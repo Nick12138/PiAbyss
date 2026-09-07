@@ -1,8 +1,8 @@
 {
-  "name": "@pideck-fixtures/extension-only",
+  "name": "@piabyss-fixtures/extension-only",
   "version": "1.0.0",
   "private": true,
-  "description": "Minimal TypeScript Extension fixture for PiDeck spike and tests",
+  "description": "Minimal TypeScript Extension fixture for PiAbyss spike and tests",
   "pi": {
     "extensions": ["./extensions/spike-extension.ts"]
   }

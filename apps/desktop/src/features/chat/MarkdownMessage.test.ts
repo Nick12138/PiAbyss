@@ -116,10 +116,10 @@ describe("deferIncompleteMermaid", () => {
 
 describe("safe footnote fragments", () => {
   it("allows only generated footnote and back-reference targets", () => {
-    const prefix = "pideck-md-r0-";
-    expect(isSafeFootnoteFragment("#pideck-md-r0-fn-note", prefix)).toBe(true);
-    expect(isSafeFootnoteFragment("#pideck-md-r0-fnref-note-2", prefix)).toBe(true);
+    const prefix = "piabyss-md-r0-";
+    expect(isSafeFootnoteFragment("#piabyss-md-r0-fn-note", prefix)).toBe(true);
+    expect(isSafeFootnoteFragment("#piabyss-md-r0-fnref-note-2", prefix)).toBe(true);
     expect(isSafeFootnoteFragment("#user-content-fn-note", prefix)).toBe(false);
-    expect(isSafeFootnoteFragment("#pideck-md-r0-fn-note/../secret", prefix)).toBe(false);
+    expect(isSafeFootnoteFragment("#piabyss-md-r0-fn-note/../secret", prefix)).toBe(false);
   });
 });

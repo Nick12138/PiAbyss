@@ -13,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { open as openExternalUrl } from "@tauri-apps/plugin-shell";
-import type { BuiltinProviderAuthStatus, BuiltinProviderModelChoice } from "@pideck/protocol";
+import type { BuiltinProviderAuthStatus, BuiltinProviderModelChoice } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import { hostContext } from "../../lib/bridge/host-context";

@@ -27,13 +27,13 @@ describe("Tauri shell-open policy", () => {
 
     const validator = new RegExp(`^(?:${openPolicy})$`);
     const allowed = [
-      "https://example.com/oauth/authorize?client_id=pideck#consent",
+      "https://example.com/oauth/authorize?client_id=piabyss#consent",
       "http://127.0.0.1:43123/callback?code=abc",
     ];
     const rejected = [
       "mailto:team@example.com",
       "tel:+1234567890",
-      "file:///tmp/pideck",
+      "file:///tmp/piabyss",
       "javascript:alert(1)",
       "vscode://settings",
       "../relative/path",

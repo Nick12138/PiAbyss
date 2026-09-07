@@ -1,4 +1,4 @@
-# PiDeck — Documentation
+# PiAbyss — Documentation
 
 > **Status:** the tracked P0 implementation requirements are source-ready, but
 > no public-release claim has been accepted. Source development covers Windows

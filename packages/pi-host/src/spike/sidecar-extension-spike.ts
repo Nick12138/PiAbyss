@@ -45,7 +45,7 @@ function findFixtureExtension(): string {
 }
 
 async function main(): Promise<void> {
-  console.log("[spike] PiDeck sidecar/Extension spike starting");
+  console.log("[spike] PiAbyss sidecar/Extension spike starting");
   console.log(`[spike] SDK version: ${SDK_VERSION}`);
   console.log(`[spike] Node: ${process.version}`);
   console.log(`[spike] NOT using global pi CLI import`);
@@ -57,7 +57,7 @@ async function main(): Promise<void> {
     throw new Error(`Expected SDK ${expectedSdkVersion}, got ${SDK_VERSION}`);
   }
 
-  const root = mkdtempSync(join(tmpdir(), "pideck-spike-"));
+  const root = mkdtempSync(join(tmpdir(), "piabyss-spike-"));
   const agentDir = join(root, "agent");
   const projectDir = join(root, "project");
   mkdirSync(agentDir, { recursive: true });
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
   cpSync(fixturePath, destExt);
   console.log(`[spike] Copied fixture extension to ${destExt}`);
 
-  // PiDeck treats selecting a workspace as authorization to load project resources.
+  // PiAbyss treats selecting a workspace as authorization to load project resources.
   const settingsManager = SettingsManager.create(projectDir, agentDir, {
     projectTrusted: true,
   });

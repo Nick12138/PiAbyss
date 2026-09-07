@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { HostStatusSnapshot, SessionSummary, WorkspaceSnapshot } from "@pideck/protocol";
+import type { HostStatusSnapshot, SessionSummary, WorkspaceSnapshot } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
 import { closeContextMenu } from "../../lib/context-menu";
@@ -87,7 +87,7 @@ describe("SessionList actions", () => {
 
   it("unpins the session when the pin button is clicked", () => {
     globalThis.localStorage.setItem(
-      "pideck.sessions.pinned.workspace-1",
+      "piabyss.sessions.pinned.workspace-1",
       JSON.stringify(["session-1"]),
     );
     render(<SessionList />);
@@ -97,7 +97,7 @@ describe("SessionList actions", () => {
 
     expect(
       JSON.parse(
-        globalThis.localStorage.getItem("pideck.sessions.pinned.workspace-1") ?? "[]",
+        globalThis.localStorage.getItem("piabyss.sessions.pinned.workspace-1") ?? "[]",
       ),
     ).toEqual([]);
     expect(screen.queryByRole("button", { name: "Unpin" })).not.toBeInTheDocument();

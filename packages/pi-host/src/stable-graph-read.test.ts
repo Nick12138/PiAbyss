@@ -1,4 +1,4 @@
-import { createHostError } from "@pideck/protocol";
+import { createHostError } from "@piabyss/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { withStableGraphRead } from "./stable-graph-read.js";
 import { IdentityState } from "./identity.js";

@@ -30,7 +30,7 @@ export type BotGateway = {
   createdAt: number;
 };
 
-const STORAGE_KEY = "pideck.bot.gateways.v1";
+const STORAGE_KEY = "piabyss.bot.gateways.v1";
 
 export function loadBotGateways(): BotGateway[] {
   try {

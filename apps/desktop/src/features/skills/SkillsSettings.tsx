@@ -27,7 +27,7 @@ import type {
   SkillInfo,
   SkillSettingsScope,
   SkillSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import {
   mergeHostIdentity,

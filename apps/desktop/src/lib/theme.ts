@@ -1,14 +1,14 @@
-import type { DesktopTheme, DesktopThemeFamily } from "@pideck/protocol";
+import type { DesktopTheme, DesktopThemeFamily } from "@piabyss/protocol";
 
 export type AppTheme = DesktopTheme;
 export type AppThemeFamily = DesktopThemeFamily;
 export type EffectiveTheme = Exclude<AppTheme, "system">;
 
-export const STARTUP_THEME_STORAGE_KEY = "pideck.theme";
-export const STARTUP_THEME_FAMILY_STORAGE_KEY = "pideck.theme-family";
-const DEFAULT_THEME_FAMILY: AppThemeFamily = "pideck";
+export const STARTUP_THEME_STORAGE_KEY = "piabyss.theme";
+export const STARTUP_THEME_FAMILY_STORAGE_KEY = "piabyss.theme-family";
+const DEFAULT_THEME_FAMILY: AppThemeFamily = "piabyss";
 const THEME_COLORS: Record<AppThemeFamily, Record<EffectiveTheme, string>> = {
-  pideck: { light: "#ffffff", dark: "#17171b" },
+  piabyss: { light: "#ffffff", dark: "#17171b" },
   vercel: { light: "#ffffff", dark: "#000000" },
   apple: { light: "#f5f5f7", dark: "#1c1c1e" },
   transparent: { light: "#f5f5f7", dark: "#1c1c1e" },
@@ -45,7 +45,8 @@ export function readStoredThemeFamily(): AppThemeFamily | null {
   try {
     const value = window.localStorage.getItem(STARTUP_THEME_FAMILY_STORAGE_KEY);
     if (value === "acrylic") return "apple";
-    return value === "pideck" || value === "vercel" || value === "apple" || value === "transparent"
+    if (value === "pideck") return "piabyss"; // legacy family id
+    return value === "piabyss" || value === "vercel" || value === "apple" || value === "transparent"
       ? value
       : null;
   } catch {

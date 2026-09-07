@@ -30,7 +30,7 @@ ff0ddec8c790dc663398d8d2bd62e505e18e7cad77bad82821597a833c56dc8e  earendil-works
 
 ## 2. coding-agent 公共导出变化
 
-以 `dist/index.d.ts` 为准。PiDeck 现在使用的导出中：
+以 `dist/index.d.ts` 为准。PiAbyss 现在使用的导出中：
 
 | 导出 | `0.82.1` |
 | --- | --- |
@@ -75,7 +75,7 @@ export declare class ModelRuntime implements Models {
 
 - 构造函数是私有的，只能走 `await ModelRuntime.create()`；它是异步的，而旧的 `ModelRegistry.create()` 是同步的。这会改变 Host 启动路径的时序。
 - `allowModelNetwork` 默认 `false`，且 create 时的联网刷新只有在**显式允许**时才发生。
-- `credentials` 接受任意 `CredentialStore` 实现，这正是 PiDeck 自有持久化实现的注入点。
+- `credentials` 接受任意 `CredentialStore` 实现，这正是 PiAbyss 自有持久化实现的注入点。
 
 ## 4. 刷新语义
 
@@ -96,7 +96,7 @@ export interface ModelsRefreshResult {
 
 `ModelRegistry.refresh()` 的签名是 `(): Promise<void>` —— **没有参数，也不返回结果**。因此它既无法声明是否允许联网，也无法传入取消信号，更无法报告 `aborted` 或分 provider 的错误。
 
-这是交接文档 §6.4 禁止继续使用 `modelRegistry.refresh()`、要求改为两个显式 helper 的直接原因。`ModelsRefreshResult` 也意味着 PiDeck 的 refresh helper 应该检查返回值，而不是只 await 一个 `void`。
+这是交接文档 §6.4 禁止继续使用 `modelRegistry.refresh()`、要求改为两个显式 helper 的直接原因。`ModelsRefreshResult` 也意味着 PiAbyss 的 refresh helper 应该检查返回值，而不是只 await 一个 `void`。
 
 ## 5. ModelRegistry 的新定位
 
@@ -128,7 +128,7 @@ export interface CredentialStore {
 }
 ```
 
-上游注释明确的语义，PiDeck 的实现必须逐条满足：
+上游注释明确的语义，PiAbyss 的实现必须逐条满足：
 
 - `read` 可能返回**已过期**的凭据，仅供展示/状态使用；真正用于请求的 auth 来自 `Models.getAuth()`。
 - `list` 只返回元数据，不解析也不暴露 secret，并且**不得**在列举时执行 provider 配置的 API-key 命令。
@@ -136,7 +136,7 @@ export interface CredentialStore {
 - `delete` 是独立的删除路径，实现必须让它与 `modify` 串行化。
 - 错误语义：`read` 对不存在的条目 resolve 为 `undefined`；只有存储失败才 reject，`Models` 会把这类 rejection 包成 code 为 `auth` 的 `ModelsError`。
 
-`InMemoryCredentialStore` 是公共导出（`dist/auth/credential-store.d.ts`，经 `export * from "./auth/credential-store.ts"` 暴露），可直接用于隔离的候选 runtime 校验。公共入口**没有**持久化实现——这就是 PiDeck 必须自己写一个的原因。
+`InMemoryCredentialStore` 是公共导出（`dist/auth/credential-store.d.ts`，经 `export * from "./auth/credential-store.ts"` 暴露），可直接用于隔离的候选 runtime 校验。公共入口**没有**持久化实现——这就是 PiAbyss 必须自己写一个的原因。
 
 ## 7. createAgentSession 的 runtime 注入
 
@@ -147,7 +147,7 @@ export interface CredentialStore {
 modelRuntime?: ModelRuntime;
 ```
 
-注意默认行为：**不传就会各自新建一个 runtime**。PiDeck 有多条 `createAgentSession` 调用路径（workspace 建图、session create、session open），任何一条漏传都会静默产生第二个 runtime，导致 provider/auth 状态分叉。这是交接文档 §6.5 把「所有 createAgentSession 收到同一个 Host-owned runtime」列为验收项的原因。
+注意默认行为：**不传就会各自新建一个 runtime**。PiAbyss 有多条 `createAgentSession` 调用路径（workspace 建图、session create、session open），任何一条漏传都会静默产生第二个 runtime，导致 provider/auth 状态分叉。这是交接文档 §6.5 把「所有 createAgentSession 收到同一个 Host-owned runtime」列为验收项的原因。
 
 ## 8. Package 取消面
 
@@ -159,7 +159,7 @@ modelRuntime?: ModelRuntime;
 | `spawnCaptureCommand()` | `spawnProcess`，`stdio` 为 `["ignore", "pipe", "pipe"]` | 可以：同上 |
 | `runCommandSync()` / `runNpmCommandSync()` | `spawnProcessSync` | **不可以**：`spawnSync` 无 `signal` |
 
-上游 `0.82.1` **没有** `setOperationSignal`，两个 async 出口也没有注入任何 signal——PiDeck 的 patch 仍然必需，且形状与现有 `0.80.7` patch 的 package-manager 部分一致。
+上游 `0.82.1` **没有** `setOperationSignal`，两个 async 出口也没有注入任何 signal——PiAbyss 的 patch 仍然必需，且形状与现有 `0.80.7` patch 的 package-manager 部分一致。
 
 同步路径的实际用途是解析全局 npm root：`runNpmCommandSync(["root", "-g"])`，bun 走 `["pm", "bin", "-g"]`。它在 abort 后不会被打断。任何「Package 生命周期完全可取消」的表述都必须排除这条路径，或先把它改造成异步。
 
@@ -176,7 +176,7 @@ export interface ResourceLoaderReloadOptions {
 三件事同时成立：
 
 1. reload 选项里**没有** signal，所以 `AgentSession.reload()` 期间的包解析无法通过公共 API 取消。
-2. `DefaultResourceLoader` 有 `private packageManager`，是它自己构造的独立实例。对 PiDeck graph 级 PackageManager 调用 `setOperationSignal()` **不会**影响它。
+2. `DefaultResourceLoader` 有 `private packageManager`，是它自己构造的独立实例。对 PiAbyss graph 级 PackageManager 调用 `setOperationSignal()` **不会**影响它。
 3. `reload()` 调用 `this.packageManager.resolve()` 且**不传 `onMissing`**（`resource-loader.js:232`、`:348`）。在这个形态下 `resolvePackageSources()` 会静默安装：
 
 ```js
@@ -194,11 +194,11 @@ npm 包的触发条件是「磁盘上不存在」或「已装版本不满足配�
 
 注意 `parseSource()`：npm 源必须写成 `npm:<spec>`，未加前缀的字符串会被归类为 `local`，不触发安装。写这条路径的测试时如果漏了前缀，测试会静默失效。
 
-### PiDeck 的决定
+### PiAbyss 的决定
 
 不扩大 patch。改为让**非用户发起**的 reload 不可能安装。
 
-`isOfflineModeEnabled()` 每次调用现读 `process.env.PI_OFFLINE`（`1` / `true` / `yes`），因此可以在调用点前后临时设置。`installNpm` / `installGit` 本身**不检查**该开关，所以 PiDeck 自己的 `package.install` 不受影响；但 `checkForAvailableUpdates` 会检查，所以不能全局设置。
+`isOfflineModeEnabled()` 每次调用现读 `process.env.PI_OFFLINE`（`1` / `true` / `yes`），因此可以在调用点前后临时设置。`installNpm` / `installGit` 本身**不检查**该开关，所以 PiAbyss 自己的 `package.install` 不受影响；但 `checkForAvailableUpdates` 会检查，所以不能全局设置。
 
 `packages/pi-host/src/offline-package-resolution.ts` 的 `withoutImplicitPackageInstall()` 包住两个调用点：
 
@@ -224,7 +224,7 @@ coding-agent `0.82.1` 的 `dependencies` 中与本次升级相关的：
 proper-lockfile                4.1.2
 ```
 
-`proper-lockfile@4.1.2` 与上游一致，且它不自带 TypeScript 声明；PiDeck 若直接 import，需要自行加 `@types/proper-lockfile@4.1.4` 开发依赖。
+`proper-lockfile@4.1.2` 与上游一致，且它不自带 TypeScript 声明；PiAbyss 若直接 import，需要自行加 `@types/proper-lockfile@4.1.4` 开发依赖。
 
 `dist/core/agent-session.d.ts` 的事件联合相比 `0.80.7` 新增四个：
 
@@ -240,7 +240,7 @@ bash_execution_update
 PR-4 已对这四个事件做出决定：
 
 - **三个 `summarization_retry_*` 事件：接入。** 它们由 `AgentSession._summarizationRetryCallbacks()` 在 compaction 或 branch-summary 的摘要 LLM 调用重试时发出（`dist/core/agent-session.js`）。桌面端此前在 branch-summary 重试退避期间没有任何状态信号，表头会显示 "Working" 且无从区分卡死与退避。现在白名单放行审阅过的字段（`attempt`/`maxAttempts`/`delayMs`/`errorMessage`/`source`/`reason`），`transcript-reducer.ts` 把它们映射到既有的 `isRetrying` 状态；compaction 期间 `isCompacting` 在表头优先级更高，用户继续看到 "Compacting"，语义仍然真实。协议无需改动——`SerializableAgentSessionEvent` 本就是 `{ type: string }` 加 JSON 值的宽松类型。
-- **`bash_execution_update`：不接入。** 它唯一的发射点是 `AgentSession.executeBash()`（TUI `!` 命令 / direct RPC bash），PiDeck 的 Host 与桌面端都不调用该方法，扩展 API 也不直接暴露它。即便未来某扩展间接触发，结果仍会以 `bashExecution` 会话消息落入 session 历史并经快照渲染，丢掉 delta 流不损失任何持久数据。`event-normalize.test.ts` 用一条显式回归测试把该事件钉在 `{ type: "unknown" }` 上，使这成为有记录的决定而非遗漏。
+- **`bash_execution_update`：不接入。** 它唯一的发射点是 `AgentSession.executeBash()`（TUI `!` 命令 / direct RPC bash），PiAbyss 的 Host 与桌面端都不调用该方法，扩展 API 也不直接暴露它。即便未来某扩展间接触发，结果仍会以 `bashExecution` 会话消息落入 session 历史并经快照渲染，丢掉 delta 流不损失任何持久数据。`event-normalize.test.ts` 用一条显式回归测试把该事件钉在 `{ type: "unknown" }` 上，使这成为有记录的决定而非遗漏。
 
 另注意：协议中的 `agent.compactionChanged` / `agent.retryChanged` 事件通道自定义以来 Host 从未发射（桌面端 `App.tsx` 有处理分支但收不到），compaction/retry 状态实际全部经 `agent.event` → transcript-reducer 传递。新事件沿用这条活路径，不复活死通道。
 
@@ -258,9 +258,9 @@ PR-4 已对这四个事件做出决定：
 
 ## 11. Extension provider 泄漏与 ownership 层（PR-4）
 
-0.82.1 的 `ModelRuntime` 把扩展注册的 provider 存进进程级实例字段 `extensionProviders` / `nativeExtensionProviders`（`dist/core/model-runtime.js`），key 是裸 provider id，无任何 workspace/session 命名空间；`AgentSession.dispose()` 不注销，SDK 与 PiDeck 全仓也没有任何 `unregisterProvider` 调用方。上游一进程一工作区所以无碍；PiDeck 的 Host 先后服务多个工作区，泄漏路径完整：
+0.82.1 的 `ModelRuntime` 把扩展注册的 provider 存进进程级实例字段 `extensionProviders` / `nativeExtensionProviders`（`dist/core/model-runtime.js`），key 是裸 provider id，无任何 workspace/session 命名空间；`AgentSession.dispose()` 不注销，SDK 与 PiAbyss 全仓也没有任何 `unregisterProvider` 调用方。上游一进程一工作区所以无碍；PiAbyss 的 Host 先后服务多个工作区，泄漏路径完整：
 
-- 扩展 `pi.registerProvider` 加载期入 loader 私有队列（`ExtensionRuntimeState.pendingProviderRegistrations`），在 `createAgentSession` → `ExtensionRunner.bindCore` 冲入共享 runtime；bind 之后的注册（Path B，agent turn 中途）经 `providerActions` 直达 `session._modelRuntime`——PiDeck 注入的正是全局唯一 runtime。
+- 扩展 `pi.registerProvider` 加载期入 loader 私有队列（`ExtensionRuntimeState.pendingProviderRegistrations`），在 `createAgentSession` → `ExtensionRunner.bindCore` 冲入共享 runtime；bind 之后的注册（Path B，agent turn 中途）经 `providerActions` 直达 `session._modelRuntime`——PiAbyss 注入的正是全局唯一 runtime。
 - 重复注册按「defined 值合并覆盖」语义（`registerProvider` 保留旧字段），A、B 同 id 会互相污染。
 - `retainedGraphFingerprint` 覆盖 `models.json` 但不含内存中的 extensionProviders，所以 retained 图带泄漏重激活。
 
@@ -274,14 +274,14 @@ PR-4 已对这四个事件做出决定：
 - owner 集合即引用计数：跨图共有（如 agentDir 级用户扩展在 A、B 都注册同 id）时最后一个 owner 离开才注销。
 - 隔离粒度刻意停在 workspace：同 Workspace 的 retained/background Session 共享 workspace 扩展，per-session 注销会误杀并行 Session 正在使用的 provider。
 
-**验收**：`workspace-package.integration.test.ts` 真实 Host A→B→A——A 的 `.pi` 扩展 provider 经 `model.list` 在 A 可见、在 B 不可见、回 A 恢复。破坏验证：注释 `retainGraph` 的 suspend 后，B 断言即红（`expected ['pideck-iso-provider'] to not include ...`）。
+**验收**：`workspace-package.integration.test.ts` 真实 Host A→B→A——A 的 `.pi` 扩展 provider 经 `model.list` 在 A 可见、在 B 不可见、回 A 恢复。破坏验证：注释 `retainGraph` 的 suspend 后，B 断言即红（`expected ['piabyss-iso-provider'] to not include ...`）。
 
 另注意 `unregisterProvider` 同步清两个 map 并重组模型集合，但 `snapshot.configuredProviders` 的清理依赖其后异步 `void refresh({allowNetwork:false})`；对 `getRegisteredProviderIds` / `find` 的断言是同步可靠的，对 `getAvailable` 的断言需在 refresh 后。
 
 ## 12. Auth 解析要点（PR-4 测试对应）
 
-- oauth 刷新的唯一写路径是 `credentials.modify()`（pi-ai `auth/resolve.js` `resolveStoredOAuth` 与 `models.js` `resolveRefreshCredential` 两处），回调内锁下二次校验：非 oauth → undefined、未过期 → undefined（= 保持现状，绝不能当删除）。PiDeck store 的「undefined = unchanged」契约正是这两处依赖的；跨进程竞争由 proper-lockfile 串行化，输者在锁下看到新 token 后跳过刷新。
-- api_key 凭证 SDK 端**不解析** `$VAR`/`!cmd` 模板（`envApiKeyAuth` 直接用 `credential.key`），模板解析是 PiDeck store `read()` 的职责；models.json 里 provider 级 `apiKey`/`headers` 的模板则由 provider-composer 的 `resolveConfigValueOrThrow` 解析，null 值在此层直接抛错。
+- oauth 刷新的唯一写路径是 `credentials.modify()`（pi-ai `auth/resolve.js` `resolveStoredOAuth` 与 `models.js` `resolveRefreshCredential` 两处），回调内锁下二次校验：非 oauth → undefined、未过期 → undefined（= 保持现状，绝不能当删除）。PiAbyss store 的「undefined = unchanged」契约正是这两处依赖的；跨进程竞争由 proper-lockfile 串行化，输者在锁下看到新 token 后跳过刷新。
+- api_key 凭证 SDK 端**不解析** `$VAR`/`!cmd` 模板（`envApiKeyAuth` 直接用 `credential.key`），模板解析是 PiAbyss store `read()` 的职责；models.json 里 provider 级 `apiKey`/`headers` 的模板则由 provider-composer 的 `resolveConfigValueOrThrow` 解析，null 值在此层直接抛错。
 - null 头哨兵（「删除继承头」）只在 `Model.headers` 携带时到达请求边界，由 `getApiKeyAndHeaders` / `withoutDeletedHeaders` 过滤。
 - header-only provider 存在 compat/stream 分歧：`getApiKeyAndHeaders` 走 `getCompatibilityRequestConfig` 兜底返回 `{ok:true, headers}`，而 `getAuth` 返回 undefined → `prepareRequest` 抛「Provider is not configured」。连接检查通过≠请求可用，`auth-compatibility.test.ts` 已钉住。
 - compaction / branch-summary 经 `_getSummarizationRequestAuth` 取 auth，失败被吞成 `{}`；但 streamFn 是 SDK 构建的 `modelRuntime.streamSimple`，`prepareRequest` 会二次解析兜底。`summarization-auth.test.ts` 在 provider `streamSimple`（wire 边界）断言两类摘要请求都实际携带 key/headers。

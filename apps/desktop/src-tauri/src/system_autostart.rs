@@ -1,4 +1,4 @@
-const AUTOSTART_ARGUMENT: &str = "--pideck-autostart";
+const AUTOSTART_ARGUMENT: &str = "--piabyss-autostart";
 
 pub fn was_launched_at_login() -> bool {
     std::env::args_os().any(|argument| argument == AUTOSTART_ARGUMENT)
@@ -33,7 +33,7 @@ mod windows {
     };
 
     const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-    const VALUE_NAME: &str = "PiDeck";
+    const VALUE_NAME: &str = "PiAbyss";
 
     struct RegistryKey(HKEY);
 
@@ -55,7 +55,7 @@ mod windows {
 
     fn enable() -> Result<(), String> {
         let executable = std::env::current_exe()
-            .map_err(|error| format!("could not resolve the PiDeck executable: {error}"))?;
+            .map_err(|error| format!("could not resolve the PiAbyss executable: {error}"))?;
         let command = startup_command(&executable)?;
         let key_path = wide(RUN_KEY);
         let value_name = wide(VALUE_NAME);
@@ -98,7 +98,7 @@ mod windows {
         };
         if result != ERROR_SUCCESS {
             return Err(windows_error(
-                "could not register PiDeck for startup",
+                "could not register PiAbyss for startup",
                 result,
             ));
         }
@@ -131,7 +131,7 @@ mod windows {
         let result = unsafe { RegDeleteValueW(key.0, value_name.as_ptr()) };
         if result != ERROR_SUCCESS && result != ERROR_FILE_NOT_FOUND {
             return Err(windows_error(
-                "could not remove PiDeck from startup",
+                "could not remove PiAbyss from startup",
                 result,
             ));
         }
@@ -141,9 +141,9 @@ mod windows {
     fn startup_command(executable: &Path) -> Result<String, String> {
         let executable = executable
             .to_str()
-            .ok_or_else(|| "the PiDeck executable path is not valid Unicode".to_string())?;
+            .ok_or_else(|| "the PiAbyss executable path is not valid Unicode".to_string())?;
         if executable.contains('"') {
-            return Err("the PiDeck executable path contains an unsupported quote".to_string());
+            return Err("the PiAbyss executable path contains an unsupported quote".to_string());
         }
         Ok(format!(r#""{executable}" {AUTOSTART_ARGUMENT}"#))
     }
@@ -169,8 +169,8 @@ mod windows {
         #[test]
         fn startup_command_quotes_the_executable_and_adds_the_hidden_argument() {
             assert_eq!(
-                startup_command(Path::new(r"C:\Program Files\PiDeck\PiDeck.exe")).unwrap(),
-                r#""C:\Program Files\PiDeck\PiDeck.exe" --pideck-autostart"#
+                startup_command(Path::new(r"C:\Program Files\PiAbyss\PiAbyss.exe")).unwrap(),
+                r#""C:\Program Files\PiAbyss\PiAbyss.exe" --piabyss-autostart"#
             );
         }
     }
@@ -182,6 +182,6 @@ mod tests {
 
     #[test]
     fn login_argument_is_stable() {
-        assert_eq!(AUTOSTART_ARGUMENT, "--pideck-autostart");
+        assert_eq!(AUTOSTART_ARGUMENT, "--piabyss-autostart");
     }
 }

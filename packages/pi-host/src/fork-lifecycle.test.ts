@@ -13,7 +13,7 @@ afterEach(() => {
 function createSessionFile(
   options: { name?: string; secondText?: string; metadataBeforeFirst?: boolean } = {},
 ) {
-  const root = mkdtempSync(join(tmpdir(), "pideck-fork-"));
+  const root = mkdtempSync(join(tmpdir(), "piabyss-fork-"));
   roots.push(root);
   const cwd = resolve(join(root, "workspace"));
   mkdirSync(cwd, { recursive: true });
@@ -128,7 +128,7 @@ describe("prepareForkFile", () => {
   });
 
   it("does not leak managed attachment markers into the restored composer draft", () => {
-    const marker = `<pideck-attachments version="1">\n[{"id":"66666666-6666-4666-8666-666666666666","name":"brief.pdf","mediaType":"application/pdf","unit":"page","unitCount":2}]\n</pideck-attachments>`;
+    const marker = `<piabyss-attachments version="1">\n[{"id":"66666666-6666-4666-8666-666666666666","name":"brief.pdf","mediaType":"application/pdf","unit":"page","unitCount":2}]\n</piabyss-attachments>`;
     const { cwd, sessionPath } = createSessionFile({
       secondText: `review this\n\n${marker}`,
     });

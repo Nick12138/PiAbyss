@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { invoke } from "@tauri-apps/api/core";
-import type { WorkspaceDirectoryEntry } from "@pideck/protocol";
+import type { WorkspaceDirectoryEntry } from "@piabyss/protocol";
 import {
   AtSign,
   ChevronDown,

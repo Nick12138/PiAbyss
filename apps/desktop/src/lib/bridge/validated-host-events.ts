@@ -1,4 +1,4 @@
-import type { HostEventEnvelope, HostEventName } from "@pideck/protocol";
+import type { HostEventEnvelope, HostEventName } from "@piabyss/protocol";
 
 export type HostEventScope = {
   expectedHostInstanceId: string;
@@ -70,7 +70,7 @@ export function publishValidatedHostEvent(event: HostEventEnvelope): void {
     try {
       subscriber.handler(event);
     } catch (error) {
-      console.error(`[pideck] ${event.event} subscriber failed`, error);
+      console.error(`[piabyss] ${event.event} subscriber failed`, error);
     }
   }
 }

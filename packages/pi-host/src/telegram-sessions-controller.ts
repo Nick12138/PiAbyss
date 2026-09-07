@@ -14,10 +14,10 @@ import type {
   TelegramSessionSummary,
   TelegramThreadsConfig,
   TelegramVoiceConfig,
-} from "@pideck/protocol";
-import { createHostError } from "@pideck/protocol";
+} from "@piabyss/protocol";
+import { createHostError } from "@piabyss/protocol";
 import type { MethodHandler } from "./server.js";
-import { workspaceStorageKey } from "./pideck-data.js";
+import { workspaceStorageKey } from "./piabyss-data.js";
 
 /**
  * Telegram workspace views + thin config shell over the @llblab/pi-telegram

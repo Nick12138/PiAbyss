@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { HostIdentity } from "@pideck/protocol";
+import type { HostIdentity } from "@piabyss/protocol";
 
 export class IdentityState {
   readonly hostInstanceId: string = randomUUID();

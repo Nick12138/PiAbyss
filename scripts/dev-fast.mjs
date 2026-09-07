@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const tauriDir = join(root, "apps", "desktop", "src-tauri");
 const devFastTargetDir = join(tauriDir, "target", "dev-fast");
-const desktopExe = join(devFastTargetDir, "debug", "pideck.exe");
+const desktopExe = join(devFastTargetDir, "debug", "piabyss.exe");
 const devUrl = "http://localhost:1420/";
 const hostSrc = join(root, "packages", "pi-host", "src");
 const hostDist = join(root, "packages", "pi-host", "dist");
@@ -138,7 +138,7 @@ function syncHostResources(destination) {
 
   for (const protocolRoot of [
     join(destination, "vendor", "protocol"),
-    join(destination, "node_modules", "@pideck", "protocol"),
+    join(destination, "node_modules", "@piabyss", "protocol"),
   ]) {
     copyDirectoryContents(protocolDist, join(protocolRoot, "dist"));
     cpSync(protocolPackage, join(protocolRoot, "package.json"), { force: true });
@@ -148,13 +148,13 @@ function syncHostResources(destination) {
 function prepareDevHostResources() {
   const protocolMtime = ensurePackageBuild({
     label: "protocol",
-    packageName: "@pideck/protocol",
+    packageName: "@piabyss/protocol",
     sourceDirectory: protocolSrc,
     entry: protocolEntry,
   });
   ensurePackageBuild({
     label: "Pi Host",
-    packageName: "@pideck/pi-host",
+    packageName: "@piabyss/pi-host",
     sourceDirectory: hostSrc,
     entry: hostEntry,
     dependencyMtime: protocolMtime,
@@ -193,7 +193,7 @@ async function isDesktopViteReady() {
   try {
     const response = await fetch(devUrl);
     if (!response.ok) return false;
-    return (await response.text()).includes("<title>PiDeck</title>");
+    return (await response.text()).includes("<title>PiAbyss</title>");
   } catch {
     return false;
   }
@@ -244,7 +244,7 @@ async function main() {
   } else {
     console.log("[dev:fast] Starting Vite...");
     ownsVite = true;
-    vite = spawnPnpm(["--filter", "@pideck/desktop", "run", "dev"]);
+    vite = spawnPnpm(["--filter", "@piabyss/desktop", "run", "dev"]);
     vite.once("error", (error) => {
       viteStartError = error;
     });

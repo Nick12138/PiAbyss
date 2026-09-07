@@ -1,5 +1,5 @@
 {
-  "name": "pideck",
+  "name": "piabyss",
   "private": true,
   "version": "0.1.9",
   "description": "A desktop interface for Pi Coding Agent",
@@ -8,13 +8,13 @@
     "node": ">=22.19.0"
   },
   "scripts": {
-    "build": "pnpm --filter @pideck/protocol run build && pnpm --filter @pideck/pi-host run build && pnpm --filter @pideck/desktop run build",
-    "typecheck": "pnpm --filter @pideck/protocol run build && pnpm --filter @pideck/protocol run typecheck && pnpm --filter @pideck/pi-host run typecheck && pnpm --filter @pideck/desktop run typecheck",
-    "test": "pnpm --filter @pideck/protocol run build && pnpm -r --filter @pideck/protocol --filter @pideck/pi-host --filter @pideck/desktop run test",
-    "dev:host": "pnpm --filter @pideck/pi-host run dev",
-    "dev:desktop": "pnpm --filter @pideck/desktop run dev",
+    "build": "pnpm --filter @piabyss/protocol run build && pnpm --filter @piabyss/pi-host run build && pnpm --filter @piabyss/desktop run build",
+    "typecheck": "pnpm --filter @piabyss/protocol run build && pnpm --filter @piabyss/protocol run typecheck && pnpm --filter @piabyss/pi-host run typecheck && pnpm --filter @piabyss/desktop run typecheck",
+    "test": "pnpm --filter @piabyss/protocol run build && pnpm -r --filter @piabyss/protocol --filter @piabyss/pi-host --filter @piabyss/desktop run test",
+    "dev:host": "pnpm --filter @piabyss/pi-host run dev",
+    "dev:desktop": "pnpm --filter @piabyss/desktop run dev",
     "dev:fast": "node scripts/dev-fast.mjs",
-    "spike:sidecar": "pnpm --filter @pideck/pi-host run spike:sidecar",
+    "spike:sidecar": "pnpm --filter @piabyss/pi-host run spike:sidecar",
     "package:sidecar": "node scripts/package-release-sidecar.mjs",
     "package:sidecar:with-node": "node scripts/package-release-sidecar.mjs --prepare-runtime",
     "prepare:runtime": "node scripts/prepare-release-runtime.mjs",

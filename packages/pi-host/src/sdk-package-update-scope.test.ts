@@ -48,7 +48,7 @@ describe("Host package update scope", () => {
 describe("SDK local package update identity", () => {
   let root: string;
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "pideck-package-update-local-"));
+    root = mkdtempSync(join(tmpdir(), "piabyss-package-update-local-"));
   });
   afterEach(() => {
     rmSync(root, { recursive: true, force: true });

@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { HostIdentity, PromptSnapshot } from "@pideck/protocol";
+import type { HostIdentity, PromptSnapshot } from "@piabyss/protocol";
 import type { HandlerContext } from "./server.js";
 import { TryMutex } from "./locks.js";
 import { createPromptHandlers } from "./prompt-controller.js";
@@ -73,7 +73,7 @@ describe("prompt-controller", () => {
   let handlers: ReturnType<typeof createPromptHandlers>;
 
   beforeEach(() => {
-    layout = createTempAgentLayout("pideck-prompt-test-");
+    layout = createTempAgentLayout("piabyss-prompt-test-");
   });
 
   afterEach(() => {
@@ -152,7 +152,7 @@ describe("prompt-controller", () => {
 
   it("loads context files regardless of project trust", async () => {
     for (const trusted of [true, false]) {
-      const layout2 = createTempAgentLayout("pideck-prompt-ctx-");
+      const layout2 = createTempAgentLayout("piabyss-prompt-ctx-");
       try {
         const { factory } = fixture(
           layout2,

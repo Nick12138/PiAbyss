@@ -74,7 +74,7 @@
     "forbidProcessExecPathAsRuntime": true
   },
   "protocolPackage": {
-    "name": "@pideck/protocol",
+    "name": "@piabyss/protocol",
     "path": "packages/protocol"
   }
 }

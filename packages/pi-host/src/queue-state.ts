@@ -1,5 +1,5 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import type { QueueSnapshot } from "@pideck/protocol";
+import type { QueueSnapshot } from "@piabyss/protocol";
 
 type QueueState = QueueSnapshot & {
   transactionDepth: number;

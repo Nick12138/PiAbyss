@@ -4,8 +4,8 @@ import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 
 /** True when a session currently has no enabled Provider model.
  * Matches the SDK NO_MODEL sentinel (provider/id both "unknown"), which the
- * SDK's clearModel() installs when PiDeck has no enabled Provider. */
-export function isPideckNoModel(
+ * SDK's clearModel() installs when PiAbyss has no enabled Provider. */
+export function isPiAbyssNoModel(
   model: { provider?: string; id?: string } | null | undefined,
 ): boolean {
   return model?.provider === "unknown" && model?.id === "unknown";

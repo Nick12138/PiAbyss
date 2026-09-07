@@ -179,7 +179,7 @@ export function sanitizeMermaidSvg(value: string): string {
         element.removeAttributeNode(attribute);
         continue;
       }
-      if (name === "data-pideck-mermaid-href") {
+      if (name === "data-piabyss-mermaid-href") {
         element.removeAttributeNode(attribute);
         continue;
       }
@@ -212,7 +212,7 @@ export function sanitizeMermaidSvg(value: string): string {
 
     if (href && isSafeExternalUrl(href)) {
       removeSvgHref(anchor);
-      anchor.setAttribute("data-pideck-mermaid-href", href);
+      anchor.setAttribute("data-piabyss-mermaid-href", href);
       anchor.setAttribute("role", "link");
       anchor.setAttribute("tabindex", "0");
       continue;
@@ -224,7 +224,7 @@ export function sanitizeMermaidSvg(value: string): string {
 
   for (const element of elements) {
     if (!element.isConnected) continue;
-    if (element.hasAttribute("data-pideck-mermaid-href")) continue;
+    if (element.hasAttribute("data-piabyss-mermaid-href")) continue;
     for (const attribute of Array.from(element.attributes)) {
       if (attribute.localName.toLowerCase() === "href" && !isSafeSvgFragment(attribute.value)) {
         element.removeAttributeNode(attribute);
@@ -232,7 +232,7 @@ export function sanitizeMermaidSvg(value: string): string {
     }
   }
 
-  root.setAttribute("data-pideck-mermaid-theme", "neutral");
+  root.setAttribute("data-piabyss-mermaid-theme", "neutral");
   return new XMLSerializer().serializeToString(root);
 }
 

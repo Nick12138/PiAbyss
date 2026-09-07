@@ -3,7 +3,7 @@ import type {
   SerializableAgentMessage,
   SerializableSessionEntry,
   SessionSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 
 type TodoStatus = "pending" | "in_progress" | "completed";
 

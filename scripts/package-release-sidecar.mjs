@@ -220,12 +220,12 @@ function stageHostWithDeploy() {
   // pnpm 9 resolves deploy links incorrectly when the workspace and target are
   // on different Windows drives. Keep the target outside the workspace but on
   // the checkout volume.
-  const deployedFrom = join(dirname(root), `.pideck-host-deploy-${process.pid}-${Date.now()}`);
+  const deployedFrom = join(dirname(root), `.piabyss-host-deploy-${process.pid}-${Date.now()}`);
   try {
     rmSync(deployedFrom, { recursive: true, force: true });
     console.log("[package-sidecar] pnpm deploy --prod ->", deployedFrom);
     const deploy = timedStage("pnpm deploy production Host", () =>
-      spawnSync("pnpm", ["--filter", "@pideck/pi-host", "deploy", "--prod", deployedFrom], {
+      spawnSync("pnpm", ["--filter", "@piabyss/pi-host", "deploy", "--prod", deployedFrom], {
         cwd: root,
         encoding: "utf8",
         shell: true,
@@ -369,7 +369,7 @@ writeFileSync(
   join(protocolVendor, "package.json"),
   JSON.stringify(
     {
-      name: "@pideck/protocol",
+      name: "@piabyss/protocol",
       version: protoMeta.version,
       type: "module",
       main: "./dist/index.js",
@@ -380,20 +380,20 @@ writeFileSync(
     2,
   ),
 );
-// Force node_modules/@pideck/protocol → vendor
-const protoLink = join(dest, "node_modules", "@pideck", "protocol");
+// Force node_modules/@piabyss/protocol → vendor
+const protoLink = join(dest, "node_modules", "@piabyss", "protocol");
 mkdirSync(dirname(protoLink), { recursive: true });
 if (existsSync(protoLink)) rmSync(protoLink, { recursive: true, force: true });
 cpSync(protocolVendor, protoLink, { recursive: true });
 
 const releasePkg = {
-  name: "pideck-host-release",
+  name: "piabyss-host-release",
   version: hostMeta.version,
   private: true,
   type: "module",
   main: "./main.js",
   dependencies: deriveReleaseProductionDependencies(sdkEvidence, {
-    "@pideck/protocol": protoMeta.version,
+    "@piabyss/protocol": protoMeta.version,
   }),
 };
 writeFileSync(join(dest, "package.json"), JSON.stringify(releasePkg, null, 2));
@@ -402,7 +402,7 @@ try {
   assertReleaseProductionManifest(
     releasePkg,
     sdkEvidence,
-    { "@pideck/protocol": protoMeta.version },
+    { "@piabyss/protocol": protoMeta.version },
     "staged release Host manifest",
   );
   assertPiPackageTree(dest, sdkEvidence, "final staged Host tree");
@@ -412,11 +412,11 @@ try {
 
 // Layout validation — refuse flatten collision of package.json identities
 const hostPkgName = JSON.parse(readFileSync(join(dest, "package.json"), "utf8")).name;
-if (hostPkgName !== "pideck-host-release") die("pi-host package.json name overwritten");
+if (hostPkgName !== "piabyss-host-release") die("pi-host package.json name overwritten");
 const protocolName = JSON.parse(
-  readFileSync(join(dest, "node_modules/@pideck/protocol/package.json"), "utf8"),
+  readFileSync(join(dest, "node_modules/@piabyss/protocol/package.json"), "utf8"),
 ).name;
-if (protocolName !== "@pideck/protocol") die("protocol package identity broken");
+if (protocolName !== "@piabyss/protocol") die("protocol package identity broken");
 
 const staging = {
   status: "ok",

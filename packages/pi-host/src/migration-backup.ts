@@ -27,9 +27,9 @@ import { createReadStream } from "node:fs";
 import { chmod, copyFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { logger } from "./logger.js";
-import { migrationBackupRoot } from "./pideck-data.js";
+import { migrationBackupRoot } from "./piabyss-data.js";
 
-export const MIGRATION_ID = "pideck-sdk-0.80.7-to-0.82.1";
+export const MIGRATION_ID = "piabyss-sdk-0.80.7-to-0.82.1";
 
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;

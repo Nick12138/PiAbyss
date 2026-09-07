@@ -1,10 +1,10 @@
 const MAIN_WINDOW_LABEL: &str = "main";
-const TRAY_ID: &str = "pideck-tray";
+const TRAY_ID: &str = "piabyss-tray";
 
 #[cfg(any(target_os = "windows", test))]
-const OPEN_MENU_ID: &str = "pideck-tray-open";
+const OPEN_MENU_ID: &str = "piabyss-tray-open";
 #[cfg(any(target_os = "windows", test))]
-const QUIT_MENU_ID: &str = "pideck-tray-quit";
+const QUIT_MENU_ID: &str = "piabyss-tray-quit";
 
 #[cfg(any(target_os = "windows", test))]
 #[derive(Debug, PartialEq, Eq)]
@@ -61,14 +61,14 @@ fn install_windows(app: &mut tauri::App) -> tauri::Result<()> {
     };
 
     let menu = MenuBuilder::new(app)
-        .text(OPEN_MENU_ID, "Open PiDeck")
+        .text(OPEN_MENU_ID, "Open PiAbyss")
         .separator()
-        .text(QUIT_MENU_ID, "Quit PiDeck")
+        .text(QUIT_MENU_ID, "Quit PiAbyss")
         .build()?;
 
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
-        .tooltip("PiDeck")
+        .tooltip("PiAbyss")
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match menu_action(event.id().as_ref()) {
             TrayMenuAction::Open => show_main_window(app),

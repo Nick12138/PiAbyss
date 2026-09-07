@@ -427,7 +427,7 @@ pub async fn pi_host_bootstrap_telegram(
         "method": "system.hello",
         "context": {},
         "params": {
-            "clientName": "pideck",
+            "clientName": "piabyss",
             "clientVersion": "0.1.0",
             "protocolVersion": 1,
             "extensionDecisionPresentation": "auto",
@@ -734,7 +734,7 @@ mod tests {
     use super::*;
 
     fn temp_test_file(name: &str, bytes: &[u8]) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("pideck-small-file-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("piabyss-small-file-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(name);
         std::fs::write(&path, bytes).unwrap();
@@ -769,7 +769,7 @@ mod tests {
 
     #[test]
     fn files_are_revealed_not_opened() {
-        let dir = std::env::temp_dir().join("pideck-open-path-test");
+        let dir = std::env::temp_dir().join("piabyss-open-path-test");
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("sample.exe");
         std::fs::write(&file, b"not really an exe").unwrap();

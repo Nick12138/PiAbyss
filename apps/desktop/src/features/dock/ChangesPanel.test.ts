@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { GitStatusSnapshot } from "@pideck/protocol";
+import type { GitStatusSnapshot } from "@piabyss/protocol";
 import {
   buildGitListRows,
   canDiscardGitChange,

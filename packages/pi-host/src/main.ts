@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * PiDeck Host entry — owns all Pi SDK services.
+ * PiAbyss Host entry — owns all Pi SDK services.
  * Transport: JSONL on stdin/stdout; logs on stderr.
  */
 import { mkdirSync } from "node:fs";
@@ -19,7 +19,7 @@ import {
   fauxText,
   fauxToolCall,
 } from "@earendil-works/pi-ai";
-import { createHostError, type HostCapabilities } from "@pideck/protocol";
+import { createHostError, type HostCapabilities } from "@piabyss/protocol";
 import { buildDegradedModelConfigHealth, buildModelConfigHealth } from "./model-health.js";
 import { recoverProviderJournals } from "./provider-journal.js";
 import { logger } from "./logger.js";
@@ -39,7 +39,7 @@ import { FileCredentialStore } from "./credential-store.js";
 import { ExtensionProviderOwnership } from "./extension-provider-ownership.js";
 import { refreshModelsLocal } from "./model-runtime-refresh.js";
 import { ensureMigrationBackup, MIGRATION_ID } from "./migration-backup.js";
-import { migrateLegacyPideckData } from "./pideck-data.js";
+import { migrateLegacyPiAbyssData } from "./piabyss-data.js";
 import { applyHostNetworkSettings, ensureGlobalSettingsFile } from "./network-bootstrap.js";
 import { AttachmentStore } from "./attachment-store.js";
 import { createAttachmentHandlers } from "./attachment-controller.js";
@@ -67,18 +67,18 @@ function resolveInitialCwd(): string | null {
 
 /**
  * Deterministic core-release model. It is opt-in and never enabled for a
- * normal Host process; the desktop E2E runner sets PIDECK_TEST_FAUX=1.
+ * normal Host process; the desktop E2E runner sets PIABYSS_TEST_FAUX=1.
  */
 function installTestFauxProvider(modelRegistry: ModelRegistry): void {
-  if (process.env.PIDECK_TEST_FAUX !== "1") return;
+  if (process.env.PIABYSS_TEST_FAUX !== "1") return;
 
   const faux = createFauxCore({
-    api: "pideck-faux-api",
-    provider: "pideck-faux",
+    api: "piabyss-faux-api",
+    provider: "piabyss-faux",
     models: [
       {
-        id: "pideck-core",
-        name: "PiDeck Core Test Model",
+        id: "piabyss-core",
+        name: "PiAbyss Core Test Model",
         reasoning: false,
         input: ["text"],
         contextWindow: 128_000,
@@ -92,13 +92,13 @@ function installTestFauxProvider(modelRegistry: ModelRegistry): void {
   // prompt: tool call -> tool result turn -> final answer -> title refinement
   // abort: a deliberately long response that remains observable while stopping
   faux.setResponses([
-    fauxAssistantMessage(fauxToolCall("read", { path: "pideck-core-e2e.txt" }), {
+    fauxAssistantMessage(fauxToolCall("read", { path: "piabyss-core-e2e.txt" }), {
       stopReason: "toolUse",
     }),
     fauxAssistantMessage(
       [
         fauxText(
-          "PIDECK_STREAM_START Core chat stream completed after a deterministic tool call. PIDECK_CORE_CHAT_COMPLETE",
+          "PIABYSS_STREAM_START Core chat stream completed after a deterministic tool call. PIABYSS_CORE_CHAT_COMPLETE",
         ),
       ],
       { stopReason: "stop" },
@@ -106,23 +106,23 @@ function installTestFauxProvider(modelRegistry: ModelRegistry): void {
     fauxAssistantMessage(fauxText("Core chat smoke"), { stopReason: "stop" }),
     fauxAssistantMessage(
       fauxText(
-        "PIDECK_ABORT_STREAM " +
+        "PIABYSS_ABORT_STREAM " +
           "This deterministic response is intentionally long enough to exercise the Stop action and abort recovery. ".repeat(
             24,
           ),
       ),
       { stopReason: "stop" },
     ),
-    fauxAssistantMessage(fauxText("PIDECK_ABORT_RECOVERED"), {
+    fauxAssistantMessage(fauxText("PIABYSS_ABORT_RECOVERED"), {
       stopReason: "stop",
     }),
   ]);
 
-  modelRegistry.registerProvider("pideck-faux", {
-    name: "PiDeck Core Test Model",
+  modelRegistry.registerProvider("piabyss-faux", {
+    name: "PiAbyss Core Test Model",
     api: faux.api,
-    apiKey: "pideck-e2e",
-    baseUrl: "http://pideck-faux.invalid",
+    apiKey: "piabyss-e2e",
+    baseUrl: "http://piabyss-faux.invalid",
     streamSimple: faux.streamSimple,
     models: faux.models.map((model) => ({
       id: model.id,
@@ -154,9 +154,9 @@ async function main(): Promise<void> {
     node: process.version,
   });
 
-  // Keep the shared Pi directory native-compatible: adopt PiDeck-owned data
+  // Keep the shared Pi directory native-compatible: adopt PiAbyss-owned data
   // into one private namespace before recovery reads any persisted state.
-  await migrateLegacyPideckData(agentDir, MIGRATION_ID);
+  await migrateLegacyPiAbyssData(agentDir, MIGRATION_ID);
   const attachmentStore = new AttachmentStore({ agentDir });
   await attachmentStore.initialize();
 

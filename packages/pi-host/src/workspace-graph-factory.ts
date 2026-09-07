@@ -7,7 +7,7 @@ import {
   type SessionSnapshot,
   type SessionRuntimeState,
   type WorkspaceSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import type { PiHostServer } from "./server.js";
 import { activateOnce } from "./extension-ui-lifecycle.js";
 import { createExtensionCommandContextActions } from "./extension-command-actions.js";

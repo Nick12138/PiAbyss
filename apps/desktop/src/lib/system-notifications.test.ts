@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { HostEventEnvelope } from "@pideck/protocol";
+import type { HostEventEnvelope } from "@piabyss/protocol";
 import { useAppStore } from "./stores/app-store";
 import {
   SystemNotificationController,
@@ -178,7 +178,7 @@ describe("systemNotificationCopy", () => {
       extensionDecisionPresentation: "auto",
       terminalProfile: "auto",
     });
-    expect(systemNotificationCopy("response-ready")).toEqual({ title: "PiDeck", body });
+    expect(systemNotificationCopy("response-ready")).toEqual({ title: "PiAbyss", body });
   });
 
   it.each([
@@ -194,11 +194,11 @@ describe("systemNotificationCopy", () => {
       terminalProfile: "auto",
     });
     expect(systemNotificationCopy("response-ready", "Fix login")).toEqual({
-      title: "PiDeck",
+      title: "PiAbyss",
       body,
     });
     expect(systemNotificationCopy("response-ready", "   ")).toEqual({
-      title: "PiDeck",
+      title: "PiAbyss",
       body: body.split(" — ")[0]!,
     });
   });
@@ -255,7 +255,7 @@ describe("SystemNotificationController", () => {
       "plugin:notification|notify",
       expect.objectContaining({
         options: expect.objectContaining({
-          title: "PiDeck",
+          title: "PiAbyss",
           extra: { kind: "response-ready", target },
         }),
       }),

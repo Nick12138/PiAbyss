@@ -13,7 +13,7 @@ import type {
   SkillInfo,
   SkillSnapshot,
   WorkspaceSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
 import { SkillsSettings } from "./SkillsSettings";

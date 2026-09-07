@@ -43,7 +43,7 @@ pub fn run() {
             let mut settings = DesktopSettingsStore::load(app.handle())?;
             settings.ensure_default_project_workspace()?;
             if let Err(error) = system_autostart::configure(settings.settings.auto_start_on_boot) {
-                eprintln!("[pideck] failed to configure startup launch: {error}");
+                eprintln!("[piabyss] failed to configure startup launch: {error}");
             }
             if system_autostart::was_launched_at_login() {
                 if let Some(window) = app.get_webview_window("main") {
@@ -68,7 +68,7 @@ pub fn run() {
                 // start_unlocked never holds the host mutex across the ready-wait,
                 // so IPC commands and app exit stay responsive during startup.
                 if let Err(e) = pi_host::start_unlocked(&host, pi_host::StartKind::Fresh).await {
-                    eprintln!("[pideck] failed to start host: {e}");
+                    eprintln!("[piabyss] failed to start host: {e}");
                     // Surface to UI as host.fatal so the banner shows the real cause
                     let _ = handle.emit(
                         "pi-host-stdout",
@@ -111,12 +111,12 @@ pub fn run() {
                     let Some(host) = host else {
                         return;
                     };
-                    eprintln!("[pideck] auto-restarting Host once after crash");
+                    eprintln!("[piabyss] auto-restarting Host once after crash");
                     if let Err(e) =
                         pi_host::start_unlocked(&host, pi_host::StartKind::AutoRestartAfterCrash)
                             .await
                     {
-                        eprintln!("[pideck] auto-restart failed: {e}");
+                        eprintln!("[piabyss] auto-restart failed: {e}");
                         let _ = handle.emit(
                             "pi-host-stdout",
                             HostTransportFrame {

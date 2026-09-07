@@ -29,10 +29,10 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
-import type { ProviderMutationStage } from "@pideck/protocol";
+import type { ProviderMutationStage } from "@piabyss/protocol";
 import { logger } from "./logger.js";
 import type { FileCredentialStore } from "./credential-store.js";
-import { providerJournalRoot as journalRoot } from "./pideck-data.js";
+import { providerJournalRoot as journalRoot } from "./piabyss-data.js";
 
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;

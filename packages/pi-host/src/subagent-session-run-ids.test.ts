@@ -7,7 +7,7 @@ import { collectSessionRunIds, resetSessionRunIdCache } from "./subagent-status-
 let sessionsDir: string;
 
 beforeEach(() => {
-  sessionsDir = mkdtempSync(join(tmpdir(), "pideck-session-runids-"));
+  sessionsDir = mkdtempSync(join(tmpdir(), "piabyss-session-runids-"));
 });
 
 afterEach(() => {

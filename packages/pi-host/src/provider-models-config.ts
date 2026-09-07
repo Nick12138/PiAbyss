@@ -8,11 +8,11 @@ export type ModelsConfig = {
   original: string | null;
 };
 
-export const ENABLED_PROVIDERS_KEY = "pideckEnabledProviders";
-export const LEGACY_ACTIVE_PROVIDER_KEY = "pideckActiveProvider";
+export const ENABLED_PROVIDERS_KEY = "piabyssEnabledProviders";
+export const LEGACY_ACTIVE_PROVIDER_KEY = "piabyssActiveProvider";
 // Per-builtin-provider model allow-lists: { providerId: modelId[] }. A missing
 // entry means every model of that provider is offered.
-export const PROVIDER_MODELS_KEY = "pideckProviderModels";
+export const PROVIDER_MODELS_KEY = "piabyssProviderModels";
 
 export function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);

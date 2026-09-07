@@ -1,5 +1,5 @@
 import { join, resolve as pathResolve } from "node:path";
-import { sessionArchiveDir, workspaceStorageKey } from "./pideck-data.js";
+import { sessionArchiveDir, workspaceStorageKey } from "./piabyss-data.js";
 
 export function sessionStorageDirs(agentDir: string, cwd: string): {
   activeDir: string;

@@ -69,7 +69,7 @@ function providerConfig(modelId = "leak-model") {
  * createAgentSession flushes its queued registration into the runtime.
  */
 async function buildWorkspaceSession(runtime: ModelRuntime, providerId: string) {
-  const root = mkdtempSync(join(tmpdir(), "pideck-provider-iso-"));
+  const root = mkdtempSync(join(tmpdir(), "piabyss-provider-iso-"));
   roots.push(root);
   const cwd = join(root, "project");
   const agentDir = join(root, "agent");

@@ -1,4 +1,4 @@
-import { createHostError, type HostError, type AttachmentSnapshot } from "@pideck/protocol";
+import { createHostError, type HostError, type AttachmentSnapshot } from "@piabyss/protocol";
 import type { MethodHandler } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { AttachmentStoreError } from "./attachment-store.js";

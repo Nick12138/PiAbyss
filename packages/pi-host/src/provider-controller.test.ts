@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ModelConfigHealth, ProviderDraft } from "@pideck/protocol";
+import type { ModelConfigHealth, ProviderDraft } from "@piabyss/protocol";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import { createProviderHandlers } from "./provider-controller.js";
@@ -13,7 +13,7 @@ import { createTestModelServices, putApiKey } from "./test-helpers/model-runtime
 import { refreshModelsLocal } from "./model-runtime-refresh.js";
 import { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import type { BackgroundSessionRuntime, WorkspaceGraph } from "./workspace-graph-types.js";
-import { modelBackupDir } from "./pideck-data.js";
+import { modelBackupDir } from "./piabyss-data.js";
 
 const layouts: TempAgentLayout[] = [];
 const httpServers: Server[] = [];
@@ -92,7 +92,7 @@ function draft(models: ProviderDraft["models"]): ProviderDraft {
     baseUrl: "http://127.0.0.1:8317/v1",
     modelsUrl: "https://catalog.example/v1/models",
     api: "openai-responses",
-    headers: { "X-Client": "pideck" },
+    headers: { "X-Client": "piabyss" },
     compat: {
       supportsDeveloperRole: false,
       supportsReasoningEffort: null,
@@ -193,7 +193,7 @@ function writeAnthropicSuccess(response: import("node:http").ServerResponse): vo
 describe("Provider controller", () => {
   it("migrates the active Provider and enables multiple Providers without clearing models", async () => {
     const { layout, handlers } = await setup({
-      pideckActiveProvider: "other",
+      piabyssActiveProvider: "other",
       providers: {
         other: {
           name: "Other",
@@ -228,8 +228,8 @@ describe("Provider controller", () => {
     } as never);
     expect("error" in save ? save.error.message : null).toBeNull();
     const afterSave = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
-    expect(afterSave.pideckEnabledProviders).toEqual(["other"]);
-    expect(afterSave.pideckActiveProvider).toBeUndefined();
+    expect(afterSave.piabyssEnabledProviders).toEqual(["other"]);
+    expect(afterSave.piabyssActiveProvider).toBeUndefined();
 
     const enable = await handlers["provider.setEnabled"]!({
       id: "enable-custom",
@@ -238,7 +238,7 @@ describe("Provider controller", () => {
     expect("error" in enable ? enable.error.message : null).toBeNull();
 
     const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
-    expect(persisted.pideckEnabledProviders).toEqual(["other", "custom"]);
+    expect(persisted.piabyssEnabledProviders).toEqual(["other", "custom"]);
     expect(persisted.providers.other.models).toEqual([{ id: "other-model" }]);
 
     const list = await handlers["provider.list"]!({ id: "list-providers", params: null } as never);
@@ -257,7 +257,7 @@ describe("Provider controller", () => {
 
   it("renames the Provider used by an idle session and migrates its current model", async () => {
     const { factory, handlers, modelRegistry } = await setup({
-      pideckEnabledProviders: ["custom"],
+      piabyssEnabledProviders: ["custom"],
       providers: {
         custom: {
           name: "Custom",
@@ -292,7 +292,7 @@ describe("Provider controller", () => {
 
   it("moves an idle session to another model when saving removes its current model", async () => {
     const { factory, handlers, modelRegistry } = await setup({
-      pideckEnabledProviders: ["custom"],
+      piabyssEnabledProviders: ["custom"],
       providers: {
         custom: {
           name: "Custom",
@@ -321,7 +321,7 @@ describe("Provider controller", () => {
 
   it("still rejects a Provider save while a session using it is running", async () => {
     const { factory, handlers, modelRegistry } = await setup({
-      pideckEnabledProviders: ["custom"],
+      piabyssEnabledProviders: ["custom"],
       providers: {
         custom: {
           name: "Custom",
@@ -348,7 +348,7 @@ describe("Provider controller", () => {
 
   it("still rejects a Provider save while its idle session has an operation in flight", async () => {
     const { factory, handlers, modelRegistry } = await setup({
-      pideckEnabledProviders: ["custom"],
+      piabyssEnabledProviders: ["custom"],
       providers: {
         custom: {
           name: "Custom",
@@ -382,7 +382,7 @@ describe("Provider controller", () => {
 
   it("allows a Provider save while an unrelated Provider runs in the background", async () => {
     const { factory, handlers, modelRegistry } = await setup({
-      pideckEnabledProviders: ["custom", "other"],
+      piabyssEnabledProviders: ["custom", "other"],
       providers: {
         custom: {
           name: "Custom",
@@ -418,7 +418,7 @@ describe("Provider controller", () => {
 
   it("rejects a Provider save used by a running background session", async () => {
     const { factory, handlers, modelRegistry } = await setup({
-      pideckEnabledProviders: ["custom"],
+      piabyssEnabledProviders: ["custom"],
       providers: {
         custom: {
           name: "Custom",
@@ -445,7 +445,7 @@ describe("Provider controller", () => {
 
   it("moves an idle session to another enabled Provider before removing its Provider", async () => {
     const { factory, handlers, modelRegistry } = await setup({
-      pideckEnabledProviders: ["custom", "other"],
+      piabyssEnabledProviders: ["custom", "other"],
       providers: {
         custom: {
           name: "Custom",
@@ -477,7 +477,7 @@ describe("Provider controller", () => {
 
   it("rolls back Provider removal when an idle session has no fallback model", async () => {
     const { credentialStore, factory, handlers, layout, modelRegistry } = await setup({
-      pideckEnabledProviders: ["custom"],
+      piabyssEnabledProviders: ["custom"],
       providers: {
         custom: {
           name: "Custom",
@@ -501,7 +501,7 @@ describe("Provider controller", () => {
     expect("error" in outcome && outcome.error.code).toBe("SETTINGS_WRITE_FAILED");
     const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
     expect(persisted.providers.custom).toBeDefined();
-    expect(persisted.pideckEnabledProviders).toEqual(["custom"]);
+    expect(persisted.piabyssEnabledProviders).toEqual(["custom"]);
     expect(await credentialStore.readRaw("custom")).toEqual({
       type: "api_key",
       key: "sk-custom",
@@ -511,7 +511,7 @@ describe("Provider controller", () => {
 
   it("moves an idle session when its current Provider is disabled", async () => {
     const { factory, handlers, modelRegistry } = await setup({
-      pideckEnabledProviders: ["custom", "other"],
+      piabyssEnabledProviders: ["custom", "other"],
       providers: {
         custom: {
           name: "Custom",
@@ -543,7 +543,7 @@ describe("Provider controller", () => {
 
   it("moves an idle session when logging out of its current Provider", async () => {
     const { credentialStore, factory, handlers, modelRegistry } = await setup({
-      pideckEnabledProviders: ["custom", "other"],
+      piabyssEnabledProviders: ["custom", "other"],
       providers: {
         custom: {
           name: "Custom",
@@ -703,7 +703,7 @@ describe("Provider controller", () => {
     expect("error" in outcome ? outcome.error.message : null).toBeNull();
     const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
     expect(persisted.providers.custom.authHeader).toBe(false);
-    expect(persisted.pideckEnabledProviders).toEqual([]);
+    expect(persisted.piabyssEnabledProviders).toEqual([]);
   });
 
   it("keeps a first empty Provider disabled so its model catalog can be fetched", async () => {
@@ -733,7 +733,7 @@ describe("Provider controller", () => {
     if ("error" in saved) return;
     expect((saved.result as { provider: { enabled: boolean } }).provider.enabled).toBe(false);
     const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
-    expect(persisted.pideckEnabledProviders).toEqual([]);
+    expect(persisted.piabyssEnabledProviders).toEqual([]);
 
     const fetched = await handlers["provider.fetchModels"]!({
       id: "fetch-first-provider-models",
@@ -748,7 +748,7 @@ describe("Provider controller", () => {
 
   it("rejects explicitly enabling a custom Provider with no models", async () => {
     const { layout, handlers } = await setup({
-      pideckEnabledProviders: [],
+      piabyssEnabledProviders: [],
       providers: {
         custom: {
           name: "Custom",
@@ -766,7 +766,7 @@ describe("Provider controller", () => {
 
     expect("error" in outcome && outcome.error.code).toBe("INVALID_REQUEST");
     const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
-    expect(persisted.pideckEnabledProviders).toEqual([]);
+    expect(persisted.piabyssEnabledProviders).toEqual([]);
   });
 
   it("defaults a new OpenAI Chat Completions Provider to the system role", async () => {
@@ -1281,7 +1281,7 @@ describe("Provider controller", () => {
         url: request.url ?? "",
         ...(userAgent ? { userAgent } : {}),
       });
-      if (userAgent === "PiDeck/0.1") {
+      if (userAgent === "PiAbyss/0.1") {
         response.writeHead(200, { "Content-Type": "text/event-stream" });
         response.end(
           [
@@ -1365,7 +1365,7 @@ describe("Provider controller", () => {
           baseUrl: `http://127.0.0.1:${address.port}`,
           api: "anthropic-messages",
           authHeader: false,
-          headers: { "User-Agent": "PiDeck/0.1" },
+          headers: { "User-Agent": "PiAbyss/0.1" },
           models: [{ id: "relay-model" }],
         },
       },
@@ -1377,7 +1377,7 @@ describe("Provider controller", () => {
     } as never);
 
     expect("error" in compatibleOutcome ? compatibleOutcome.error.message : null).toBeNull();
-    expect(requests[1]).toEqual({ url: "/v1/messages", userAgent: "PiDeck/0.1" });
+    expect(requests[1]).toEqual({ url: "/v1/messages", userAgent: "PiAbyss/0.1" });
     if (!("error" in compatibleOutcome)) {
       expect(compatibleOutcome.result).toEqual(
         expect.objectContaining({
@@ -1420,7 +1420,7 @@ describe("Provider controller", () => {
           baseUrl: `http://127.0.0.1:${address.port}`,
           api: "anthropic-messages",
           authHeader: false,
-          headers: { "User-Agent": "PiDeck/0.1" },
+          headers: { "User-Agent": "PiAbyss/0.1" },
           models: [{ id: "relay-model" }],
         },
       },
@@ -1484,7 +1484,7 @@ describe("Provider controller", () => {
           baseUrl: `http://127.0.0.1:${address.port}`,
           api: "anthropic-messages",
           authHeader: false,
-          headers: { "User-Agent": "PiDeck/0.1" },
+          headers: { "User-Agent": "PiAbyss/0.1" },
           models: [{ id: "relay-model" }],
         },
       },
@@ -1523,7 +1523,7 @@ describe("Provider controller", () => {
         expect.arrayContaining([
           expect.objectContaining({
             type: "function",
-            function: expect.objectContaining({ name: "pideck_connection_test" }),
+            function: expect.objectContaining({ name: "piabyss_connection_test" }),
           }),
         ]),
       );
@@ -1563,7 +1563,7 @@ describe("Provider controller", () => {
       baseUrl: `http://127.0.0.1:${address.port}/v1`,
       api: "openai-completions",
       authHeader: true,
-      headers: { "User-Agent": "PiDeck/0.1" },
+      headers: { "User-Agent": "PiAbyss/0.1" },
       models: [{ id: "relay-model", reasoning: true }],
     };
     const automatic = await setup({ providers: { custom: providerConfig } });
@@ -1703,7 +1703,7 @@ describe("Provider login", () => {
       );
     });
     const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
-    expect(persisted.pideckEnabledProviders).toContain("anthropic");
+    expect(persisted.piabyssEnabledProviders).toContain("anthropic");
   });
 
   it("cancels an active login flow and reports a failed done event", async () => {
@@ -1889,7 +1889,7 @@ describe("Provider login", () => {
 
   it("allows disabling the final Provider and clears the idle Session model", async () => {
     const { factory, handlers, layout, modelRegistry } = await setup({
-      pideckEnabledProviders: ["custom"],
+      piabyssEnabledProviders: ["custom"],
       providers: {
         custom: {
           name: "Custom",
@@ -1916,7 +1916,7 @@ describe("Provider login", () => {
     expect(active.state.model?.id).toBe("unknown");
     expect(active.clearModel).toHaveBeenCalled();
     const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
-    expect(persisted.pideckEnabledProviders).toEqual([]);
+    expect(persisted.piabyssEnabledProviders).toEqual([]);
   });
 
   it("toggles a builtin Provider in the enabled list by id", async () => {
@@ -1927,7 +1927,7 @@ describe("Provider login", () => {
     } as never);
     expect("error" in enable ? enable.error.message : null).toBeNull();
     let persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
-    expect(persisted.pideckEnabledProviders).toContain("openai");
+    expect(persisted.piabyssEnabledProviders).toContain("openai");
 
     const disable = await handlers["provider.setEnabled"]!({
       id: "disable-builtin",
@@ -1935,12 +1935,12 @@ describe("Provider login", () => {
     } as never);
     expect("error" in disable ? disable.error.message : null).toBeNull();
     persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
-    expect(persisted.pideckEnabledProviders).not.toContain("openai");
+    expect(persisted.piabyssEnabledProviders).not.toContain("openai");
   });
 
   it("logs out a stored credential and removes the Provider from the enabled list", async () => {
     const { layout, credentialStore, modelRuntime, handlers } = await setup({
-      pideckEnabledProviders: ["anthropic"],
+      piabyssEnabledProviders: ["anthropic"],
       providers: {},
     });
     await putApiKey(credentialStore, "anthropic", "sk-test");
@@ -1958,11 +1958,11 @@ describe("Provider login", () => {
     expect(refresh.mock.calls.every(([options]) => options?.allowNetwork === false)).toBe(true);
     expect(await credentialStore.readRaw("anthropic")).toBeUndefined();
     const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
-    expect(persisted.pideckEnabledProviders ?? []).not.toContain("anthropic");
+    expect(persisted.piabyssEnabledProviders ?? []).not.toContain("anthropic");
   });
 
   it("keeps builtin ids in the enabled filter once the list exists", async () => {
-    const { layout } = await setup({ pideckEnabledProviders: ["anthropic"], providers: {} });
+    const { layout } = await setup({ piabyssEnabledProviders: ["anthropic"], providers: {} });
     expect(
       await getEnabledProviderIds(layout.agentDir, undefined, ["anthropic", "openai"]),
     ).toEqual(["anthropic"]);
@@ -2014,7 +2014,7 @@ describe("Builtin provider models", () => {
         .sort(),
     ).toEqual([...keep].sort());
     let persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
-    expect([...persisted.pideckProviderModels.anthropic].sort()).toEqual([...keep].sort());
+    expect([...persisted.piabyssProviderModels.anthropic].sort()).toEqual([...keep].sort());
     expect(await getProviderModelAllowLists(layout.agentDir)).toEqual({
       anthropic: expect.arrayContaining(keep),
     });
@@ -2025,13 +2025,13 @@ describe("Builtin provider models", () => {
     } as never);
     expect("error" in restore ? restore.error.message : null).toBeNull();
     persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
-    expect(persisted.pideckProviderModels).toBeUndefined();
+    expect(persisted.piabyssProviderModels).toBeUndefined();
     expect(await getProviderModelAllowLists(layout.agentDir)).toBeUndefined();
   });
 
   it("moves an idle session when its builtin model is removed from the allow-list", async () => {
     const { factory, handlers, modelRegistry, modelRuntime } = await setup({
-      pideckEnabledProviders: ["anthropic"],
+      piabyssEnabledProviders: ["anthropic"],
       providers: {},
     });
     const catalog = modelRuntime.getModels("anthropic");
@@ -2055,7 +2055,7 @@ describe("Builtin provider models", () => {
 
   it("rejects hiding every model while a builtin Provider is enabled", async () => {
     const { layout, handlers } = await setup({
-      pideckEnabledProviders: ["anthropic"],
+      piabyssEnabledProviders: ["anthropic"],
       providers: {},
     });
 
@@ -2066,7 +2066,7 @@ describe("Builtin provider models", () => {
 
     expect("error" in outcome && outcome.error.code).toBe("INVALID_REQUEST");
     const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
-    expect(persisted.pideckProviderModels).toBeUndefined();
+    expect(persisted.piabyssProviderModels).toBeUndefined();
   });
 
   it("rejects custom Providers and unknown ids", async () => {

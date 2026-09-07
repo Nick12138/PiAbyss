@@ -1,4 +1,4 @@
-import { createHostError } from "@pideck/protocol";
+import { createHostError } from "@piabyss/protocol";
 import type { MethodHandler } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { WorkspaceFileService } from "./workspace-files.js";

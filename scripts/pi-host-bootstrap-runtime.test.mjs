@@ -82,7 +82,7 @@ function writeResourceMetadata(resourceDir, archiveBytes, links, graph) {
 }
 
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), "pideck-host-cache-"));
+  const root = mkdtempSync(join(tmpdir(), "piabyss-host-cache-"));
   const resourceDir = join(root, "resources");
   const payloadDir = join(root, "payload");
   const cacheRoot = join(root, "cache");
@@ -105,7 +105,7 @@ function fixture() {
   const { manifest } = detachNodeModulesLinks(nodeModules);
   const runtimeDir = join(payloadDir, "host-runtime");
   writePackage(runtimeDir, {
-    name: "pideck-host-release",
+    name: "piabyss-host-release",
     version: "1.0.0",
     type: "module",
     dependencies,

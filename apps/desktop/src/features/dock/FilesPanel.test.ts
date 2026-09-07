@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { WorkspaceDirectoryEntry } from "@pideck/protocol";
+import type { WorkspaceDirectoryEntry } from "@piabyss/protocol";
 import { flattenVisibleFiles, workspaceAbsolutePath } from "./FilesPanel";
 
 const dir = (name: string, path = name): WorkspaceDirectoryEntry => ({

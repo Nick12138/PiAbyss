@@ -10,8 +10,8 @@ import type {
   SerializableAgentMessage,
   SerializableAssistantMessageEvent,
   HostIdentity,
-} from "@pideck/protocol";
-import { toJsonValue, stripAttachmentReferenceBlocks } from "@pideck/protocol";
+} from "@piabyss/protocol";
+import { toJsonValue, stripAttachmentReferenceBlocks } from "@piabyss/protocol";
 import { parse as parsePartialJson } from "partial-json";
 import { isAbortedToolResult } from "./tool-result-status";
 

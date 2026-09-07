@@ -23,7 +23,7 @@ function nextTimestamp(): string {
 }
 
 function createAgentDir(options: { sessions?: number } = {}): string {
-  const root = mkdtempSync(join(tmpdir(), "pideck-migration-"));
+  const root = mkdtempSync(join(tmpdir(), "piabyss-migration-"));
   roots.push(root);
   const agentDir = join(root, "agent");
   mkdirSync(agentDir, { recursive: true });
@@ -47,7 +47,7 @@ function createAgentDir(options: { sessions?: number } = {}): string {
 }
 
 function backupDir(agentDir: string): string {
-  return join(agentDir, "pideck", "migration-backups", MIGRATION_ID);
+  return join(agentDir, "piabyss", "migration-backups", MIGRATION_ID);
 }
 
 function readManifest(directory: string): MigrationManifest {

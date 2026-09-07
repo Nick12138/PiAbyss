@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TelegramSessionSummary } from "@pideck/protocol";
+import type { TelegramSessionSummary } from "@piabyss/protocol";
 import { TelegramSessionList, telegramSessionTime, telegramSessionTitle } from "./TelegramSessionList";
 import { useTelegramViewStore } from "./telegram-view-store";
 

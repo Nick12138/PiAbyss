@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { HostResponseEnvelope, SessionSnapshot, WorkspaceSnapshot } from "@pideck/protocol";
+import type { HostResponseEnvelope, SessionSnapshot, WorkspaceSnapshot } from "@piabyss/protocol";
 import { activateWorkspaceHost, prepareWorkspaceHost } from "./tauri-transport";
 import { waitForWorkspaceActivation } from "../../features/workspaces/workspace-switch-policy";
 import { hostClient } from "./host-client";

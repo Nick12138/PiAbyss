@@ -2,7 +2,7 @@
  * Structured logging to stderr only — never stdout (protocol channel).
  */
 
-import { toJsonValue, type JsonValue } from "@pideck/protocol";
+import { toJsonValue, type JsonValue } from "@piabyss/protocol";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 

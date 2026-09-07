@@ -28,7 +28,7 @@ async function setup(
     enabled: { type: "api_key", key: "enabled-test-key" },
   },
 ) {
-  const layout = createTempAgentLayout("pideck-agent-session-policy-");
+  const layout = createTempAgentLayout("piabyss-agent-session-policy-");
   layouts.push(layout);
   writeFileSync(join(layout.agentDir, "models.json"), JSON.stringify(config));
   writeFileSync(join(layout.agentDir, "auth.json"), JSON.stringify(credentials));
@@ -39,7 +39,7 @@ async function setup(
 describe("createHostAgentSession Provider policy", () => {
   it("replaces a saved model whose Provider is disabled", async () => {
     const { layout, modelRuntime } = await setup({
-      pideckEnabledProviders: ["enabled"],
+      piabyssEnabledProviders: ["enabled"],
       providers: {
         disabled: provider("disabled", ["disabled-model"]),
         enabled: provider("enabled", ["enabled-model"]),
@@ -68,7 +68,7 @@ describe("createHostAgentSession Provider policy", () => {
   it("preserves the SDK-restored model when the enabled list is explicitly empty",
     async () => {
       const { layout, modelRuntime } = await setup({
-        pideckEnabledProviders: [],
+        piabyssEnabledProviders: [],
         providers: {
           disabled: provider("disabled", ["disabled-model"]),
           enabled: provider("enabled", ["enabled-model"]),
@@ -86,7 +86,7 @@ describe("createHostAgentSession Provider policy", () => {
         sessionManager,
       });
 
-      // SDK has no clearModel API; without an eligible PiDeck model the session
+      // SDK has no clearModel API; without an eligible PiAbyss model the session
       // falls back to whatever was saved in the session history.
       expect(session.model).toMatchObject({ provider: "disabled", id: "disabled-model" });
       session.dispose();
@@ -103,7 +103,7 @@ describe("createHostAgentSession Provider policy", () => {
     if (!hidden || !allowed) throw new Error("Missing builtin Anthropic test models");
     writeFileSync(
       join(layout.agentDir, "models.json"),
-      JSON.stringify({ pideckProviderModels: { anthropic: [allowed.id] } }),
+      JSON.stringify({ piabyssProviderModels: { anthropic: [allowed.id] } }),
     );
     const sessionManager = SessionManager.inMemory(layout.projectDir);
     sessionManager.appendModelChange("anthropic", hidden.id);
@@ -121,7 +121,7 @@ describe("createHostAgentSession Provider policy", () => {
     session.dispose();
   });
 
-  it("preserves SDK-native selection when no PiDeck policy exists", async () => {
+  it("preserves SDK-native selection when no PiAbyss policy exists", async () => {
     const { layout, modelRuntime } = await setup(
       {},
       { anthropic: { type: "api_key", key: "anthropic-test-key" } },

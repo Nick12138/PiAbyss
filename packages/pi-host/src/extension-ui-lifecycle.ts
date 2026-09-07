@@ -2,7 +2,7 @@ import type {
   AgentSession,
   ExtensionCommandContextActions,
 } from "@earendil-works/pi-coding-agent";
-import type { HostIdentity } from "@pideck/protocol";
+import type { HostIdentity } from "@piabyss/protocol";
 import {
   bindExtensionUi,
   type ExtensionUiBinding,

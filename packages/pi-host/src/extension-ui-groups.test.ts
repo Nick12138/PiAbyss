@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentSession, ExtensionInvocationMetadata } from "@earendil-works/pi-coding-agent";
-import type { ExtensionUiGroupClosed, HostIdentity } from "@pideck/protocol";
+import type { ExtensionUiGroupClosed, HostIdentity } from "@piabyss/protocol";
 import {
   createExtensionInvocationRunner,
   getActiveExtensionInvocation,
@@ -26,7 +26,7 @@ function metadata(
 ): ExtensionInvocationMetadata {
   const sourceInfo = {
     path: "/packages/questions/extensions/index.ts",
-    source: "npm:@pideck/questions@1.0.0",
+    source: "npm:@piabyss/questions@1.0.0",
     scope: "user" as const,
     origin: "package" as const,
     baseDir: "/packages/questions",
@@ -103,7 +103,7 @@ describe("ExtensionUiGroupRegistry", () => {
         invocationName: "review",
         sourceInfo: {
           path: "/packages/questions/extensions/review.ts",
-          source: "npm:@pideck/questions@1.0.0",
+          source: "npm:@piabyss/questions@1.0.0",
           scope: "user" as const,
           origin: "package" as const,
           baseDir: "/packages/questions",

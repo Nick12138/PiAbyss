@@ -20,8 +20,8 @@
  *   authoritative rehydrate snapshot. If the queue remains over the cap, all
  *   queued events are dropped; responses are always kept.
  */
-import type { HostEventName, HostIdentity } from "@pideck/protocol";
-import { createEvent, createHostError, MAX_HOST_JSONL_FRAME_BYTES } from "@pideck/protocol";
+import type { HostEventName, HostIdentity } from "@piabyss/protocol";
+import { createEvent, createHostError, MAX_HOST_JSONL_FRAME_BYTES } from "@piabyss/protocol";
 import { logger } from "./logger.js";
 
 export type WritableLike = {

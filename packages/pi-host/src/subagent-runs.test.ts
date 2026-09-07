@@ -22,7 +22,7 @@ vi.mock("node:os", async (importOriginal) => {
 });
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "pideck-subagent-runs-"));
+  home = mkdtempSync(join(tmpdir(), "piabyss-subagent-runs-"));
 });
 
 afterEach(() => {

@@ -308,8 +308,8 @@ index 556623b..c0e09d4 100644
  export type { AgentToolResult, AgentToolUpdateCallback, ToolExecutionMode };
  export type { AppKeybinding, KeybindingsManager } from "../keybindings.ts";
  /** Options for extension UI dialogs. */
-+/** Optional PiDeck-only presentation metadata. Other UI modes ignore it. */
-+export interface PiDeckExtensionUIDialogOptions {
++/** Optional PiAbyss-only presentation metadata. Other UI modes ignore it. */
++export interface PiAbyssExtensionUIDialogOptions {
 +    presentation?: "inline" | "modal";
 +    sourceLabel?: string;
 +    correlationId?: string;
@@ -327,8 +327,8 @@ index 556623b..c0e09d4 100644
      signal?: AbortSignal;
      /** Timeout in milliseconds. Dialog auto-dismisses with live countdown display. */
      timeout?: number;
-+    /** Declarative presentation hints used by PiDeck's desktop UI. */
-+    pideck?: PiDeckExtensionUIDialogOptions;
++    /** Declarative presentation hints used by PiAbyss's desktop UI. */
++    piabyss?: PiAbyssExtensionUIDialogOptions;
  }
 +/** Host-neutral metadata for one Extension callback invocation. */
 +export type ExtensionInvocationMetadata = {
@@ -406,7 +406,7 @@ index 14030e7..05fce68 100644
      }): boolean;
      setProgressCallback(callback: ProgressCallback | undefined): void;
 +    /**
-+     * PiDeck patch: required so callers cannot silently skip cancellation.
++     * PiAbyss patch: required so callers cannot silently skip cancellation.
 +     * Applies to the async npm/git spawn paths; `runCommandSync` can only
 +     * refuse to start after abort.
 +     */
@@ -422,7 +422,7 @@ index 14030e7..05fce68 100644
      constructor(options: PackageManagerOptions);
      setProgressCallback(callback: ProgressCallback | undefined): void;
 +    /**
-+     * PiDeck patch: required so callers cannot silently skip cancellation.
++     * PiAbyss patch: required so callers cannot silently skip cancellation.
 +     * Applies to the async npm/git spawn paths; `runCommandSync` can only
 +     * refuse to start after abort.
 +     */
@@ -469,7 +469,7 @@ index e806af3..1540e29 100644
      setProgressCallback(callback) {
          this.progressCallback = callback;
      }
-+    // PiDeck patch: let the Host cancel npm/git children. Upstream spawns them
++    // PiAbyss patch: let the Host cancel npm/git children. Upstream spawns them
 +    // with no signal, so an aborted package operation leaves the child running
 +    // and holds the graph lock until it finishes on its own.
 +    setOperationSignal(signal) {
@@ -622,7 +622,7 @@ index e806af3..1540e29 100644
 +        throw new Error(`${command} ${args.join(" ")} failed with ${exitStatus}${output ? `: ${output}` : ""}`);
      }
      runCommandSync(command, args) {
-+        // PiDeck patch: spawnSync cannot be interrupted, so an in-flight sync
++        // PiAbyss patch: spawnSync cannot be interrupted, so an in-flight sync
 +        // child still runs to completion. Refusing to start a new one after
 +        // abort is the only cancellation this path can honour.
 +        this.operationSignal?.throwIfAborted();
@@ -733,11 +733,11 @@ index 68e7e51..a8ddebd 100644
  import { spawn, spawnSync } from "child_process";
  import { getBinDir } from "../config.js";
 +function bundledBashFallback() {
-+    const bash = process.env.PIDECK_BUNDLED_BASH;
++    const bash = process.env.PIABYSS_BUNDLED_BASH;
 +    if (bash && existsSync(bash)) {
 +        return bash;
 +    }
-+    const git = process.env.PIDECK_BUNDLED_GIT;
++    const git = process.env.PIABYSS_BUNDLED_GIT;
 +    if (!git) {
 +        return null;
 +    }
@@ -760,7 +760,7 @@ index 68e7e51..a8ddebd 100644
   * 1. User-specified shellPath
   * 2. On Windows: Git Bash in known locations, then bash on PATH
 - * 3. On Unix: /bin/bash, then bash on PATH, then fallback to sh
-+ * 3. On Windows: PiDeck bundled bash (PIDECK_BUNDLED_BASH / Portable Git)
++ * 3. On Windows: PiAbyss bundled bash (PIABYSS_BUNDLED_BASH / Portable Git)
 + * 4. On Unix: /bin/bash, then bash on PATH, then fallback to sh
   */
  export function getShellConfig(customShellPath) {

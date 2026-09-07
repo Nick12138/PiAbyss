@@ -4,7 +4,7 @@ import type {
   HostStatusSnapshot,
   SessionSnapshot,
   WorkspaceSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { hostClient } from "./bridge/host-client";
 import { useAppStore } from "./stores/app-store";
 import { exportFileName, requestExport } from "./export-actions";

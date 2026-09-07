@@ -214,16 +214,16 @@ rl.on('line', (line) => {
         // where cmd.exe resolves npm.cmd — cmd cannot handle \\?\ paths, so a
         // verbatim entry breaks every npm install in the packaged app.
         let node = strip_verbatim_prefix(PathBuf::from(
-            r"\\?\C:\Users\Admin\AppData\Local\PiDeck\resources\node\node.exe",
+            r"\\?\C:\Users\Admin\AppData\Local\PiAbyss\resources\node\node.exe",
         ));
         assert_eq!(
             node,
-            PathBuf::from(r"C:\Users\Admin\AppData\Local\PiDeck\resources\node\node.exe"),
+            PathBuf::from(r"C:\Users\Admin\AppData\Local\PiAbyss\resources\node\node.exe"),
         );
         let node_dir = node.parent().expect("node dir");
         assert!(!node_dir.to_string_lossy().starts_with(r"\\?\"));
         let git_cmd = strip_verbatim_prefix(PathBuf::from(
-            r"\\?\C:\Users\Admin\AppData\Local\PiDeck\resources\git\cmd",
+            r"\\?\C:\Users\Admin\AppData\Local\PiAbyss\resources\git\cmd",
         ));
         assert!(!git_cmd.to_string_lossy().starts_with(r"\\?\"));
     }
@@ -249,8 +249,8 @@ rl.on('line', (line) => {
         .expect("join user path");
         let host_path = build_host_path(
             Some(user_path.as_os_str()),
-            Some(std::path::Path::new(r"C:\PiDeck\resources\node")),
-            Some(std::path::Path::new(r"C:\PiDeck\resources\git\cmd")),
+            Some(std::path::Path::new(r"C:\PiAbyss\resources\node")),
+            Some(std::path::Path::new(r"C:\PiAbyss\resources\git\cmd")),
             Some(r"C:\Windows"),
         )
         .expect("build host path");
@@ -261,9 +261,9 @@ rl.on('line', (line) => {
         assert_eq!(entries[0], "C:\\Users\\me\\AppData\\Local\\mise\\shims");
         assert_eq!(entries[1], "C:\\Program Files\\Git\\cmd");
         // Bundled Node/Git are appended as a fallback.
-        assert_eq!(entries[2], "C:\\PiDeck\\resources\\node");
-        assert_eq!(entries[3], "C:\\PiDeck\\resources\\git\\cmd");
-        assert!(entries.contains(&"C:\\PiDeck\\resources\\git\\bin".to_string()));
+        assert_eq!(entries[2], "C:\\PiAbyss\\resources\\node");
+        assert_eq!(entries[3], "C:\\PiAbyss\\resources\\git\\cmd");
+        assert!(entries.contains(&"C:\\PiAbyss\\resources\\git\\bin".to_string()));
         assert!(entries.contains(&"C:\\Windows\\System32".to_string()));
     }
 
@@ -271,7 +271,7 @@ rl.on('line', (line) => {
     fn build_host_path_without_user_path_only_appends_bundled() {
         let host_path = build_host_path(
             None,
-            Some(std::path::Path::new(r"C:\PiDeck\resources\node")),
+            Some(std::path::Path::new(r"C:\PiAbyss\resources\node")),
             None,
             None,
         )
@@ -279,7 +279,7 @@ rl.on('line', (line) => {
         let entries: Vec<String> = std::env::split_paths(&host_path)
             .map(|p| p.to_string_lossy().into_owned())
             .collect();
-        assert_eq!(entries, vec!["C:\\PiDeck\\resources\\node"]);
+        assert_eq!(entries, vec!["C:\\PiAbyss\\resources\\node"]);
     }
 
     #[test]
@@ -289,7 +289,7 @@ rl.on('line', (line) => {
             use crate::pi_host::PiHostManager;
             // Fake layout: <root>/cmd/git.exe -> <root>/bin/bash.exe
             let temp =
-                std::env::temp_dir().join(format!("pideck-bash-test-{}", uuid::Uuid::new_v4()));
+                std::env::temp_dir().join(format!("piabyss-bash-test-{}", uuid::Uuid::new_v4()));
             let git_cmd = temp.join("cmd");
             std::fs::create_dir_all(&git_cmd).expect("create git cmd dir");
             let git_exe = git_cmd.join("git.exe");
@@ -322,7 +322,7 @@ rl.on('line', (line) => {
         use std::os::unix::fs::PermissionsExt;
 
         let path =
-            std::env::temp_dir().join(format!("pideck-node-candidate-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("piabyss-node-candidate-{}", uuid::Uuid::new_v4()));
         std::fs::write(&path, b"fixture").expect("write candidate");
 
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644))

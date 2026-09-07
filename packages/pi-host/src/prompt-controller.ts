@@ -5,7 +5,7 @@ import {
   type PromptInfo,
   type PromptKind,
   type PromptSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import type { WorkspaceGraph } from "./workspace-graph-types.js";
 import type { MethodHandler } from "./server.js";

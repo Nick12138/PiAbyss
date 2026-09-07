@@ -1,4 +1,4 @@
-# PiDeck 产品 / UX 评估(2026-07-30)
+# PiAbyss 产品 / UX 评估(2026-07-30)
 
 只读评审,未修改业务代码。视角是**产品与用户体验**:UI 完成度、pi-agent 适配覆盖度、交互体验。与 [2026-07-27 独立代码 Review](./2026-07-27-independent-review.md)(可靠性视角)互补,不重复其发现。
 
@@ -63,7 +63,7 @@
 
 ### 覆盖矩阵摘要
 
-先划界:MCP、subagents、工具权限弹窗、plan mode、todo 是 **SDK 明文非目标**(SDK `docs/usage.md`),不计为 PiDeck 缺口。
+先划界:MCP、subagents、工具权限弹窗、plan mode、todo 是 **SDK 明文非目标**(SDK `docs/usage.md`),不计为 PiAbyss 缺口。
 
 | 能力域 | 状态 |
 |---|---|
@@ -83,12 +83,12 @@
 ### 适配深度的三个标志
 
 1. **虚拟终端**(`pi-host/src/virtual-terminal.ts`):在 Host 进程里跑**真实 pi-tui**,ANSI 流经 `extensionUi.customFrame` 推给前端 xterm.js,键盘反向回灌,连 OSC 11 背景色探针都由真 xterm 回包。TUI 时代的 `ui.custom()` 扩展面板因此在 GUI 可用——全仓技术含量最高的适配。
-2. **SDK 补丁克制且有原则**:唯一补丁 `patches/@earendil-works__pi-coding-agent@0.82.1.patch`(584 行,8 文件,全打 dist、每处带 `// PiDeck patch:` 注释):包子进程取消(`.d.ts` 声明为必需方法,漏接线=编译错误)、`invocationRunner` 可信调用上下文(11 条事件路径逐一包裹,扩展弹窗从此有来源)、`pideck` 命名空间类型、`package.update` 作用域。SHA 钉进 `scripts/release-runtime.lock.json`;上一版的 `preserveExtensionCache` 行为补丁被**主动删除**改走官方路径。决策全记录在 [pi-sdk-0.82.1-api-notes.md](../operations/pi-sdk-0.82.1-api-notes.md)。
+2. **SDK 补丁克制且有原则**:唯一补丁 `patches/@earendil-works__pi-coding-agent@0.82.1.patch`(584 行,8 文件,全打 dist、每处带 `// PiAbyss patch:` 注释):包子进程取消(`.d.ts` 声明为必需方法,漏接线=编译错误)、`invocationRunner` 可信调用上下文(11 条事件路径逐一包裹,扩展弹窗从此有来源)、`piabyss` 命名空间类型、`package.update` 作用域。SHA 钉进 `scripts/release-runtime.lock.json`;上一版的 `preserveExtensionCache` 行为补丁被**主动删除**改走官方路径。决策全记录在 [pi-sdk-0.82.1-api-notes.md](../operations/pi-sdk-0.82.1-api-notes.md)。
 3. **修了 SDK 的真实泄漏**:`ModelRuntime` 进程级 provider 注册在多工作区 Host 下会跨区泄漏 apiKey;`extension-provider-ownership.ts` 用 AsyncLocalStorage 归属窗口 + 引用计数 + suspend/resume 建隔离层,且**先写复现测试再动手**。
 
 ### 最重要的缺口(按对用户的实际影响排序)
 
-1. **`bindExtensions` 未传 `commandContextActions`**(`extension-ui-bridge.ts:1124-1128`):SDK 缺省实现返回 `{cancelled:false}` 什么都不做 → 扩展里的 `ctx.newSession()/fork()/navigateTree()/switchSession()/reload()` **点了"成功"但无任何效果、无报错**。SDK 官方示例(handoff、git-checkpoint、bookmark)全依赖这些;PiDeck 自身有全部对应实现,接线成本不高。
+1. **`bindExtensions` 未传 `commandContextActions`**(`extension-ui-bridge.ts:1124-1128`):SDK 缺省实现返回 `{cancelled:false}` 什么都不做 → 扩展里的 `ctx.newSession()/fork()/navigateTree()/switchSession()/reload()` **点了"成功"但无任何效果、无报错**。SDK 官方示例(handoff、git-checkpoint、bookmark)全依赖这些;PiAbyss 自身有全部对应实现,接线成本不高。
 2. **未传 `onError`**(`ExtensionErrorListener`,全仓 `ExtensionError` 零命中):扩展 handler 在 agent 轮次中抛错,用户看不到任何提示。与 ① 叠加,扩展调试体验为零——对"把 pi 扩展生态搬进 GUI"这一核心卖点是信任级伤害。
 3. **`projectTrusted` 硬编码 `true`**(`workspace-lifecycle.ts:711`):打开任意仓库即加载执行其 `.pi/` 扩展。这是文档化的产品决策("选择工作区即授权"),但与 CLI 的 `/trust` 分叉;且策略层已把 `project_trust` 列为强制 modal 高危(`extension-ui-policy.ts:53-54`)——策略准备好了,数据源没接。
 4. **Settings 面 48 → 5**:`httpProxy` 不可配对企业网/国内网络用户是硬需求;压缩阈值与重试预算不可调。
@@ -115,7 +115,7 @@
 | # | 问题 | 证据 | 修复成本 |
 |---|---|---|---|
 | 1 | **恢复失败 → 启动屏永久卡死**:rehydrate 5 次全败后 `desynchronized` 不复位,`startupSettled` 恒 false,启动屏永远"正在重新连接",底下整个 UI 被 `pointer-events-none` + `aria-hidden` 封死,只能强杀进程。〔待运行时复现,机制静态可追〕 | `App.tsx:530-531`(条件)、`:141`(置位)、`:819-824`(失败分支漏复位) | 一行 |
-| 2 | **无凭据首启是死循环**:`AUTH_REQUIRED` 横幅是死代码(pi-host 零产出,仅 `ChatPage.tsx:16-18` 消费);`agent.prompt` 返回 `accepted:true` 无预检,失败在 detached 任务里才暴露;SDK 错误文案指引用户输入 `/login`——而 PiDeck 内置命令只有 5 个,`/login` 被当普通 prompt 发给不存在的模型,再收到同一句报错;且多行诊断被压成一行(`Transcript.tsx:429` 缺 `whitespace-pre-wrap`)。Rust 不 `env_clear()`,开发者的 `ANTHROPIC_API_KEY` 等环境变量旁路掩盖了整条路径("在我机器上是好的") | `builtin-commands.ts:9-31`、`agent-controller.ts:278-389`、`pi_host.rs:1028-1063` | 现成探针 `provider.authStatus`(`provider-controller.ts:1844`)前端未用,接上即可做发送前引导 |
+| 2 | **无凭据首启是死循环**:`AUTH_REQUIRED` 横幅是死代码(pi-host 零产出,仅 `ChatPage.tsx:16-18` 消费);`agent.prompt` 返回 `accepted:true` 无预检,失败在 detached 任务里才暴露;SDK 错误文案指引用户输入 `/login`——而 PiAbyss 内置命令只有 5 个,`/login` 被当普通 prompt 发给不存在的模型,再收到同一句报错;且多行诊断被压成一行(`Transcript.tsx:429` 缺 `whitespace-pre-wrap`)。Rust 不 `env_clear()`,开发者的 `ANTHROPIC_API_KEY` 等环境变量旁路掩盖了整条路径("在我机器上是好的") | `builtin-commands.ts:9-31`、`agent-controller.ts:278-389`、`pi_host.rs:1028-1063` | 现成探针 `provider.authStatus`(`provider-controller.ts:1844`)前端未用,接上即可做发送前引导 |
 | 3 | **有草稿时无法中断**:busy + 草稿非空 → Stop 按钮被"加入队列"替换而**消失**;无 Esc 中断。要停必须先清空正在写的内容 | `Composer.tsx:1570-1605`、`:1235-1238` | 小 |
 | 4 | **无法 steering**:Host 实现了 `agent.steer`(`agent-controller.ts:391`),[chat-runtime.md](../architecture/chat-runtime.md) 也声称 busy 时用它,前端从不调用;QueuePanel 能展示/删除 steering 项却无创建入口。"跑偏了插一句纠正"只能整轮 abort | `Composer.tsx:1177-1189` | 小 |
 | 5 | **输入框**:固定 60px 不自动增高(`resize-none`,写 20 行需求在 3 行高的框里滚)、启动/切换/新建均不自动聚焦、草稿仅内存重启即失;发送无乐观回显,新会话首条消息在 `agent_start` 前像凭空消失 | `Composer.tsx:1483`、`ChatPage.tsx:22-24` | 小 |

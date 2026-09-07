@@ -7,7 +7,7 @@ import {
   type QueueSnapshot,
   type SessionRuntimeState,
   type SessionSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { clearSlots } from "./extension-ui-lifecycle.js";
 import { normalizeAgentEvent } from "./event-normalize.js";
 import { AgentOperationLock } from "./locks.js";
@@ -32,13 +32,13 @@ function integerFromEnv(name: string, fallback: number, min: number, max: number
 
 /** Number of hot Sessions (the active Session plus idle cached Sessions). */
 export const MAX_IDLE_SESSION_CACHE = integerFromEnv(
-  "PIDECK_IDLE_SESSION_CACHE_LIMIT",
+  "PIABYSS_IDLE_SESSION_CACHE_LIMIT",
   5,
   1,
   20,
 );
 export const IDLE_SESSION_CACHE_TTL_MS =
-  integerFromEnv("PIDECK_IDLE_SESSION_TIMEOUT_MINUTES", 30, 1, 24 * 60) * 60 * 1000;
+  integerFromEnv("PIABYSS_IDLE_SESSION_TIMEOUT_MINUTES", 30, 1, 24 * 60) * 60 * 1000;
 
 type DisposalStepResult =
   { status: "completed" } | { status: "failed"; error: unknown } | { status: "timed_out" };

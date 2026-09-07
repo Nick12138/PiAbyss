@@ -4,8 +4,8 @@ import type {
   HostStatusSnapshot,
   SessionSnapshot,
   WorkspaceSnapshot,
-} from "@pideck/protocol";
-import { buildAttachmentReferenceBlock } from "@pideck/protocol";
+} from "@piabyss/protocol";
+import { buildAttachmentReferenceBlock } from "@piabyss/protocol";
 import { hostClient } from "./bridge/host-client";
 import { useAppStore } from "./stores/app-store";
 import { requestGoOn, requestRetry } from "./retry-actions";

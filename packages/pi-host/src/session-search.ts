@@ -7,8 +7,8 @@ import {
   type SessionSearchMatch,
   type SessionSearchReport,
   type SessionSearchResultItem,
-} from "@pideck/protocol";
-import { pideckDataDir } from "./pideck-data.js";
+} from "@piabyss/protocol";
+import { piabyssDataDir } from "./piabyss-data.js";
 
 const DEFAULT_RESULT_LIMIT = 50;
 const MAX_MATCHES_PER_SESSION = 3;
@@ -291,7 +291,7 @@ export async function searchSessions(args: {
   const includeArchived = args.includeArchived !== false;
 
   const sessionsRoot = join(args.agentDir, "sessions");
-  const archiveRoot = join(pideckDataDir(args.agentDir), "session-archive");
+  const archiveRoot = join(piabyssDataDir(args.agentDir), "session-archive");
   const [activePaths, archivedPaths] = await Promise.all([
     listSessionFilesUnder(sessionsRoot),
     includeArchived ? listSessionFilesUnder(archiveRoot) : Promise.resolve([]),

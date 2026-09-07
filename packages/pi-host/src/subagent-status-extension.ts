@@ -13,7 +13,7 @@
  * package install/reload keeps publishing instead of freezing the panel.
  */
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import type { HostIdentity, SubagentStatusNode, SubagentsStatusSnapshot } from "@pideck/protocol";
+import type { HostIdentity, SubagentStatusNode, SubagentsStatusSnapshot } from "@piabyss/protocol";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {

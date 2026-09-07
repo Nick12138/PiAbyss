@@ -64,7 +64,7 @@ export default function extensionCompatibilityMatrix(pi: ExtensionAPI) {
     watcher = undefined;
     ctx.ui.setWidget("matrix-persistent", undefined);
     ctx.ui.setStatus("matrix-watcher", undefined);
-    pi.events.emit("pideck:matrix:shutdown", { cleaned: true });
+    pi.events.emit("piabyss:matrix:shutdown", { cleaned: true });
   });
 
   pi.on("tool_call", async (event, ctx) => {
@@ -90,7 +90,7 @@ export default function extensionCompatibilityMatrix(pi: ExtensionAPI) {
       "Background watcher approval",
       "Apply the queued background observation?",
     );
-    pi.events.emit("pideck:matrix:background-result", { confirmed });
+    pi.events.emit("piabyss:matrix:background-result", { confirmed });
   });
 
   pi.registerTool({
@@ -136,7 +136,7 @@ export default function extensionCompatibilityMatrix(pi: ExtensionAPI) {
       const plan = next === "Edit plan"
         ? await ctx.ui.editor("Edit matrix plan", "Initial matrix plan")
         : "Initial matrix plan";
-      pi.events.emit("pideck:matrix:plan-result", { next, plan });
+      pi.events.emit("piabyss:matrix:plan-result", { next, plan });
     },
   });
 
@@ -145,7 +145,7 @@ export default function extensionCompatibilityMatrix(pi: ExtensionAPI) {
     handler: async (_args, ctx) => {
       const options = Array.from({ length: 150 }, (_, index) => `Matrix option ${index + 1}`);
       const selected = await ctx.ui.select("Choose a matrix option", options);
-      pi.events.emit("pideck:matrix:large-result", { selected });
+      pi.events.emit("piabyss:matrix:large-result", { selected });
     },
   });
 

@@ -16,7 +16,7 @@ const hasBrokenWindowsFsWatch =
 let root = "";
 
 beforeEach(async () => {
-  root = await mkdtemp(join(tmpdir(), "pideck-workspace-files-"));
+  root = await mkdtemp(join(tmpdir(), "piabyss-workspace-files-"));
   await mkdir(join(root, "src"));
   await writeFile(join(root, "README.md"), "readme");
   await writeFile(join(root, "src", "index.ts"), "export {};");

@@ -10,7 +10,7 @@ import {
   wrapRegisteredTool,
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
-import type { HostEventName, HostIdentity } from "@pideck/protocol";
+import type { HostEventName, HostIdentity } from "@piabyss/protocol";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   bindExtensionUi,
@@ -60,14 +60,14 @@ function matrixIdentity(sessionId = "session-matrix"): HostIdentity {
 }
 
 async function loadMatrix(): Promise<LoadedMatrix> {
-  const layout = createTempAgentLayout("pideck-extension-matrix-");
+  const layout = createTempAgentLayout("piabyss-extension-matrix-");
   const eventBus = createEventBus();
   const busEvents = new Map<string, unknown[]>();
   for (const channel of [
-    "pideck:matrix:shutdown",
-    "pideck:matrix:background-result",
-    "pideck:matrix:plan-result",
-    "pideck:matrix:large-result",
+    "piabyss:matrix:shutdown",
+    "piabyss:matrix:background-result",
+    "piabyss:matrix:plan-result",
+    "piabyss:matrix:large-result",
   ]) {
     eventBus.on(channel, (payload) => {
       const entries = busEvents.get(channel) ?? [];
@@ -203,7 +203,7 @@ describe("Extension behavior-class compatibility matrix", () => {
         type: "session_shutdown",
         reason: "quit",
       });
-      expect(matrix.busEvents.get("pideck:matrix:shutdown")).toEqual([
+      expect(matrix.busEvents.get("piabyss:matrix:shutdown")).toEqual([
         { cleaned: true },
       ]);
       expect(
@@ -438,7 +438,7 @@ describe("Extension behavior-class compatibility matrix", () => {
         matrix.identity,
       );
       await planRun;
-      expect(matrix.busEvents.get("pideck:matrix:plan-result")).toEqual([
+      expect(matrix.busEvents.get("piabyss:matrix:plan-result")).toEqual([
         { next: "Edit plan", plan: "Reviewed matrix plan" },
       ]);
 
@@ -452,7 +452,7 @@ describe("Extension behavior-class compatibility matrix", () => {
       const selected = large.options![148]!;
       respondExtensionUi(large.requestId, "resolved", selected.id, matrix.identity);
       await largeRun;
-      expect(matrix.busEvents.get("pideck:matrix:large-result")).toEqual([
+      expect(matrix.busEvents.get("piabyss:matrix:large-result")).toEqual([
         { selected: "Matrix option 149" },
       ]);
     } finally {
@@ -497,7 +497,7 @@ describe("Extension behavior-class compatibility matrix", () => {
         true,
       );
       await backgroundRun;
-      expect(matrix.busEvents.get("pideck:matrix:background-result")).toEqual([
+      expect(matrix.busEvents.get("piabyss:matrix:background-result")).toEqual([
         { confirmed: true },
       ]);
     } finally {

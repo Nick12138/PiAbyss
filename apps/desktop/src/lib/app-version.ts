@@ -1,6 +1,6 @@
 let cached: string | null = null;
 
-/** PiDeck's own version from the Tauri app config (falls back in browser mock). */
+/** PiAbyss's own version from the Tauri app config (falls back in browser mock). */
 export async function getAppVersion(): Promise<string> {
   if (cached) return cached;
   try {

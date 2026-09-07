@@ -6,7 +6,7 @@ import {
   resolveCredentialConfigValue,
 } from "./credential-config-value.js";
 
-const ENV_KEYS = ["PIDECK_CV_A", "PIDECK_CV_B", "PIDECK_CV_CMD"];
+const ENV_KEYS = ["PIABYSS_CV_A", "PIABYSS_CV_B", "PIABYSS_CV_CMD"];
 
 beforeEach(() => {
   clearCredentialCommandCache();
@@ -37,59 +37,59 @@ describe("literal values", () => {
 
 describe("environment templates", () => {
   it("substitutes $NAME and ${NAME} from the process environment", () => {
-    process.env.PIDECK_CV_A = "alpha";
-    expect(resolveCredentialConfigValue("$PIDECK_CV_A")).toBe("alpha");
-    expect(resolveCredentialConfigValue("${PIDECK_CV_A}")).toBe("alpha");
+    process.env.PIABYSS_CV_A = "alpha";
+    expect(resolveCredentialConfigValue("$PIABYSS_CV_A")).toBe("alpha");
+    expect(resolveCredentialConfigValue("${PIABYSS_CV_A}")).toBe("alpha");
   });
 
   it("prefers the credential env over the process environment", () => {
-    process.env.PIDECK_CV_A = "from-process";
-    expect(resolveCredentialConfigValue("$PIDECK_CV_A", { PIDECK_CV_A: "from-credential" })).toBe(
+    process.env.PIABYSS_CV_A = "from-process";
+    expect(resolveCredentialConfigValue("$PIABYSS_CV_A", { PIABYSS_CV_A: "from-credential" })).toBe(
       "from-credential",
     );
   });
 
   it("concatenates literals and multiple variables", () => {
-    process.env.PIDECK_CV_A = "one";
-    process.env.PIDECK_CV_B = "two";
-    expect(resolveCredentialConfigValue("p-${PIDECK_CV_A}-${PIDECK_CV_B}-s")).toBe("p-one-two-s");
+    process.env.PIABYSS_CV_A = "one";
+    process.env.PIABYSS_CV_B = "two";
+    expect(resolveCredentialConfigValue("p-${PIABYSS_CV_A}-${PIABYSS_CV_B}-s")).toBe("p-one-two-s");
   });
 
   it("resolves to undefined when any referenced variable is unset", () => {
-    process.env.PIDECK_CV_A = "one";
-    expect(resolveCredentialConfigValue("$PIDECK_CV_MISSING")).toBeUndefined();
-    expect(resolveCredentialConfigValue("${PIDECK_CV_A}-${PIDECK_CV_MISSING}")).toBeUndefined();
+    process.env.PIABYSS_CV_A = "one";
+    expect(resolveCredentialConfigValue("$PIABYSS_CV_MISSING")).toBeUndefined();
+    expect(resolveCredentialConfigValue("${PIABYSS_CV_A}-${PIABYSS_CV_MISSING}")).toBeUndefined();
   });
 
   it("treats an empty variable as unset, matching the SDK", () => {
-    process.env.PIDECK_CV_A = "";
-    expect(resolveCredentialConfigValue("$PIDECK_CV_A")).toBeUndefined();
+    process.env.PIABYSS_CV_A = "";
+    expect(resolveCredentialConfigValue("$PIABYSS_CV_A")).toBeUndefined();
   });
 });
 
 describe("command values", () => {
   it("classifies a leading bang as a command", () => {
     expect(isCommandConfigValue("!echo hi")).toBe(true);
-    expect(isCommandConfigValue("$PIDECK_CV_A")).toBe(false);
+    expect(isCommandConfigValue("$PIABYSS_CV_A")).toBe(false);
     expect(isCommandConfigValue("$!echo hi")).toBe(false);
   });
 
   it("uses the trimmed stdout of the command", () => {
-    expect(resolveCredentialConfigValue("!echo pideck-secret")).toBe("pideck-secret");
+    expect(resolveCredentialConfigValue("!echo piabyss-secret")).toBe("piabyss-secret");
   });
 
   it("resolves to undefined when the command fails", () => {
-    expect(resolveCredentialConfigValue("!pideck-no-such-command-xyz")).toBeUndefined();
+    expect(resolveCredentialConfigValue("!piabyss-no-such-command-xyz")).toBeUndefined();
   });
 
   it("caches the result for the process lifetime and clears on request", () => {
     if (process.platform === "win32") return; // `$VAR` expansion is shell-specific.
-    process.env.PIDECK_CV_CMD = "first";
-    const config = '!printf "%s" "$PIDECK_CV_CMD"';
+    process.env.PIABYSS_CV_CMD = "first";
+    const config = '!printf "%s" "$PIABYSS_CV_CMD"';
 
     expect(resolveCredentialConfigValue(config)).toBe("first");
 
-    process.env.PIDECK_CV_CMD = "second";
+    process.env.PIABYSS_CV_CMD = "second";
     expect(resolveCredentialConfigValue(config)).toBe("first");
 
     clearCredentialCommandCache();
@@ -98,7 +98,7 @@ describe("command values", () => {
 
   it("caches a failed command as undefined instead of re-running it", () => {
     if (process.platform === "win32") return;
-    const marker = `/tmp/pideck-cv-${process.pid}-${Date.now()}`;
+    const marker = `/tmp/piabyss-cv-${process.pid}-${Date.now()}`;
     // Fails every time, but appends a line so we can count invocations.
     const config = `!sh -c 'echo x >> ${marker}; exit 3'`;
 

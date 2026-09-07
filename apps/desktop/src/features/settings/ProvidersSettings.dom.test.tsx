@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { HostStatusSnapshot, ProviderModelConfig, ProviderSnapshot } from "@pideck/protocol";
+import type { HostStatusSnapshot, ProviderModelConfig, ProviderSnapshot } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
 import { ProvidersSettings } from "./ProvidersSettings";
@@ -388,19 +388,63 @@ describe("ProvidersSettings model catalog refresh coordination", () => {
   });
 });
 
-describe("ProvidersSettings model number fields", () => {
+describe("ProvidersSettings model token count fields", () => {
   it("lets a cleared field be retyped without snapping to 1", async () => {
     const user = userEvent.setup();
     await renderLoaded();
 
     await user.click(screen.getByTitle("Model settings"));
     const contextWindow = screen.getByLabelText("Context window");
-    expect(contextWindow).toHaveValue(8192);
+    expect(contextWindow).toHaveValue("8192");
 
     await user.clear(contextWindow);
     await user.type(contextWindow, "200000");
     await user.tab();
-    expect(contextWindow).toHaveValue(200000);
+    expect(contextWindow).toHaveValue("200k");
+  });
+
+  it("accepts K and M suffixes and normalizes the display", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+
+    await user.click(screen.getByTitle("Model settings"));
+    const contextWindow = screen.getByLabelText("Context window");
+    await user.clear(contextWindow);
+    await user.type(contextWindow, "1.05M");
+    await user.tab();
+    expect(contextWindow).toHaveValue("1.05M");
+
+    const maxTokens = screen.getByLabelText("Max output tokens");
+    await user.clear(maxTokens);
+    await user.type(maxTokens, "127k");
+    await user.tab();
+    expect(maxTokens).toHaveValue("127k");
+  });
+
+  it("reverts invalid input to the committed value", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+
+    await user.click(screen.getByTitle("Model settings"));
+    const contextWindow = screen.getByLabelText("Context window");
+    await user.clear(contextWindow);
+    await user.type(contextWindow, "12abc");
+    await user.tab();
+    expect(contextWindow).toHaveValue("8192");
+  });
+
+  it("applies preset chips to the field", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+
+    await user.click(screen.getByTitle("Model settings"));
+    const contextField = screen.getByLabelText("Context window").closest("label") as HTMLElement;
+    await user.click(within(contextField).getByTitle("200,000"));
+    expect(screen.getByLabelText("Context window")).toHaveValue("200k");
+
+    const maxField = screen.getByLabelText("Max output tokens").closest("label") as HTMLElement;
+    await user.click(within(maxField).getByTitle("128,000"));
+    expect(screen.getByLabelText("Max output tokens")).toHaveValue("128k");
   });
 
   it("restores the last committed value when the field is left empty", async () => {
@@ -411,7 +455,7 @@ describe("ProvidersSettings model number fields", () => {
     const contextWindow = screen.getByLabelText("Context window");
     await user.clear(contextWindow);
     await user.tab();
-    expect(contextWindow).toHaveValue(8192);
+    expect(contextWindow).toHaveValue("8192");
   });
 
   it("Escape reverts the field without committing and without closing Settings", async () => {
@@ -432,7 +476,7 @@ describe("ProvidersSettings model number fields", () => {
       await user.type(contextWindow, "200000");
       await user.keyboard("{Escape}");
 
-      expect(contextWindow).toHaveValue(8192);
+      expect(contextWindow).toHaveValue("8192");
       expect(outerClose).not.toHaveBeenCalled();
       expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
     } finally {

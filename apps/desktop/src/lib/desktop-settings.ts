@@ -6,7 +6,7 @@ import {
   DESKTOP_THEMES,
   TERMINAL_PROFILE_IDS,
   type DesktopSettings,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import {
   MAX_CODE_FONT_SIZE,
   MAX_CONVERSATION_FONT_SIZE,

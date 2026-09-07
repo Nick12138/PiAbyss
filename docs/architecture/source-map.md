@@ -1,6 +1,6 @@
 # Source map
 
-Paths are relative to the PiDeck repository root. **Only paths that exist on
+Paths are relative to the PiAbyss repository root. **Only paths that exist on
 disk** are listed. Layers map to implementation paths. Source verification and
 the current Windows development-candidate boundary follow
 `docs/operations/p0-scope.md`.

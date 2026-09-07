@@ -41,7 +41,7 @@ import {
   type AttachmentSnapshot,
   type JsonValue,
   type SerializableImage,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import {
   buildAttachedFileBlock,
   buildAttachedImageBlock,

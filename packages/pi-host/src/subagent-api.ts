@@ -3,7 +3,7 @@
  *
  * The pi-subagent extension starts a loopback HTTP server
  * (http://127.0.0.1:<SUBAGENT_HTTP_PORT|18765>) that exposes run status and
- * control endpoints for the PiDeck panel. See the plugin's http.ts for the
+ * control endpoints for the PiAbyss panel. See the plugin's http.ts for the
  * exact response shapes.
  *
  * Loopback control-plane calls deliberately use node:http instead of the

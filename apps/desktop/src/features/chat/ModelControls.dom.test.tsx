@@ -9,7 +9,7 @@ import type {
   ModelSummary,
   SessionSnapshot,
   WorkspaceSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
 import { ModelControls, ThinkingControls } from "./ModelControls";

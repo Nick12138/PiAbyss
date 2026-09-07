@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 function layoutWithConfiguredPackage(): { cwd: string; agentDir: string } {
-  const root = mkdtempSync(join(tmpdir(), "pideck-offline-"));
+  const root = mkdtempSync(join(tmpdir(), "piabyss-offline-"));
   roots.push(root);
   const cwd = join(root, "project");
   const agentDir = join(root, "agent");
@@ -38,7 +38,7 @@ function layoutWithConfiguredPackage(): { cwd: string; agentDir: string } {
   // local path, which never installs and would make this test vacuous.
   writeFileSync(
     join(agentDir, "settings.json"),
-    JSON.stringify({ packages: ["npm:pideck-not-a-real-package@1.0.0"] }, null, 2),
+    JSON.stringify({ packages: ["npm:piabyss-not-a-real-package@1.0.0"] }, null, 2),
   );
   return { cwd, agentDir };
 }
@@ -66,7 +66,7 @@ describe("withoutImplicitPackageInstall", () => {
 
     // The package is skipped, not fetched, and not treated as a load failure.
     expect(loader.getExtensions().extensions).toEqual([]);
-    expect(existsSync(join(agentDir, "packages", "pideck-not-a-real-package"))).toBe(false);
+    expect(existsSync(join(agentDir, "packages", "piabyss-not-a-real-package"))).toBe(false);
   }, 60_000);
 
   it("restores the previous value, including when it was unset", async () => {

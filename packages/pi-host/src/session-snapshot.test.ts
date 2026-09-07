@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
-import { validateSuccessResult } from "@pideck/protocol";
+import { validateSuccessResult } from "@piabyss/protocol";
 import type { WorkspaceGraph } from "./workspace-graph-types.js";
 import { buildSessionSnapshot, refreshActiveSessionSnapshot } from "./session-snapshot.js";
 

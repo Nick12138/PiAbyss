@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
-import type { DesktopInterfaceDensity, DesktopThemeFamily } from "@pideck/protocol";
+import type { DesktopInterfaceDensity, DesktopThemeFamily } from "@piabyss/protocol";
 import { Minus, Plus } from "lucide-react";
 import { Select } from "../../components/Select";
 import {
@@ -81,7 +81,7 @@ function FontSizeStepper({
 export function AppearanceSettings() {
   const t = useT();
   const desktopSettings = useAppStore((state) => state.desktopSettings);
-  const themeFamily = desktopSettings?.themeFamily ?? "pideck";
+  const themeFamily = desktopSettings?.themeFamily ?? "piabyss";
   const interfaceDensity = resolveInterfaceDensity(desktopSettings?.interfaceDensity);
   const conversationMinWidth = resolveConversationMinWidth(desktopSettings?.conversationMinWidth);
   const conversationMaxWidth = resolveConversationMaxWidth(desktopSettings?.conversationMaxWidth);
@@ -146,7 +146,7 @@ export function AppearanceSettings() {
     value: DesktopThemeFamily;
     label: string;
   }> = [
-    { value: "pideck", label: t("appearanceThemePideck") },
+    { value: "piabyss", label: t("appearanceThemePiAbyss") },
     { value: "vercel", label: t("appearanceThemeVercel") },
     { value: "apple", label: t("appearanceThemeApple") },
     { value: "transparent", label: t("appearanceThemeTransparent") },

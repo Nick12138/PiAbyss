@@ -16,7 +16,7 @@ describe.runIf(process.platform === "win32")("Windows credential replacement", (
   let original: string;
   beforeEach(() => {
     vi.mocked(rename).mockClear();
-    root = mkdtempSync(join(tmpdir(), "pideck-rename-"));
+    root = mkdtempSync(join(tmpdir(), "piabyss-rename-"));
     path = join(root, "auth.json");
     original = JSON.stringify({ p: { type: "api_key", key: "test-old" } });
     writeFileSync(path, original);

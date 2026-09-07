@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { HostStatusSnapshot } from "@pideck/protocol";
+import type { HostStatusSnapshot } from "@piabyss/protocol";
 import type { AppUpdateInstallProgress } from "../../lib/updater";
 import { useAppStore } from "../../lib/stores/app-store";
 import { HostSettings } from "./HostSettings";
@@ -105,7 +105,7 @@ describe("HostSettings", () => {
     render(<HostSettings />);
 
     await user.click(screen.getByRole("button", { name: "Check for updates" }));
-    expect(await screen.findByText("PiDeck is up to date.")).toBeInTheDocument();
+    expect(await screen.findByText("PiAbyss is up to date.")).toBeInTheDocument();
     expect(checkForAppUpdateMock).toHaveBeenCalledTimes(1);
   });
 

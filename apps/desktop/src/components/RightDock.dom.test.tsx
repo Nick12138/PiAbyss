@@ -3,7 +3,7 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
-import type { DesktopSettings, SessionSnapshot, WorkspaceSnapshot } from "@pideck/protocol";
+import type { DesktopSettings, SessionSnapshot, WorkspaceSnapshot } from "@piabyss/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../lib/stores/app-store";
 import { requestDockBrowser } from "../lib/dock-browser";

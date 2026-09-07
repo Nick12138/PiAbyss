@@ -40,7 +40,7 @@
 Tool Result `addedToolNames` → Host publishes full `agent.toolsChanged` (no client-side tool schema invention).
 
 The Composer's `/` completion merges `session.getCommands` (prompt templates,
-extension commands, skills) with PiDeck's built-in commands
+extension commands, skills) with PiAbyss's built-in commands
 (`features/chat/builtin-commands.ts`, currently `/compact`, `/session`,
 `/tree`, `/fork`, and `/export`). A
 draft matching a built-in command runs locally instead of being sent to the
@@ -86,7 +86,7 @@ target through the native save dialog, `session.export` runs the SDK's
 `exportToHtml` / `exportToJsonl`, and the desktop reveals the written file via
 `desktop_open_path`; the Host advertises this as the `sessionExport`
 capability. Unlike the CLI,
-PiDeck does not emit `session_before_fork` to extensions, and the forked
+PiAbyss does not emit `session_before_fork` to extensions, and the forked
 session starts through the normal open path rather than a `session_start`
 with reason `fork`. Forking before the first message is not supported.
 
@@ -119,7 +119,7 @@ await session.bindExtensions({
 `uiContext` implements positional `ExtensionUIContext` APIs (`select(title, options)`, `confirm(title, message)`, `input`, `editor`, `notify`, `setStatus`, `setWidget`). TUI-only methods (custom editor/footer/header factories) are no-op or throw a clear unsupported error — they never access private setters.
 
 The narrow SDK patch invokes `invocationRunner` around each registered tool and each
-individual Extension event handler. PiDeck stores the resulting trusted `SourceInfo`
+individual Extension event handler. PiAbyss stores the resulting trusted `SourceInfo`
 context in AsyncLocalStorage; slash commands reuse the same context with their resolved
 command `sourceInfo`. The binding is reapplied before `session_start` on SDK reload.
 Only a bounded opaque Extension ID, display name, source kind, and invocation metadata
@@ -150,7 +150,7 @@ cannot be downgraded by Extension hints.
 
 Stale owners are cancelled, background owners remain queued on their captured Session,
 and high-risk, destructive, lifecycle, candidate, or unavailable-surface requests remain
-Modal. Extension `opts.pideck.presentation` and `risk` values are hints and cannot lower a
+Modal. Extension `opts.piabyss.presentation` and `risk` values are hints and cannot lower a
 Host safety decision. Custom transcript messages can
 declare Extension Presentation v1 under `details.presentation`; agent-audience
 coordination and other visible Extension activity join the assistant's execution

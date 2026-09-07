@@ -9,7 +9,7 @@ import type {
   SerializableSessionTreeNode,
   SessionSnapshot,
   WorkspaceSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { __resetDraftPersistenceForTests } from "../../lib/draft-persistence";
 import { subscribeTranscriptScroll } from "../../lib/transcript-navigation";

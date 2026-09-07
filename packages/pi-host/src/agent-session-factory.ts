@@ -72,7 +72,7 @@ async function resolveInitialModelOption(
 }
 
 /**
- * Construct every Host AgentSession through the PiDeck Provider/model policy.
+ * Construct every Host AgentSession through the PiAbyss Provider/model policy.
  * Omitting the model option preserves SDK-native selection for legacy configs;
  * an explicit null prevents the SDK from resurrecting a disabled Provider.
  */

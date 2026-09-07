@@ -1,6 +1,6 @@
 # Extension Presentation
 
-PiDeck supports a declarative Extension Presentation v1 contract for custom
+PiAbyss supports a declarative Extension Presentation v1 contract for custom
 messages and blocking Extension UI requests. The contract carries semantics and
 copy, not Extension-owned HTML, React components, CSS, colors, or executable
 actions.
@@ -33,7 +33,7 @@ await ctx.sendMessage({
 });
 ```
 
-PiDeck also accepts `presentation` at the top level when a producer controls the
+PiAbyss also accepts `presentation` at the top level when a producer controls the
 serialized message directly. `details.presentation` is the portable SDK path.
 
 Presentation fields:
@@ -54,7 +54,7 @@ Presentation fields:
 | `technicalDetails` | JSON shown only after opening the Extension title row |
 
 `display: false` always wins and keeps the message out of the transcript. For
-`audience: "agent"`, PiDeck ignores presentation title and summary in the main
+`audience: "agent"`, PiAbyss ignores presentation title and summary in the main
 reading flow. Visible Extension activity is collected into the surrounding
 assistant execution trace, so it does not create a second Pi avatar or usage
 footer. Opening the trace reveals a quiet Agent coordination or Extension title
@@ -71,7 +71,7 @@ inside the same execution-trace flow.
 
 ### Registered message renderers
 
-For existing Extensions that register a Pi message renderer, PiDeck projects the
+For existing Extensions that register a Pi message renderer, PiAbyss projects the
 renderer into a bounded, read-only transcript snapshot. Host renders both collapsed
 and expanded modes at a fixed terminal width, removes terminal control sequences,
 and sends plain text lines to Desktop. Declarative Presentation v1 remains the first
@@ -93,7 +93,7 @@ content, timestamp, or private metadata.
 
 ## Blocking requests
 
-Dialog options can suggest a surface with the PiDeck namespace. The value is a
+Dialog options can suggest a surface with the PiAbyss namespace. The value is a
 hint; the Host resolves the final presentation under the configured rollout mode:
 
 ```ts
@@ -102,7 +102,7 @@ const approved = await ctx.ui.confirm(
   "This changes the local database schema.",
   {
     timeout: 120_000,
-    pideck: {
+    piabyss: {
       presentation: "inline",
       sourceLabel: "Migration review",
       correlationId: "migration-42",
@@ -114,7 +114,7 @@ const approved = await ctx.ui.confirm(
 
 The timeout above is explicit. Omitting `timeout`, or passing `timeout: 0`, leaves the
 request pending until it is answered, aborted, or closed by Session lifecycle cleanup;
-PiDeck does not add a default timeout.
+PiAbyss does not add a default timeout.
 
 `sourceLabel` is Extension-controlled presentation copy, not identity. For standard
 blocking requests, Host captures the active command, registered tool, or individual
@@ -124,11 +124,11 @@ requests. Origin IDs are opaque hashes; absolute package and Extension paths are
 sent over the protocol. Trusted invocation kind participates in Host routing; package
 names, titles, option labels, and `sourceLabel` do not.
 
-The same `pideck` object is supported by `select`, `input`, and the optional
+The same `piabyss` object is supported by `select`, `input`, and the optional
 third argument added to `editor`. Supported fields are:
 
 ```ts
-interface PiDeckExtensionUIDialogOptions {
+interface PiAbyssExtensionUIDialogOptions {
   // Hints only; Host publishes the final presentation and risk.
   presentation?: "inline" | "modal";
   sourceLabel?: string;
@@ -150,7 +150,7 @@ merged only when `optionDetails.id` exactly matches a sanitized select value.
 
 ```ts
 await ctx.ui.select("Choose a cleanup mode", ["keep", "delete"], {
-  pideck: {
+  piabyss: {
     presentation: "inline",
     allowFreeform: true,
     optionDetails: [
@@ -164,10 +164,10 @@ await ctx.ui.select("Choose a cleanup mode", ["keep", "delete"], {
 });
 ```
 
-PiDeck strips terminal controls, bounds presentation strings, ignores unknown
+PiAbyss strips terminal controls, bounds presentation strings, ignores unknown
 metadata, and emits only protocol-whitelisted fields. Other UI modes ignore the
-optional `pideck` namespace. Extensions compiled against an unpatched upstream
-0.82.1 declaration need the PiDeck type extension (or an equivalent local type
+optional `piabyss` namespace. Extensions compiled against an unpatched upstream
+0.82.1 declaration need the PiAbyss type extension (or an equivalent local type
 intersection) even though the runtime option is backward compatible.
 
 ### Host routing modes
@@ -262,4 +262,4 @@ are ecosystem evidence; the repository fixture remains the stable per-commit con
 The compatibility adapter for `subagent_supervisor_request` maps old pi-subagents
 messages to `audience: "agent"` activity without parsing their `Reply with:`
 content. Durable changes to pi-subagents should emit Presentation v1 upstream;
-PiDeck does not modify the globally installed Extension package.
+PiAbyss does not modify the globally installed Extension package.

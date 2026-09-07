@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { HostStatusSnapshot, WorkspaceSnapshot } from "@pideck/protocol";
+import type { HostStatusSnapshot, WorkspaceSnapshot } from "@piabyss/protocol";
 import {
   captureRequestGeneration,
   captureWorkspaceAuthorization,

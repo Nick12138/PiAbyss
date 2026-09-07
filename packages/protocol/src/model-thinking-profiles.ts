@@ -39,7 +39,7 @@ const MISTRAL_REASONING_DOCS = "https://docs.mistral.ai/studio-api/conversations
 
 /**
  * Fallback capability catalog for models whose Provider does not advertise
- * reasoning efforts. A null entry means the PiDeck level is unavailable.
+ * reasoning efforts. A null entry means the PiAbyss level is unavailable.
  * Keep specific variants before broader family patterns.
  */
 export const MODEL_THINKING_PROFILES: readonly ModelThinkingProfile[] = [

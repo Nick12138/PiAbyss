@@ -1,6 +1,6 @@
 # Commands, shortcuts, and context menus
 
-PiDeck desktop interactions share one command layer in
+PiAbyss desktop interactions share one command layer in
 `apps/desktop/src/lib/commands/`. A command owns its title, optional chord,
 availability rule, focus scope, and action. Keyboard shortcuts consume this registry;
 the shortcut reference dialog renders the same data. A future command palette must

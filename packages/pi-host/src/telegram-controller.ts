@@ -1,4 +1,4 @@
-import { createHostError, type TelegramValidateTokenResult } from "@pideck/protocol";
+import { createHostError, type TelegramValidateTokenResult } from "@piabyss/protocol";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { MethodHandler } from "./server.js";

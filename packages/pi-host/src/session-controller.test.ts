@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { validateSuccessResult } from "@pideck/protocol";
+import { validateSuccessResult } from "@piabyss/protocol";
 import type { HandlerContext } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { IdentityState } from "./identity.js";
@@ -16,7 +16,7 @@ const BACKGROUND_SESSION_ID = "44444444-4444-4444-8444-444444444444";
 
 describe("session.open", () => {
   it("switches to the managed session workspace and continues opening it", async () => {
-    const root = mkdtempSync(join(tmpdir(), "pideck-cross-workspace-open-"));
+    const root = mkdtempSync(join(tmpdir(), "piabyss-cross-workspace-open-"));
     try {
       const agentDir = join(root, "agent");
       const currentCwd = resolve(join(root, "current"));
@@ -79,7 +79,7 @@ describe("session.open", () => {
   });
 
   it("does not switch for an unmanaged session file", async () => {
-    const root = mkdtempSync(join(tmpdir(), "pideck-unmanaged-session-open-"));
+    const root = mkdtempSync(join(tmpdir(), "piabyss-unmanaged-session-open-"));
     try {
       const agentDir = join(root, "agent");
       const currentCwd = resolve(join(root, "current"));

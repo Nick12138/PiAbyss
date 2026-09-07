@@ -8,7 +8,7 @@ import type {
   ResolvedCommand,
   SourceInfo,
 } from "@earendil-works/pi-coding-agent";
-import type { ExtensionUiOrigin, ExtensionUiSourceKind } from "@pideck/protocol";
+import type { ExtensionUiOrigin, ExtensionUiSourceKind } from "@piabyss/protocol";
 
 export type ResolvedExtensionCommandInvocation = {
   invocation: string;

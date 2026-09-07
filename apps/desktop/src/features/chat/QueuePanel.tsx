@@ -10,7 +10,7 @@ import {
   preserveAttachmentReferenceBlocks,
   stripAttachmentReferenceBlocks,
   type ActiveSessionContext,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { useT } from "../../lib/i18n/use-t";
 import {
   appendOptimisticUserMessage,

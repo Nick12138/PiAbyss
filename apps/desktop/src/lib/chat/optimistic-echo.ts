@@ -1,4 +1,4 @@
-import type { SerializableImage } from "@pideck/protocol";
+import type { SerializableImage } from "@piabyss/protocol";
 import { useAppStore } from "../stores/app-store";
 
 /**

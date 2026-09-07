@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ExtensionUiOrigin, HostIdentity } from "@pideck/protocol";
+import type { ExtensionUiOrigin, HostIdentity } from "@piabyss/protocol";
 import {
   classifyHostDecisionRisk,
   resolveDecisionRoute,

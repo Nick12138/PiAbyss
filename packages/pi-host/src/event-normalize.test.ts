@@ -189,7 +189,7 @@ describe("normalizeAgentEvent", () => {
   });
 
   it("keeps bash_execution_update unreviewed by decision, not by accident", () => {
-    // 0.82.1 emits this only from AgentSession.executeBash, which PiDeck never
+    // 0.82.1 emits this only from AgentSession.executeBash, which PiAbyss never
     // calls; the transcript still shows the result via the bashExecution
     // session message. Wiring the delta stream is a deliberate future step.
     expect(

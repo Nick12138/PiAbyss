@@ -87,7 +87,7 @@ export function WorkspaceFiles({ visible }: { visible: boolean }) {
 
   useEffect(() => {
     if (!maximized) return;
-    const main = document.querySelector("[data-pideck-app] main");
+    const main = document.querySelector("[data-piabyss-app] main");
     const update = () => setLeft(main?.getBoundingClientRect().left ?? 0);
     update();
     const observer = new ResizeObserver(update);

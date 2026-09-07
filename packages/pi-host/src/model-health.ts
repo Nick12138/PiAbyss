@@ -1,4 +1,4 @@
-import type { ModelConfigHealth } from "@pideck/protocol";
+import type { ModelConfigHealth } from "@piabyss/protocol";
 import type { JournalRecovery } from "./provider-journal.js";
 
 const MIGRATION_HINT = {

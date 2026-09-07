@@ -1,7 +1,7 @@
 import { watch, type FSWatcher } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
-import { type WorkspaceDirectoryEntry } from "@pideck/protocol";
+import { type WorkspaceDirectoryEntry } from "@piabyss/protocol";
 
 export const MAX_DIRECTORY_WATCHES = 128;
 const WATCH_COALESCE_MS = 100;

@@ -10,7 +10,7 @@ import {
   RotateCcw,
   Square,
 } from "lucide-react";
-import type { SubagentSessionSnapshot, SubagentStatusNode } from "@pideck/protocol";
+import type { SubagentSessionSnapshot, SubagentStatusNode } from "@piabyss/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { useT } from "../../lib/i18n/use-t";
 import { hostClient } from "../../lib/bridge/host-client";

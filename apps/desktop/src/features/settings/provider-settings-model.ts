@@ -9,7 +9,7 @@ import {
   type ProviderModelConfig,
   type ProviderSnapshot,
   type ThinkingLevelMap,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import type { Translate } from "../../lib/i18n/use-t";
 
 export type ProviderDraftState = ProviderDraft & { originalId?: string };
@@ -68,7 +68,7 @@ export function emptyProviderDraft(): ProviderDraftState {
     baseUrl: "",
     modelsUrl: "",
     api: "openai-completions",
-    headers: { "User-Agent": "PiDeck/0.1" },
+    headers: { "User-Agent": "PiAbyss/0.1" },
     compat: {
       supportsDeveloperRole: null,
       supportsReasoningEffort: null,

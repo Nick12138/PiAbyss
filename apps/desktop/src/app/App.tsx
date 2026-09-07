@@ -60,7 +60,7 @@ import {
   clearExtensionTerminal as clearExtensionTerminalFrames,
   pushExtensionTerminalFrame,
 } from "../lib/chat/extension-terminal-bus";
-import type { HostEventEnvelope, HostEventPayloadMap } from "@pideck/protocol";
+import type { HostEventEnvelope, HostEventPayloadMap } from "@piabyss/protocol";
 import { CommandLayer } from "../lib/commands/CommandLayer";
 import {
   resolveWindowFrameAttribute,
@@ -174,7 +174,7 @@ async function openSystemNotificationTarget(target: SystemNotificationTarget): P
   // A click must surface the app even when the window is hidden to the tray
   // or minimized (fork-specific tray behavior; the notification plugin never
   // shows the window for us). Runs before any guard so host-fatal clicks,
-  // which carry no routing target, still bring PiDeck up.
+  // which carry no routing target, still bring PiAbyss up.
   try {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     const win = getCurrentWindow();
@@ -701,7 +701,7 @@ export function App() {
       try {
         const browserDefaults = {
           theme: "dark" as const,
-          themeFamily: "pideck" as const,
+          themeFamily: "piabyss" as const,
           restoreLastSession: false,
           autoStartOnBoot: false,
           systemNotificationsEnabled: true,
@@ -843,7 +843,7 @@ export function App() {
                   const configuredPresentation =
                     useAppStore.getState().desktopSettings?.extensionDecisionPresentation ?? "auto";
                   const status = await hostClient.hello(
-                    "pideck",
+                    "piabyss",
                     await getAppVersion(),
                     configuredPresentation,
                   );
@@ -1195,7 +1195,7 @@ export function App() {
   return (
     <div
       className="relative flex h-full flex-col overflow-hidden bg-surface text-foreground"
-      data-pideck-app
+      data-piabyss-app
       data-has-topbar
       data-window-platform={windowControlsPlatform}
       data-window-frame={resolveWindowFrameAttribute(nativeWindowAvailable, windowFrameMode)}

@@ -7,8 +7,8 @@ import {
   type AgentEventEnvelope,
   type TimedAgentEventEnvelope,
 } from "./transcript-reducer.js";
-import type { SerializableAssistantMessageEvent, SessionSnapshot } from "@pideck/protocol";
-import { buildAttachmentReferenceBlock } from "@pideck/protocol";
+import type { SerializableAssistantMessageEvent, SessionSnapshot } from "@piabyss/protocol";
+import { buildAttachmentReferenceBlock } from "@piabyss/protocol";
 
 function baseSession(): SessionSnapshot {
   return {

@@ -34,7 +34,7 @@ afterEach(async () => {
   if (root) await removeTree(root);
   root = undefined;
   delete process.env.PI_OFFLINE;
-  delete process.env.PIDECK_TEST_NPM_STDERR;
+  delete process.env.PIABYSS_TEST_NPM_STDERR;
 });
 
 /** A child that records its pid and then never exits on its own. */
@@ -69,7 +69,7 @@ function createManager(npmCommand: string[]): {
   cwd: string;
   agentDir: string;
 } {
-  root = mkdtempSync(join(tmpdir(), "pideck-package-cancel-"));
+  root = mkdtempSync(join(tmpdir(), "piabyss-package-cancel-"));
   const agentDir = join(root, "agent");
   const cwd = join(root, "workspace");
   mkdirSync(agentDir, { recursive: true });
@@ -123,9 +123,9 @@ async function waitForExit(pid: number, timeoutMs = 5_000): Promise<boolean> {
   return false;
 }
 
-describe("PiDeck package-manager cancellation patch", () => {
+describe("PiAbyss package-manager cancellation patch", () => {
   it("settles a successful install when a descendant inherits npm stdio", async () => {
-    const pidFile = join(tmpdir(), `pideck-inherited-stdio-${process.pid}-${Date.now()}`);
+    const pidFile = join(tmpdir(), `piabyss-inherited-stdio-${process.pid}-${Date.now()}`);
     const { manager } = createManager(inheritedPipeCommand(pidFile));
     let outcome: "pending" | "resolved" | "rejected" = "pending";
     const installing = manager.installAndPersist("npm:never-finishes").then(
@@ -156,7 +156,7 @@ describe("PiDeck package-manager cancellation patch", () => {
   }, 10_000);
 
   it("settles a successful captured npm query with inherited stdio", async () => {
-    const pidFile = join(tmpdir(), `pideck-captured-stdio-${process.pid}-${Date.now()}`);
+    const pidFile = join(tmpdir(), `piabyss-captured-stdio-${process.pid}-${Date.now()}`);
     const { manager, agentDir } = createManager(
       inheritedPipeCommand(pidFile, JSON.stringify("1.1.0")),
     );
@@ -196,7 +196,7 @@ describe("PiDeck package-manager cancellation patch", () => {
   }, 10_000);
 
   it("kills the package install child and settles the mutation", async () => {
-    const pidFile = join(tmpdir(), `pideck-cancel-inherit-${process.pid}-${Date.now()}`);
+    const pidFile = join(tmpdir(), `piabyss-cancel-inherit-${process.pid}-${Date.now()}`);
     const { manager } = createManager(longRunningCommand(pidFile));
     const controller = new AbortController();
     manager.setOperationSignal(controller.signal);
@@ -214,7 +214,7 @@ describe("PiDeck package-manager cancellation patch", () => {
   }, 20_000);
 
   it("kills the captured-stdio child too", async () => {
-    const pidFile = join(tmpdir(), `pideck-cancel-capture-${process.pid}-${Date.now()}`);
+    const pidFile = join(tmpdir(), `piabyss-cancel-capture-${process.pid}-${Date.now()}`);
     const { manager, agentDir } = createManager(longRunningCommand(pidFile));
 
     // The update check short-circuits unless the package is already installed,
@@ -249,7 +249,7 @@ describe("PiDeck package-manager cancellation patch", () => {
   }, 20_000);
 
   it("accepts a new operation after an aborted one", async () => {
-    const firstPidFile = join(tmpdir(), `pideck-cancel-reuse-a-${process.pid}-${Date.now()}`);
+    const firstPidFile = join(tmpdir(), `piabyss-cancel-reuse-a-${process.pid}-${Date.now()}`);
     const { manager } = createManager(longRunningCommand(firstPidFile));
     const first = new AbortController();
     manager.setOperationSignal(first.signal);
@@ -264,7 +264,7 @@ describe("PiDeck package-manager cancellation patch", () => {
     // A stale signal must not leak into the next operation: without clearing
     // it the manager would refuse every later spawn.
     manager.setOperationSignal(undefined);
-    const secondPidFile = join(tmpdir(), `pideck-cancel-reuse-b-${process.pid}-${Date.now()}`);
+    const secondPidFile = join(tmpdir(), `piabyss-cancel-reuse-b-${process.pid}-${Date.now()}`);
     const { manager: reused } = createManager(longRunningCommand(secondPidFile));
     const second = new AbortController();
     reused.setOperationSignal(second.signal);
@@ -293,11 +293,11 @@ describe("PiDeck package-manager cancellation patch", () => {
 
   it("includes npm stderr when an install command fails", async () => {
     const marker = "registry request failed: certificate rejected";
-    process.env.PIDECK_TEST_NPM_STDERR = marker;
+    process.env.PIABYSS_TEST_NPM_STDERR = marker;
     const { manager } = createManager([
       process.execPath,
       "-e",
-      'process.stderr.write(process.env.PIDECK_TEST_NPM_STDERR ?? ""); process.exit(7);',
+      'process.stderr.write(process.env.PIABYSS_TEST_NPM_STDERR ?? ""); process.exit(7);',
       "--",
     ]);
 

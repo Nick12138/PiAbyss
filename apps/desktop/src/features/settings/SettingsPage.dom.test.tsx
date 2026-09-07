@@ -242,12 +242,12 @@ describe("SettingsPage navigation guard", () => {
     const user = userEvent.setup();
     render(<SettingsPage initialSection="appearance" />);
     const themeStyle = screen.getByRole("group", { name: "Theme style" });
-    const pideck = within(themeStyle).getByRole("button", { name: "PiDeck" });
+    const piabyss = within(themeStyle).getByRole("button", { name: "PiAbyss" });
     const vercel = within(themeStyle).getByRole("button", { name: "Vercel" });
     const apple = within(themeStyle).getByRole("button", { name: "Apple" });
 
-    expect(pideck).toHaveAttribute("aria-pressed", "true");
-    expect(pideck).toHaveAttribute("data-state", "active");
+    expect(piabyss).toHaveAttribute("aria-pressed", "true");
+    expect(piabyss).toHaveAttribute("data-state", "active");
     expect(vercel).toHaveAttribute("aria-pressed", "false");
     expect(vercel).toHaveAttribute("data-state", "inactive");
     expect(apple).toHaveAttribute("aria-pressed", "false");
@@ -258,7 +258,7 @@ describe("SettingsPage navigation guard", () => {
     expect(document.documentElement.dataset.themeFamily).toBe("vercel");
     expect(vercel).toHaveAttribute("aria-pressed", "true");
     expect(vercel).toHaveAttribute("data-state", "active");
-    expect(pideck).toHaveAttribute("data-state", "inactive");
+    expect(piabyss).toHaveAttribute("data-state", "inactive");
 
     await user.click(apple);
     await waitFor(() => expect(useAppStore.getState().desktopSettings?.themeFamily).toBe("apple"));
@@ -310,7 +310,7 @@ describe("SettingsPage navigation guard", () => {
 
     expect(
       screen.getByRole("heading", {
-        name: "Customize commands active while PiDeck is focused",
+        name: "Customize commands active while PiAbyss is focused",
       }),
     ).toBeInTheDocument();
     expect(screen.getByText("New session")).toBeInTheDocument();

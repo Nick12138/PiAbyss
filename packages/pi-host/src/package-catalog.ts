@@ -3,7 +3,7 @@ import {
   type HostError,
   type PackageCatalog,
   type PackageCatalogItem,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 
 /**
  * pi.dev has no public JSON API yet ("API routes are reserved for future

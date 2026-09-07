@@ -4,7 +4,7 @@ import type {
   HostStatusSnapshot,
   SessionSnapshot,
   WorkspaceSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
 import { abortCompaction, requestCompact, setAutoCompaction } from "./compaction-actions";

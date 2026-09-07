@@ -27,7 +27,7 @@ describe("WorkspaceSwitchTransition", () => {
         <p>conversation</p>
       </WorkspaceSwitchTransition>,
     );
-    act(() => useAppStore.getState().setWorkspaceSwitchTarget("/Users/me/Projects/PiDeck"));
+    act(() => useAppStore.getState().setWorkspaceSwitchTarget("/Users/me/Projects/PiAbyss"));
 
     // Within the grace period the stale content stays visible and interactive —
     // the skeleton is mounted but stays transparent, so a fast switch never flashes.
@@ -47,13 +47,13 @@ describe("WorkspaceSwitchTransition", () => {
         <p>conversation</p>
       </WorkspaceSwitchTransition>,
     );
-    act(() => useAppStore.getState().setWorkspaceSwitchTarget("/Users/me/Projects/PiDeck"));
+    act(() => useAppStore.getState().setWorkspaceSwitchTarget("/Users/me/Projects/PiAbyss"));
 
     // Once the grace period elapses the skeleton fades in and the content hides.
     await waitFor(() => {
       expect(screen.getByText("conversation").closest("[aria-hidden]")).not.toBeNull();
     });
-    expect(screen.getByRole("status")).toHaveTextContent("Opening PiDeck…");
+    expect(screen.getByRole("status")).toHaveTextContent("Opening PiAbyss…");
   });
 
   it("removes the skeleton after the switch settles", async () => {

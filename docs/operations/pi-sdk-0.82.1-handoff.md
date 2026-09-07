@@ -8,7 +8,7 @@
 
 ## 1. 继续点
 
-- 仓库：`https://github.com/Skitre/PiDeck.git`
+- 仓库：`https://github.com/Skitre/PiAbyss.git`
 - 分支：`main`，后续直接在 `main` 开发，不新建分支。
 - 当前提交：`e3faa58046fe162acaa006878a39a5c004cd1c2f`
 - 当前提交说明：`build(release): derive sdk evidence from host manifest`
@@ -113,7 +113,7 @@ pre-pi-sdk-0.82.1-8859c1e414c
 
 最新 Windows 完整 gate：
 
-- Run：[30196221459](https://github.com/Skitre/PiDeck/actions/runs/30196221459)
+- Run：[30196221459](https://github.com/Skitre/PiAbyss/actions/runs/30196221459)
 - Node 22 minimum lane：通过。
 - Node 24 source/P0/staging lane：通过。
 - staged SDK family：`pi-ai`、`pi-agent-core`、`pi-coding-agent`、`pi-tui` 均为 `0.82.1`。
@@ -173,7 +173,7 @@ pnpm why @earendil-works/pi-coding-agent
 
 ### 6.2 持久化 CredentialStore
 
-新增 PiDeck 自有实现和测试，建议文件：
+新增 PiAbyss 自有实现和测试，建议文件：
 
 ```text
 packages/pi-host/src/credential-store.ts
@@ -200,7 +200,7 @@ delete(providerId)
 - 写临时文件、flush/fsync、atomic rename，失败时清理临时文件并保留原文件。
 - malformed JSON、lock timeout、rename/permission failure 使用 typed errors。
 - 日志不得包含 key、access token、refresh token 或完整 credential object。
-- PiDeck 内部另设 `snapshot()` / `restore()`；不要把事务辅助能力混入 SDK contract。
+- PiAbyss 内部另设 `snapshot()` / `restore()`；不要把事务辅助能力混入 SDK contract。
 
 必须覆盖单进程并发、两个独立进程并发、写入中断、权限和 secret-log 测试。
 
@@ -217,7 +217,7 @@ package 配置
 Session header/metadata
 ```
 
-建议备份目录为 `~/.pi/agent/pideck/migration-backups/pideck-sdk-0.80.7-to-0.82.1/<timestamp>/`。PiDeck 自有的 provider journal、Model 配置备份和 Session 归档也分别放在同级命名空间的 `provider-journal/`、`model-backups/` 和 `session-archive/` 下；原生的 `models.json` 与活动 Session 位置不变。manifest 不得包含 credential 内容。只有 runtime create、local refresh、旧 Session open/continue/save、provider snapshot 和正常 shutdown 都成功后，才能记录 migration completed。
+建议备份目录为 `~/.pi/agent/piabyss/migration-backups/piabyss-sdk-0.80.7-to-0.82.1/<timestamp>/`。PiAbyss 自有的 provider journal、Model 配置备份和 Session 归档也分别放在同级命名空间的 `provider-journal/`、`model-backups/` 和 `session-archive/` 下；原生的 `models.json` 与活动 Session 位置不变。manifest 不得包含 credential 内容。只有 runtime create、local refresh、旧 Session open/continue/save、provider snapshot 和正常 shutdown 都成功后，才能记录 migration completed。
 
 ### 6.4 Host-owned ModelRuntime
 
@@ -391,7 +391,7 @@ staged evidence 必须报告四个 Pi 包均为 `0.82.1`、新的 patch SHA 和�
 PR-3 稳定后再做以下兼容扩展。全部六项已完成：本地 pi-host 400 / desktop 326 用例全绿，两包 `tsc --noEmit` 干净，Windows gate run `30197892965`（`c64ccf4`）verify-p0 与 verify-node-minimum 一次通过——跨进程 oauth 竞争与真实 Host A→B→A 集成用例均在两条 lane 上验证。
 
 - ~~评估桌面端是否需要展示 `summarization_retry_*` 三事件~~ —— 已接入。白名单放行审阅字段，`transcript-reducer.ts` 映射到既有 `isRetrying`；branch-summary 退避期间桌面端从此有真实状态信号，compaction 期间表头仍优先显示 "Compacting"。详见 api-notes §9。
-- ~~`bash_execution_update` 仅在实际使用 direct RPC bash 时接入~~ —— 决定不接入：唯一发射点 `AgentSession.executeBash()` 在 PiDeck 无调用方；`event-normalize.test.ts` 以显式回归测试把它钉在 `{ type: "unknown" }`。
+- ~~`bash_execution_update` 仅在实际使用 direct RPC bash 时接入~~ —— 决定不接入：唯一发射点 `AgentSession.executeBash()` 在 PiAbyss 无调用方；`event-normalize.test.ts` 以显式回归测试把它钉在 `{ type: "unknown" }`。
 - ~~保持 `event-normalize.ts` 白名单~~ —— 保持；新事件亦经白名单进入，未知事件仍规约为 `{ type: "unknown" }`。
 - ~~覆盖 API key、OAuth refresh、environment/header-only auth、custom headers/models、compaction/branch auth~~ —— 新增三组测试：
   - `credential-store.test.ts` + `credential-store-process.test.ts`：oauth 凭证 read() 原样返回、SDK `resolveStoredOAuth` 形状的过期刷新持久化、锁下二次校验跳过刷新、刷新回调抛错不损坏存储；跨进程双进程竞争刷新**恰好轮换一次**（marker 计数 + 最终 token 归属胜者），对应 §11「OAuth refresh 竞争写或跨进程更新丢失」。
@@ -484,7 +484,7 @@ frozen lock 无法重建同一依赖树
 
 若 0.82.1 已写入用户目录：
 
-1. 关闭 PiDeck 和 Pi CLI，确认无残留 Host/Node/npm/git 进程。
+1. 关闭 PiAbyss 和 Pi CLI，确认无残留 Host/Node/npm/git 进程。
 2. 保存当前 0.82.1 数据副本用于诊断。
 3. 恢复迁移前 auth/models/settings/package/session metadata 备份。
 4. 根据实测结果处理仅属于新 runtime 的 `models-store.json`，不要假设 0.80.7 一定忽略它。
@@ -496,8 +496,8 @@ frozen lock 无法重建同一依赖树
 macOS 建议使用项目的精确 Node 文件：
 
 ```bash
-git clone https://github.com/Skitre/PiDeck.git
-cd PiDeck
+git clone https://github.com/Skitre/PiAbyss.git
+cd PiAbyss
 
 brew install fnm
 eval "$(fnm env --use-on-cd --shell zsh)"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SessionSnapshot } from "@pideck/protocol";
+import type { SessionSnapshot } from "@piabyss/protocol";
 import { extractLatestTodos } from "./todo-model";
 
 function session(messages: SessionSnapshot["messages"]): SessionSnapshot {

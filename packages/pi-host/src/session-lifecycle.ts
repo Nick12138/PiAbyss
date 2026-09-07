@@ -13,7 +13,7 @@ import {
   type HostError,
   type HostIdentity,
   type SessionSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { logger } from "./logger.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
 import { getQueueSnapshot } from "./queue-state.js";
@@ -455,7 +455,7 @@ async function createSessionResourceLoader(
   });
   // Session create/open must not reach the network. Without this the SDK would
   // npm-install or git-clone any configured package missing from disk, in a
-  // package manager PiDeck cannot cancel.
+  // package manager PiAbyss cannot cancel.
   await withoutImplicitPackageInstall(() => resourceLoader.reload());
   return resourceLoader;
 }
@@ -875,7 +875,7 @@ export async function openSession(
       return await factory.promoteBackgroundRuntime(g, retained);
     }
 
-    // Ensure the session belongs to the active workspace. Use PiDeck's
+    // Ensure the session belongs to the active workspace. Use PiAbyss's
     // configured storage root and normalized path identity: forked paths can
     // use different separators than the SDK listing on Windows.
     const { activeDir } = sessionStorageDirs(factory, g);

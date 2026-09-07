@@ -1,6 +1,6 @@
-import type { SessionRuntimeState, SessionSnapshot, SessionSummary } from "@pideck/protocol";
+import type { SessionRuntimeState, SessionSnapshot, SessionSummary } from "@piabyss/protocol";
 
-export type { SessionRuntimeState } from "@pideck/protocol";
+export type { SessionRuntimeState } from "@piabyss/protocol";
 
 export type SessionCatalogEntry = SessionSummary & {
   runtimeState: SessionRuntimeState;

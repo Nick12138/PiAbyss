@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PackageCatalogItem, PackageRecord, ResourceRecord } from "@pideck/protocol";
+import type { PackageCatalogItem, PackageRecord, ResourceRecord } from "@piabyss/protocol";
 import {
   filterCatalogItems,
   catalogPageRange,

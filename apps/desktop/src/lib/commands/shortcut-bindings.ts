@@ -1,4 +1,4 @@
-import type { DesktopSettings } from "@pideck/protocol";
+import type { DesktopSettings } from "@piabyss/protocol";
 import type { AppCommand } from "./registry";
 
 export type ShortcutOverrides = NonNullable<DesktopSettings["shortcutOverrides"]>;

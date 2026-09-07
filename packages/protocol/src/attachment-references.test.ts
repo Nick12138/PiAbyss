@@ -65,7 +65,7 @@ describe("attachment reference blocks", () => {
   });
 
   it("ignores malformed and non-UUID reference data", () => {
-    const text = '<pideck-attachments version="1">[{"id":"bad"}]</pideck-attachments>';
+    const text = '<piabyss-attachments version="1">[{"id":"bad"}]</piabyss-attachments>';
     expect(parseAttachmentReferences(text)).toEqual([]);
   });
 
@@ -89,8 +89,8 @@ describe("attachment reference blocks", () => {
     const next = preserveAttachmentReferenceBlocks(original, "New");
 
     expect(stripAttachmentReferenceBlocks(next)).toBe("New");
-    expect(next.indexOf("pideck-attachment-guide")).toBeLessThan(
-      next.indexOf("pideck-attachments"),
+    expect(next.indexOf("piabyss-attachment-guide")).toBeLessThan(
+      next.indexOf("piabyss-attachments"),
     );
     expect(next).toContain("wpscli first");
     expect(parseAttachmentReferences(next)).toHaveLength(1);

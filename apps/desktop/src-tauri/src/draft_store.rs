@@ -98,11 +98,11 @@ enum ParsedDraftFile {
 
 impl DraftStore {
     pub fn load(app: &AppHandle) -> Self {
-        let dir = match std::env::var_os("PIDECK_CONFIG_DIR") {
+        let dir = match std::env::var_os("PIABYSS_CONFIG_DIR") {
             Some(value) => {
                 let path = PathBuf::from(value);
                 if !path.is_absolute() {
-                    return Self::disabled("PIDECK_CONFIG_DIR must be an absolute path".into());
+                    return Self::disabled("PIABYSS_CONFIG_DIR must be an absolute path".into());
                 }
                 path
             }
@@ -164,7 +164,7 @@ impl DraftStore {
                 drafts: Vec::new(),
                 read_only: true,
                 warning: Some(format!(
-                    "Drafts were created by a newer PiDeck schema ({version}) and were left unchanged"
+                    "Drafts were created by a newer PiAbyss schema ({version}) and were left unchanged"
                 )),
                 recovered_from: None,
             }),
@@ -485,7 +485,7 @@ mod tests {
     use super::*;
 
     fn test_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("pideck-drafts-{name}-{}", Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("piabyss-drafts-{name}-{}", Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
         dir
     }

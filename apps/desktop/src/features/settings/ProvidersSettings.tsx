@@ -24,8 +24,8 @@ import type {
   ProviderCompatibilityDraft,
   ProviderDraft,
   ProviderSnapshot,
-} from "@pideck/protocol";
-import { THINKING_LEVELS } from "@pideck/protocol";
+} from "@piabyss/protocol";
+import { THINKING_LEVELS } from "@piabyss/protocol";
 import { hostClient, isHostEpochError } from "../../lib/bridge/host-client";
 import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import { hostContext } from "../../lib/bridge/host-context";

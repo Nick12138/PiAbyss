@@ -88,7 +88,7 @@ class MarkdownRenderBoundary extends Component<
   componentDidCatch(error: Error): void {
     // Syntax highlighting is optional; keep the transcript usable when its
     // lazy chunk is stale or unavailable during a Vite update.
-    console.warn("PiDeck Markdown enhancement failed; using plain text", error);
+    console.warn("PiAbyss Markdown enhancement failed; using plain text", error);
   }
 
   render() {
@@ -376,7 +376,7 @@ export const MarkdownMessage = memo(function MarkdownMessage({
   const t = useT();
   const reactMessageId = useId();
   const footnotePrefix = useMemo(
-    () => `pideck-md-${reactMessageId.replace(/[^A-Za-z0-9_-]/g, "") || "message"}-`,
+    () => `piabyss-md-${reactMessageId.replace(/[^A-Za-z0-9_-]/g, "") || "message"}-`,
     [reactMessageId],
   );
   const remarkRehypeOptions = useMemo(() => ({ clobberPrefix: footnotePrefix }), [footnotePrefix]);
@@ -402,9 +402,9 @@ export const MarkdownMessage = memo(function MarkdownMessage({
   const openMermaidLink = useCallback(
     (target: EventTarget | null, activation: ChatLinkActivation = {}) => {
       if (!(target instanceof Element)) return false;
-      const anchor = target.closest<Element>("[data-pideck-mermaid-href]");
+      const anchor = target.closest<Element>("[data-piabyss-mermaid-href]");
       if (!anchor || !anchor.closest('[data-streamdown="mermaid"]')) return false;
-      const href = anchor.getAttribute("data-pideck-mermaid-href");
+      const href = anchor.getAttribute("data-piabyss-mermaid-href");
       if (!href || !isSafeExternalUrl(href)) return true;
       openChatLink(href, activation);
       return true;

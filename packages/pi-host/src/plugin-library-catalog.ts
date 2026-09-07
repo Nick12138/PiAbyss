@@ -3,10 +3,10 @@ import {
   type HostError,
   type PluginLibraryCatalog,
   type PluginLibraryEntry,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 
 /**
- * PiDeck's curated plugin library is data-driven: the registry repository
+ * PiAbyss's curated plugin library is data-driven: the registry repository
  * (github.com/Nick12138/my-pi-plugins) publishes a machine-readable
  * `plugins.json` at its root, and this module fetches, validates, and caches
  * it. The renderer cannot fetch it itself — the WebView CSP only allows
@@ -154,7 +154,7 @@ export async function getPluginLibraryCatalog(
   }
   const fetchImpl: CatalogFetcher = args.fetchImpl ?? fetch;
   const registryUrl = args.refresh
-    ? `${PLUGIN_LIBRARY_REGISTRY_URL}?_pideck_refresh=${encodeURIComponent(String(nowMs))}`
+    ? `${PLUGIN_LIBRARY_REGISTRY_URL}?_piabyss_refresh=${encodeURIComponent(String(nowMs))}`
     : PLUGIN_LIBRARY_REGISTRY_URL;
   let text: string;
   try {

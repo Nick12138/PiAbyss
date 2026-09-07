@@ -105,7 +105,7 @@ describe("getPluginLibraryCatalog", () => {
     await getPluginLibraryCatalog({ fetchImpl, refresh: true, nowMs: 1_001 });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(fetchImpl.mock.calls[1]?.[0]).toBe(
-      `${PLUGIN_LIBRARY_REGISTRY_URL}?_pideck_refresh=1001`,
+      `${PLUGIN_LIBRARY_REGISTRY_URL}?_piabyss_refresh=1001`,
     );
     expect(fetchImpl.mock.calls[1]?.[1]).toEqual(
       expect.objectContaining({

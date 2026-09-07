@@ -2,7 +2,7 @@ import {
   DESKTOP_INTERFACE_DENSITIES,
   type DesktopInterfaceDensity,
   type DesktopSettings,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 
 const DEFAULT_INTERFACE_DENSITY: DesktopInterfaceDensity = "standard";
 const DEFAULT_CONVERSATION_FONT_SIZE = 15;

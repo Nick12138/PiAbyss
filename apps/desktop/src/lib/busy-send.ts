@@ -1,4 +1,4 @@
-import type { BusySendBehavior } from "@pideck/protocol";
+import type { BusySendBehavior } from "@piabyss/protocol";
 
 export function busySendMethod(
   behavior: BusySendBehavior | undefined,

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { WorkspaceFilePreview, WorkspaceTextFile } from "@pideck/protocol";
+import type { WorkspaceFilePreview, WorkspaceTextFile } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { workspaceContext } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";

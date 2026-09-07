@@ -118,7 +118,7 @@ if (!existsSync(hostMain)) {
   if (
     (currentMain.includes("node_modules.zip") && currentMain.includes("host-main.js")) ||
     currentMain.includes("pi-host-bootstrap-runtime.mjs") ||
-    currentMain.includes("PIDECK_HOST_CACHE_DIR")
+    currentMain.includes("PIABYSS_HOST_CACHE_DIR")
   ) {
     die("host-main.js missing but main.js is already bootstrap — re-run package:sidecar");
   }
@@ -199,9 +199,9 @@ import { fileURLToPath } from "node:url";
 import { runPiHostBootstrap } from "./pi-host-bootstrap-runtime.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const cacheRoot = process.env.PIDECK_HOST_CACHE_DIR;
+const cacheRoot = process.env.PIABYSS_HOST_CACHE_DIR;
 if (!cacheRoot) {
-  console.error("[pi-host bootstrap] PIDECK_HOST_CACHE_DIR is required");
+  console.error("[pi-host bootstrap] PIABYSS_HOST_CACHE_DIR is required");
   process.exit(1);
 }
 await runPiHostBootstrap({ resourceDir: __dirname, cacheRoot });

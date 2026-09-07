@@ -53,7 +53,7 @@ function run(cmd, args) {
 }
 
 function verifiedSourceBuildCommit() {
-  const expected = process.env.PIDECK_VERIFIED_SOURCE_COMMIT?.trim();
+  const expected = process.env.PIABYSS_VERIFIED_SOURCE_COMMIT?.trim();
   if (!expected) return null;
   const head = spawnSync("git", ["rev-parse", "HEAD"], {
     cwd: root,
@@ -77,7 +77,7 @@ function verifiedSourceBuildCommit() {
     !requiredBuildOutputs.every(existsSync)
   ) {
     throw new Error(
-      "PIDECK_VERIFIED_SOURCE_COMMIT does not match a clean HEAD with required build outputs",
+      "PIABYSS_VERIFIED_SOURCE_COMMIT does not match a clean HEAD with required build outputs",
     );
   }
   return expected;
@@ -225,14 +225,14 @@ function validatePackagedRuntime(releaseDir, expectedResourceManifest) {
     const main = readFileSync(mainPath, "utf8");
     if (
       !main.includes("pi-host-bootstrap-runtime.mjs") ||
-      !main.includes("PIDECK_HOST_CACHE_DIR")
+      !main.includes("PIABYSS_HOST_CACHE_DIR")
     ) {
       errors.push("packaged pi-host/main.js is not the writable-cache bootstrap");
     }
   }
   if (existsSync(hostPackagePath)) {
     const name = JSON.parse(readFileSync(hostPackagePath, "utf8")).name;
-    if (name !== "pideck-host-release") {
+    if (name !== "piabyss-host-release") {
       errors.push(`packaged pi-host/package.json identity is ${name ?? "missing"}`);
     }
   }
@@ -309,7 +309,7 @@ for (const stalePath of [
   join(bundleRoot, "resources", "pi-host"),
   join(bundleRoot, "resources", "node"),
   join(bundleRoot, "resources", "git"),
-  join(bundleRoot, "pideck.exe"),
+  join(bundleRoot, "piabyss.exe"),
   join(bundleRoot, "bundle", "nsis"),
 ]) {
   rmSync(stalePath, { recursive: true, force: true });
@@ -331,13 +331,13 @@ const tauriStatus = timedStage("build Tauri NSIS candidate", () => {
   }
   const r = spawnSync(
     "pnpm",
-    ["--filter", "@pideck/desktop", "exec", "tauri", "build", "--bundles", "nsis"],
+    ["--filter", "@piabyss/desktop", "exec", "tauri", "build", "--bundles", "nsis"],
     { cwd: root, stdio: "inherit", shell: true, env: process.env },
   );
   return r.status ?? 1;
 });
 
-const desktopExecutable = join(bundleRoot, "pideck.exe");
+const desktopExecutable = join(bundleRoot, "piabyss.exe");
 const installer = timedStage("locate primary bundle output", () =>
   findPrimaryInstaller(bundleRoot),
 );

@@ -17,7 +17,7 @@ apps/desktop/dist/
 coverage/
 *.tsbuildinfo
 .vite/
-.pideck-tmp/
+.piabyss-tmp/
 .runtime-cache/
 
 artifacts/

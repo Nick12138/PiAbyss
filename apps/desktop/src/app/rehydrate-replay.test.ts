@@ -5,7 +5,7 @@ import type {
   RehydrateSnapshot,
   SessionSnapshot,
   WorkspaceSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { hostClient } from "../lib/bridge/host-client";
 import { RecoveryEventBuffer } from "../lib/bridge/rehydrate";
 import { subscribeValidatedHostEvent } from "../lib/bridge/validated-host-events";

@@ -1,4 +1,4 @@
-import type { HostEventEnvelope } from "@pideck/protocol";
+import type { HostEventEnvelope } from "@piabyss/protocol";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { tCurrent } from "./i18n/use-t";
 

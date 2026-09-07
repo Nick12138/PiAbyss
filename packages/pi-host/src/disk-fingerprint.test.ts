@@ -18,7 +18,7 @@ describe("package disk fingerprint", () => {
     agentDir: string;
     packagesDir: string;
   } {
-    root = mkdtempSync(join(tmpdir(), "pideck-fingerprint-"));
+    root = mkdtempSync(join(tmpdir(), "piabyss-fingerprint-"));
     const agentDir = join(root, "agent");
     const workspace = join(root, "workspace");
     const packagesDir = join(agentDir, "packages");

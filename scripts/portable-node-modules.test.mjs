@@ -32,7 +32,7 @@ function linkDirectory(target, path) {
 }
 
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), "pideck-portable-nm-"));
+  const root = mkdtempSync(join(tmpdir(), "piabyss-portable-nm-"));
   const nodeModules = join(root, "node_modules");
   const left = join(nodeModules, ".pnpm", "left@1.0.0", "node_modules", "left");
   const right = join(nodeModules, ".pnpm", "right@1.0.0", "node_modules", "right");
@@ -148,7 +148,7 @@ test("restore rejects manifest path traversal before creating links", (t) => {
 });
 
 test("graph resolution cannot escape into an ancestor workspace node_modules", (t) => {
-  const root = mkdtempSync(join(tmpdir(), "pideck-bounded-graph-"));
+  const root = mkdtempSync(join(tmpdir(), "piabyss-bounded-graph-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const hostNodeModules = join(root, "apps", "host", "node_modules");
   writePackage(join(hostNodeModules, "consumer"), {

@@ -15,7 +15,7 @@ import type {
   AgentSession,
   ExtensionCommandContextActions,
 } from "@earendil-works/pi-coding-agent";
-import type { HostError } from "@pideck/protocol";
+import type { HostError } from "@piabyss/protocol";
 import {
   createSession,
   openSession,

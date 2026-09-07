@@ -11,7 +11,7 @@ import type {
   PackageSnapshot,
   ResourceRecord,
   WorkspaceSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
 import { NotificationCenter } from "../../components/NotificationCenter";

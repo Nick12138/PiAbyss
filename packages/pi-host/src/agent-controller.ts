@@ -12,7 +12,7 @@ import {
   type ModelSummary,
   type QueueSnapshot,
   type SerializableImage,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import type { AgentOperationLock } from "./locks.js";
 import type { MethodHandler, PiHostServer } from "./server.js";
 import type { BackgroundSessionRuntime, WorkspaceGraphFactory } from "./workspace-graph-factory.js";

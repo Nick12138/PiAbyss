@@ -1,4 +1,4 @@
-import { createHostError, type GitStatusSnapshot, type HostError } from "@pideck/protocol";
+import { createHostError, type GitStatusSnapshot, type HostError } from "@piabyss/protocol";
 import {
   completeSimple,
   type AssistantMessage,

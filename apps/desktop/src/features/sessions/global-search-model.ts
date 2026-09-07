@@ -1,4 +1,4 @@
-import type { SessionSearchResultItem } from "@pideck/protocol";
+import type { SessionSearchResultItem } from "@piabyss/protocol";
 
 export type HighlightSegment = { text: string; matched: boolean };
 

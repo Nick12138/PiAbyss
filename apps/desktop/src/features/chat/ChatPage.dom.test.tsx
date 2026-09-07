@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import type { SessionSnapshot } from "@pideck/protocol";
+import type { SessionSnapshot } from "@piabyss/protocol";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useAppStore } from "../../lib/stores/app-store";
 import {

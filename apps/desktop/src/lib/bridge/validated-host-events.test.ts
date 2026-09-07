@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { HostEventEnvelope } from "@pideck/protocol";
+import type { HostEventEnvelope } from "@piabyss/protocol";
 import { publishValidatedHostEvent, subscribeValidatedHostEvent } from "./validated-host-events";
 
 const HOST_ID = "11111111-1111-4111-8111-111111111111";

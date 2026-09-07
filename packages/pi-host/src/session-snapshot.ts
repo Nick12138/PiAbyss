@@ -6,8 +6,8 @@ import type {
   SerializableToolInfo,
   SessionSnapshot,
   ToolSnapshot,
-} from "@pideck/protocol";
-import { toJsonValue } from "@pideck/protocol";
+} from "@piabyss/protocol";
+import { toJsonValue } from "@piabyss/protocol";
 import { buildContextUsageBreakdown } from "./context-usage-breakdown.js";
 import { renderExtensionMessageEntries } from "./extension-message-renderer.js";
 import { getQueueSnapshot } from "./queue-state.js";

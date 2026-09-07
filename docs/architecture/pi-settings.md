@@ -2,7 +2,7 @@
 
 Pi stores its settings as plain JSON, and hand-editing is an official mechanism:
 the SDK preserves keys it doesn't know about (its own saves are scoped,
-incremental writes under a file lock), and PiDeck's Settings → General →
+incremental writes under a file lock), and PiAbyss's Settings → General →
 **More settings** block reveals the file for exactly this workflow.
 
 ## Locations and precedence
@@ -12,11 +12,11 @@ incremental writes under a file lock), and PiDeck's Settings → General →
 | Global | `<agentDir>/settings.json` | `<agentDir>` defaults to `~/.pi/agent`, overridable via `PI_CODING_AGENT_DIR` |
 | Project | `<workspace>/.pi/settings.json` | Only loaded when the project is trusted |
 
-Project settings deep-merge over global settings (project wins). PiDeck's More
-settings block opens the **global** file; PiDeck currently hardcodes
+Project settings deep-merge over global settings (project wins). PiAbyss's More
+settings block opens the **global** file; PiAbyss currently hardcodes
 `projectTrusted: true`, so a project file is always read when present.
 
-## What takes effect in PiDeck
+## What takes effect in PiAbyss
 
 Settings are read from disk only when the Host creates its `SettingsManager`
 (Host start / workspace open), so **restart the Host after editing** —
@@ -39,7 +39,7 @@ Applied after a Host restart:
 - `branchSummary.reserveTokens`, `branchSummary.skipPrompt`
 - `websocketConnectTimeoutMs`
 
-Never applied in PiDeck (writing them changes nothing):
+Never applied in PiAbyss (writing them changes nothing):
 
 - `sessionDir` — resolved at SessionManager construction; the Host always uses
   the default per-workspace session directories

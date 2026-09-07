@@ -1,6 +1,6 @@
 ---
 name: test-skill
-description: Harmless test skill for PiDeck fixtures
+description: Harmless test skill for PiAbyss fixtures
 ---
 
 # Test Skill

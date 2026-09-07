@@ -95,7 +95,7 @@ describe("Workspace lifecycle", () => {
   });
 
   it("canonicalizes an existing Workspace path", () => {
-    const root = mkdtempSync(join(tmpdir(), "pideck-workspace-lifecycle-"));
+    const root = mkdtempSync(join(tmpdir(), "piabyss-workspace-lifecycle-"));
     try {
       expect(lifecycle().canonicalizeCwd(root)).toBe(realpathSync(root));
     } finally {
@@ -104,7 +104,7 @@ describe("Workspace lifecycle", () => {
   });
 
   it("rejects a missing Workspace path without mutating state", () => {
-    const root = mkdtempSync(join(tmpdir(), "pideck-workspace-lifecycle-"));
+    const root = mkdtempSync(join(tmpdir(), "piabyss-workspace-lifecycle-"));
     const missing = join(root, "missing");
     try {
       let thrown: unknown;
@@ -122,7 +122,7 @@ describe("Workspace lifecycle", () => {
   });
 
   it("rejects an existing file as a Workspace", () => {
-    const root = mkdtempSync(join(tmpdir(), "pideck-workspace-lifecycle-"));
+    const root = mkdtempSync(join(tmpdir(), "piabyss-workspace-lifecycle-"));
     const file = join(root, "workspace.txt");
     writeFileSync(file, "not a directory");
     try {
@@ -135,7 +135,7 @@ describe("Workspace lifecycle", () => {
   });
 
   it("accepts a symlink to a Workspace directory", () => {
-    const root = mkdtempSync(join(tmpdir(), "pideck-workspace-lifecycle-"));
+    const root = mkdtempSync(join(tmpdir(), "piabyss-workspace-lifecycle-"));
     const target = join(root, "target");
     const link = join(root, "link");
     try {

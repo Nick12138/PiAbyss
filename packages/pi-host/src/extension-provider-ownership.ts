@@ -3,9 +3,9 @@
  *
  * The 0.82.1 runtime keeps extension providers in one process-wide pair of
  * maps (`extensionProviders` / `nativeExtensionProviders`) keyed by bare
- * provider id, and nothing in the SDK or PiDeck ever unregisters them.
+ * provider id, and nothing in the SDK or PiAbyss ever unregisters them.
  * Upstream that is sound — one Pi CLI process serves one workspace for its
- * whole lifetime. The PiDeck Host serves many workspaces in sequence, so a
+ * whole lifetime. The PiAbyss Host serves many workspaces in sequence, so a
  * provider registered by a workspace extension (config, baseUrl, apiKey and
  * all) would otherwise stay visible and selectable in every workspace the
  * user visits afterwards. `extension-provider-isolation.test.ts` demonstrates
@@ -78,7 +78,7 @@ export class ExtensionProviderOwnership {
       getRegisteredProviderConfig: runtime.getRegisteredProviderConfig.bind(runtime),
     };
 
-    // Instance-level shadowing intercepts every path: PiDeck's ModelRegistry
+    // Instance-level shadowing intercepts every path: PiAbyss's ModelRegistry
     // facade, the ExtensionRunner's fallback facade, and AgentSession's
     // providerActions all call methods on this same runtime instance.
     runtime.registerProvider = (providerId, config) => {

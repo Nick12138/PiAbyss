@@ -6,7 +6,7 @@ import type {
   ResourcePreferenceUpdate,
   ResourceRecord,
   ResourceType,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 
 export const PACKAGE_RESOURCE_TYPES: ResourceType[] = ["extension", "skill", "prompt", "theme"];
 

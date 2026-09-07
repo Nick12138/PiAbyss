@@ -1,4 +1,4 @@
-import type { JsonValue, SerializableSessionTreeNode } from "@pideck/protocol";
+import type { JsonValue, SerializableSessionTreeNode } from "@piabyss/protocol";
 
 export type TreeRowKind = "user" | "assistant" | "other";
 

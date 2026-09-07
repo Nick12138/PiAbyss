@@ -21,7 +21,7 @@ import {
   validateEventPayload,
   type HostEventName,
   type HostIdentity,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
   createExtensionInvocationRunner,
@@ -51,7 +51,7 @@ function commandInvocation(invocation: string): ResolvedExtensionCommandInvocati
       invocationName: invocation,
       sourceInfo: {
         path: `/packages/review/extensions/${invocation}.ts`,
-        source: "npm:@pideck/review-extension@1.0.0",
+        source: "npm:@piabyss/review-extension@1.0.0",
         scope: "user",
         origin: "package",
         baseDir: "/packages/review",
@@ -150,7 +150,7 @@ describe("extension-ui-bridge", () => {
       ...Array.from({ length: MAX_EXTENSION_UI_OPTIONS }, (_, index) => `option-${index}`),
     ];
     const pendingSelect = ui.select("t".repeat(MAX_EXTENSION_UI_TITLE_LENGTH + 1), values, {
-      pideck: {
+      piabyss: {
         sourceLabel: "s".repeat(MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH + 1),
         correlationId: "c".repeat(MAX_EXTENSION_UI_CORRELATION_ID_LENGTH + 1),
         optionDetails: [
@@ -222,7 +222,7 @@ describe("extension-ui-bridge", () => {
       getActiveInvocation: () => activeInvocation,
     });
     const pending = ui.confirm("Continue?", "Review changes", {
-      pideck: { sourceLabel: "Untrusted label" },
+      piabyss: { sourceLabel: "Untrusted label" },
     });
     const request = events.find((event) => event.e === "extensionUi.request")!.p as {
       requestId: string;
@@ -243,7 +243,7 @@ describe("extension-ui-bridge", () => {
     await expect(pending).resolves.toBe(false);
   });
 
-  it("normalizes namespaced PiDeck presentation metadata", async () => {
+  it("normalizes namespaced PiAbyss presentation metadata", async () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
     const ui = createExtensionUiContext({
       emit: (e, p) => events.push({ e, p }),
@@ -251,7 +251,7 @@ describe("extension-ui-bridge", () => {
     });
     const pendingSelect = ui.select("Pick", ["keep", "delete"], {
       timeout: 5_000,
-      pideck: {
+      piabyss: {
         presentation: "inline",
         sourceLabel: "\u001b[31mReview\u001b[0m",
         correlationId: "review-1",
@@ -376,7 +376,7 @@ describe("extension-ui-bridge", () => {
     });
 
     const pending = ui.select("Allow command?", ["Allow", "Block"], {
-      pideck: { presentation: "inline", risk: "normal" },
+      piabyss: { presentation: "inline", risk: "normal" },
     } as never);
     const request = events.find((event) => event.e === "extensionUi.request")!.p as {
       requestId: string;
@@ -411,7 +411,7 @@ describe("extension-ui-bridge", () => {
         kind: "tool",
         sourceInfo: {
           path: "/packages/questions/extensions/index.ts",
-          source: "npm:@pideck/questions@1.0.0",
+          source: "npm:@piabyss/questions@1.0.0",
           scope: "user",
           origin: "package",
           baseDir: "/packages/questions",

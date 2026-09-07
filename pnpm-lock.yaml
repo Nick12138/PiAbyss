@@ -14,7 +14,7 @@ overrides:
 
 patchedDependencies:
   '@earendil-works/pi-coding-agent@0.84.2':
-    hash: rlvzsqrixlqhyywngei7efoxjy
+    hash: ftiieijgyxqf7nz4xwkvsbb7vm
     path: patches/@earendil-works__pi-coding-agent@0.84.2.patch
 
 importers:
@@ -81,7 +81,7 @@ importers:
       '@lezer/highlight':
         specifier: ^1.2.3
         version: 1.2.3
-      '@pideck/protocol':
+      '@piabyss/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
       '@streamdown/cjk':
@@ -210,11 +210,11 @@ importers:
         version: 0.84.2(ws@8.21.1)(zod@4.4.3)
       '@earendil-works/pi-coding-agent':
         specifier: 0.84.2
-        version: 0.84.2(patch_hash=rlvzsqrixlqhyywngei7efoxjy)(ws@8.21.1)(zod@4.4.3)
+        version: 0.84.2(patch_hash=ftiieijgyxqf7nz4xwkvsbb7vm)(ws@8.21.1)(zod@4.4.3)
       '@earendil-works/pi-tui':
         specifier: 0.84.2
         version: 0.84.2
-      '@pideck/protocol':
+      '@piabyss/protocol':
         specifier: workspace:*
         version: link:../protocol
       '@sinclair/typebox':
@@ -242,12 +242,12 @@ importers:
         specifier: 3.4.0
         version: 3.4.0
     devDependencies:
-      '@pideck-test/rpiv-ask-user-question-v1':
+      '@piabyss-test/rpiv-ask-user-question-v1':
         specifier: npm:@juicesharp/rpiv-ask-user-question@1.20.0
-        version: '@juicesharp/rpiv-ask-user-question@1.20.0(@earendil-works/pi-coding-agent@0.84.2(patch_hash=rlvzsqrixlqhyywngei7efoxjy)(ws@8.21.1)(zod@4.4.3))(@earendil-works/pi-tui@0.84.2)(typebox@1.3.7)'
-      '@pideck-test/rpiv-ask-user-question-v2':
+        version: '@juicesharp/rpiv-ask-user-question@1.20.0(@earendil-works/pi-coding-agent@0.84.2(patch_hash=ftiieijgyxqf7nz4xwkvsbb7vm)(ws@8.21.1)(zod@4.4.3))(@earendil-works/pi-tui@0.84.2)(typebox@1.3.7)'
+      '@piabyss-test/rpiv-ask-user-question-v2':
         specifier: npm:@juicesharp/rpiv-ask-user-question@2.1.0
-        version: '@juicesharp/rpiv-ask-user-question@2.1.0(@earendil-works/pi-coding-agent@0.84.2(patch_hash=rlvzsqrixlqhyywngei7efoxjy)(ws@8.21.1)(zod@4.4.3))(@earendil-works/pi-tui@0.84.2)'
+        version: '@juicesharp/rpiv-ask-user-question@2.1.0(@earendil-works/pi-coding-agent@0.84.2(patch_hash=ftiieijgyxqf7nz4xwkvsbb7vm)(ws@8.21.1)(zod@4.4.3))(@earendil-works/pi-tui@0.84.2)'
       '@types/node':
         specifier: 24.12.4
         version: 24.12.4
@@ -3841,9 +3841,6 @@ packages:
     resolution: {integrity: sha512-XleUoc9uwGXqjWwXaUTZAmzMcFZ5858QA2vvx1Ur5xIcixXIP+8LnFDgRplU30us6teqdlskFfu+ae4K79Ooew==}
     engines: {node: '>= 0.8.0'}
 
-  typebox@1.1.38:
-    resolution: {integrity: sha512-pZ0aQPmMmXoUvSbeuWf/Hzsc+avNw/Zd6VeE8CFgkVGWyuHPJvqeJJDeJqLve+K70LvjYIoleGcoJHPT17cWoA==}
-
   typebox@1.3.7:
     resolution: {integrity: sha512-meKuifc33Pccx0O6PdIzYMq3Og8zvP4TIi/a+Bw3AEMZMxOD0+RHGQvpglEe6Zdy3wZ8nqn/j95h8LUZLk/6Hg==}
 
@@ -4819,7 +4816,7 @@ snapshots:
     dependencies:
       '@earendil-works/pi-protocol': 0.84.3
 
-  '@earendil-works/pi-coding-agent@0.84.2(patch_hash=rlvzsqrixlqhyywngei7efoxjy)(ws@8.21.1)(zod@4.4.3)':
+  '@earendil-works/pi-coding-agent@0.84.2(patch_hash=ftiieijgyxqf7nz4xwkvsbb7vm)(ws@8.21.1)(zod@4.4.3)':
     dependencies:
       '@earendil-works/pi-agent-core': 0.84.2(ws@8.21.1)(zod@4.4.3)
       '@earendil-works/pi-ai': 0.84.2(ws@8.21.1)(zod@4.4.3)
@@ -5055,19 +5052,19 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@juicesharp/rpiv-ask-user-question@1.20.0(@earendil-works/pi-coding-agent@0.84.2(patch_hash=rlvzsqrixlqhyywngei7efoxjy)(ws@8.21.1)(zod@4.4.3))(@earendil-works/pi-tui@0.84.2)(typebox@1.3.7)':
+  '@juicesharp/rpiv-ask-user-question@1.20.0(@earendil-works/pi-coding-agent@0.84.2(patch_hash=ftiieijgyxqf7nz4xwkvsbb7vm)(ws@8.21.1)(zod@4.4.3))(@earendil-works/pi-tui@0.84.2)(typebox@1.3.7)':
     dependencies:
-      '@earendil-works/pi-coding-agent': 0.84.2(patch_hash=rlvzsqrixlqhyywngei7efoxjy)(ws@8.21.1)(zod@4.4.3)
+      '@earendil-works/pi-coding-agent': 0.84.2(patch_hash=ftiieijgyxqf7nz4xwkvsbb7vm)(ws@8.21.1)(zod@4.4.3)
       '@earendil-works/pi-tui': 0.84.2
       '@juicesharp/rpiv-config': 1.20.0(typebox@1.3.7)
       typebox: 1.3.7
 
-  '@juicesharp/rpiv-ask-user-question@2.1.0(@earendil-works/pi-coding-agent@0.84.2(patch_hash=rlvzsqrixlqhyywngei7efoxjy)(ws@8.21.1)(zod@4.4.3))(@earendil-works/pi-tui@0.84.2)':
+  '@juicesharp/rpiv-ask-user-question@2.1.0(@earendil-works/pi-coding-agent@0.84.2(patch_hash=ftiieijgyxqf7nz4xwkvsbb7vm)(ws@8.21.1)(zod@4.4.3))(@earendil-works/pi-tui@0.84.2)':
     dependencies:
-      '@earendil-works/pi-coding-agent': 0.84.2(patch_hash=rlvzsqrixlqhyywngei7efoxjy)(ws@8.21.1)(zod@4.4.3)
+      '@earendil-works/pi-coding-agent': 0.84.2(patch_hash=ftiieijgyxqf7nz4xwkvsbb7vm)(ws@8.21.1)(zod@4.4.3)
       '@earendil-works/pi-tui': 0.84.2
       '@juicesharp/rpiv-config': 2.1.0
-      typebox: 1.1.38
+      typebox: 1.3.7
 
   '@juicesharp/rpiv-config@1.20.0(typebox@1.3.7)':
     dependencies:
@@ -5075,7 +5072,7 @@ snapshots:
 
   '@juicesharp/rpiv-config@2.1.0':
     dependencies:
-      typebox: 1.1.38
+      typebox: 1.3.7
 
   '@lezer/common@1.5.2': {}
 
@@ -8276,8 +8273,6 @@ snapshots:
   type-check@0.4.0:
     dependencies:
       prelude-ls: 1.2.1
-
-  typebox@1.1.38: {}
 
   typebox@1.3.7: {}
 

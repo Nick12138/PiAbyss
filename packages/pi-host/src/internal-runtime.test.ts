@@ -37,14 +37,14 @@ describe("bundled runtime descriptors", () => {
   it("reads the bundled Node/Git/Bash descriptors when advertised", () => {
     withEnv(
       {
-        [BUNDLED_NODE_ENV]: String.raw`C:\PiDeck\resources\node\node.exe`,
-        [BUNDLED_GIT_ENV]: String.raw`C:\PiDeck\resources\git\cmd\git.exe`,
-        [BUNDLED_BASH_ENV]: String.raw`C:\PiDeck\resources\git\bin\bash.exe`,
+        [BUNDLED_NODE_ENV]: String.raw`C:\PiAbyss\resources\node\node.exe`,
+        [BUNDLED_GIT_ENV]: String.raw`C:\PiAbyss\resources\git\cmd\git.exe`,
+        [BUNDLED_BASH_ENV]: String.raw`C:\PiAbyss\resources\git\bin\bash.exe`,
       },
       () => {
-        expect(bundledNodeExecutable()).toBe(String.raw`C:\PiDeck\resources\node\node.exe`);
-        expect(bundledGitExecutable()).toBe(String.raw`C:\PiDeck\resources\git\cmd\git.exe`);
-        expect(bundledBashExecutable()).toBe(String.raw`C:\PiDeck\resources\git\bin\bash.exe`);
+        expect(bundledNodeExecutable()).toBe(String.raw`C:\PiAbyss\resources\node\node.exe`);
+        expect(bundledGitExecutable()).toBe(String.raw`C:\PiAbyss\resources\git\cmd\git.exe`);
+        expect(bundledBashExecutable()).toBe(String.raw`C:\PiAbyss\resources\git\bin\bash.exe`);
       },
     );
   });

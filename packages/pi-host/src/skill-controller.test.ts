@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { HostIdentity, SkillSnapshot } from "@pideck/protocol";
+import type { HostIdentity, SkillSnapshot } from "@piabyss/protocol";
 import type { Skill, ResourceDiagnostic } from "@earendil-works/pi-coding-agent";
 import type { HandlerContext } from "./server.js";
 import { TryMutex } from "./locks.js";
@@ -97,7 +97,7 @@ describe("skill-controller", () => {
   let handlers: ReturnType<typeof createSkillHandlers>;
 
   beforeEach(() => {
-    layout = createTempAgentLayout("pideck-skill-test-");
+    layout = createTempAgentLayout("piabyss-skill-test-");
   });
 
   afterEach(() => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PackageRecord, PackageSnapshot } from "@pideck/protocol";
+import type { PackageRecord, PackageSnapshot } from "@piabyss/protocol";
 import { isTelegramPluginInstalled, isTelegramPluginRecord } from "./telegram-plugin";
 
 function record(overrides: Partial<PackageRecord>): PackageRecord {

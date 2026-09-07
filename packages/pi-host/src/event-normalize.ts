@@ -2,7 +2,7 @@ import {
   toJsonValue,
   type SerializableAgentSessionEvent,
   type SerializableAssistantMessageEvent,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 
 type EventRecord = Record<string, unknown>;
 
@@ -29,7 +29,7 @@ const EVENT_FIELDS = {
   // Retries of the summarization LLM call inside compaction or branch-summary.
   // The desktop uses these to keep the header truthful while a summarization
   // attempt is backing off; `bash_execution_update` stays unreviewed because
-  // nothing in PiDeck calls AgentSession.executeBash, its only emitter.
+  // nothing in PiAbyss calls AgentSession.executeBash, its only emitter.
   summarization_retry_scheduled: ["attempt", "maxAttempts", "delayMs", "errorMessage"],
   summarization_retry_attempt_start: ["source", "reason"],
   summarization_retry_finished: [],

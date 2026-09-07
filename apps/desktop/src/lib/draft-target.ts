@@ -1,4 +1,4 @@
-import type { SessionSnapshot, WorkspaceSnapshot } from "@pideck/protocol";
+import type { SessionSnapshot, WorkspaceSnapshot } from "@piabyss/protocol";
 
 type DraftKind = "session" | "new-conversation";
 export type DraftKey = string;

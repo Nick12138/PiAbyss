@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { HostStatusSnapshot, TelegramSessionSummary } from "@pideck/protocol";
+import type { HostStatusSnapshot, TelegramSessionSummary } from "@piabyss/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { TelegramWorkspaceRow } from "./TelegramWorkspaceRow";
 import { useTelegramViewStore } from "./telegram-view-store";
@@ -33,7 +33,7 @@ const host: HostStatusSnapshot = {
 const sessions: TelegramSessionSummary[] = [
   {
     sessionPath: "C:/agent/sessions/--P--/a.jsonl",
-    name: "PiDeck 概览",
+    name: "PiAbyss 概览",
     cwd: "C:/work",
     updatedAt: 1787029396000,
     telegramMessageCount: 3,
@@ -152,7 +152,7 @@ describe("TelegramWorkspaceRow", () => {
   });
 
   it("does not auto-enter at startup when the bridge preference is off", async () => {
-    globalThis.localStorage?.setItem("pideck.telegram.bridgeEnabled.v1", "0");
+    globalThis.localStorage?.setItem("piabyss.telegram.bridgeEnabled.v1", "0");
     useAppStore.setState({
       host,
       connecting: false,
@@ -162,11 +162,11 @@ describe("TelegramWorkspaceRow", () => {
     render(<TelegramWorkspaceRow onActivate={onActivate} />);
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(onActivate).not.toHaveBeenCalled();
-    globalThis.localStorage?.removeItem("pideck.telegram.bridgeEnabled.v1");
+    globalThis.localStorage?.removeItem("piabyss.telegram.bridgeEnabled.v1");
   });
 
   it("shows a green status dot when the bridge is connected", () => {
-    globalThis.localStorage?.removeItem("pideck.telegram.bridgeEnabled.v1");
+    globalThis.localStorage?.removeItem("piabyss.telegram.bridgeEnabled.v1");
     useTelegramViewStore.setState({
       bridgeStatus: { connected: true },
       bridgeLoading: false,
@@ -178,7 +178,7 @@ describe("TelegramWorkspaceRow", () => {
   });
 
   it("shows no status dot when the bridge is turned off", () => {
-    globalThis.localStorage?.setItem("pideck.telegram.bridgeEnabled.v1", "0");
+    globalThis.localStorage?.setItem("piabyss.telegram.bridgeEnabled.v1", "0");
     useTelegramViewStore.setState({
       bridgeStatus: { connected: false },
       bridgeLoading: false,
@@ -187,11 +187,11 @@ describe("TelegramWorkspaceRow", () => {
     const row = screen.getByRole("button", { name: /@liu_worker_bot/ });
     expect(row.querySelector(".bg-success.status-dot-pulse")).toBeNull();
     expect(row.querySelector(".bg-danger")).toBeNull();
-    globalThis.localStorage?.removeItem("pideck.telegram.bridgeEnabled.v1");
+    globalThis.localStorage?.removeItem("piabyss.telegram.bridgeEnabled.v1");
   });
 
   it("shows a red status dot when the bridge should be on but is disconnected", () => {
-    globalThis.localStorage?.removeItem("pideck.telegram.bridgeEnabled.v1");
+    globalThis.localStorage?.removeItem("piabyss.telegram.bridgeEnabled.v1");
     useTelegramViewStore.setState({
       bridgeStatus: { connected: false },
       bridgeLoading: false,

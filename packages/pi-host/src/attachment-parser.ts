@@ -3,7 +3,7 @@ import { join } from "node:path";
 import mammoth from "mammoth";
 import TurndownService from "turndown";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-import type { AttachmentMediaType, AttachmentStatus, AttachmentUnit } from "@pideck/protocol";
+import type { AttachmentMediaType, AttachmentStatus, AttachmentUnit } from "@piabyss/protocol";
 
 const FILE_MODE = 0o600;
 const MAX_EXTRACTED_BYTES = 100 * 1024 * 1024;

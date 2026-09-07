@@ -8,7 +8,7 @@ import type {
   SessionUsageReport,
   SessionUsageReportItem,
   UsageRange,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { sessionStorageDirs } from "./session-storage.js";
 
 type ParsedSession = {

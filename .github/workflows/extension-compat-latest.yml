@@ -28,12 +28,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Replace the disposable v2 test alias with npm latest
         run: >-
-          pnpm --filter @pideck/pi-host add --save-dev --save-exact
-          '@pideck-test/rpiv-ask-user-question-v2@npm:@juicesharp/rpiv-ask-user-question@latest'
+          pnpm --filter @piabyss/pi-host add --save-dev --save-exact
+          '@piabyss-test/rpiv-ask-user-question-v2@npm:@juicesharp/rpiv-ask-user-question@latest'
           --lockfile=false
       - name: Build the protocol workspace
-        run: pnpm --filter @pideck/protocol run build
+        run: pnpm --filter @piabyss/protocol run build
       - name: Run the real published-package regression
         run: >-
-          pnpm --filter @pideck/pi-host exec vitest run
+          pnpm --filter @piabyss/pi-host exec vitest run
           src/real-extension-compatibility.test.ts

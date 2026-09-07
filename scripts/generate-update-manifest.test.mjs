@@ -23,7 +23,7 @@ function sha256(content) {
 const base = {
   tag: "v0.1.1",
   version: "0.1.1",
-  repo: "Nick12138/PiDeck",
+  repo: "Nick12138/PiAbyss",
   publishedAt: "2026-08-01T00:00:00.000Z",
 };
 
@@ -33,17 +33,17 @@ test("builds a cross-platform static updater manifest", () => {
     artifacts: [
       {
         updaterPlatform: "windows-x86_64",
-        updaterName: "PiDeck_0.1.1_x64-setup.exe",
+        updaterName: "PiAbyss_0.1.1_x64-setup.exe",
         signature: "windows-signature",
       },
       {
         updaterPlatform: "darwin-aarch64",
-        updaterName: "PiDeck_0.1.1_aarch64.app.tar.gz",
+        updaterName: "PiAbyss_0.1.1_aarch64.app.tar.gz",
         signature: "arm-signature",
       },
       {
         updaterPlatform: "darwin-x86_64",
-        updaterName: "PiDeck_0.1.1_x64.app.tar.gz",
+        updaterName: "PiAbyss_0.1.1_x64.app.tar.gz",
         signature: "intel-signature",
       },
     ],
@@ -54,15 +54,15 @@ test("builds a cross-platform static updater manifest", () => {
     platforms: {
       "windows-x86_64": {
         signature: "windows-signature",
-        url: "https://github.com/Nick12138/PiDeck/releases/download/v0.1.1/PiDeck_0.1.1_x64-setup.exe",
+        url: "https://github.com/Nick12138/PiAbyss/releases/download/v0.1.1/PiAbyss_0.1.1_x64-setup.exe",
       },
       "darwin-aarch64": {
         signature: "arm-signature",
-        url: "https://github.com/Nick12138/PiDeck/releases/download/v0.1.1/PiDeck_0.1.1_aarch64.app.tar.gz",
+        url: "https://github.com/Nick12138/PiAbyss/releases/download/v0.1.1/PiAbyss_0.1.1_aarch64.app.tar.gz",
       },
       "darwin-x86_64": {
         signature: "intel-signature",
-        url: "https://github.com/Nick12138/PiDeck/releases/download/v0.1.1/PiDeck_0.1.1_x64.app.tar.gz",
+        url: "https://github.com/Nick12138/PiAbyss/releases/download/v0.1.1/PiAbyss_0.1.1_x64.app.tar.gz",
       },
     },
   });
@@ -74,11 +74,11 @@ test("normalizes macOS artifact names so architectures cannot collide", () => {
       version: "0.1.1",
       platform: "darwin",
       arch: "arm64",
-      primaryName: "PiDeck.dmg",
+      primaryName: "PiAbyss.dmg",
     }),
     {
-      primary: "PiDeck_0.1.1_aarch64.dmg",
-      updater: "PiDeck_0.1.1_aarch64.app.tar.gz",
+      primary: "PiAbyss_0.1.1_aarch64.dmg",
+      updater: "PiAbyss_0.1.1_aarch64.app.tar.gz",
     },
   );
   assert.deepEqual(
@@ -86,11 +86,11 @@ test("normalizes macOS artifact names so architectures cannot collide", () => {
       version: "0.1.1",
       platform: "darwin",
       arch: "x64",
-      primaryName: "PiDeck.dmg",
+      primaryName: "PiAbyss.dmg",
     }),
     {
-      primary: "PiDeck_0.1.1_x64.dmg",
-      updater: "PiDeck_0.1.1_x64.app.tar.gz",
+      primary: "PiAbyss_0.1.1_x64.dmg",
+      updater: "PiAbyss_0.1.1_x64.app.tar.gz",
     },
   );
 });
@@ -133,7 +133,7 @@ test("probes Windows npm through staged Node instead of spawning npm.cmd", () =>
     "win32",
     "x64",
   );
-  const probe = stagedNpmProbe(runtimeTarget, "C:\\pideck\\node");
+  const probe = stagedNpmProbe(runtimeTarget, "C:\\piabyss\\node");
   assert.match(probe.executable, /node\.exe$/u);
   assert.match(probe.args[0], /node_modules[/\\]npm[/\\]bin[/\\]npm-cli\.js$/u);
   assert.equal(probe.args[1], "--version");
@@ -143,7 +143,7 @@ test("probes Windows npm through staged Node instead of spawning npm.cmd", () =>
 test("refuses mismatched tags, duplicate platforms, and empty signatures", () => {
   const artifact = {
     updaterPlatform: "windows-x86_64",
-    updaterName: "PiDeck.exe",
+    updaterName: "PiAbyss.exe",
     signature: "signature",
   };
   assert.throws(
@@ -161,7 +161,7 @@ test("refuses mismatched tags, duplicate platforms, and empty signatures", () =>
 });
 
 test("aggregates isolated platform artifacts without overwriting assets", () => {
-  const root = mkdtempSync(join(tmpdir(), "pideck-release-aggregate-"));
+  const root = mkdtempSync(join(tmpdir(), "piabyss-release-aggregate-"));
   try {
     const input = join(root, "input");
     const output = join(root, "output");
@@ -170,15 +170,15 @@ test("aggregates isolated platform artifacts without overwriting assets", () => 
         updaterPlatform: "windows-x86_64",
         platform: "win32",
         arch: "x64",
-        primaryName: "PiDeck_0.1.1_x64-setup.exe",
-        updaterName: "PiDeck_0.1.1_x64-setup.exe",
+        primaryName: "PiAbyss_0.1.1_x64-setup.exe",
+        updaterName: "PiAbyss_0.1.1_x64-setup.exe",
       },
       {
         updaterPlatform: "darwin-aarch64",
         platform: "darwin",
         arch: "arm64",
-        primaryName: "PiDeck_0.1.1_aarch64.dmg",
-        updaterName: "PiDeck_0.1.1_aarch64.app.tar.gz",
+        primaryName: "PiAbyss_0.1.1_aarch64.dmg",
+        updaterName: "PiAbyss_0.1.1_aarch64.app.tar.gz",
       },
     ];
     for (const fixture of fixtures) {
@@ -222,7 +222,7 @@ test("aggregates isolated platform artifacts without overwriting assets", () => 
       inputDir: input,
       outputDir: output,
       tag: "v0.1.1",
-      repo: "Nick12138/PiDeck",
+      repo: "Nick12138/PiAbyss",
       publishedAt: base.publishedAt,
     });
     assert.deepEqual(Object.keys(result.manifest.platforms).sort(), [

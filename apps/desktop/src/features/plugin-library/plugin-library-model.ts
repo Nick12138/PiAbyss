@@ -6,7 +6,7 @@ import type {
   PluginLibraryConfigItem,
   PluginLibraryEntry,
   ResourceRecord,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 
 /**
  * Pure derivation for the plugin-library view: from the curated registry

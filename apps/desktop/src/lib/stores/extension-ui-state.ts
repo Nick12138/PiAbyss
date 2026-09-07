@@ -2,7 +2,7 @@ import type {
   ExtensionUiGroupStatus,
   ExtensionUiRequest,
   SessionTargetContext,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 
 export type ExtensionUiRequestState = ExtensionUiRequest & {
   context: SessionTargetContext;

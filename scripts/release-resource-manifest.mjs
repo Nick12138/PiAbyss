@@ -59,7 +59,7 @@ export function writeReleaseResourceManifest(root, resourceDir) {
   assertReleaseProductionManifest(
     releaseHostManifest,
     sdkEvidence,
-    { "@pideck/protocol": protocolVersion },
+    { "@piabyss/protocol": protocolVersion },
     "staged release Host manifest",
   );
   const files = criticalReleaseResourcePaths(runtimeTarget).map((relativePath) => {

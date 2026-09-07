@@ -3,7 +3,7 @@ import type {
   ExtensionUiGroupClosed,
   ExtensionUiGroupStatus,
   HostIdentity,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import {
   registerExtensionInvocationCompletion,
   type ExtensionInvocationContext,

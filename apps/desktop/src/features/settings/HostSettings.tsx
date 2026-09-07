@@ -217,7 +217,7 @@ export function HostSettings() {
             <h2 className="mb-2 text-sm font-medium text-muted">{t("hostAboutGroup")}</h2>
             <div className="flex flex-col gap-2 rounded-lg border border-border p-4 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted">PiDeck</span>
+                <span className="text-muted">PiAbyss</span>
                 <span className="font-mono">{appVersion ?? "—"}</span>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">

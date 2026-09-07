@@ -4,14 +4,14 @@
  *
  * The plugin persists every run as task.json / status.json / result.json plus a
  * live `sessions/*.jsonl` pi session transcript (and events.jsonl for the raw
- * event stream). The PiDeck panel needs the persisted session transcript to
+ * event stream). The PiAbyss panel needs the persisted session transcript to
  * render the expanded conversation, so this module reads it directly from
  * disk while status/control goes through the plugin's HTTP API.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { JsonValue, SerializableSessionEntry, SubagentStatusState } from "@pideck/protocol";
+import type { JsonValue, SerializableSessionEntry, SubagentStatusState } from "@piabyss/protocol";
 
 const MAX_ENTRIES = 160;
 const MAX_STRING_LENGTH = 16_000;

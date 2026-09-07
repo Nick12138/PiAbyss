@@ -1,4 +1,4 @@
-# PiDeck 独立全项目代码 Review（2026-07-27）
+# PiAbyss 独立全项目代码 Review（2026-07-27）
 
 只读审查，未修改任何代码。未参考 docs/history/ 中的历史报告。
 
@@ -156,7 +156,7 @@
 ### 边界 / Rust
 
 - **L1 `commands.rs:245`：macOS 上 `desktop_open_path` 对 .app bundle 执行 `open <dir>` 等于启动该应用**，而不是在 Finder 中显示。Files 面板的「Open folder」按钮（FilesPanel.tsx:263-272）对任何目录条目可达；分类逻辑（commands.rs:212-214）只看 `is_dir()`。原报高危，下调理由：渲染进程本就持有 shell_terminal_* 这一更大原语（任意命令执行是设计内能力），且工作区内容按文档化策略已被信任——剩余实质缺陷是「按钮做的不是它说的事」+ commands.rs:187-189 注释夸大了保证。一行修复（目录改用 `open -R`）。静默错误动作，已确认。
-- **L2 `pi_host.rs:1258`（及 :1138、:1204-1208）：多条清理路径先 reap 子进程再向进程组发信号**，留出 pid 复用窗口——若内核把该 pid 分给新的进程组组长（PiDeck 自己就在并发制造组长：新 Host、PTY 终端），SIGKILL/SIGTERM 落到无关进程组。cleanup_claimed CAS 只防重复信号，不防 signal-after-reap。仅理论风险（需要 pid 计数器回绕恰好落在微秒窗口内），已确认。
+- **L2 `pi_host.rs:1258`（及 :1138、:1204-1208）：多条清理路径先 reap 子进程再向进程组发信号**，留出 pid 复用窗口——若内核把该 pid 分给新的进程组组长（PiAbyss 自己就在并发制造组长：新 Host、PTY 终端），SIGKILL/SIGTERM 落到无关进程组。cleanup_claimed CAS 只防重复信号，不防 signal-after-reap。仅理论风险（需要 pid 计数器回绕恰好落在微秒窗口内），已确认。
 - **L3 `capabilities/default.json:23`：`shell:allow-open` 的 URL allowlist 是死的**——tauri-plugin-shell 2.3.5 的 open 命令从不解析 ACL scope（只读 tauri.conf.json 的 `plugins.shell.open`，而这里是 `"plugins": {}`），且 `{"url":...}` 条目本身不符合 ShellScopeEntry schema。实际生效的是插件内置默认正则（mailto:/tel: 也被允许）。无注入后果（open-5.4.0 走 argv/环境变量），但声明的策略与实际策略不一致且会随插件升级静默漂移。仅理论风险，已确认。
 
 ### 前端
@@ -180,7 +180,7 @@
 - **L14 `provider-controller.ts:1285`：provider.list 是全文件唯一无锁调用 refreshRegistry + 读 models.json 的入口**（dispatch 是逐行并发）——可与 mutation 的 commit/rollback 窗口交错，把即将被回滚的瞬时配置返回给 UI（models.json 不受任何 revision 保护，无 STALE_REVISION 兜底），极端交错下运行时停留在旧合成直到下一次刷新自愈。静默数据错误（瞬时、自愈），已确认。
 - **L15 `provider-controller.ts:409`：每次 commitModelsConfig 生成一个唯一命名的 `models-<ts>-<rand>.bak`，全仓无任何清理**——每次 provider 变更（含登录后自动启用、checkConnection 后 authHeader 持久化）留一个文件，在使用寿命内无界堆积在共享的 `~/.pi/agent`。仅理论风险（缓慢磁盘/inode 消耗），已确认。
 - **L16 `logger.ts:22`：结构化 meta 的脱敏对其主要输入形态无效**——key-value 正则匹配不到 JSON 序列化形态（`"apiKey":"v"` 中 key 名与冒号之间隔着引号），值前缀正则只认 sk-/key-/Bearer。今天没有调用点往 meta 传原始凭据（已逐一核查），所以是纵深防御失效而非现役泄露；但 stderr 会被 Rust 原样转发给前端 webview 并留在 50 行崩溃尾部里。仅理论风险，已确认（用真实管线执行验证）。
-- **L17 `credential-store.ts:333`：ensureFileExists 在 advisory lock 外做无串行的 `writeFileSync("{}")`**——首跑机器上，PiDeck 用 `openSync("wx")` 创建空文件后到写 "{}" 之前的毫秒窗口里，共享此文件的 Pi CLI 可正常持锁写入真实凭据，随后被这次无锁覆写截断。窗口小、仅首跑，但写本身就是多余的（空文件经 readRoot 已等价于 {}）。静默数据错误，已确认。
+- **L17 `credential-store.ts:333`：ensureFileExists 在 advisory lock 外做无串行的 `writeFileSync("{}")`**——首跑机器上，PiAbyss 用 `openSync("wx")` 创建空文件后到写 "{}" 之前的毫秒窗口里，共享此文件的 Pi CLI 可正常持锁写入真实凭据，随后被这次无锁覆写截断。窗口小、仅首跑，但写本身就是多余的（空文件经 readRoot 已等价于 {}）。静默数据错误，已确认。
 
 ---
 

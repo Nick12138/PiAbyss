@@ -49,7 +49,7 @@ function usage(totalTokens: number, totalCost: number) {
 }
 
 async function createFixture() {
-  const agentDir = join(tmpdir(), `pideck-usage-${Date.now()}-${Math.random()}`);
+  const agentDir = join(tmpdir(), `piabyss-usage-${Date.now()}-${Math.random()}`);
   roots.push(agentDir);
   const cwd = join(agentDir, "workspace");
   const dirs = sessionStorageDirs(agentDir, cwd);

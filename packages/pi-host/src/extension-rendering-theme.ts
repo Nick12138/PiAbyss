@@ -66,5 +66,5 @@ export function createDesktopExtensionTheme(): Theme {
     toolSuccessBg: "#000000",
     toolErrorBg: "#000000",
   } as const;
-  return new ThemeClass(fg, bg, "256color", { name: "pideck-stub" });
+  return new ThemeClass(fg, bg, "256color", { name: "piabyss-stub" });
 }

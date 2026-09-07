@@ -1,6 +1,6 @@
 # Release and Packaging
 
-PiDeck does not currently provide a certified public installer. Source
+PiAbyss does not currently provide a certified public installer. Source
 development and release packaging are separate support levels:
 
 | Platform | Source development | Development package | Public release |
@@ -68,7 +68,7 @@ macOS can run the complete development application and build a native candidate 
 
 ```bash
 pnpm build
-pnpm --filter @pideck/desktop run tauri:dev
+pnpm --filter @piabyss/desktop run tauri:dev
 pnpm package:release
 ```
 
@@ -123,6 +123,6 @@ the current command surface.
 
 ## Rollback and User Data
 
-Keep the previously accepted installer when testing an update. PiDeck user data
+Keep the previously accepted installer when testing an update. PiAbyss user data
 lives in the configured Pi agent directory, not inside the application bundle.
 Packaging and uninstall tests must never use a real user data directory.

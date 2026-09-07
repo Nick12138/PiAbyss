@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createHostError, type GitStatusSnapshot, type HostIdentity } from "@pideck/protocol";
+import { createHostError, type GitStatusSnapshot, type HostIdentity } from "@piabyss/protocol";
 import { GraphOperationRegistry } from "./operation-lifecycle.js";
 import { TryMutex } from "./locks.js";
 import type { HandlerContext } from "./server.js";

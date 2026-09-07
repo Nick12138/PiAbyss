@@ -3,35 +3,35 @@ import { dirname, join, resolve as pathResolve } from "node:path";
 
 const DIR_MODE = 0o700;
 
-export const PIDECK_MODEL_BACKUP_PATTERN = /^models-(\d+)-[0-9a-f]{8}\.bak$/u;
+export const PIABYSS_MODEL_BACKUP_PATTERN = /^models-(\d+)-[0-9a-f]{8}\.bak$/u;
 
 export function workspaceStorageKey(cwd: string): string {
   const resolvedCwd = pathResolve(cwd);
   return `--${resolvedCwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
 }
 
-export function pideckDataDir(agentDir: string): string {
-  return join(pathResolve(agentDir), "pideck");
+export function piabyssDataDir(agentDir: string): string {
+  return join(pathResolve(agentDir), "piabyss");
 }
 
 export function migrationBackupRoot(agentDir: string, migrationId: string): string {
-  return join(pideckDataDir(agentDir), "migration-backups", migrationId);
+  return join(piabyssDataDir(agentDir), "migration-backups", migrationId);
 }
 
 export function providerJournalRoot(agentDir: string): string {
-  return join(pideckDataDir(agentDir), "provider-journal");
+  return join(piabyssDataDir(agentDir), "provider-journal");
 }
 
 export function modelBackupDir(agentDir: string): string {
-  return join(pideckDataDir(agentDir), "model-backups");
+  return join(piabyssDataDir(agentDir), "model-backups");
 }
 
 function sessionArchiveRoot(agentDir: string): string {
-  return join(pideckDataDir(agentDir), "session-archive");
+  return join(piabyssDataDir(agentDir), "session-archive");
 }
 
 export function attachmentRoot(agentDir: string): string {
-  return join(pideckDataDir(agentDir), "attachments");
+  return join(piabyssDataDir(agentDir), "attachments");
 }
 
 export function sessionArchiveDir(agentDir: string, cwd: string): string {
@@ -78,7 +78,7 @@ async function moveLegacyTree(source: string, target: string): Promise<void> {
 
   const currentTargetKind = await pathKind(target);
   if (sourceKind !== "directory" || currentTargetKind !== "directory") {
-    throw new Error(`Conflicting PiDeck data at ${source} and ${target}`);
+    throw new Error(`Conflicting PiAbyss data at ${source} and ${target}`);
   }
 
   await ensurePrivateDirectory(target);
@@ -98,16 +98,24 @@ async function removeEmptyDirectory(path: string): Promise<void> {
 }
 
 /**
- * Adopt data written by older PiDeck versions. Every source and destination is
+ * Adopt data written by older PiAbyss versions. Every source and destination is
  * inside one agent directory, so successful renames stay on the same volume.
  * The operation is restartable and never overwrites conflicting recovery data.
  */
-export async function migrateLegacyPideckData(
+export async function migrateLegacyPiAbyssData(
   agentDir: string,
   migrationId: string,
 ): Promise<void> {
   const resolvedAgentDir = pathResolve(agentDir);
-  await ensurePrivateDirectory(pideckDataDir(resolvedAgentDir));
+  await ensurePrivateDirectory(piabyssDataDir(resolvedAgentDir));
+
+  // Adopt the legacy `pideck` namespace from older versions. When the Rust
+  // shell already renamed it, this is a no-op; when both exist (partial
+  // migration), moveLegacyTree merges under its collision rules.
+  await moveLegacyTree(
+    join(resolvedAgentDir, "pideck"),
+    piabyssDataDir(resolvedAgentDir),
+  );
 
   await moveLegacyTree(
     join(resolvedAgentDir, "backups", migrationId),
@@ -124,7 +132,7 @@ export async function migrateLegacyPideckData(
   const targetModelBackupDir = modelBackupDir(resolvedAgentDir);
   await ensurePrivateDirectory(targetModelBackupDir);
   for (const entry of backups) {
-    if (!entry.isFile() || !PIDECK_MODEL_BACKUP_PATTERN.test(entry.name)) continue;
+    if (!entry.isFile() || !PIABYSS_MODEL_BACKUP_PATTERN.test(entry.name)) continue;
     await moveLegacyTree(
       join(resolvedAgentDir, entry.name),
       join(targetModelBackupDir, entry.name),

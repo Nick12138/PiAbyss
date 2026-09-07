@@ -1,6 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { Terminal } from "@xterm/xterm";
-import type { TerminalProfileId } from "@pideck/protocol";
+import type { TerminalProfileId } from "@piabyss/protocol";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 import { XtermSurface } from "./XtermSurface";
 

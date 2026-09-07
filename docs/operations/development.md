@@ -96,9 +96,9 @@ re-imports extension modules. Re-evaluate the patch on every SDK upgrade;
 consider proposing the cancellation hook upstream.
 
 The patch deliberately stops at `DefaultPackageManager`.
-`DefaultResourceLoader` builds its own private package manager that PiDeck
+`DefaultResourceLoader` builds its own private package manager that PiAbyss
 cannot reach, so a reload can neither be cancelled nor bounded. Rather than
-patching a second class, PiDeck removes the reason to cancel: see
+patching a second class, PiAbyss removes the reason to cancel: see
 "Implicit resource loading" below.
 
 ## Implicit resource loading
@@ -122,15 +122,15 @@ Do not set `PI_OFFLINE` globally — it would also disable the update-check
 capability. The scoping is safe because every reload call site runs under
 `serviceGraphLock`.
 
-## PiDeck-owned agent data
+## PiAbyss-owned agent data
 
-PiDeck keeps its Host-owned persistent data under one namespace inside the Pi
+PiAbyss keeps its Host-owned persistent data under one namespace inside the Pi
 agent directory:
 
 ```text
-<agentDir>/pideck/
+<agentDir>/piabyss/
   DefaultProject/
-  migration-backups/pideck-sdk-0.80.7-to-0.82.1/
+  migration-backups/piabyss-sdk-0.80.7-to-0.82.1/
   provider-journal/
   model-backups/
   session-archive/<encoded-cwd>/
@@ -139,13 +139,13 @@ agent directory:
 Canonical Pi files such as `<agentDir>/models.json` and active Sessions under
 `<agentDir>/sessions/<encoded-cwd>/` stay in their native locations. Before any
 of those files are read at startup, the Host adopts data from the former
-`backups/pideck-sdk-0.80.7-to-0.82.1`, `provider-journal`, root-level
+`backups/piabyss-sdk-0.80.7-to-0.82.1`, `provider-journal`, root-level
 `models-<timestamp>-<id>.bak`, and per-workspace `.archive` locations. The move
 is restartable; a conflicting source and destination abort startup without
 overwriting either copy.
 
 On Desktop startup, an empty Workspace configuration creates
-`<agentDir>/pideck/DefaultProject` with `0700` permissions and persists it as
+`<agentDir>/piabyss/DefaultProject` with `0700` permissions and persists it as
 both the recent Workspace and the first known Workspace. Any non-empty
 `defaultWorkspace`, `lastWorkspace`, or `knownWorkspaces` setting suppresses
 this fallback. `defaultWorkspace` itself is not set, so a Workspace the user
@@ -157,7 +157,7 @@ Before the 0.82.1 runtime first touches a real agent directory, the Host copies
 the pre-migration user data to:
 
 ```text
-<agentDir>/pideck/migration-backups/pideck-sdk-0.80.7-to-0.82.1/<timestamp>/
+<agentDir>/piabyss/migration-backups/piabyss-sdk-0.80.7-to-0.82.1/<timestamp>/
 ```
 
 It holds `auth.json`, `models.json`, `models-store.json`, and `settings.json`
@@ -180,7 +180,7 @@ be rolled back is worse than refusing to start.
 
 A provider change writes `models.json` and `auth.json`, which no single rename
 can cover together. Before committing either, the pre-mutation bytes of both go
-to `<agentDir>/pideck/provider-journal/<journalId>/`. The entry is removed only
+to `<agentDir>/piabyss/provider-journal/<journalId>/`. The entry is removed only
 after the whole mutation, including the local refresh and reconciliation, succeeds —
 so an entry found at startup means exactly one thing: a mutation did not finish.
 
@@ -231,7 +231,7 @@ A→B→A acceptance runs in `workspace-package.integration.test.ts`.
 | `pnpm dev:host` | Run Pi Host (JSONL on stdio) |
 | `pnpm spike:sidecar` | M0 Extension load spike |
 | `pnpm dev:desktop` | Vite UI only |
-| `pnpm --filter @pideck/desktop tauri:dev` | Full desktop |
+| `pnpm --filter @piabyss/desktop tauri:dev` | Full desktop |
 | `pnpm dev:fast` | Reuse a compiled debug binary for faster Windows iteration (Windows only) |
 
 The weekly/manual `Extension compatibility latest audit` workflow checks the current
@@ -254,7 +254,7 @@ All write tests **must** set:
 
 ```powershell
 # PowerShell
-$env:PI_CODING_AGENT_DIR = "$env:TEMP\pideck-test-agent"
+$env:PI_CODING_AGENT_DIR = "$env:TEMP\piabyss-test-agent"
 ```
 
 Or pass `--agent-dir=<path>` to the host. Never point tests at real `~/.pi/agent` for mutations.
@@ -263,14 +263,14 @@ On macOS and other POSIX shells, use a temporary directory outside the real
 agent data, for example:
 
 ```bash
-export PI_CODING_AGENT_DIR="${TMPDIR:-/tmp}/pideck-test-agent"
+export PI_CODING_AGENT_DIR="${TMPDIR:-/tmp}/piabyss-test-agent"
 ```
 
 ## Manual host smoke
 
 ```powershell
 $env:PI_CODING_AGENT_DIR = "$env:TEMP\pi-host-smoke"
-pnpm --filter @pideck/pi-host exec tsx src/main.ts
+pnpm --filter @piabyss/pi-host exec tsx src/main.ts
 # stdin:
 # {"protocolVersion":1,"id":"1","method":"system.hello","context":{},"params":{"clientName":"cli","clientVersion":"0","protocolVersion":1}}
 ```
@@ -284,6 +284,6 @@ Use the equivalent `export PI_CODING_AGENT_DIR=...` syntax on macOS.
 | Spike fails on Extension load | Node ≥22.19, SDK matches the Host manifest, fixture path exists |
 | Host fatal on start | `agentDir` writable; inspect stderr JSON logs |
 | `flush stdin: 管道正在被关闭` / pipe closed | Fixed: Windows must not pass `\\?\` paths to Node. Rebuild Tauri (`tauri:dev` again) after pulling. Also run `pnpm build` first. |
-| Reveal/open path fails | Confirm the target still exists and the platform file manager is available. PiDeck uses Explorer on Windows, Finder (`open -R`) on macOS, and `xdg-open` on Linux. |
+| Reveal/open path fails | Confirm the target still exists and the platform file manager is available. PiAbyss uses Explorer on Windows, Finder (`open -R`) on macOS, and `xdg-open` on Linux. |
 | STALE_REVISION everywhere | UI must update identity from each response |
 | Tauri can't find host | Build `packages/pi-host` so `dist/main.js` exists |

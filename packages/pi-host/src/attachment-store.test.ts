@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ZipFile } from "yazl";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MAX_PASTED_TEXT_ATTACHMENT_BYTES, type AttachmentSnapshot } from "@pideck/protocol";
+import { MAX_PASTED_TEXT_ATTACHMENT_BYTES, type AttachmentSnapshot } from "@piabyss/protocol";
 import { parseAttachment } from "./attachment-parser.js";
 import { AttachmentStore, AttachmentStoreError } from "./attachment-store.js";
 import { logger } from "./logger.js";
@@ -19,7 +19,7 @@ afterEach(async () => {
 });
 
 async function tempLayout(): Promise<{ root: string; agentDir: string }> {
-  const root = await mkdtemp(join(tmpdir(), "pideck-attachments-"));
+  const root = await mkdtemp(join(tmpdir(), "piabyss-attachments-"));
   tempDirs.push(root);
   return { root, agentDir: join(root, "agent") };
 }

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PiSettings } from "./PiSettings";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
-import type { HostStatusSnapshot } from "@pideck/protocol";
+import type { HostStatusSnapshot } from "@piabyss/protocol";
 
 const host: HostStatusSnapshot = {
   hostInstanceId: "11111111-1111-4111-8111-111111111111",

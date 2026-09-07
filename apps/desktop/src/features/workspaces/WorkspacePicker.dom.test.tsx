@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { DesktopSettings, HostStatusSnapshot, WorkspaceSnapshot } from "@pideck/protocol";
+import type { DesktopSettings, HostStatusSnapshot, WorkspaceSnapshot } from "@piabyss/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { WorkspacePicker } from "./WorkspacePicker";
 import { useTelegramViewStore } from "../telegram/telegram-view-store";

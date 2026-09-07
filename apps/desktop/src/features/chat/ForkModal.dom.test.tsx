@@ -8,7 +8,7 @@ import type {
   HostStatusSnapshot,
   SessionSnapshot,
   WorkspaceSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { SESSION_OPEN_TIMEOUT_MS } from "../../lib/bridge/session-open-request";
 import { __resetDraftPersistenceForTests } from "../../lib/draft-persistence";

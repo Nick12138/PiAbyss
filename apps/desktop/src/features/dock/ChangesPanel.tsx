@@ -10,7 +10,7 @@ import type {
   GitFileChange,
   GitStatusSnapshot,
   HostError,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import {
   AlertTriangle,
   ArrowDown,

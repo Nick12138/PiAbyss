@@ -1,5 +1,5 @@
 import type { AgentSession, ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { detectModelThinking } from "@pideck/protocol";
+import { detectModelThinking } from "@piabyss/protocol";
 import { readModelsConfig } from "./provider-models-config.js";
 
 type RegisteredProviderConfig = NonNullable<
@@ -10,7 +10,7 @@ type RuntimeModel = NonNullable<ReturnType<ModelRuntime["getModels"]>>[number];
 
 /**
  * OpenAI-compatible endpoints (sglang, vllm, Ollama, OpenRouter, …) commonly
- * accept only none/low/medium/high/max — not PiDeck's extra minimal/xhigh
+ * accept only none/low/medium/high/max — not PiAbyss's extra minimal/xhigh
  * levels. Fold them so an unknown reasoning model never sends an unsupported
  * effort value (sglang rejects "minimal" with a 400). Applies to every
  * protocol that serializes a reasoning_effort string; anthropic/gemini/mistral

@@ -1,4 +1,4 @@
-import type { PackageRecord, PackageSnapshot } from "@pideck/protocol";
+import type { PackageRecord, PackageSnapshot } from "@piabyss/protocol";
 
 /** The telegram plugin's install source (npm package). */
 export const TELEGRAM_PLUGIN_SOURCE = "npm:@llblab/pi-telegram";

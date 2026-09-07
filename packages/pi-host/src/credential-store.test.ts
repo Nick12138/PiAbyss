@@ -11,7 +11,7 @@ let authPath: string;
 let store: FileCredentialStore;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "pideck-cred-"));
+  root = mkdtempSync(join(tmpdir(), "piabyss-cred-"));
   authPath = join(root, "agent", "auth.json");
   store = new FileCredentialStore(authPath);
   clearCredentialCommandCache();
@@ -120,8 +120,8 @@ describe("FileCredentialStore field preservation", () => {
   });
 
   it("hands modify the raw stored key so a command reference is never overwritten with its output", async () => {
-    writeAuth({ p: { type: "api_key", key: "$PIDECK_TEST_CRED" } });
-    process.env.PIDECK_TEST_CRED = "resolved-secret";
+    writeAuth({ p: { type: "api_key", key: "$PIABYSS_TEST_CRED" } });
+    process.env.PIABYSS_TEST_CRED = "resolved-secret";
     try {
       // read() resolves for display...
       expect(await store.read("p")).toEqual({ type: "api_key", key: "resolved-secret" });
@@ -134,15 +134,15 @@ describe("FileCredentialStore field preservation", () => {
         return { ...(current as Credential), env: { EXTRA: "1" } };
       });
 
-      expect(seen).toEqual({ type: "api_key", key: "$PIDECK_TEST_CRED" });
+      expect(seen).toEqual({ type: "api_key", key: "$PIABYSS_TEST_CRED" });
       expect(readAuth().p).toEqual({
         type: "api_key",
-        key: "$PIDECK_TEST_CRED",
+        key: "$PIABYSS_TEST_CRED",
         env: { EXTRA: "1" },
       });
       expect(readFileSync(authPath, "utf8")).not.toContain("resolved-secret");
     } finally {
-      delete process.env.PIDECK_TEST_CRED;
+      delete process.env.PIABYSS_TEST_CRED;
     }
   });
 });

@@ -61,7 +61,7 @@ import {
   type TranscriptBlock,
   type TranscriptRow,
 } from "./transcript-model";
-import { stripAttachmentReferenceBlocks } from "@pideck/protocol";
+import { stripAttachmentReferenceBlocks } from "@piabyss/protocol";
 import { requestGoOn, requestRetry } from "../../lib/retry-actions";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";

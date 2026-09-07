@@ -26,8 +26,8 @@ import {
   type AttachmentSnapshot,
   type AttachmentStatus,
   type AttachmentUnit,
-} from "@pideck/protocol";
-import { attachmentRoot } from "./pideck-data.js";
+} from "@piabyss/protocol";
+import { attachmentRoot } from "./piabyss-data.js";
 import { runAttachmentParserWorker } from "./attachment-parser-runner.js";
 import type { AttachmentParseArgs, AttachmentParseResult } from "./attachment-parser.js";
 import { logger } from "./logger.js";

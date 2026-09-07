@@ -1,12 +1,12 @@
 {
   "providers": {
-    "pideck-fixture": {
-      "name": "PiDeck Fixture Provider",
-      "baseUrl": "https://pideck-fixture.invalid/v1",
-      "apiKey": "pideck-fixture-model-key-never-real",
+    "piabyss-fixture": {
+      "name": "PiAbyss Fixture Provider",
+      "baseUrl": "https://piabyss-fixture.invalid/v1",
+      "apiKey": "piabyss-fixture-model-key-never-real",
       "api": "openai-completions",
       "headers": {
-        "X-Fixture-Token": "pideck-fixture-header-never-real"
+        "X-Fixture-Token": "piabyss-fixture-header-never-real"
       },
       "authHeader": true,
       "models": [

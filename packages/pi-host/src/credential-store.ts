@@ -1,5 +1,5 @@
 /**
- * PiDeck-owned persistent CredentialStore for `auth.json`.
+ * PiAbyss-owned persistent CredentialStore for `auth.json`.
  *
  * SDK 0.82.1 removed `AuthStorage` from the coding-agent public surface and
  * `@earendil-works/pi-ai` exports only the `CredentialStore` contract plus an
@@ -7,7 +7,7 @@
  *
  * On-disk format is unchanged from the SDK's own store — a flat
  * `{ [providerId]: Credential }` JSON object, two-space indented, mode 0600 —
- * so PiDeck and the Pi CLI keep sharing `~/.pi/agent`.
+ * so PiAbyss and the Pi CLI keep sharing `~/.pi/agent`.
  *
  * Two deliberate differences from the SDK implementation:
  *
@@ -39,7 +39,7 @@ const DIR_MODE = 0o700;
 
 /**
  * Bounded on purpose. The SDK's own store retries for roughly 45 seconds,
- * which would leave an interactive provider save looking hung; PiDeck would
+ * which would leave an interactive provider save looking hung; PiAbyss would
  * rather surface a typed `lock_timeout` after a few seconds. `stale` still
  * matches the SDK so a crashed CLI holding the lock is reclaimed the same way.
  */
@@ -190,7 +190,7 @@ export class FileCredentialStore implements CredentialStore {
     });
   }
 
-  // --- PiDeck-only transaction helpers ------------------------------------
+  // --- PiAbyss-only transaction helpers ------------------------------------
   // Deliberately outside the CredentialStore contract: provider mutations need
   // to roll credentials back together with models.json, which the SDK-facing
   // read/modify/delete surface cannot express.
@@ -340,7 +340,7 @@ export class FileCredentialStore implements CredentialStore {
 
   /**
    * proper-lockfile requires an existing target, and it is the same lock file
-   * the SDK's own store uses, so PiDeck and the Pi CLI exclude each other.
+   * the SDK's own store uses, so PiAbyss and the Pi CLI exclude each other.
    */
   private ensureFileExists(): void {
     if (existsSync(this.authPath)) return;

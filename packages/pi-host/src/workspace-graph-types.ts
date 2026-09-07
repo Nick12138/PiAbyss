@@ -20,7 +20,7 @@ import type {
   ModelConfigHealth,
   PackageSnapshot,
   SessionSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import type { ResourceIdMap } from "./package-snapshot.js";
 import type { AttachmentStore } from "./attachment-store.js";
 import type { SubagentStatusBridge } from "./subagent-status-extension.js";
@@ -60,7 +60,7 @@ export type WorkspaceGraph = {
   providerOwner?: ProviderOwnerToken | null;
   /** Extension providers unregistered while this graph is parked. */
   suspendedProviders?: SuspendedProviders;
-  /** Optional PiDeck inline bridge for pi-subagents status projection. */
+  /** Optional PiAbyss inline bridge for pi-subagents status projection. */
   subagentStatusBridge?: SubagentStatusBridge;
 };
 
@@ -116,7 +116,7 @@ export type GraphFactoryDeps = {
   subagentStatusBridgeFactory?: (
     emit: (
       identity: HostIdentity,
-      snapshot: import("@pideck/protocol").SubagentsStatusSnapshot,
+      snapshot: import("@piabyss/protocol").SubagentsStatusSnapshot,
     ) => void,
     options?: { sessionsDir?: string },
   ) => SubagentStatusBridge;

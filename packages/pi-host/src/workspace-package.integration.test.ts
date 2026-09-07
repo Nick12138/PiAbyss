@@ -40,7 +40,7 @@ class HostProcess {
         env: {
           ...process.env,
           PI_CODING_AGENT_DIR: agentDir,
-          PIDECK_TEST_FAUX: "1",
+          PIABYSS_TEST_FAUX: "1",
         },
         stdio: ["pipe", "pipe", "pipe"],
       },
@@ -151,7 +151,7 @@ function projectWithProviderExtension(root: string, name: string, providerId: st
     `export default function (pi) {
       pi.registerProvider(${JSON.stringify(providerId)}, {
         baseUrl: "http://localhost:8317/v1",
-        apiKey: "pideck-isolation-test-key",
+        apiKey: "piabyss-isolation-test-key",
         api: "openai-completions",
         models: [{
           id: "iso-model",
@@ -234,14 +234,14 @@ describe("package + workspace integration", () => {
   let hostId: string;
 
   beforeAll(async () => {
-    root = mkdtempSync(join(tmpdir(), "pideck-package-workspace-"));
+    root = mkdtempSync(join(tmpdir(), "piabyss-package-workspace-"));
     agentDir = join(root, "agent");
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(join(agentDir, "auth.json"), "{}");
     writeFileSync(join(agentDir, "models.json"), "{}");
     writeFileSync(
       join(agentDir, "settings.json"),
-      JSON.stringify({ defaultProvider: "pideck-faux", defaultModel: "pideck-core" }),
+      JSON.stringify({ defaultProvider: "piabyss-faux", defaultModel: "piabyss-core" }),
     );
 
     host = new HostProcess(agentDir);
@@ -712,7 +712,7 @@ describe("package + workspace integration", () => {
   }, 180_000);
 
   it("keeps an extension-registered provider isolated to its workspace across A → B → A", async () => {
-    const providerId = "pideck-iso-provider";
+    const providerId = "piabyss-iso-provider";
     const a = projectWithProviderExtension(root, "ws-provider-a", providerId);
     const b = projectWithPartialProviderExtension(root, "ws-provider-b", providerId);
     const st = await host.request("system.getStatus", { expectedHostInstanceId: hostId }, null);

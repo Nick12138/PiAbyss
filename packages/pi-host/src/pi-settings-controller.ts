@@ -11,8 +11,8 @@ import type {
   PiSettingsSnapshot,
   ModelSummary,
   ThinkingLevel,
-} from "@pideck/protocol";
-import { createHostError } from "@pideck/protocol";
+} from "@piabyss/protocol";
+import { createHostError } from "@piabyss/protocol";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import type { MethodHandler } from "./server.js";
 import { logger } from "./logger.js";

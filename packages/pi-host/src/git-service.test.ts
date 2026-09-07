@@ -20,13 +20,13 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 async function createRepository(): Promise<{ root: string; workspace: string }> {
-  const root = await mkdtemp(join(tmpdir(), "pideck-git-"));
+  const root = await mkdtemp(join(tmpdir(), "piabyss-git-"));
   temporaryDirectories.push(root);
   const workspace = join(root, "packages", "app");
   await mkdir(workspace, { recursive: true });
   git(root, "init");
-  git(root, "config", "user.name", "PiDeck Test");
-  git(root, "config", "user.email", "pideck@example.invalid");
+  git(root, "config", "user.name", "PiAbyss Test");
+  git(root, "config", "user.email", "piabyss@example.invalid");
   git(root, "config", "core.autocrlf", "false");
   await writeFile(join(workspace, "tracked.txt"), "first\n", "utf8");
   git(root, "add", ".");
@@ -144,7 +144,7 @@ describe("parseUnifiedGitDiffHunks", () => {
 
 describe("GitService", () => {
   it("returns an expected empty state outside a repository", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pideck-not-git-"));
+    const root = await mkdtemp(join(tmpdir(), "piabyss-not-git-"));
     temporaryDirectories.push(root);
     await expect(new GitService().getStatus(root)).resolves.toEqual({
       state: "not_repository",
@@ -153,7 +153,7 @@ describe("GitService", () => {
   });
 
   it("reports a missing Git executable as unavailable", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pideck-no-git-"));
+    const root = await mkdtemp(join(tmpdir(), "piabyss-no-git-"));
     temporaryDirectories.push(root);
     const status = await new GitService(join(root, "missing-git")).getStatus(root);
     expect(status.state).toBe("unavailable");
@@ -492,7 +492,7 @@ describe("GitService", () => {
     git(root, "commit", "-m", "history change");
     const history = await service.listHistory(workspace, 1);
     expect(history.commits).toHaveLength(1);
-    expect(history.commits[0]).toMatchObject({ subject: "history change", authorName: "PiDeck Test" });
+    expect(history.commits[0]).toMatchObject({ subject: "history change", authorName: "PiAbyss Test" });
     expect(history.nextCursor).toBe(history.commits[0]?.sha);
     const older = await service.listHistory(workspace, 10, history.nextCursor!);
     expect(older.commits[0]?.subject).toBe("initial");

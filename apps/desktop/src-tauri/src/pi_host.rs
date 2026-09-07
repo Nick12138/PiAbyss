@@ -1828,7 +1828,7 @@ impl PiHostManager {
         })?;
 
         eprintln!(
-            "[pideck] starting host node={} entry={} cwd={} agentDir={} cacheDir={}",
+            "[piabyss] starting host node={} entry={} cwd={} agentDir={} cacheDir={}",
             node.display(),
             entry.display(),
             work_dir.display(),
@@ -1859,13 +1859,13 @@ impl PiHostManager {
             }
         }
         cmd.env("PI_CODING_AGENT_DIR", &agent_dir);
-        cmd.env("PIDECK_HOST_CACHE_DIR", &host_cache_dir);
+        cmd.env("PIABYSS_HOST_CACHE_DIR", &host_cache_dir);
         cmd.env(
-            "PIDECK_IDLE_SESSION_CACHE_LIMIT",
+            "PIABYSS_IDLE_SESSION_CACHE_LIMIT",
             self.idle_session_cache_limit.to_string(),
         );
         cmd.env(
-            "PIDECK_IDLE_SESSION_TIMEOUT_MINUTES",
+            "PIABYSS_IDLE_SESSION_TIMEOUT_MINUTES",
             self.idle_session_timeout_minutes.to_string(),
         );
         // Reserved names belong to the launcher; plugin config must not shadow them.
@@ -1874,12 +1874,12 @@ impl PiHostManager {
             "NODE_PATH",
             "NODE",
             "PI_CODING_AGENT_DIR",
-            "PIDECK_HOST_CACHE_DIR",
-            "PIDECK_IDLE_SESSION_CACHE_LIMIT",
-            "PIDECK_IDLE_SESSION_TIMEOUT_MINUTES",
-            "PIDECK_BUNDLED_NODE",
-            "PIDECK_BUNDLED_GIT",
-            "PIDECK_BUNDLED_BASH",
+            "PIABYSS_HOST_CACHE_DIR",
+            "PIABYSS_IDLE_SESSION_CACHE_LIMIT",
+            "PIABYSS_IDLE_SESSION_TIMEOUT_MINUTES",
+            "PIABYSS_BUNDLED_NODE",
+            "PIABYSS_BUNDLED_GIT",
+            "PIABYSS_BUNDLED_BASH",
         ];
         for vars in self.plugin_env.values() {
             for (name, value) in vars {
@@ -1892,7 +1892,7 @@ impl PiHostManager {
         // Host inherits the desktop user PATH so Agent Bash and internal
         // children see the user's own environment (mise, nvm, system git, …).
         // Bundled Node/Git dirs are appended as a fallback only, and the
-        // exact bundled executables are advertised via PIDECK_BUNDLED_* so the
+        // exact bundled executables are advertised via PIABYSS_BUNDLED_* so the
         // Host can use them without depending on PATH placement.
         let host_path = build_host_path(
             std::env::var_os("PATH").as_deref(),
@@ -1903,12 +1903,12 @@ impl PiHostManager {
         cmd.env("PATH", host_path);
 
         // Explicit bundled runtime descriptors for internal children.
-        cmd.env("PIDECK_BUNDLED_NODE", &node);
+        cmd.env("PIABYSS_BUNDLED_NODE", &node);
         if let Some(git_cmd) = portable_git_cmd.as_ref() {
             let git_exe = git_cmd.join("git.exe");
-            cmd.env("PIDECK_BUNDLED_GIT", &git_exe);
+            cmd.env("PIABYSS_BUNDLED_GIT", &git_exe);
             if let Some(bash) = Self::bundled_bash_from_git(&git_exe) {
-                cmd.env("PIDECK_BUNDLED_BASH", bash);
+                cmd.env("PIABYSS_BUNDLED_BASH", bash);
             }
         }
 
@@ -2003,7 +2003,7 @@ impl PiHostManager {
                             let mut logs = stderr_buf.lock().await;
                             push_stderr_tail(&mut logs, message.clone(), 50);
                         }
-                        eprintln!("[pideck] {message}");
+                        eprintln!("[piabyss] {message}");
                         let _ = app_err.emit(
                             "pi-host-stderr",
                             HostTransportFrame {
@@ -2019,7 +2019,7 @@ impl PiHostManager {
                             let mut logs = stderr_buf.lock().await;
                             push_stderr_tail(&mut logs, message.clone(), 50);
                         }
-                        eprintln!("[pideck] {message}");
+                        eprintln!("[piabyss] {message}");
                         let _ = app_err.emit(
                             "pi-host-stderr",
                             HostTransportFrame {
@@ -2108,14 +2108,14 @@ impl PiHostManager {
                             );
                             if is_hello_response {
                                 eprintln!(
-                                    "[pideck] system.hello response emitted to WebView: {}",
+                                    "[piabyss] system.hello response emitted to WebView: {}",
                                     emitted.is_ok()
                                 );
                             }
                         }
                         Err(error) if is_host_line_too_long(&error) => {
                             let message = format!("Pi Host stdout frame dropped: {error}");
-                            eprintln!("[pideck] {message}");
+                            eprintln!("[piabyss] {message}");
                             let _ = app_out.emit(
                                 "pi-host-stderr",
                                 HostTransportFrame {
@@ -2127,7 +2127,7 @@ impl PiHostManager {
                         }
                         Err(error) => {
                             let message = format!("Pi Host stdout transport read failed: {error}");
-                            eprintln!("[pideck] {message}");
+                            eprintln!("[piabyss] {message}");
                             read_failure = Some(message);
                             break;
                         }
@@ -2248,7 +2248,7 @@ impl PiHostManager {
         }
         match done.outcome {
             StartWaitOutcome::Ready(hid) => {
-                eprintln!("[pideck] host.ready received");
+                eprintln!("[piabyss] host.ready received");
                 if let Some(id) = hid {
                     self.host_instance_id = Some(id);
                 }
@@ -2364,7 +2364,7 @@ impl PiHostManager {
             format!("{line}\n")
         };
         if payload.contains("\"method\":\"system.hello\"") {
-            eprintln!("[pideck] writing system.hello request to Host");
+            eprintln!("[piabyss] writing system.hello request to Host");
         }
         let result =
             write_host_stdin(&mut *guard, payload.as_bytes(), HOST_STDIN_WRITE_TIMEOUT).await;
@@ -2416,7 +2416,7 @@ impl PiHostManager {
             let line = build_shutdown_line(&host_id, "shutdown");
             if self.host_instance_id.is_none() {
                 eprintln!(
-                    "[pideck] shutdown without hostInstanceId — sending expectedHostInstanceId=unknown then terminate"
+                    "[piabyss] shutdown without hostInstanceId — sending expectedHostInstanceId=unknown then terminate"
                 );
             }
             let _ = self.send_line(line).await;

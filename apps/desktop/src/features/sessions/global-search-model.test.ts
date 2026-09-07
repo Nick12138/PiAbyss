@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SessionSearchResultItem } from "@pideck/protocol";
+import type { SessionSearchResultItem } from "@piabyss/protocol";
 import {
   groupResultsByWorkspace,
   highlightSegments,

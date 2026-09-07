@@ -5,7 +5,7 @@ import type {
   PluginLibraryCatalog,
   PluginLibraryEntry,
   ResourceRecord,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import {
   buildPluginEnvPatch,
   initialConfigValues,

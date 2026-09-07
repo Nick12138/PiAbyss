@@ -8,7 +8,7 @@ import type {
   HostStatusSnapshot,
   SessionSnapshot,
   WorkspaceSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { draftTargetFor } from "../../lib/draft-target";
 import { useAppStore } from "../../lib/stores/app-store";

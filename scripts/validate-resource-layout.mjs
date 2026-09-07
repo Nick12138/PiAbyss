@@ -80,7 +80,7 @@ if (compacted) {
   const mainSrc = readFileSync(join(res, "pi-host/main.js"), "utf8");
   if (
     !mainSrc.includes("pi-host-bootstrap-runtime.mjs") ||
-    !mainSrc.includes("PIDECK_HOST_CACHE_DIR")
+    !mainSrc.includes("PIABYSS_HOST_CACHE_DIR")
   ) {
     errors.push("compacted main.js must delegate extraction to the writable Host cache runtime");
   }
@@ -88,7 +88,7 @@ if (compacted) {
   info.layout = "expanded-node_modules";
   need(expandedSdk, "SDK package missing under pi-host/node_modules");
   need(
-    join(res, "pi-host/node_modules/@pideck/protocol/package.json"),
+    join(res, "pi-host/node_modules/@piabyss/protocol/package.json"),
     "protocol package missing under pi-host/node_modules",
   );
 }
@@ -115,7 +115,7 @@ if (existsSync(hostRoot)) {
 
 if (existsSync(join(res, "pi-host/package.json"))) {
   const n = JSON.parse(readFileSync(join(res, "pi-host/package.json"), "utf8")).name;
-  if (n === "@pideck/protocol") {
+  if (n === "@piabyss/protocol") {
     errors.push("pi-host/package.json overwritten by protocol package (flatten collision)");
   }
   info.hostPackageName = n;
@@ -161,13 +161,13 @@ if (existsSync(join(res, "pi-host/STAGING.json"))) {
       assertReleaseProductionManifest(
         releaseManifest,
         expectedSdkEvidence,
-        { "@pideck/protocol": protocolVersion },
+        { "@piabyss/protocol": protocolVersion },
         "staged release Host manifest",
       );
       assertReleaseProductionManifest(
         { dependencies: s.productionDependencies },
         expectedSdkEvidence,
-        { "@pideck/protocol": protocolVersion },
+        { "@piabyss/protocol": protocolVersion },
         "STAGING production dependency evidence",
       );
     } catch (error) {

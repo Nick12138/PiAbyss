@@ -1,4 +1,4 @@
-import type { JsonValue, SerializableImage } from "@pideck/protocol";
+import type { JsonValue, SerializableImage } from "@piabyss/protocol";
 import { useAppStore } from "./stores/app-store";
 import { hostClient } from "./bridge/host-client";
 import { activeSessionContext } from "./bridge/host-context";

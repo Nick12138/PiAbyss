@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HostClient, HostEpochError, isHostEpochError } from "./host-client.js";
-import type { HostEventMessage } from "@pideck/protocol";
+import type { HostEventMessage } from "@piabyss/protocol";
 
 const HOST_ID = "00000000-0000-4000-8000-000000000011";
 const UNKNOWN_REQUEST_ID = "00000000-0000-4000-8000-000000000099";
@@ -46,7 +46,7 @@ describe("HostClient hello configuration", () => {
     expect(transport.sent[0]).toMatchObject({
       method: "system.hello",
       params: {
-        clientName: "pideck",
+        clientName: "piabyss",
         clientVersion: "0.1.0",
         protocolVersion: 1,
         extensionDecisionPresentation: "auto",
@@ -87,12 +87,12 @@ describe("HostClient hello configuration", () => {
   it("sends and accepts the persisted Extension decision mode", async () => {
     const client = new HostClient();
     const transport = attachTestTransport(client);
-    const pending = client.hello("pideck", "1.2.3", "inline-first");
+    const pending = client.hello("piabyss", "1.2.3", "inline-first");
 
     expect(transport.sent[0]).toMatchObject({
       method: "system.hello",
       params: {
-        clientName: "pideck",
+        clientName: "piabyss",
         clientVersion: "1.2.3",
         protocolVersion: 1,
         extensionDecisionPresentation: "inline-first",

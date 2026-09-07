@@ -15,7 +15,7 @@ import {
   type ModelConfigHealth,
   type HostCapabilities,
   type ExtensionDecisionPresentation,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { IdentityState } from "./identity.js";
 import { AgentOperationLock, TryMutex } from "./locks.js";
 import { logger } from "./logger.js";

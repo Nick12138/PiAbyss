@@ -470,7 +470,7 @@ export type BuiltinProviderAuthStatus = {
   configured: boolean;
   /** Human-readable auth source, e.g. "OAuth" or "ANTHROPIC_API_KEY". */
   authLabel?: string;
-  /** True when auth.json holds a credential PiDeck can log out of. */
+  /** True when auth.json holds a credential PiAbyss can log out of. */
   hasStoredCredential: boolean;
   enabled: boolean;
 };
@@ -929,7 +929,7 @@ export type PackageUpdateSummary = {
 };
 
 /* ------------------------------------------------------------------ */
-/* Plugin library (PiDeck-curated registry, see my-pi-plugins repo)   */
+/* Plugin library (PiAbyss-curated registry, see my-pi-plugins repo)   */
 /* ------------------------------------------------------------------ */
 
 /** How a curated plugin is installed. "repo" entries live inside the
@@ -941,7 +941,7 @@ export type PluginLibraryInstallSource =
 
 export type PluginLibraryConfigOption = { value: string; label: string };
 
-/** One auto-generated configuration control. Values are persisted by PiDeck
+/** One auto-generated configuration control. Values are persisted by PiAbyss
  *  and injected as environment variables (`env`) when the Host starts. */
 export type PluginLibraryConfigItem = {
   key: string;
@@ -1296,7 +1296,7 @@ export type SerializableAgentSessionEvent = {
 export const DESKTOP_THEMES = ["light", "dark", "system"] as const;
 export type DesktopTheme = (typeof DESKTOP_THEMES)[number];
 
-export const DESKTOP_THEME_FAMILIES = ["pideck", "vercel", "apple", "transparent"] as const;
+export const DESKTOP_THEME_FAMILIES = ["piabyss", "vercel", "apple", "transparent"] as const;
 export type DesktopThemeFamily = (typeof DESKTOP_THEME_FAMILIES)[number];
 
 export const DESKTOP_LANGUAGES = ["system", "en", "zh"] as const;
@@ -1324,11 +1324,11 @@ export type TerminalProfileId = (typeof TERMINAL_PROFILE_IDS)[number];
 
 export type DesktopSettings = {
   theme: DesktopTheme;
-  /** Visual theme family; absent values use the original PiDeck palette. */
+  /** Visual theme family; absent values use the original PiAbyss palette. */
   themeFamily?: DesktopThemeFamily;
   defaultWorkspace?: string;
   restoreLastSession: boolean;
-  /** Launch PiDeck with Windows at login and keep it hidden in the system tray. */
+  /** Launch PiAbyss with Windows at login and keep it hidden in the system tray. */
   autoStartOnBoot?: boolean;
   /** Deliver OS-level notifications for background completions, failures,
    *  input requests and Host fatals while the window is not focused. */

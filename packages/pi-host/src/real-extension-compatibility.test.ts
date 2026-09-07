@@ -8,7 +8,7 @@ import {
   wrapRegisteredTool,
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
-import type { HostEventName, HostIdentity } from "@pideck/protocol";
+import type { HostEventName, HostIdentity } from "@piabyss/protocol";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   bindExtensionUi,
@@ -24,10 +24,10 @@ import {
 
 const require = createRequire(import.meta.url);
 const RPIV_V1_ENTRYPOINT = require.resolve(
-  "@pideck-test/rpiv-ask-user-question-v1",
+  "@piabyss-test/rpiv-ask-user-question-v1",
 );
 const RPIV_V2_ENTRYPOINT = require.resolve(
-  "@pideck-test/rpiv-ask-user-question-v2",
+  "@piabyss-test/rpiv-ask-user-question-v2",
 );
 
 type EmittedEvent = { event: HostEventName; payload: unknown };
@@ -75,7 +75,7 @@ async function loadPublishedExtension(
   entrypoint: string,
   sessionId: string,
 ): Promise<LoadedExtension> {
-  const layout = createTempAgentLayout("pideck-real-extension-");
+  const layout = createTempAgentLayout("piabyss-real-extension-");
   const eventBus = createEventBus();
   const promptEvents: unknown[] = [];
   const blockedEvents: unknown[] = [];

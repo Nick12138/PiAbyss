@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureRoot = join(repoRoot, "test-fixtures/pi-agent");
-const safeCredentialPattern = /^pideck-fixture-[a-z0-9-]+-never-real$/i;
+const safeCredentialPattern = /^piabyss-fixture-[a-z0-9-]+-never-real$/i;
 const sensitiveFieldPattern =
   /^(?:key|apiKey|access|accessToken|refresh|refreshToken|token|secret|password|authorization)$/i;
 const forbiddenTokenPatterns = [

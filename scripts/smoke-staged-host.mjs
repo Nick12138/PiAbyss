@@ -36,24 +36,24 @@ assertReleaseSdkEvidence(staging.sdkEvidence, sdkEvidence, "STAGING SDK evidence
 assertReleaseProductionManifest(
   stagedManifest,
   sdkEvidence,
-  { "@pideck/protocol": protocolVersion },
+  { "@piabyss/protocol": protocolVersion },
   "staged release Host manifest",
 );
 const nodePath =
-  process.env.PIDECK_STAGED_NODE ?? join(resources, "node", runtimeTarget.stagedNodeExecutable);
-const hostEntry = process.env.PIDECK_STAGED_HOST_ENTRY ?? join(resources, "pi-host", "main.js");
+  process.env.PIABYSS_STAGED_NODE ?? join(resources, "node", runtimeTarget.stagedNodeExecutable);
+const hostEntry = process.env.PIABYSS_STAGED_HOST_ENTRY ?? join(resources, "pi-host", "main.js");
 const portableGit = join(resources, "git", "cmd", "git.exe");
 const gitExecutable =
-  process.env.PIDECK_STAGED_GIT ??
+  process.env.PIABYSS_STAGED_GIT ??
   (process.platform === "win32" && existsSync(portableGit) ? portableGit : "git");
-const expectedNodeVersion = process.env.PIDECK_EXPECT_NODE_VERSION ?? runtimeTarget.node.version;
-const timeoutMs = parseTimeout(process.env.PIDECK_STAGED_SMOKE_TIMEOUT_MS, 180_000);
+const expectedNodeVersion = process.env.PIABYSS_EXPECT_NODE_VERSION ?? runtimeTarget.node.version;
+const timeoutMs = parseTimeout(process.env.PIABYSS_STAGED_SMOKE_TIMEOUT_MS, 180_000);
 
 function parseTimeout(value, fallback) {
   if (value === undefined) return fallback;
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    throw new Error(`Invalid PIDECK_STAGED_SMOKE_TIMEOUT_MS: ${value}`);
+    throw new Error(`Invalid PIABYSS_STAGED_SMOKE_TIMEOUT_MS: ${value}`);
   }
   return parsed;
 }
@@ -70,7 +70,7 @@ function withStderr(message, stderr) {
 assert(existsSync(nodePath), `Staged Node is missing: ${nodePath}`);
 assert(existsSync(hostEntry), `Staged Host entry is missing: ${hostEntry}`);
 
-const tempRoot = mkdtempSync(join(tmpdir(), "pideck-staged-smoke-"));
+const tempRoot = mkdtempSync(join(tmpdir(), "piabyss-staged-smoke-"));
 const agentDir = join(tempRoot, "agent");
 const workspaceDir = join(tempRoot, "workspace");
 const hostCacheDir = join(tempRoot, "host-cache");
@@ -110,7 +110,7 @@ function assertStagedHostUnchanged() {
 
 // Host inherits the desktop user PATH (mise, nvm, system git, …); bundled
 // Node/Git dirs are appended as a fallback, and the exact bundled executables
-// are advertised via PIDECK_BUNDLED_* like the real launcher does.
+// are advertised via PIABYSS_BUNDLED_* like the real launcher does.
 const hostPath = [process.env.PATH];
 hostPath.push(dirname(nodePath));
 if (existsSync(portableGit)) {
@@ -126,9 +126,9 @@ const child = spawn(nodePath, [hostEntry], {
   env: {
     ...process.env,
     PI_CODING_AGENT_DIR: agentDir,
-    PIDECK_HOST_CACHE_DIR: hostCacheDir,
-    PIDECK_BUNDLED_NODE: nodePath,
-    ...(existsSync(portableGit) ? { PIDECK_BUNDLED_GIT: portableGit } : {}),
+    PIABYSS_HOST_CACHE_DIR: hostCacheDir,
+    PIABYSS_BUNDLED_NODE: nodePath,
+    ...(existsSync(portableGit) ? { PIABYSS_BUNDLED_GIT: portableGit } : {}),
     PATH: hostPath.filter(Boolean).join(delimiter),
   },
   stdio: ["pipe", "pipe", "pipe"],

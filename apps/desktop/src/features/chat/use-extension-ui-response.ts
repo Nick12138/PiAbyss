@@ -1,4 +1,4 @@
-import type { JsonValue } from "@pideck/protocol";
+import type { JsonValue } from "@piabyss/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { hostClient, isHostEpochError } from "../../lib/bridge/host-client";
 import { latestSessionTargetContext } from "../../lib/bridge/host-context";

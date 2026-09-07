@@ -16,7 +16,7 @@ import type {
   BusySendBehavior,
   ExtensionDecisionPresentation,
   TerminalProfileId,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { Dialog, secondaryButton } from "../../components/Dialog";
 import { Select } from "../../components/Select";
 import { Switch } from "../../components/Switch";

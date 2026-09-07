@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 const SETTINGS_SCHEMA_VERSION: u32 = 1;
 const SETTINGS_FILE_NAME: &str = "desktop-settings.json";
-const PIDECK_DATA_DIR_NAME: &str = "pideck";
+const PIABYSS_DATA_DIR_NAME: &str = "piabyss";
 const DEFAULT_PROJECT_DIR_NAME: &str = "DefaultProject";
 const DEFAULT_CONVERSATION_MIN_WIDTH: u32 = 350;
 const DEFAULT_CONVERSATION_MAX_WIDTH: u32 = 1100;
@@ -43,7 +43,8 @@ pub enum DesktopLanguage {
 #[serde(rename_all = "lowercase")]
 pub enum DesktopThemeFamily {
     #[default]
-    Pideck,
+    #[serde(alias = "pideck")]
+    PiAbyss,
     Vercel,
     Apple,
     Transparent,
@@ -139,7 +140,7 @@ impl Default for DesktopSettings {
     fn default() -> Self {
         Self {
             theme: DesktopTheme::System,
-            theme_family: DesktopThemeFamily::Pideck,
+            theme_family: DesktopThemeFamily::PiAbyss,
             default_workspace: None,
             restore_last_session: true,
             auto_start_on_boot: false,
@@ -191,6 +192,28 @@ pub struct DesktopSettingsStore {
     recovered_from: Option<PathBuf>,
 }
 
+/// One-shot rename of the legacy `pideck` namespace directory to `piabyss`.
+/// Runs before any namespace consumer; rename is same-volume and atomic.
+/// If the target already exists (partially migrated), the legacy dir is left
+/// untouched so no data is overwritten.
+fn migrate_legacy_namespace_dir(agent_dir: &std::path::Path) {
+    let legacy = agent_dir.join("pideck");
+    let current = agent_dir.join(PIABYSS_DATA_DIR_NAME);
+    let legacy_is_dir = fs::metadata(&legacy).map(|m| m.is_dir()).unwrap_or(false);
+    if !legacy_is_dir {
+        return;
+    }
+    if std::fs::symlink_metadata(&current).is_ok() {
+        return;
+    }
+    if let Err(error) = fs::rename(&legacy, &current) {
+        eprintln!(
+            "[piabyss] could not migrate legacy data dir {}: {error}",
+            legacy.display()
+        );
+    }
+}
+
 impl DesktopSettingsStore {
     fn recovery_defaults() -> DesktopSettings {
         DesktopSettings {
@@ -200,11 +223,11 @@ impl DesktopSettingsStore {
     }
 
     pub fn load(app: &AppHandle) -> Result<Self, String> {
-        let dir = match std::env::var_os("PIDECK_CONFIG_DIR") {
+        let dir = match std::env::var_os("PIABYSS_CONFIG_DIR") {
             Some(value) => {
                 let path = PathBuf::from(value);
                 if !path.is_absolute() {
-                    return Err("PIDECK_CONFIG_DIR must be an absolute path".into());
+                    return Err("PIABYSS_CONFIG_DIR must be an absolute path".into());
                 }
                 path
             }
@@ -457,7 +480,7 @@ impl DesktopSettingsStore {
             return Ok(None);
         }
 
-        let namespace_dir = self.resolved_agent_dir().join(PIDECK_DATA_DIR_NAME);
+        let namespace_dir = self.resolved_agent_dir().join(PIABYSS_DATA_DIR_NAME);
         let project_dir = namespace_dir.join(DEFAULT_PROJECT_DIR_NAME);
         create_private_directory(&namespace_dir)?;
         create_private_directory(&project_dir)?;
@@ -522,13 +545,16 @@ impl DesktopSettingsStore {
     }
 
     pub fn resolved_agent_dir(&self) -> PathBuf {
-        if let Some(ref dir) = self.settings.agent_dir {
-            return PathBuf::from(dir);
-        }
-        dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".pi")
-            .join("agent")
+        let dir = if let Some(ref dir) = self.settings.agent_dir {
+            PathBuf::from(dir)
+        } else {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".pi")
+                .join("agent")
+        };
+        migrate_legacy_namespace_dir(&dir);
+        dir
     }
 }
 
@@ -583,7 +609,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     fn test_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("pideck-settings-{name}-{}", Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("piabyss-settings-{name}-{}", Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -688,7 +714,7 @@ mod tests {
             store.settings.interface_density,
             DesktopInterfaceDensity::Standard
         );
-        assert_eq!(store.settings.theme_family, DesktopThemeFamily::Pideck);
+        assert_eq!(store.settings.theme_family, DesktopThemeFamily::PiAbyss);
         assert_eq!(
             store.settings.conversation_font_size,
             DEFAULT_CONVERSATION_FONT_SIZE
@@ -895,7 +921,7 @@ mod tests {
 
         let loaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
         assert_eq!(loaded.settings.theme, DesktopTheme::Light);
-        assert_eq!(loaded.settings.theme_family, DesktopThemeFamily::Pideck);
+        assert_eq!(loaded.settings.theme_family, DesktopThemeFamily::PiAbyss);
         assert!(!loaded.settings.restore_last_session);
         assert_eq!(
             loaded.settings.extension_decision_presentation,
@@ -954,7 +980,7 @@ mod tests {
     fn initializes_and_persists_the_default_project_workspace() {
         let dir = test_dir("default-project");
         let agent_dir = dir.join("agent");
-        let project_dir = agent_dir.join("pideck").join("DefaultProject");
+        let project_dir = agent_dir.join("piabyss").join("DefaultProject");
         let project_path = project_dir.to_string_lossy().into_owned();
         let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
         store.settings.agent_dir = Some(agent_dir.to_string_lossy().into_owned());
@@ -973,7 +999,7 @@ mod tests {
 
         #[cfg(unix)]
         {
-            let namespace_mode = fs::metadata(agent_dir.join("pideck"))
+            let namespace_mode = fs::metadata(agent_dir.join("piabyss"))
                 .unwrap()
                 .permissions()
                 .mode()
@@ -1024,7 +1050,7 @@ mod tests {
 
             assert_eq!(store.ensure_default_project_workspace().unwrap(), None);
             assert_eq!(serde_json::to_value(&store.settings).unwrap(), before);
-            assert!(!agent_dir.join("pideck").join("DefaultProject").exists());
+            assert!(!agent_dir.join("piabyss").join("DefaultProject").exists());
             fs::remove_dir_all(dir).unwrap();
         }
     }

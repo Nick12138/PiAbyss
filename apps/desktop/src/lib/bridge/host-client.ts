@@ -9,7 +9,7 @@ import {
   type HostResponseEnvelope,
   type HostStatusSnapshot,
   type ExtensionDecisionPresentation,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 
 export type HostTransport = {
   send: (line: string) => void | Promise<void>;
@@ -276,7 +276,7 @@ export class HostClient {
   }
 
   async hello(
-    clientName = "pideck",
+    clientName = "piabyss",
     clientVersion = "0.1.0",
     extensionDecisionPresentation: ExtensionDecisionPresentation = "auto",
   ): Promise<HostStatusSnapshot> {

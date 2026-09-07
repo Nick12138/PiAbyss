@@ -245,7 +245,7 @@ describe("session-bound agent handlers", () => {
 
     expect("error" in outcome).toBe(false);
     expect(fixture.session.followUp).toHaveBeenCalledWith(
-      expect.stringContaining('<pideck-attachments version="1">'),
+      expect.stringContaining('<piabyss-attachments version="1">'),
       undefined,
     );
     expect(fixture.session.followUp).toHaveBeenCalledWith(
@@ -289,7 +289,7 @@ describe("session-bound agent handlers", () => {
 
     expect("error" in outcome).toBe(false);
     const promptText = vi.mocked(fixture.session.followUp).mock.calls[0]?.[0] as string;
-    expect(promptText).toContain('<pideck-attachment-guide version="1">');
+    expect(promptText).toContain('<piabyss-attachment-guide version="1">');
     expect(promptText).toContain("scan.pdf");
     expect(promptText).toContain("wpscli");
     expect(promptText).toContain("ocr_image");
@@ -324,7 +324,7 @@ describe("session-bound agent handlers", () => {
     } as never);
 
     const promptText = vi.mocked(fixture.session.followUp).mock.calls[0]?.[0] as string;
-    expect(promptText).not.toContain("pideck-attachment-guide");
+    expect(promptText).not.toContain("piabyss-attachment-guide");
   });
 });
 
@@ -460,7 +460,7 @@ describe("agent.prompt extension command provenance", () => {
               invocationName: name,
               sourceInfo: {
                 path: "/packages/brainstorm/extensions/index.ts",
-                source: "npm:@pideck/brainstorm@1.0.0",
+                source: "npm:@piabyss/brainstorm@1.0.0",
                 scope: "user",
                 origin: "package",
                 baseDir: "/packages/brainstorm",

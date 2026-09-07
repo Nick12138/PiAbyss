@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { MethodHandler } from "./server.js";
 import { createTelegramSessionHandlers } from "./telegram-sessions-controller.js";
-import { workspaceStorageKey } from "./pideck-data.js";
+import { workspaceStorageKey } from "./piabyss-data.js";
 
 /** Sessions dir of the dedicated telegram workspace (scoped scan target). */
 function telegramSessionsDir(agentDir: string): string {
@@ -72,7 +72,7 @@ describe("telegram sessions controller", () => {
 
   describe("telegram.getProfiles", () => {
     it("returns the default profile when configured", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       writeFileSync(
         join(agentDir, "telegram.json"),
         JSON.stringify({
@@ -88,12 +88,12 @@ describe("telegram sessions controller", () => {
 
   describe("telegram.listSessions", () => {
     it("returns an empty list when the sessions dir is missing", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       expect(await call(agentDir, "telegram.listSessions")).toEqual({ sessions: [] });
     });
 
     it("finds sessions with telegram markers and ignores plain ones", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       writeSession(
         join(telegramSessionsDir(agentDir), "tg-a.jsonl"),
         [
@@ -132,7 +132,7 @@ describe("telegram sessions controller", () => {
     });
 
     it("sorts sessions by last write, newest first", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       writeSession(join(telegramSessionsDir(agentDir), "old.jsonl"), [sessionOpen("11111111-1111-4111-8111-111111111111", "C:/w"),
         userMessage("u1", telegramText("老消息"))], 1_000);
       writeSession(join(telegramSessionsDir(agentDir), "new.jsonl"), [sessionOpen("22222222-2222-4222-8222-222222222222", "C:/w"),
@@ -147,7 +147,7 @@ describe("telegram sessions controller", () => {
     });
 
     it("counts multiple telegram messages across a session", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       writeSession(
         join(telegramSessionsDir(agentDir), "multi.jsonl"),
         [
@@ -165,7 +165,7 @@ describe("telegram sessions controller", () => {
     });
 
     it("ignores telegram-marked sessions living in OTHER workspaces", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       // A legacy telegram pair before the dedicated workspace existed: it must
       // stay visible only in its own folder workspace, never in the TG view.
       writeSession(
@@ -194,7 +194,7 @@ describe("telegram sessions controller", () => {
 
   describe("telegram.getConfig", () => {
     it("returns null profile, creates the workspace dir and no config blocks", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       const response = await handlers(agentDir)["telegram.getConfig"]!({} as never);
       if (!("result" in response)) throw new Error("expected result");
       const result = response.result as { default: unknown; workspacePath: string; assistant?: unknown };
@@ -205,7 +205,7 @@ describe("telegram sessions controller", () => {
     });
 
     it("returns sanitized config blocks but never the raw token", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       writeFileSync(
         join(agentDir, "telegram.json"),
         JSON.stringify({
@@ -232,7 +232,7 @@ describe("telegram sessions controller", () => {
 
   describe("telegram.updateConfig", () => {
     it("merges config blocks and preserves profiles and other root fields", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       writeFileSync(
         join(agentDir, "telegram.json"),
         JSON.stringify({
@@ -259,7 +259,7 @@ describe("telegram sessions controller", () => {
     });
 
     it("creates config blocks from an empty file", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       const response = await handlers(agentDir)["telegram.updateConfig"]!({
         params: { threads: { automaticCleanup: true } },
       } as never);
@@ -273,7 +273,7 @@ describe("telegram sessions controller", () => {
 
   describe("telegram.reset", () => {
     it("removes config, temp state, workspace dir and telegram sessions only", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       writeFileSync(join(agentDir, "telegram.json"), JSON.stringify({ profiles: { default: {} } }), "utf8");
       mkdirSync(join(agentDir, "tmp", "telegram", "inbox.json.segments"), { recursive: true });
       writeFileSync(join(agentDir, "tmp", "telegram", "inbox.json.segments", "0000000000000001.json"), "{}", "utf8");
@@ -301,7 +301,7 @@ describe("telegram sessions controller", () => {
 
   describe("telegram.saveProfile", () => {
     it("writes the default profile with token and identity", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       const response = await handlers(agentDir)["telegram.saveProfile"]!({
         params: { token: "123456:ABC-DEF", botId: 7, botUsername: "bot", botName: "B" },
       } as never);
@@ -321,7 +321,7 @@ describe("telegram sessions controller", () => {
     });
 
     it("upserts an existing default profile and preserves other profiles", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       writeFileSync(
         join(agentDir, "telegram.json"),
         JSON.stringify({
@@ -347,7 +347,7 @@ describe("telegram sessions controller", () => {
     });
 
     it("rejects an empty token", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       const response = await handlers(agentDir)["telegram.saveProfile"]!({
         params: { token: "   " },
       } as never);
@@ -358,7 +358,7 @@ describe("telegram sessions controller", () => {
 
   describe("telegram.getSession", () => {
     it("returns the message records plus a fresh summary", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       const path = writeSession(
         join(telegramSessionsDir(agentDir), "detail.jsonl"),
         [
@@ -380,7 +380,7 @@ describe("telegram sessions controller", () => {
     });
 
     it("rejects paths outside the sessions directory", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       const response = await handlers(agentDir)["telegram.getSession"]!({
         params: { sessionPath: `${agentDir}/../evil.jsonl` },
       } as never);
@@ -389,7 +389,7 @@ describe("telegram sessions controller", () => {
     });
 
     it("rejects sessions without telegram messages", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       const path = writeSession(
         join(telegramSessionsDir(agentDir), "plain.jsonl"),
         [sessionOpen("11111111-1111-4111-8111-111111111111", "C:/w"), userMessage("u1", "无标记")],
@@ -405,12 +405,12 @@ describe("telegram sessions controller", () => {
 
   describe("telegram.status", () => {
     it("reports disconnected when no owners file exists", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       expect(await call(agentDir, "telegram.status")).toEqual({ connected: false });
     });
 
     it("reports disconnected when the owner entry is missing or unparsable", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       mkdirSync(join(agentDir, "tmp", "telegram"), { recursive: true });
       writeFileSync(
         join(agentDir, "tmp", "telegram", "owners.json"),
@@ -421,7 +421,7 @@ describe("telegram sessions controller", () => {
     });
 
     it("reports disconnected when the owning process is dead", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       mkdirSync(join(agentDir, "tmp", "telegram"), { recursive: true });
       writeFileSync(
         join(agentDir, "tmp", "telegram", "owners.json"),
@@ -432,7 +432,7 @@ describe("telegram sessions controller", () => {
     });
 
     it("reports connected with the profile bot id for a live owner", async () => {
-      agentDir = mkdtempSync(join(tmpdir(), "pideck-tg-sess-"));
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       writeFileSync(
         join(agentDir, "telegram.json"),
         JSON.stringify({

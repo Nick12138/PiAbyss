@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ModelSummary } from "@pideck/protocol";
+import type { ModelSummary } from "@piabyss/protocol";
 import {
   canRequestModelList,
   clampModelMenuWidth,

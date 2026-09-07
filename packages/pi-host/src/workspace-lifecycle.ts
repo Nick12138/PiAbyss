@@ -16,7 +16,7 @@ import {
   type SessionSnapshot,
   type WorkspaceSnapshot,
   toJsonValue,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { activateOnce, bindForCandidate } from "./extension-ui-lifecycle.js";
 import type { ProviderOwnerToken } from "./extension-provider-ownership.js";
 import { captureFilesystemFingerprint } from "./filesystem-fingerprint.js";
@@ -700,7 +700,7 @@ export class WorkspaceLifecycle {
     };
 
     try {
-      // PiDeck has no separate project-trust prompt. Treat "ask" as the
+      // PiAbyss has no separate project-trust prompt. Treat "ask" as the
       // compatibility default (load project resources) and reserve "never"
       // for explicitly disabling project-local settings/resources.
       const globalSettings = SettingsManager.create(args.canonicalCwd, agentDir, {

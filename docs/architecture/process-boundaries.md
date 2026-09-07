@@ -64,7 +64,7 @@ cleanup claim prevents the stdout crash monitor and manager from both signaling
 a later-reused process-group id.
 
 Extensions, tools, and SDK helpers may spawn ordinary child processes, but they
-must not evade PiDeck ownership with detached mode, `setsid`, `setpgid`, or a
+must not evade PiAbyss ownership with detached mode, `setsid`, `setpgid`, or a
 double-fork daemon. A deliberately detached process has left the Host lifecycle
 contract and cannot be contained by either a Unix process group or ordinary
 parent-death handling. As with all userspace Unix supervisors, an unrecoverable

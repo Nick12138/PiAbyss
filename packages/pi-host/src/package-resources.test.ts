@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DefaultPackageManager, SettingsManager } from "@earendil-works/pi-coding-agent";
-import type { ResourcePreferenceUpdate } from "@pideck/protocol";
+import type { ResourcePreferenceUpdate } from "@piabyss/protocol";
 import {
   applyResourcePreferences,
   createPackageHandlers,
@@ -170,7 +170,7 @@ describe("unified package resources", () => {
   });
 
   it("keeps shadowed global resources user-only in the independent projection", async () => {
-    const root = mkdtempSync(join(tmpdir(), "pideck-host-shadowed-"));
+    const root = mkdtempSync(join(tmpdir(), "piabyss-host-shadowed-"));
     const agentDir = join(root, "agent");
     const cwd = join(root, "workspace");
     const packageRoot = join(root, "shared-package");
@@ -525,7 +525,7 @@ describe("unified package resources", () => {
   });
 
   it("reads disabled skill name and description from frontmatter", async () => {
-    const root = mkdtempSync(join(tmpdir(), "pideck-host-disabled-skill-"));
+    const root = mkdtempSync(join(tmpdir(), "piabyss-host-disabled-skill-"));
     const skillPath = join(root, "skills", "folder-name", "SKILL.md");
     mkdirSync(join(root, "skills", "folder-name"), { recursive: true });
     writeFileSync(

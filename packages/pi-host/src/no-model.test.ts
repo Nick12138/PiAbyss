@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
-import type { SessionSnapshot } from "@pideck/protocol";
+import type { SessionSnapshot } from "@piabyss/protocol";
 
 const buildSessionSnapshotMock = vi.fn();
 vi.mock("./session-snapshot.js", async (importOriginal) => {
@@ -13,22 +13,22 @@ vi.mock("./session-snapshot.js", async (importOriginal) => {
 
 import {
   clearSessionModel,
-  isPideckNoModel,
+  isPiAbyssNoModel,
   publishIdleActiveSessionSnapshot,
 } from "./no-model.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 
-describe("isPideckNoModel", () => {
+describe("isPiAbyssNoModel", () => {
   it("recognizes the no-model sentinel", () => {
-    expect(isPideckNoModel({ provider: "unknown", id: "unknown" })).toBe(true);
+    expect(isPiAbyssNoModel({ provider: "unknown", id: "unknown" })).toBe(true);
   });
 
   it("rejects real models, partial matches and empty input", () => {
-    expect(isPideckNoModel({ provider: "custom", id: "primary" })).toBe(false);
-    expect(isPideckNoModel({ provider: "unknown", id: "primary" })).toBe(false);
-    expect(isPideckNoModel({ provider: "custom", id: "unknown" })).toBe(false);
-    expect(isPideckNoModel(null)).toBe(false);
-    expect(isPideckNoModel(undefined)).toBe(false);
+    expect(isPiAbyssNoModel({ provider: "custom", id: "primary" })).toBe(false);
+    expect(isPiAbyssNoModel({ provider: "unknown", id: "primary" })).toBe(false);
+    expect(isPiAbyssNoModel({ provider: "custom", id: "unknown" })).toBe(false);
+    expect(isPiAbyssNoModel(null)).toBe(false);
+    expect(isPiAbyssNoModel(undefined)).toBe(false);
   });
 });
 

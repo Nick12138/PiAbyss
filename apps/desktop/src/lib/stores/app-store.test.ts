@@ -7,7 +7,7 @@ import {
   deriveExtensionUiWaitingBySession,
   isExtensionDecisionBlockingSession,
 } from "./extension-ui-state";
-import type { HostStatusSnapshot, SessionSnapshot, WorkspaceSnapshot } from "@pideck/protocol";
+import type { HostStatusSnapshot, SessionSnapshot, WorkspaceSnapshot } from "@piabyss/protocol";
 import { emptySessionCatalog } from "./session-catalog";
 
 function host(id: string): HostStatusSnapshot {
@@ -146,7 +146,7 @@ describe("app-store epoch wiring", () => {
   });
   it("treats an authoritative message with attachment blocks as the pending row", () => {
     const block =
-      '<pideck-attachments version="1">\n[{"id":"a1"}]\n</pideck-attachments>';
+      '<piabyss-attachments version="1">\n[{"id":"a1"}]\n</piabyss-attachments>';
     const current = session("s1");
     current.messages = [
       ...current.messages,

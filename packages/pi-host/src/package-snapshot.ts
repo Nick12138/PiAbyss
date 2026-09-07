@@ -14,7 +14,7 @@ import type {
   PackageRecord,
   PackageSnapshot,
   ResourceRecord,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import {
   matchesResourcePattern,
   resourceTypeToSettingsKey,

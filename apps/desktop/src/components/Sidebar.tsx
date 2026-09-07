@@ -15,7 +15,7 @@ import {
   subscribeCreateSessionPending,
 } from "../lib/commands/actions";
 
-const SIDEBAR_WIDTH_KEY = "pideck.sidebar.width.v1";
+const SIDEBAR_WIDTH_KEY = "piabyss.sidebar.width.v1";
 const DEFAULT_SIDEBAR_WIDTH = 268;
 const MIN_SIDEBAR_WIDTH = 220;
 const MAX_SIDEBAR_WIDTH = 420;
@@ -124,7 +124,7 @@ export function SidebarLayout({
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const telegramViewActive = useTelegramWorkspaceActive();
   const [sessionsCollapsed, setSessionsCollapsed] = useState(() =>
-    sidebarPref("pideck.sidebar.sessionsCollapsed"),
+    sidebarPref("piabyss.sidebar.sessionsCollapsed"),
   );
   const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
   const [resizing, setResizing] = useState(false);
@@ -231,7 +231,7 @@ export function SidebarLayout({
 
   function toggleSessionsCollapsed() {
     setSessionsCollapsed((current) => {
-      setSidebarPref("pideck.sidebar.sessionsCollapsed", !current);
+      setSidebarPref("piabyss.sidebar.sessionsCollapsed", !current);
       return !current;
     });
   }

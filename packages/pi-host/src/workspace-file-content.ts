@@ -7,7 +7,7 @@ import {
   MAX_PREVIEW_TEXT_BYTES,
   type WorkspaceFilePreview,
   type WorkspaceTextFile,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { normalizeWorkspaceRelativePath } from "./workspace-files.js";
 
 export class FileConflictError extends Error {}
@@ -154,7 +154,7 @@ export async function writeWorkspaceTextFile(
       if (bytes.length > MAX_PREVIEW_TEXT_BYTES) throw new Error("Text exceeds the 1 MiB limit");
       const result = describeText(source.path, bytes);
       if (!result) throw new Error("Binary text cannot be saved");
-      const temporary = join(dirname(source.absolute), `.pideck-save-${randomUUID()}`);
+      const temporary = join(dirname(source.absolute), `.piabyss-save-${randomUUID()}`);
       try {
         const handle = await open(temporary, "wx", source.stats.mode & 0o777);
         try {

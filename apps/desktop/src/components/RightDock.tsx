@@ -14,7 +14,7 @@ import {
   SquareTerminal,
   X,
 } from "lucide-react";
-import type { TerminalProfileId } from "@pideck/protocol";
+import type { TerminalProfileId } from "@piabyss/protocol";
 import { useAppStore } from "../lib/stores/app-store";
 import { setSidebarPref } from "../lib/sidebar-prefs";
 import { PiMark } from "./PiMark";
@@ -66,7 +66,7 @@ type BrowserDockTab = {
   initialUrl: string;
 };
 
-const DOCK_WIDTH_KEY = "pideck.dock.width.v1";
+const DOCK_WIDTH_KEY = "piabyss.dock.width.v1";
 const DEFAULT_DOCK_WIDTH = 460;
 const MIN_DOCK_WIDTH = 350;
 const MAX_DOCK_WIDTH = 720;
@@ -227,7 +227,7 @@ export function RightDock() {
     });
     if (closesLastTab) {
       setDockOpen(false);
-      setSidebarPref("pideck.dock.open", false);
+      setSidebarPref("piabyss.dock.open", false);
     }
   };
 
@@ -363,7 +363,7 @@ export function RightDock() {
         if (request.kind === "toggle") {
           const open = !useAppStore.getState().dockOpen;
           setDockOpen(open);
-          setSidebarPref("pideck.dock.open", open);
+          setSidebarPref("piabyss.dock.open", open);
           return;
         }
         const tabId = visibleTabIdsRef.current[request.index];
@@ -371,7 +371,7 @@ export function RightDock() {
         setActiveTab(tabId);
         if (!useAppStore.getState().dockOpen) {
           setDockOpen(true);
-          setSidebarPref("pideck.dock.open", true);
+          setSidebarPref("piabyss.dock.open", true);
         }
       }),
     [setDockOpen],
@@ -426,7 +426,7 @@ export function RightDock() {
     setActiveTab("subagents");
     if (!dockOpen) {
       setDockOpen(true);
-      setSidebarPref("pideck.dock.open", true);
+      setSidebarPref("piabyss.dock.open", true);
     }
   }, [
     dockOpen,
@@ -442,7 +442,7 @@ export function RightDock() {
         createTree();
         if (!useAppStore.getState().dockOpen) {
           setDockOpen(true);
-          setSidebarPref("pideck.dock.open", true);
+          setSidebarPref("piabyss.dock.open", true);
         }
         return true;
       }),
@@ -458,7 +458,7 @@ export function RightDock() {
         createChanges();
         if (!useAppStore.getState().dockOpen) {
           setDockOpen(true);
-          setSidebarPref("pideck.dock.open", true);
+          setSidebarPref("piabyss.dock.open", true);
         }
         return true;
       }),
@@ -488,7 +488,7 @@ export function RightDock() {
         if (!createBrowserTab(url)) return false;
         if (!useAppStore.getState().dockOpen) {
           setDockOpen(true);
-          setSidebarPref("pideck.dock.open", true);
+          setSidebarPref("piabyss.dock.open", true);
         }
         return true;
       }),

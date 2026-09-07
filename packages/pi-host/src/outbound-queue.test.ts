@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseHostResponse, type HostIdentity } from "@pideck/protocol";
+import { parseHostResponse, type HostIdentity } from "@piabyss/protocol";
 import { OutboundWriter, type WritableLike } from "./outbound-queue.js";
 
 const identity: HostIdentity = {

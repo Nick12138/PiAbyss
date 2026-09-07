@@ -1,4 +1,4 @@
-# PiDeck 开发启动指南（Windows）
+# PiAbyss 开发启动指南（Windows）
 
 > 本文档总结了为启动开发所完成的全部环境配置，以及日常开发命令与热重载原理。
 > 给第一次做桌面应用开发的你。
@@ -13,7 +13,7 @@
 | MSVC C++ Build Tools | ✅ | `C:\BuildTools`（cl.exe 14.44.35207） |
 | 项目依赖 | ✅ | 716 个包，`pnpm install` 完成 |
 | JS 包 build | ✅ | protocol / pi-host / desktop 均已 build |
-| Tauri 二进制 | ✅ | `apps/desktop/src-tauri/target/debug/pideck.exe` 已编译（45s） |
+| Tauri 二进制 | ✅ | `apps/desktop/src-tauri/target/debug/piabyss.exe` 已编译（45s） |
 
 ## 🔑 重要：每次新开终端要先做的事
 
@@ -34,13 +34,13 @@ export PATH="$HOME/.cargo/bin:$PATH"
 ## 🚀 一键启动开发环境
 
 ```bash
-cd C:/Users/liu/Documents/我的项目/PiDeck
-pnpm --filter @pideck/desktop run tauri:dev
+cd C:/Users/liu/Documents/我的项目/PiAbyss
+pnpm --filter @piabyss/desktop run tauri:dev
 ```
 
 这会同时：
 1. 起一个 Vite 前端开发服务器：http://127.0.0.1:1420
-2. 启动 Rust 编译好的桌面壳 `pideck.exe`（已编译过 → 秒开）
+2. 启动 Rust 编译好的桌面壳 `piabyss.exe`（已编译过 → 秒开）
 3. 内部拉起 Node Pi Host 子进程
 
 第一次启动后，桌面窗口就会弹出来。
@@ -48,7 +48,7 @@ pnpm --filter @pideck/desktop run tauri:dev
 ## ⚡ Windows 加速启动（推荐用于日常迭代）
 
 项目自带 `pnpm dev:fast`，专门为 Windows 优化的"复用已编译二进制 + 增量同步 host 资源"模式：
-- 改了 `packages/pi-host/*`（Agent/工具逻辑）→ 自动增量 build 并同步到 `pideck.exe` 的资源目录
+- 改了 `packages/pi-host/*`（Agent/工具逻辑）→ 自动增量 build 并同步到 `piabyss.exe` 的资源目录
 - 不需要每次重新编译整个 Tauri Rust 工程
 
 ```bash
@@ -59,7 +59,7 @@ pnpm dev:fast
 `dev:fast` 会自动：
 - 检测 protocol / pi-host TS 源码是否变动 → 增量 build
 - 同步到 `apps/desktop/src-tauri/resources/pi-host/`
-- 复用 `target/debug/pideck.exe` 直接启动
+- 复用 `target/debug/piabyss.exe` 直接启动
 
 ## 🔥 热重载（HMR）原理——分三层
 
@@ -69,7 +69,7 @@ pnpm dev:fast
 | **Pi Host**：`packages/pi-host/src/**`（Agent/工具/会话逻辑） | `dev:fast` 自动重新 build 并同步资源，**下次启动或手动重启 host 生效** | 秒级 |
 | **Rust 壳**：`apps/desktop/src-tauri/src/**` | Tauri 自动重新编译并重启桌面壳 | 几秒～几十秒 |
 
-> ⚠️ 注意：Pi Host 子进程是 `pideck.exe` 启动时拉起的常驻进程。
+> ⚠️ 注意：Pi Host 子进程是 `piabyss.exe` 启动时拉起的常驻进程。
 > 改了 host 的代码后，桌面壳不会自动重启 host——用 `Ctrl+R` 重载窗口，或关掉重启 `pnpm dev:fast`。
 
 ## 📝 单独跑某一部分（调试用）
@@ -105,7 +105,7 @@ pnpm package:release           # 出 Windows x64 NSIS .exe
 
 ```
 ┌─────────────────────────────────────┐
-│  Tauri 桌面壳 (Rust 编译，pideck.exe) │
+│  Tauri 桌面壳 (Rust 编译，piabyss.exe) │
 │  ┌───────────────────────────────┐  │
 │  │ WebView2 = 嵌一个 Chromium    │  │  ← 你的 React UI 跑在这里
 │  │   └─ apps/desktop/src/**      │  │     Vite HMR，改了秒刷新
@@ -135,6 +135,6 @@ pnpm package:release           # 出 Windows x64 NSIS .exe
 
 写测试或本地跑 host 时，**永远**用临时目录：
 ```bash
-export PI_CODING_AGENT_DIR="$TEMP/pideck-test-agent"
+export PI_CODING_AGENT_DIR="$TEMP/piabyss-test-agent"
 ```
 不要把测试写入真实的 `~/.pi/agent`。

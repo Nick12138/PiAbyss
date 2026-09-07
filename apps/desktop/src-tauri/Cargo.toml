@@ -1,12 +1,12 @@
 [package]
-name = "pideck"
+name = "piabyss"
 version = "0.3.0"
-description = "PiDeck"
-authors = ["PiDeck contributors"]
+description = "PiAbyss"
+authors = ["PiAbyss contributors"]
 edition = "2021"
 
 [lib]
-name = "pideck_lib"
+name = "piabyss_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

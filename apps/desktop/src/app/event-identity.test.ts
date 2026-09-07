@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { HostEventEnvelope, HostStatusSnapshot, SessionSnapshot } from "@pideck/protocol";
+import type { HostEventEnvelope, HostStatusSnapshot, SessionSnapshot } from "@piabyss/protocol";
 import { HostClient } from "../lib/bridge/host-client";
 import { applySessionSnapshot, emptyEpoch } from "../lib/stores/epoch-store";
 import { expectedIdentityForEvent, extensionUiRequestDelivery } from "./event-identity";

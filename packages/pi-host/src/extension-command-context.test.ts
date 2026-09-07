@@ -41,7 +41,7 @@ function commandInvocation(invocation: string): ResolvedExtensionCommandInvocati
       invocationName: invocation,
       sourceInfo: {
         path: `/packages/commands/extensions/${invocation}.ts`,
-        source: "npm:@pideck/commands@2.0.0",
+        source: "npm:@piabyss/commands@2.0.0",
         scope: "user",
         origin: "package",
         baseDir: "/packages/commands",
@@ -53,7 +53,7 @@ function commandInvocation(invocation: string): ResolvedExtensionCommandInvocati
 
 function packageSourceInfo(
   path = "/packages/commands/extensions/index.ts",
-  source = "npm:@pideck/commands@2.0.0",
+  source = "npm:@piabyss/commands@2.0.0",
 ): SourceInfo {
   return {
     path,
@@ -103,7 +103,7 @@ describe("extension invocation context", () => {
         seen.push(origin?.invocation ?? "missing-first");
         expect(origin?.origin).toMatchObject({
           invocationKind: "command",
-          extensionDisplayName: "@pideck/commands",
+          extensionDisplayName: "@piabyss/commands",
           sourceKind: "package",
           commandName: "brainstorm",
         });
@@ -135,7 +135,7 @@ describe("extension invocation context", () => {
   it("generates stable opaque identities without exposing source paths", () => {
     const current = normalizeExtensionIdentity(packageSourceInfo());
     const upgraded = normalizeExtensionIdentity(
-      packageSourceInfo("/packages/commands/extensions/index.ts", "npm:@pideck/commands@3.0.0"),
+      packageSourceInfo("/packages/commands/extensions/index.ts", "npm:@piabyss/commands@3.0.0"),
     );
     const sibling = normalizeExtensionIdentity(
       packageSourceInfo("/packages/commands/extensions/other.ts"),
@@ -143,7 +143,7 @@ describe("extension invocation context", () => {
     expect(current).toEqual(upgraded);
     expect(current.extensionId).toMatch(/^ext_[0-9a-f]{24}$/);
     expect(current.extensionId).not.toContain("packages");
-    expect(current.extensionDisplayName).toBe("@pideck/commands");
+    expect(current.extensionDisplayName).toBe("@piabyss/commands");
     expect(current.sourceKind).toBe("package");
     expect(sibling.extensionId).not.toBe(current.extensionId);
 
@@ -167,7 +167,7 @@ describe("extension invocation context", () => {
     });
     expect(toolOrigin?.origin).toMatchObject({
       invocationKind: "tool",
-      extensionDisplayName: "@pideck/commands",
+      extensionDisplayName: "@piabyss/commands",
       toolName: "ask_user_question",
       toolCallId: "tool-call-1",
     });

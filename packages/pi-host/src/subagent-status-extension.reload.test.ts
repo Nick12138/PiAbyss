@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { HostIdentity, SubagentsStatusSnapshot } from "@pideck/protocol";
+import type { HostIdentity, SubagentsStatusSnapshot } from "@piabyss/protocol";
 import { createSubagentStatusBridge } from "./subagent-status-extension.js";
 import { getSubagentApi, type SubagentHttpRunSummary } from "./subagent-api.js";
 

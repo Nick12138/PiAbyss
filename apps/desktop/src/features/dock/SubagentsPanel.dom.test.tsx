@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { HostStatusSnapshot, WorkspaceSnapshot } from "@pideck/protocol";
+import type { HostStatusSnapshot, WorkspaceSnapshot } from "@piabyss/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { SubagentsPanel } from "./SubagentsPanel";

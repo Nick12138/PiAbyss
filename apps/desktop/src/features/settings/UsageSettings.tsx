@@ -4,7 +4,7 @@ import type {
   SessionUsageModelItem,
   SessionUsageReport,
   UsageRange,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import type { LucideIcon } from "lucide-react";
 import {
   Archive,

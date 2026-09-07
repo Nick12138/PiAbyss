@@ -7,7 +7,7 @@ import {
   type SkillInfo,
   type SkillPathMutation,
   type SkillSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import type { Skill } from "@earendil-works/pi-coding-agent";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import type { WorkspaceGraph } from "./workspace-graph-types.js";

@@ -27,7 +27,7 @@ export type SessionTerminalStates = Record<
   Record<string, SessionTerminalState> // sessionId → state
 >;
 
-const TERMINAL_STATES_KEY = "pideck.sessions.terminalStates.v1";
+const TERMINAL_STATES_KEY = "piabyss.sessions.terminalStates.v1";
 
 function isSessionTerminalState(value: unknown): value is SessionTerminalState {
   if (typeof value !== "object" || value === null) return false;

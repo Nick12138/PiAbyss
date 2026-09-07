@@ -3,7 +3,7 @@
  *
  * `ModelRegistry.refresh()` takes no options and resolves to `void`, so it can
  * neither declare whether network access is allowed, nor be cancelled, nor
- * report which providers failed. Routing every PiDeck refresh through one of
+ * report which providers failed. Routing every PiAbyss refresh through one of
  * these two helpers makes the intent visible at the call site and keeps the
  * no-network guarantee auditable: startup, provider list/save/remove/setEnabled,
  * models.json reconciliation, and session create/open must all use the local

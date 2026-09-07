@@ -5,7 +5,7 @@ import {
   toJsonValue,
   type HostError,
   type JsonValue,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import type { HandlerContext, MethodHandler } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { buildSessionUsageReport } from "./session-usage-report.js";

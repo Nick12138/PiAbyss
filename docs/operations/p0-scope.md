@@ -1,6 +1,6 @@
 # P0 Scope and Verification
 
-This document is the authoritative definition of PiDeck P0. Historical
+This document is the authoritative definition of PiAbyss P0. Historical
 roadmaps and remediation notes describe how the project reached this point;
 they do not redefine the current release boundary.
 
@@ -10,14 +10,14 @@ ignored local artifacts cannot authorize documentation completion language.
 
 ## Product objective and platform boundary
 
-PiDeck's desktop workflows are not Windows-specific. Source development and
+PiAbyss's desktop workflows are not Windows-specific. Source development and
 early testing cover Windows 11 x64 and Apple Silicon macOS. The first installer
-acceptance scope is narrower: it proves that a Windows user can install PiDeck,
+acceptance scope is narrower: it proves that a Windows user can install PiAbyss,
 choose a local workspace, complete a deterministic Pi Agent turn, recover the
 conversation after a Host restart, and uninstall without leaving runtime
 processes behind.
 
-That Windows acceptance scope is not PiDeck's product-platform identity.
+That Windows acceptance scope is not PiAbyss's product-platform identity.
 Automated development-candidate packaging now covers Windows x64 plus macOS
 arm64 and x64. Windows produces an NSIS candidate with bundled Node and Portable
 Git; macOS produces an app bundle and DMG with bundled Node and the system Git.
@@ -25,7 +25,7 @@ The first accepted-installer scope remains Windows x64. macOS Developer ID
 signing, notarization, installed acceptance, and public-release support remain
 outside the current P0 release claim.
 
-Selecting a workspace authorizes its project resources. PiDeck immediately
+Selecting a workspace authorizes its project resources. PiAbyss immediately
 loads them with `projectTrusted: true`; existing `.pi/extensions` may execute
 local code. There is no pending, deny, or per-workspace trust state.
 

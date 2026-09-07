@@ -82,7 +82,7 @@ impl ShellTerminalWriter {
         let (requests, receiver) = mpsc::channel::<ShellTerminalWriteRequest>();
         // Never join this worker during close: the PTY syscall itself may be blocked.
         std::thread::Builder::new()
-            .name("pideck-shell-writer".into())
+            .name("piabyss-shell-writer".into())
             .spawn(move || {
                 while let Ok(request) = receiver.recv() {
                     let result = writer
@@ -190,7 +190,7 @@ impl ShellTerminalSession {
         let reader_child = Arc::clone(&child);
         let reader_stopping = Arc::clone(&stopping);
         let reader_thread = match std::thread::Builder::new()
-            .name("pideck-shell-reader".into())
+            .name("piabyss-shell-reader".into())
             .spawn(move || {
                 let mut buffer = vec![0_u8; READ_BUFFER_BYTES];
                 let mut decoder = Utf8StreamDecoder::default();

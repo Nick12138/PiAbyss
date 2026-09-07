@@ -3,7 +3,7 @@
 @import "@fontsource-variable/jetbrains-mono";
 
 @font-face {
-  font-family: "PiDeck PingFang SC";
+  font-family: "PiAbyss PingFang SC";
   src: url("../assets/fonts/pingfang-sc/PingFangSC-Regular.woff2") format("woff2");
   font-style: normal;
   font-weight: 400;
@@ -14,7 +14,7 @@
 }
 
 @font-face {
-  font-family: "PiDeck PingFang SC";
+  font-family: "PiAbyss PingFang SC";
   src: url("../assets/fonts/pingfang-sc/PingFangSC-Medium.woff2") format("woff2");
   font-style: normal;
   font-weight: 500;
@@ -25,7 +25,7 @@
 }
 
 @font-face {
-  font-family: "PiDeck PingFang SC";
+  font-family: "PiAbyss PingFang SC";
   src: url("../assets/fonts/pingfang-sc/PingFangSC-Semibold.woff2") format("woff2");
   font-style: normal;
   font-weight: 600;
@@ -72,9 +72,9 @@
   --color-background: var(--color-surface);
   --color-muted-foreground: var(--color-muted);
   --font-sans:
-    "Inter Variable", "PiDeck PingFang SC", system-ui, -apple-system, "Segoe UI", sans-serif;
+    "Inter Variable", "PiAbyss PingFang SC", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono:
-    "JetBrains Mono Variable", "PiDeck PingFang SC", ui-monospace, "Cascadia Code", monospace;
+    "JetBrains Mono Variable", "PiAbyss PingFang SC", ui-monospace, "Cascadia Code", monospace;
 }
 
 :root {
@@ -157,12 +157,12 @@ body,
 /* Native desktop windows are transparent so this shared app shell defines
    the visible silhouette for every theme. Maximized/fullscreen windows must
    meet the display edges without transparent corner gaps. */
-[data-pideck-app][data-window-frame="floating"] {
+[data-piabyss-app][data-window-frame="floating"] {
   border-radius: var(--window-frame-radius);
   isolation: isolate;
 }
 
-[data-pideck-app][data-window-frame="filled"] {
+[data-piabyss-app][data-window-frame="filled"] {
   border-radius: 0;
 }
 
@@ -181,20 +181,20 @@ body,
   border-bottom-left-radius: var(--app-content-radius);
 }
 
-[data-pideck-app][data-has-topbar] {
+[data-piabyss-app][data-has-topbar] {
   background-color: var(--app-shell-bg);
 }
-[data-pideck-app][data-has-topbar] [data-app-topbar] {
+[data-piabyss-app][data-has-topbar] [data-app-topbar] {
   background-color: var(--app-shell-bg);
 }
-[data-pideck-app][data-has-topbar] [data-sidebar] {
+[data-piabyss-app][data-has-topbar] [data-sidebar] {
   background-color: var(--app-shell-bg);
 }
 
 /* The content area (main + right dock) floats as a rounded card inset from the
    shell frame. Pure-color themes get the surface fill + radius + margin here;
    every theme now shares the same gap/radius so the content card sits
-   identically across pideck/vercel/apple/transparent. */
+   identically across piabyss/vercel/apple/transparent. */
 [data-app-body] {
   gap: 0;
 }
@@ -250,19 +250,19 @@ body,
    keeps the aside body cut to width; nothing else sticks out. The Tailwind
    `overflow-hidden` utility on <aside> is overridden here by higher
    specificity — no per-theme override needed. */
-[data-pideck-app] [data-sidebar] {
+[data-piabyss-app] [data-sidebar] {
   overflow: visible;
 }
 
 /* All theme families use the frosted left rail. The material tint
    keeps ordinary opaque themes readable while allowing transparent native
    windows to contribute their backdrop underneath the sidebar. */
-[data-pideck-app][data-has-topbar] [data-sidebar] {
+[data-piabyss-app][data-has-topbar] [data-sidebar] {
   background-color: var(--theme-sidebar-material);
 }
 
 @supports (backdrop-filter: blur(1px)) {
-  [data-pideck-app][data-has-topbar] [data-sidebar] {
+  [data-piabyss-app][data-has-topbar] [data-sidebar] {
     -webkit-backdrop-filter: saturate(145%) blur(var(--theme-sidebar-blur));
     backdrop-filter: saturate(145%) blur(var(--theme-sidebar-blur));
   }
@@ -577,7 +577,7 @@ html.light {
 
 html[data-theme-family="apple"] {
   --font-sans:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "PiDeck PingFang SC", "Inter Variable",
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "PiAbyss PingFang SC", "Inter Variable",
     system-ui, "Segoe UI", sans-serif;
   --radius-sm: 6px;
   --radius-md: 8px;
@@ -687,7 +687,7 @@ html[data-theme-family="apple"].dark {
    ========================================================================== */
 html[data-theme-family="transparent"] {
   --font-sans:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "PiDeck PingFang SC", "Inter Variable",
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "PiAbyss PingFang SC", "Inter Variable",
     system-ui, "Segoe UI", sans-serif;
   --radius-sm: 6px;
   --radius-md: 8px;
@@ -854,15 +854,15 @@ html[data-theme-family="transparent"] [data-dock-header] {
 /* Only when a real native transparent window is present (data-window-frame set)
    do we drop the shell backgrounds to let the window material show through.
    Otherwise (tests / non-native web) surfaces keep their solid fills. */
-html[data-theme-family="transparent"] [data-pideck-app][data-window-frame] {
+html[data-theme-family="transparent"] [data-piabyss-app][data-window-frame] {
   background-color: transparent;
 }
 
-html[data-theme-family="transparent"] [data-pideck-app][data-window-frame] main {
+html[data-theme-family="transparent"] [data-piabyss-app][data-window-frame] main {
   background-color: transparent;
 }
 
-html[data-theme-family="transparent"] [data-pideck-app][data-window-frame] [data-sidebar] {
+html[data-theme-family="transparent"] [data-piabyss-app][data-window-frame] [data-sidebar] {
   background-color: var(--theme-sidebar-material);
 }
 
@@ -885,23 +885,23 @@ html[data-theme-family="transparent"] [data-pideck-app][data-window-frame] [data
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  html[data-theme-family="transparent"] [data-pideck-app][data-window-frame] {
+  html[data-theme-family="transparent"] [data-piabyss-app][data-window-frame] {
     background-color: var(--color-surface);
   }
 
-  html[data-theme-family="transparent"] [data-pideck-app][data-window-frame] main {
+  html[data-theme-family="transparent"] [data-piabyss-app][data-window-frame] main {
     background-color: var(--color-surface);
   }
 
   /* Reduced-transparency fallback: the top bar stays transparent over the now-surface
      app root, so the aside must fall back to surface too to stay one底色 with it. */
-  html[data-theme-family="transparent"] [data-pideck-app][data-window-frame] [data-sidebar] {
+  html[data-theme-family="transparent"] [data-piabyss-app][data-window-frame] [data-sidebar] {
     background-color: var(--color-surface);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
 
-  html[data-theme-family="transparent"] [data-pideck-app][data-window-frame] [data-right-dock] {
+  html[data-theme-family="transparent"] [data-piabyss-app][data-window-frame] [data-right-dock] {
     background-color: var(--color-surface);
   }
 
@@ -1438,13 +1438,13 @@ html[data-theme-family="apple"] [data-sidebar] {
   background-color: var(--theme-sidebar-material);
 }
 
-html[data-theme-family="apple"] [data-pideck-app][data-window-frame] {
+html[data-theme-family="apple"] [data-piabyss-app][data-window-frame] {
   background-color: transparent;
 }
 
 /* Native window: the aside rides the same半透明 surface tint as the top bar so
    the OS-level transparent window material frosts through it uniformly. */
-html[data-theme-family="apple"] [data-pideck-app][data-window-frame] [data-sidebar] {
+html[data-theme-family="apple"] [data-piabyss-app][data-window-frame] [data-sidebar] {
   background-color: var(--theme-sidebar-material);
 }
 
@@ -1574,7 +1574,7 @@ html[data-theme-family="apple"] [data-chat-status] {
     --theme-toolbar-material: var(--color-surface);
   }
 
-  html[data-theme-family="apple"] [data-pideck-app][data-window-frame] [data-sidebar] {
+  html[data-theme-family="apple"] [data-piabyss-app][data-window-frame] [data-sidebar] {
     background-color: var(--color-surface);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
@@ -2150,7 +2150,7 @@ textarea:focus-visible {
 }
 
 /* Streamdown 2.5 only marks highlighted lines as blocks when line numbers are
-   enabled. PiDeck hides line numbers, so restore the line layout explicitly. */
+   enabled. PiAbyss hides line numbers, so restore the line layout explicitly. */
 .chat-markdown [data-streamdown="code-block-body"] pre > code > span {
   display: block;
 }
@@ -2233,7 +2233,7 @@ textarea:focus-visible {
   height: auto;
 }
 
-svg[data-pideck-mermaid-theme="neutral"] {
+svg[data-piabyss-mermaid-theme="neutral"] {
   background: #ffffff;
   color-scheme: light;
 }

@@ -5,7 +5,7 @@ import {
   MAX_EXTENSION_MESSAGE_RENDER_LINE_LENGTH,
   MAX_EXTENSION_MESSAGE_RENDER_LINES,
   type ExtensionMessageRenderSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { createDesktopExtensionTheme } from "./extension-rendering-theme.js";
 
 const MESSAGE_RENDER_WIDTH = 100;

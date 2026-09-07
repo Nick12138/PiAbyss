@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createHostError, type HostIdentity } from "@pideck/protocol";
+import { createHostError, type HostIdentity } from "@piabyss/protocol";
 import type { GraphOperationKind } from "./locks.js";
 import { HOST_SHUTDOWN_QUIESCE_TIMEOUT_MS, PiHostServer } from "./server.js";
 
@@ -99,7 +99,7 @@ describe("PiHostServer Extension UI presentation handshake", () => {
         method: "system.hello",
         context: {},
         params: {
-          clientName: "pideck",
+          clientName: "piabyss",
           clientVersion: "0.1.0",
           protocolVersion: 1,
           extensionDecisionPresentation: "auto",

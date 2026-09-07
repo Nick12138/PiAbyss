@@ -1,6 +1,6 @@
 import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { ModelSummary, SessionContextBreakdown } from "@pideck/protocol";
+import type { ModelSummary, SessionContextBreakdown } from "@piabyss/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";

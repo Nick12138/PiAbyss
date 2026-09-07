@@ -27,7 +27,7 @@ import type {
   ResourceRecord,
   ResourcePreferenceUpdate,
   ResourceType,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { userErrorMessage } from "../../lib/notify-operation-error";
 import {

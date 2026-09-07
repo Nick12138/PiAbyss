@@ -27,7 +27,7 @@ describe("network-bootstrap", () => {
 
   beforeEach(() => {
     vi.resetModules();
-    dir = mkdtempSync(join(tmpdir(), "pideck-netboot-"));
+    dir = mkdtempSync(join(tmpdir(), "piabyss-netboot-"));
     savedHttpProxy = process.env.HTTP_PROXY;
     savedHttpsProxy = process.env.HTTPS_PROXY;
     delete process.env.HTTP_PROXY;

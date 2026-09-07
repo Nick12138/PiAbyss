@@ -1,6 +1,6 @@
 import { ChevronDown, LoaderCircle, RefreshCw, Send } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { TelegramSessionSummary } from "@pideck/protocol";
+import type { TelegramSessionSummary } from "@piabyss/protocol";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { sidebarPref, setSidebarPref } from "../../lib/sidebar-prefs";
 import { useT } from "../../lib/i18n/use-t";
@@ -45,7 +45,7 @@ export function TelegramSessionList() {
   const refresh = useTelegramViewStore((s) => s.refreshTelegramSessions);
   const openSession = useTelegramViewStore((s) => s.openTelegramSession);
   const [collapsed, setCollapsed] = useState(() =>
-    sidebarPref("pideck.sidebar.telegramSessionsCollapsed"),
+    sidebarPref("piabyss.sidebar.telegramSessionsCollapsed"),
   );
 
   useEffect(() => {
@@ -59,7 +59,7 @@ export function TelegramSessionList() {
           type="button"
           onClick={() => {
             setCollapsed((current) => {
-              setSidebarPref("pideck.sidebar.telegramSessionsCollapsed", !current);
+              setSidebarPref("piabyss.sidebar.telegramSessionsCollapsed", !current);
               return !current;
             });
           }}

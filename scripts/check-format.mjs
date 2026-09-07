@@ -44,7 +44,7 @@ function changedFiles() {
     ...gitLines(["diff", "--name-only", "--diff-filter=ACMR"]),
     ...gitLines(["ls-files", "--others", "--exclude-standard"]),
   ]);
-  const base = process.env.PIDECK_FORMAT_BASE?.trim();
+  const base = process.env.PIABYSS_FORMAT_BASE?.trim();
   const usableBase = base && !/^0+$/u.test(base) ? base : null;
   if (usableBase) {
     for (const file of gitLines([

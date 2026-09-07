@@ -1,19 +1,19 @@
 <div align="center">
 
-# PiDeck
+# PiAbyss
 
 **A native desktop app for [Pi Coding Agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)**
 
 Chat with your coding agent, watch its tools work, manage sessions, models, and packages — in one visual workspace.
 
-[![CI](https://github.com/Nick12138/PiDeck/actions/workflows/p0.yml/badge.svg)](https://github.com/Nick12138/PiDeck/actions/workflows/p0.yml)
-[![Release](https://img.shields.io/github/v/release/Nick12138/PiDeck?include_prereleases)](https://github.com/Nick12138/PiDeck/releases)
+[![CI](https://github.com/Nick12138/PiAbyss/actions/workflows/p0.yml/badge.svg)](https://github.com/Nick12138/PiAbyss/actions/workflows/p0.yml)
+[![Release](https://img.shields.io/github/v/release/Nick12138/PiAbyss?include_prereleases)](https://github.com/Nick12138/PiAbyss/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#download)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
-<img src="docs/assets/readme/hero-zh.png" alt="PiDeck main window in Chinese with the right dock" width="840">
+<img src="docs/assets/readme/hero-zh.png" alt="PiAbyss main window in Chinese with the right dock" width="840">
 
 </div>
 
@@ -34,16 +34,16 @@ Chat with your coding agent, watch its tools work, manage sessions, models, and 
 
 ## Download
 
-Grab the installer for your platform from the [latest release](https://github.com/Nick12138/PiDeck/releases):
+Grab the installer for your platform from the [latest release](https://github.com/Nick12138/PiAbyss/releases):
 
 | Platform | File |
 |---|---|
-| Windows 11 x64 | `PiDeck_<version>_x64-setup.exe` |
-| macOS Apple Silicon | `PiDeck_<version>_aarch64.dmg` |
-| macOS Intel | `PiDeck_<version>_x64.dmg` |
+| Windows 11 x64 | `PiAbyss_<version>_x64-setup.exe` |
+| macOS Apple Silicon | `PiAbyss_<version>_aarch64.dmg` |
+| macOS Intel | `PiAbyss_<version>_x64.dmg` |
 
 These downloads are early-access development candidates rather than accepted,
-platform-certified public releases. PiDeck checks for updates automatically and
+platform-certified public releases. PiAbyss checks for updates automatically and
 installs them in place.
 
 > **Early-access builds.** Windows candidates do not yet carry an accepted
@@ -55,13 +55,13 @@ installs them in place.
 
 ## Works with the Pi CLI — but doesn't need it
 
-PiDeck bundles the Pi SDK (currently `0.82.1`) and its own Node runtime, so
+PiAbyss bundles the Pi SDK (currently `0.82.1`) and its own Node runtime, so
 it runs standalone — no global `pi` executable or Node installation required.
 The Windows build bundles Git as well.
 
 If you also use the Pi CLI, both share the same data in `~/.pi/agent` and each
 workspace's `.pi` directory: sessions and history, authentication and model
-settings, and installed packages. Keep the CLI version close to PiDeck's
+settings, and installed packages. Keep the CLI version close to PiAbyss's
 pinned SDK version, and avoid editing the same session from both apps at once.
 
 ## Build from source
@@ -74,7 +74,7 @@ setup on Windows and macOS.
 ```bash
 pnpm install --frozen-lockfile
 pnpm build
-pnpm --filter @pideck/desktop run tauri:dev
+pnpm --filter @piabyss/desktop run tauri:dev
 ```
 
 The first launch compiles the Tauri application and may take several minutes;

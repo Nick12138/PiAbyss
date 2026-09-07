@@ -1,12 +1,12 @@
 import type { AttachmentSnapshot, AttachmentUnit } from "./types.js";
 
-const OPEN_TAG = '<pideck-attachments version="1">';
-const CLOSE_TAG = "</pideck-attachments>";
-const BLOCK_PATTERN = /<pideck-attachments version="1">\s*([\s\S]*?)\s*<\/pideck-attachments>/gu;
-const GUIDE_OPEN_TAG = '<pideck-attachment-guide version="1">';
-const GUIDE_CLOSE_TAG = "</pideck-attachment-guide>";
+const OPEN_TAG = '<piabyss-attachments version="1">';
+const CLOSE_TAG = "</piabyss-attachments>";
+const BLOCK_PATTERN = /<piabyss-attachments version="1">\s*([\s\S]*?)\s*<\/piabyss-attachments>/gu;
+const GUIDE_OPEN_TAG = '<piabyss-attachment-guide version="1">';
+const GUIDE_CLOSE_TAG = "</piabyss-attachment-guide>";
 const GUIDE_PATTERN =
-  /<pideck-attachment-guide version="1">\s*([\s\S]*?)\s*<\/pideck-attachment-guide>/gu;
+  /<piabyss-attachment-guide version="1">\s*([\s\S]*?)\s*<\/piabyss-attachment-guide>/gu;
 
 export type AttachmentReference = {
   id: string;

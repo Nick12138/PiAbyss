@@ -4,7 +4,7 @@ import type {
   HostStatusSnapshot,
   SessionSnapshot,
   WorkspaceSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import {
   captureRequestGeneration,
   isCurrentRequestGeneration,

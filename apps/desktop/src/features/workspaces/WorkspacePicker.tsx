@@ -99,7 +99,7 @@ export function WorkspacePicker() {
   const pushNotification = useAppStore((s) => s.pushNotification);
   const [pending, setPending] = useState(false);
   const [collapsed, setCollapsed] = useState(() =>
-    sidebarPref("pideck.sidebar.workspacesCollapsed"),
+    sidebarPref("piabyss.sidebar.workspacesCollapsed"),
   );
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const addMenuRef = useRef<HTMLDivElement>(null);
@@ -150,20 +150,20 @@ export function WorkspacePicker() {
   const [telegramInstallOpen, setTelegramInstallOpen] = useState(false);
   const [gateways, setGateways] = useState<BotGateway[]>(() => loadBotGateways());
   const [gatewaysCollapsed, setGatewaysCollapsed] = useState(() =>
-    sidebarPref("pideck.sidebar.botGatewaysCollapsed"),
+    sidebarPref("piabyss.sidebar.botGatewaysCollapsed"),
   );
   const requestRef = useRef(0);
 
   function toggleCollapsed() {
     setCollapsed((current) => {
-      setSidebarPref("pideck.sidebar.workspacesCollapsed", !current);
+      setSidebarPref("piabyss.sidebar.workspacesCollapsed", !current);
       return !current;
     });
   }
 
   function toggleGatewaysCollapsed() {
     setGatewaysCollapsed((current) => {
-      setSidebarPref("pideck.sidebar.botGatewaysCollapsed", !current);
+      setSidebarPref("piabyss.sidebar.botGatewaysCollapsed", !current);
       return !current;
     });
   }

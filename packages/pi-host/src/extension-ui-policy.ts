@@ -5,7 +5,7 @@ import type {
   ExtensionUiRisk,
   ExtensionUiRouteReason,
   HostIdentity,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 
 export type ExtensionUiOwnerSessionState = "active" | "background" | "candidate" | "stale";
 

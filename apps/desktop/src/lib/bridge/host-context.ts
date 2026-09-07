@@ -13,7 +13,7 @@ import type {
   SessionTargetContext,
   WorkspaceContext,
   WorkspaceSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 
 export function hostContext(host: HostStatusSnapshot): HostContext {
   return { expectedHostInstanceId: host.hostInstanceId };

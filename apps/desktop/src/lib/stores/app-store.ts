@@ -15,8 +15,8 @@ import type {
   JsonValue,
   ProviderLoginPrompt,
   SessionSummary,
-} from "@pideck/protocol";
-import { stripAttachmentReferenceBlocks } from "@pideck/protocol";
+} from "@piabyss/protocol";
+import { stripAttachmentReferenceBlocks } from "@piabyss/protocol";
 import {
   applyPackageSnapshot as epochApplyPackages,
   applySessionSnapshot as epochApplySession,
@@ -551,9 +551,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   lastExtensionWidgetAttentionRunId: null,
   extensionTerminal: null,
   subagentsStatus: EMPTY_SUBAGENTS_STATUS,
-  dockOpen: sidebarPref("pideck.dock.open"),
+  dockOpen: sidebarPref("piabyss.dock.open"),
   dockRestoreOnPanelClose: null,
-  sidebarCollapsed: sidebarPref("pideck.sidebar.collapsed"),
+  sidebarCollapsed: sidebarPref("piabyss.sidebar.collapsed"),
   packageProgress: null,
   packageRetry: null,
   thinkingLevels: [],
@@ -1115,13 +1115,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       dockRestoreOnPanelClose: null,
     }),
   setSidebarCollapsed: (open) => {
-    setSidebarPref("pideck.sidebar.collapsed", open);
+    setSidebarPref("piabyss.sidebar.collapsed", open);
     set({ sidebarCollapsed: open });
   },
   toggleSidebar: () =>
     set((state) => {
       const next = !state.sidebarCollapsed;
-      setSidebarPref("pideck.sidebar.collapsed", next);
+      setSidebarPref("piabyss.sidebar.collapsed", next);
       return { sidebarCollapsed: next };
     }),
   setExtensionStatus: (key, text) =>

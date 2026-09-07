@@ -74,7 +74,7 @@ import {
 type SessionConfirmAction =
   { kind: "delete"; item: SessionCatalogEntry } | { kind: "cleanup"; count: number };
 
-const SESSION_GROUPS_COLLAPSED_KEY = "pideck.sidebar.sessionGroupsCollapsed.v1";
+const SESSION_GROUPS_COLLAPSED_KEY = "piabyss.sidebar.sessionGroupsCollapsed.v1";
 
 function sessionGroupLabelKey(group: SessionTimeGroup): "sessionsGroupToday" | "sessionsGroupThisWeek" | "sessionsGroupEarlier" {
   return group === "today"

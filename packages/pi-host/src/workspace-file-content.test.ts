@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, afterEach, describe, it, expect } from "vitest";
-import { MAX_PREVIEW_TEXT_BYTES, MAX_PREVIEW_MEDIA_BYTES } from "@pideck/protocol";
+import { MAX_PREVIEW_TEXT_BYTES, MAX_PREVIEW_MEDIA_BYTES } from "@piabyss/protocol";
 import {
   readWorkspaceFilePreview,
   writeWorkspaceTextFile,
@@ -22,7 +22,7 @@ import {
 
 let root: string;
 beforeEach(async () => {
-  root = await mkdtemp(join(tmpdir(), "pideck-file-content-"));
+  root = await mkdtemp(join(tmpdir(), "piabyss-file-content-"));
 });
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });

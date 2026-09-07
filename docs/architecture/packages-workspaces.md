@@ -4,7 +4,7 @@
 
 Before the native Desktop starts Pi Host, it guarantees one usable Workspace
 for a genuinely empty first-run configuration. It creates
-`<agentDir>/pideck/DefaultProject`, records it in `lastWorkspace` and
+`<agentDir>/piabyss/DefaultProject`, records it in `lastWorkspace` and
 `knownWorkspaces`, and passes it through the normal Host preload path. Existing
 Workspace configuration always wins, and standalone Host processes retain the
 `waitingForWorkspace` state until given an explicit cwd.

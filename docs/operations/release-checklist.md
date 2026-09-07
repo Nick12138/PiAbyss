@@ -11,7 +11,7 @@
 - [ ] 仓库已 `git init` 且工作区干净（`git status` 无未提交变更）——完整门控会记录 commit SHA 并要求 `dirty:false`
 - [ ] `pnpm-lock.yaml` 稳定后，`scripts/release-runtime.lock.json` 的 `pnpmLock.sha256` 与实际哈希一致（每次改依赖后需重新 pin）
 - [ ] `docs/operations/p0-status.json` 中所有实现项均为 `implemented`；`claimStatus` 在正式接受证据前仍为 `not-complete`
-- [ ] CI `pideck-release` environment 已启用审批；runner 具有 `self-hosted, Windows, X64, pideck-release` 标签并从干净快照启动
+- [ ] CI `piabyss-release` environment 已启用审批；runner 具有 `self-hosted, Windows, X64, piabyss-release` 标签并从干净快照启动
 
 ## 1. 重新staging运行时（每次 lock 变更后必做）
 
@@ -73,7 +73,7 @@ Package 操作确认、资源持久化、错误中心和 Extension UI。Nightly 
 - [ ] `FINAL_RELEASE.json`、E2E 截图和所有子门日志已上传 CI artifact
 
 安装 smoke 的进程清理和孤儿审计只匹配候选安装目录。即使如此，release
-runner 仍必须专用或可还原，因为预安装阶段会卸载/清理已知 PiDeck 安装根。
+runner 仍必须专用或可还原，因为预安装阶段会卸载/清理已知 PiAbyss 安装根。
 
 ## 6. 发布后
 

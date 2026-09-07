@@ -8,7 +8,7 @@ import {
   type SessionTerminalStates,
 } from "./session-terminal-states";
 
-const KEY = "pideck.sessions.terminalStates.v1";
+const KEY = "piabyss.sessions.terminalStates.v1";
 
 describe("session-terminal-states persistence", () => {
   beforeEach(() => {

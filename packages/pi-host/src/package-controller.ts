@@ -6,7 +6,7 @@ import {
   type PackageSnapshot,
   type PackageUpdateSummary,
   type ResourcePreferenceUpdate,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import type { MethodHandler } from "./server.js";
 import type { WorkspaceGraph, WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import {

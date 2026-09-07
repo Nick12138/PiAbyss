@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GitBranch, GitFork, LoaderCircle, RefreshCw } from "lucide-react";
-import type { SerializableSessionTreeNode } from "@pideck/protocol";
+import type { SerializableSessionTreeNode } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import {

@@ -1,5 +1,5 @@
 {
-  "name": "@pideck-fixtures/invalid-package",
+  "name": "@piabyss-fixtures/invalid-package",
   "version": "1.0.0",
   "private": true,
   "description": "Invalid package fixture (missing pi resources)"

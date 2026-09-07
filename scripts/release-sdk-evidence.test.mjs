@@ -30,14 +30,14 @@ test("derives the release manifest from every Host production dependency", () =>
     readFileSync(join(root, "packages/protocol/package.json"), "utf8"),
   ).version;
   const dependencies = deriveReleaseProductionDependencies(evidence, {
-    "@pideck/protocol": protocolVersion,
+    "@piabyss/protocol": protocolVersion,
   });
   assert.deepEqual(
     Object.keys(dependencies),
     Object.keys(evidence.hostManifest.productionDependencies),
   );
   assertReleaseProductionManifest({ dependencies }, evidence, {
-    "@pideck/protocol": protocolVersion,
+    "@piabyss/protocol": protocolVersion,
   });
 });
 

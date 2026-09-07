@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { PiSettingsPatch, PiSettingsSnapshot, ThinkingLevel } from "@pideck/protocol";
+import type { PiSettingsPatch, PiSettingsSnapshot, ThinkingLevel } from "@piabyss/protocol";
 import { Select } from "../../components/Select";
 import { useT } from "../../lib/i18n/use-t";
 import type { MessageKey } from "../../lib/i18n";

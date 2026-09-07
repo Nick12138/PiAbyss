@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SerializableSessionTreeNode } from "@pideck/protocol";
+import type { SerializableSessionTreeNode } from "@piabyss/protocol";
 import {
   currentPathIds,
   entryExcerpt,

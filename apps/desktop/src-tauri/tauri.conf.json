@@ -1,19 +1,19 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "PiDeck",
+  "productName": "PiAbyss",
   "version": "0.3.0",
   "identifier": "com.nick12138.pideck",
   "build": {
-    "beforeDevCommand": "pnpm --filter @pideck/desktop dev",
+    "beforeDevCommand": "pnpm --filter @piabyss/desktop dev",
     "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "pnpm --filter @pideck/desktop build",
+    "beforeBuildCommand": "pnpm --filter @piabyss/desktop build",
     "frontendDist": "../dist"
   },
   "app": {
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "PiDeck",
+        "title": "PiAbyss",
         "width": 1280,
         "height": 800,
         "minWidth": 420,
@@ -57,7 +57,7 @@
     },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERDNkIwODFBOENBQkI3NTQKUldSVXQ2dU1HZ2hyM0FuN3MzWS9ud0VMT296M3VTTlIrNGFERmVmWVdiRTRTV29BeDQvSjdhSFEK",
-      "endpoints": ["https://github.com/Nick12138/PiDeck/releases/latest/download/latest.json"],
+      "endpoints": ["https://github.com/Nick12138/PiAbyss/releases/latest/download/latest.json"],
       "windows": {
         "installMode": "passive"
       }

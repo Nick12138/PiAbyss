@@ -22,7 +22,7 @@ import type {
   PluginLibraryCatalog,
   PluginLibraryConfigItem,
   PluginLibraryEntry,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import {

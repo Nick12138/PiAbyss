@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 function installFixture(): TempAgentLayout {
-  const layout = createTempAgentLayout("pideck-pi-0807-compat-");
+  const layout = createTempAgentLayout("piabyss-pi-0807-compat-");
   layouts.push(layout);
   cpSync(join(fixtureRoot, "agent"), layout.agentDir, { recursive: true, force: true });
   cpSync(join(fixtureRoot, "workspace"), layout.projectDir, { recursive: true, force: true });
@@ -37,7 +37,7 @@ function installFixture(): TempAgentLayout {
 describe("Pi SDK 0.80.7 compatibility fixtures", () => {
   it("loads sanitized auth, models, settings, and local package resources", async () => {
     const layout = installFixture();
-    // 0.80.7 data read through the 0.82.1 runtime and the PiDeck-owned store.
+    // 0.80.7 data read through the 0.82.1 runtime and the PiAbyss-owned store.
     const { credentialStore, modelRegistry } = await createTestModelServices(layout.agentDir);
     const settingsManager = SettingsManager.create(layout.projectDir, layout.agentDir, {
       projectTrusted: true,
@@ -47,25 +47,25 @@ describe("Pi SDK 0.80.7 compatibility fixtures", () => {
     // so a resolving read is itself the assertion that the file parsed.
     expect(await credentialStore.list()).toEqual(
       expect.arrayContaining([
-        { providerId: "pideck-fixture", type: "api_key" },
-        { providerId: "pideck-fixture-oauth", type: "oauth" },
+        { providerId: "piabyss-fixture", type: "api_key" },
+        { providerId: "piabyss-fixture-oauth", type: "oauth" },
       ]),
     );
-    expect(await credentialStore.readRaw("pideck-fixture")).toEqual({
+    expect(await credentialStore.readRaw("piabyss-fixture")).toEqual({
       type: "api_key",
-      key: "pideck-fixture-api-key-never-real",
-      env: { PIDECK_FIXTURE_ACCOUNT: "pideck-fixture-account-never-real" },
+      key: "piabyss-fixture-api-key-never-real",
+      env: { PIABYSS_FIXTURE_ACCOUNT: "piabyss-fixture-account-never-real" },
     });
-    expect(await credentialStore.readRaw("pideck-fixture-oauth")).toMatchObject({
+    expect(await credentialStore.readRaw("piabyss-fixture-oauth")).toMatchObject({
       type: "oauth",
-      refresh: "pideck-fixture-refresh-never-real",
-      access: "pideck-fixture-access-never-real",
+      refresh: "piabyss-fixture-refresh-never-real",
+      access: "piabyss-fixture-access-never-real",
     });
 
     expect(modelRegistry.getError()).toBeUndefined();
-    const model = modelRegistry.find("pideck-fixture", "fixture-model");
+    const model = modelRegistry.find("piabyss-fixture", "fixture-model");
     expect(model).toMatchObject({
-      provider: "pideck-fixture",
+      provider: "piabyss-fixture",
       id: "fixture-model",
       reasoning: true,
       contextWindow: 32768,
@@ -74,17 +74,17 @@ describe("Pi SDK 0.80.7 compatibility fixtures", () => {
     const requestAuth = await modelRegistry.getApiKeyAndHeaders(model!);
     expect(requestAuth).toEqual({
       ok: true,
-      apiKey: "pideck-fixture-api-key-never-real",
+      apiKey: "piabyss-fixture-api-key-never-real",
       headers: {
-        "X-Fixture-Token": "pideck-fixture-header-never-real",
-        Authorization: "Bearer pideck-fixture-api-key-never-real",
+        "X-Fixture-Token": "piabyss-fixture-header-never-real",
+        Authorization: "Bearer piabyss-fixture-api-key-never-real",
       },
-      env: { PIDECK_FIXTURE_ACCOUNT: "pideck-fixture-account-never-real" },
+      env: { PIABYSS_FIXTURE_ACCOUNT: "piabyss-fixture-account-never-real" },
     });
 
     expect(settingsManager.drainErrors()).toEqual([]);
     expect(settingsManager.getGlobalSettings()).toMatchObject({
-      defaultProvider: "pideck-fixture",
+      defaultProvider: "piabyss-fixture",
       defaultModel: "fixture-model",
       defaultThinkingLevel: "high",
     });
@@ -138,7 +138,7 @@ describe("Pi SDK 0.80.7 compatibility fixtures", () => {
     );
     expect(opened.buildSessionContext()).toMatchObject({
       thinkingLevel: "high",
-      model: { provider: "pideck-fixture", modelId: "fixture-model" },
+      model: { provider: "piabyss-fixture", modelId: "fixture-model" },
     });
     expect(opened.buildSessionContext().messages).toEqual(
       expect.arrayContaining([

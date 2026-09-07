@@ -1,4 +1,4 @@
-import type { SessionSnapshot, SessionSummary } from "@pideck/protocol";
+import type { SessionSnapshot, SessionSummary } from "@piabyss/protocol";
 import type { SessionCatalogEntry, SessionRuntimeState } from "../../lib/stores/session-catalog";
 import type { SessionTerminalState } from "../../lib/session-terminal-states";
 

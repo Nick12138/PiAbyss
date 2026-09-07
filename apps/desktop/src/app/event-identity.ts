@@ -1,4 +1,4 @@
-import type { HostEventEnvelope, SessionRuntimeState } from "@pideck/protocol";
+import type { HostEventEnvelope, SessionRuntimeState } from "@piabyss/protocol";
 
 export type EventIdentityState = {
   hostInstanceId: string | null;

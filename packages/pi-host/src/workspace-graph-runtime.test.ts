@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ModelRuntime, type AgentSession } from "@earendil-works/pi-coding-agent";
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
-import type { HostEventName, HostIdentity } from "@pideck/protocol";
+import type { HostEventName, HostIdentity } from "@piabyss/protocol";
 import type { PiHostServer } from "./server.js";
 import { TryMutex } from "./locks.js";
 import { GraphOperationRegistry } from "./operation-lifecycle.js";
@@ -902,7 +902,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
 
 describe("WorkspaceGraphFactory retained Workspace recovery", () => {
   function setup(providerOwnership?: ExtensionProviderOwnership) {
-    const root = mkdtempSync(join(tmpdir(), "pideck-retained-workspace-"));
+    const root = mkdtempSync(join(tmpdir(), "piabyss-retained-workspace-"));
     const agentDir = join(root, "agent");
     const currentDir = join(root, "current");
     const retainedDir = join(root, "retained");

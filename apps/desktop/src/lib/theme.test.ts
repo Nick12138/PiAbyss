@@ -45,7 +45,7 @@ describe("theme bootstrap", () => {
     expect(document.documentElement).toHaveClass("light");
     expect(document.documentElement).not.toHaveClass("dark");
     expect(document.documentElement.dataset.theme).toBe("light");
-    expect(document.documentElement.dataset.themeFamily).toBe("pideck");
+    expect(document.documentElement.dataset.themeFamily).toBe("piabyss");
     expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute(
       "content",
       "#ffffff",
@@ -125,6 +125,6 @@ describe("theme bootstrap", () => {
     expect(readStoredTheme()).toBeNull();
     expect(readStoredThemeFamily()).toBeNull();
     expect(document.documentElement).toHaveClass("dark");
-    expect(document.documentElement.dataset.themeFamily).toBe("pideck");
+    expect(document.documentElement.dataset.themeFamily).toBe("piabyss");
   });
 });

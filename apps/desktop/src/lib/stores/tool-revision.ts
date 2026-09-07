@@ -1,4 +1,4 @@
-import type { ToolSnapshot } from "@pideck/protocol";
+import type { ToolSnapshot } from "@piabyss/protocol";
 
 export type ToolSnapshotAction = "apply" | "drop" | "recover";
 

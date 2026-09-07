@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import type { PiSettingsSnapshot } from "@pideck/protocol";
+import type { PiSettingsSnapshot } from "@piabyss/protocol";
 import { createPiSettingsHandlers } from "./pi-settings-controller.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 
@@ -35,7 +35,7 @@ describe("piSettings.get model summaries", () => {
   });
 
   async function getSettings(runtime: ModelRuntime): Promise<PiSettingsSnapshot> {
-    agentDir = mkdtempSync(join(tmpdir(), "pideck-pi-settings-"));
+    agentDir = mkdtempSync(join(tmpdir(), "piabyss-pi-settings-"));
     const handlers = createPiSettingsHandlers(fakeFactory(runtime, agentDir), agentDir);
     const response = (await handlers["piSettings.get"]!({} as never)) as {
       result?: PiSettingsSnapshot;

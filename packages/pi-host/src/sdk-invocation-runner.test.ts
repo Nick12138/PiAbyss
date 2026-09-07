@@ -8,7 +8,7 @@ import {
   type AgentSession,
   type SourceInfo,
 } from "@earendil-works/pi-coding-agent";
-import type { HostEventName, HostIdentity } from "@pideck/protocol";
+import type { HostEventName, HostIdentity } from "@piabyss/protocol";
 import { describe, expect, it } from "vitest";
 import {
   createExtensionUiContext,
@@ -36,7 +36,7 @@ const EVENT_TYPES = [
 function sourceInfo(name: string): SourceInfo {
   return {
     path: `/packages/${name}/extensions/index.ts`,
-    source: `npm:@pideck/${name}@1.0.0`,
+    source: `npm:@piabyss/${name}@1.0.0`,
     scope: "user",
     origin: "package",
     baseDir: `/packages/${name}`,
@@ -233,7 +233,7 @@ describe("SDK Extension invocation runner patch", () => {
     };
     expect(request.origin).toMatchObject({
       invocationKind: "tool",
-      extensionDisplayName: "@pideck/ask-user",
+      extensionDisplayName: "@piabyss/ask-user",
       sourceKind: "package",
       toolName: "ask_user_question",
       toolCallId: "tool-call-ask",

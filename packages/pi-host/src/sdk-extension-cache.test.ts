@@ -21,12 +21,12 @@ afterEach(() => {
 /**
  * The 0.80.7 patch kept the SDK's extension module cache across reloads and
  * added a preserveExtensionCache option. The 0.82.1 patch drops both, so this
- * now pins the upstream contract PiDeck depends on: every reload re-imports the
+ * now pins the upstream contract PiAbyss depends on: every reload re-imports the
  * extension module and rebuilds its handlers.
  */
 describe("SDK extension module cache", () => {
   it("re-imports the extension module on every reload", async () => {
-    const root = mkdtempSync(join(tmpdir(), "pideck-extension-cache-"));
+    const root = mkdtempSync(join(tmpdir(), "piabyss-extension-cache-"));
     roots.push(root);
     const cwd = join(root, "project");
     const agentDir = join(root, "agent");
@@ -34,7 +34,7 @@ describe("SDK extension module cache", () => {
     mkdirSync(cwd, { recursive: true });
     mkdirSync(agentDir, { recursive: true });
 
-    const stateKey = `__pideck_extension_cache_${Date.now()}_${Math.random()
+    const stateKey = `__piabyss_extension_cache_${Date.now()}_${Math.random()
       .toString(36)
       .slice(2)}`;
     globalState[stateKey] = { imports: 0, factories: 0 } satisfies CacheState;

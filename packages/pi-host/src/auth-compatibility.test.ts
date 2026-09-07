@@ -3,7 +3,7 @@
  *
  * Each test drives the exact resolution path a request uses in production —
  * ModelRuntime.getAuth / ModelRegistry.getApiKeyAndHeaders over a real
- * models.json and the PiDeck FileCredentialStore — never a reimplementation.
+ * models.json and the PiAbyss FileCredentialStore — never a reimplementation.
  * Covers the §11 gate "API key 重启后丢失" and the environment / header-only /
  * custom-header rows of the PR-4 matrix.
  */
@@ -33,7 +33,7 @@ function modelEntry(id: string, extra: Record<string, unknown> = {}) {
 }
 
 function layoutWithProviders(providers: Record<string, unknown>): TempAgentLayout {
-  const layout = createTempAgentLayout("pideck-auth-compat-");
+  const layout = createTempAgentLayout("piabyss-auth-compat-");
   layouts.push(layout);
   writeFileSync(join(layout.agentDir, "models.json"), JSON.stringify({ providers }, null, 2));
   return layout;
@@ -74,18 +74,18 @@ describe("environment-backed auth", () => {
         name: "Env Key",
         baseUrl: "http://localhost:1/v1",
         api: "openai-completions",
-        apiKey: "$PIDECK_AUTH_COMPAT_ENV",
+        apiKey: "$PIABYSS_AUTH_COMPAT_ENV",
         models: [modelEntry("m1")],
       },
     });
 
-    process.env.PIDECK_AUTH_COMPAT_ENV = "from-process-env";
+    process.env.PIABYSS_AUTH_COMPAT_ENV = "from-process-env";
     try {
       const { modelRegistry } = await createTestModelServices(layout.agentDir);
       const auth = await modelRegistry.getApiKeyAndHeaders(modelRegistry.find("envkey", "m1")!);
       expect(auth).toMatchObject({ ok: true, apiKey: "from-process-env" });
     } finally {
-      delete process.env.PIDECK_AUTH_COMPAT_ENV;
+      delete process.env.PIABYSS_AUTH_COMPAT_ENV;
     }
   });
 

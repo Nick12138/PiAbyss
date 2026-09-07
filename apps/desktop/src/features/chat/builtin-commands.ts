@@ -4,8 +4,8 @@ export type BuiltinCommand = {
   argumentHint?: string;
 };
 
-/** Slash commands PiDeck executes locally instead of sending to the model.
- * A subset of Pi's built-in command set; grows as PiDeck implements more. */
+/** Slash commands PiAbyss executes locally instead of sending to the model.
+ * A subset of Pi's built-in command set; grows as PiAbyss implements more. */
 export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
   {
     name: "compact",

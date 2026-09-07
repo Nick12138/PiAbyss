@@ -8,9 +8,9 @@
  * relying on PATH placement.
  */
 
-export const BUNDLED_NODE_ENV = "PIDECK_BUNDLED_NODE";
-export const BUNDLED_GIT_ENV = "PIDECK_BUNDLED_GIT";
-export const BUNDLED_BASH_ENV = "PIDECK_BUNDLED_BASH";
+export const BUNDLED_NODE_ENV = "PIABYSS_BUNDLED_NODE";
+export const BUNDLED_GIT_ENV = "PIABYSS_BUNDLED_GIT";
+export const BUNDLED_BASH_ENV = "PIABYSS_BUNDLED_BASH";
 
 function envValue(name: string): string | undefined {
   const value = process.env[name];

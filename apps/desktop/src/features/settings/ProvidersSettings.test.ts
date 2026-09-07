@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_MODEL_CONTEXT_WINDOW, DEFAULT_MODEL_MAX_TOKENS } from "@pideck/protocol";
+import { DEFAULT_MODEL_CONTEXT_WINDOW, DEFAULT_MODEL_MAX_TOKENS } from "@piabyss/protocol";
 import {
   automaticThinkingConfig,
   newProviderModel,
@@ -115,7 +115,7 @@ describe("providerDraftForSave", () => {
     baseUrl: "https://relay.example/v1",
     modelsUrl: "",
     api: "openai-completions" as const,
-    headers: { "User-Agent": "PiDeck/0.1" },
+    headers: { "User-Agent": "PiAbyss/0.1" },
     compat: {
       supportsDeveloperRole: null,
       supportsReasoningEffort: null,
@@ -130,7 +130,7 @@ describe("providerDraftForSave", () => {
       baseUrl: "https://relay.example/v1",
       api: "openai-completions",
       authHeader: true,
-      headers: { "User-Agent": "PiDeck/0.1" },
+      headers: { "User-Agent": "PiAbyss/0.1" },
       models: [],
     });
   });

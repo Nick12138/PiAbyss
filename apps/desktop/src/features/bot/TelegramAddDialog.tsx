@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Bot, Copy, Check, LoaderCircle } from "lucide-react";
-import type { TelegramProfileSummary } from "@pideck/protocol";
+import type { TelegramProfileSummary } from "@piabyss/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";

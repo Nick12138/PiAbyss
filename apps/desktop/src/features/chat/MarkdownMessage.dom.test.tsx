@@ -318,7 +318,7 @@ describe("MarkdownMessage Mermaid rendering", () => {
         '<style>@import url("https://evil.example/style.css")</style>',
         '<defs><path id="shape" d="M0 0h1v1z" /><linearGradient id="gradient" /></defs>',
         '<use href="#shape" xlink:href="https://evil.example/shape.svg#shape" />',
-        '<g data-pideck-mermaid-href="https://evil.example/forged"><text>forged</text></g>',
+        '<g data-piabyss-mermaid-href="https://evil.example/forged"><text>forged</text></g>',
         '<rect fill="url(https://evil.example/fill.svg#paint)" />',
         '<animate attributeName="href" to="https://evil.example/animated" />',
         '<set attributeName="onclick" to="window.__mermaidRan = true" />',
@@ -340,14 +340,14 @@ describe("MarkdownMessage Mermaid rendering", () => {
     expect(container.querySelector('use[href="#shape"]')).toBeInTheDocument();
     expect(container.querySelector("use")).not.toHaveAttribute("xlink:href");
     expect(
-      container.querySelector('[data-pideck-mermaid-href="https://evil.example/forged"]'),
+      container.querySelector('[data-piabyss-mermaid-href="https://evil.example/forged"]'),
     ).not.toBeInTheDocument();
     expect(container.querySelector("rect")).not.toHaveAttribute("fill");
     expect(container.querySelector("animate, set, discard")).not.toBeInTheDocument();
     expect(container.querySelector("image")).not.toBeInTheDocument();
     expect(container.querySelector("a[href], a[xlink\\:href]")).not.toBeInTheDocument();
     expect(
-      container.querySelector('[data-pideck-mermaid-href="https://example.com/path"]'),
+      container.querySelector('[data-piabyss-mermaid-href="https://example.com/path"]'),
     ).toBeInTheDocument();
     expect(container.querySelector('[aria-label="Mermaid chart"] svg')).not.toHaveAttribute(
       "onload",
@@ -355,12 +355,12 @@ describe("MarkdownMessage Mermaid rendering", () => {
     expect(container.querySelector('[aria-label="Mermaid chart"] svg')).not.toHaveAttribute("href");
     expect((window as Window & { __mermaidRan?: boolean }).__mermaidRan).not.toBe(true);
 
-    fireEvent.click(container.querySelector("[data-pideck-mermaid-href]")!);
+    fireEvent.click(container.querySelector("[data-piabyss-mermaid-href]")!);
     expect(openChatLink).toHaveBeenLastCalledWith(
       "https://example.com/path",
       expect.objectContaining({ button: 0 }),
     );
-    middleClick(container.querySelector("[data-pideck-mermaid-href]")!);
+    middleClick(container.querySelector("[data-piabyss-mermaid-href]")!);
     expect(openChatLink).toHaveBeenLastCalledWith(
       "https://example.com/path",
       expect.objectContaining({ button: 1 }),
@@ -419,7 +419,7 @@ describe("MarkdownMessage safety and footnotes", () => {
       return element!;
     });
     const href = reference.getAttribute("href");
-    expect(href).toMatch(/^#pideck-md-.*-fn-/);
+    expect(href).toMatch(/^#piabyss-md-.*-fn-/);
 
     view.rerender(<MarkdownMessage content={`[spoof](${href})`} mode="static" />);
     await waitFor(() => expect(view.container).toHaveTextContent("spoof"));

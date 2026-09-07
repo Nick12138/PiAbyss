@@ -149,7 +149,7 @@ describe("applyKnownThinkingProfiles", () => {
   });
 
   it("folds models.json providers surfaced through the runtime", async () => {
-    const agentDir = mkdtempSync(join(tmpdir(), "pideck-thinking-"));
+    const agentDir = mkdtempSync(join(tmpdir(), "piabyss-thinking-"));
     const modelsPath = join(agentDir, "models.json");
     const modelsStorePath = join(agentDir, "models-store.json");
     writeFileSync(

@@ -7,7 +7,7 @@ import type {
   SessionSnapshot,
   ToolSnapshot,
   WorkspaceSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 
 export type EpochState = {
   host: HostStatusSnapshot | null;

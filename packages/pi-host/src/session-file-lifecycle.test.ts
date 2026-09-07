@@ -10,7 +10,7 @@ import {
   type GraphFactoryDeps,
   type WorkspaceGraph,
 } from "./workspace-graph-factory.js";
-import { sessionArchiveDir } from "./pideck-data.js";
+import { sessionArchiveDir } from "./piabyss-data.js";
 
 const SESSION_ID = "33333333-3333-4333-8333-333333333333";
 const SECOND_SESSION_ID = "44444444-4444-4444-8444-444444444444";
@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 function createFixture() {
-  const root = mkdtempSync(join(tmpdir(), "pideck-session-files-"));
+  const root = mkdtempSync(join(tmpdir(), "piabyss-session-files-"));
   roots.push(root);
   const agentDir = join(root, "agent");
   const cwd = join(root, "workspace");

@@ -1,5 +1,5 @@
 /** Atomic Host snapshot and recovery-period event buffering (R2/R7). */
-import type { HostEventEnvelope, RehydrateSnapshot } from "@pideck/protocol";
+import type { HostEventEnvelope, RehydrateSnapshot } from "@piabyss/protocol";
 import { hostClient } from "./host-client";
 
 export type RehydrateResult = RehydrateSnapshot;

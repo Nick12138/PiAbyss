@@ -1,6 +1,6 @@
 import { Archive, Folder, LoaderCircle, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { SessionSearchReport, SessionSearchResultItem } from "@pideck/protocol";
+import type { SessionSearchReport, SessionSearchResultItem } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { openSessionAcrossWorkspaces } from "../../lib/bridge/session-navigation";
 import { hostContext } from "../../lib/bridge/host-context";

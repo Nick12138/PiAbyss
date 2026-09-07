@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { HostEventEnvelope } from "@pideck/protocol";
+import type { HostEventEnvelope } from "@piabyss/protocol";
 import { HostClient, type HostTransport } from "../lib/bridge/host-client";
 import { useAppStore } from "../lib/stores/app-store";
 import { handleHostEvent } from "./App";

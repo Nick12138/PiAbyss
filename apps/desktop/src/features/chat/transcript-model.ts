@@ -6,12 +6,12 @@ import type {
   SerializableAgentMessage,
   SerializableSessionEntry,
   SerializableUsage,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import {
   parseAttachmentReferences,
   parseExtensionPresentation,
   stripAttachmentReferenceBlocks,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { isAbortedToolResult } from "../../lib/chat/tool-result-status";
 
 export type ToolTraceStatus = "waiting" | "running" | "done" | "error" | "aborted";

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { FileCredentialStore } from "./credential-store.js";
 import { ProviderMutationJournal, recoverProviderJournals } from "./provider-journal.js";
 import { buildDegradedModelConfigHealth } from "./model-health.js";
-import { providerJournalRoot } from "./pideck-data.js";
+import { providerJournalRoot } from "./piabyss-data.js";
 
 const roots: string[] = [];
 
@@ -18,7 +18,7 @@ const ORIGINAL_MODELS = JSON.stringify({ providers: { a: { name: "A" } } }, null
 const ORIGINAL_AUTH = JSON.stringify({ a: { type: "api_key", key: "sk-original" } }, null, 2);
 
 function createAgentDir(): { agentDir: string; modelsPath: string; store: FileCredentialStore } {
-  const root = mkdtempSync(join(tmpdir(), "pideck-journal-"));
+  const root = mkdtempSync(join(tmpdir(), "piabyss-journal-"));
   roots.push(root);
   const agentDir = join(root, "agent");
   mkdirSync(agentDir, { recursive: true });

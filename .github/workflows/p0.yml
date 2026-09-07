@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  PIDECK_FORMAT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+  PIABYSS_FORMAT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
 
 concurrency:
   group: p0-${{ github.workflow }}-${{ github.ref }}

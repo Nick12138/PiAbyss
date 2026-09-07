@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title PiDeck
+title PiAbyss
 cd /d "%~dp0"
 
 rem ============================================================
@@ -18,7 +18,7 @@ if /i "%~1"=="--nomini" set "MINIMIZE=0"
 rem On first launch, relaunch self in a minimized window
 if "%MINIMIZE%"=="1" (
     if /i not "%~1"=="--minimized" (
-        start "PiDeck" /min "%~f0" --minimized
+        start "PiAbyss" /min "%~f0" --minimized
         exit /b 0
     )
 )
@@ -26,16 +26,16 @@ if "%MINIMIZE%"=="1" (
 if "%MINIMIZE%"=="0" echo Launch mode: normal window
 if "%MINIMIZE%"=="1" echo Launch mode: minimized to taskbar
 
-echo Starting PiDeck...
+echo Starting PiAbyss...
 call pnpm dev:fast
 set "EXIT_CODE=%ERRORLEVEL%"
 
 echo.
 if not "%EXIT_CODE%"=="0" (
-    echo [ERROR] PiDeck exited with code %EXIT_CODE%.
+    echo [ERROR] PiAbyss exited with code %EXIT_CODE%.
     echo Please scroll up to review the error, then fix it and run this script again.
 ) else (
-    echo PiDeck exited.
+    echo PiAbyss exited.
 )
 
 echo.

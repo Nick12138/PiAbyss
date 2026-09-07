@@ -1,4 +1,4 @@
-import type { SessionContextBreakdown } from "@pideck/protocol";
+import type { SessionContextBreakdown } from "@piabyss/protocol";
 
 const CHARS_PER_TOKEN = 4;
 const ESTIMATED_IMAGE_CHARS = 4_800;

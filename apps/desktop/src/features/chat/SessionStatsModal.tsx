@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import type { SessionStatsSnapshot } from "@pideck/protocol";
+import type { SessionStatsSnapshot } from "@piabyss/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { localizeHostError } from "../../lib/bridge/localize-host-error";

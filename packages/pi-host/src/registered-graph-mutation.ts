@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createHostError, type HostError } from "@pideck/protocol";
+import { createHostError, type HostError } from "@piabyss/protocol";
 import type { GraphOperationRegistry } from "./operation-lifecycle.js";
 import type { GraphOperationKind, TryMutex } from "./locks.js";
 

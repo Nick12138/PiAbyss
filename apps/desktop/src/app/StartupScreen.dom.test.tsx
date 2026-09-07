@@ -84,7 +84,7 @@ describe("pre-React startup contract", () => {
     const css = readFileSync(join(process.cwd(), "src/styles/index.css"), "utf8");
     expect(html).toContain("/src/bootstrap-theme.ts");
     expect(html).toContain("background: transparent");
-    expect(html).not.toContain("pideck-bootstrap");
+    expect(html).not.toContain("piabyss-bootstrap");
     expect(css).toContain("html.light .startup-screen");
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
   });

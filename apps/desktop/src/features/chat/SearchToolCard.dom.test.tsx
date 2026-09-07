@@ -112,11 +112,11 @@ describe("tool disclosure motion", () => {
       <SearchToolCard
         name="web_search"
         status="done"
-        args={{ query: "PiDeck docs" }}
+        args={{ query: "PiAbyss docs" }}
         result={{
           results: [
             {
-              title: "PiDeck documentation",
+              title: "PiAbyss documentation",
               url: "https://example.com/docs",
               snippet: "Documentation",
             },
@@ -131,7 +131,7 @@ describe("tool disclosure motion", () => {
     flushFrame();
     flushFrame();
     expect(region).toHaveAttribute("data-state", "open");
-    const link = screen.getByRole("link", { name: /PiDeck documentation/u });
+    const link = screen.getByRole("link", { name: /PiAbyss documentation/u });
     expect(link).toHaveAttribute("href", "https://example.com/docs");
     expect(link).not.toHaveAttribute("target");
     expect(link).toHaveAttribute("title", expect.stringContaining("Open in Dock browser"));

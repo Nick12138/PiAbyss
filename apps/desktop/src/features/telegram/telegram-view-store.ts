@@ -8,17 +8,17 @@ import type {
   TelegramSessionSummary,
   TelegramThreadsConfig,
   TelegramVoiceConfig,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { activeSessionContext, hostContext } from "../../lib/bridge/host-context";
 import { bootstrapTelegramHost } from "../../lib/bridge/tauri-transport";
 import { useAppStore } from "../../lib/stores/app-store";
 import { isSameTelegramPath } from "../../lib/telegram-path";
 
-const TELEGRAM_WORKSPACE_DISPLAY_NAME_KEY = "pideck.telegram.workspaceDisplayName.v1";
+const TELEGRAM_WORKSPACE_DISPLAY_NAME_KEY = "piabyss.telegram.workspaceDisplayName.v1";
 
 /** Bridge on/off preference, persisted by the settings toggle. Default on. */
-const TELEGRAM_BRIDGE_ENABLED_KEY = "pideck.telegram.bridgeEnabled.v1";
+const TELEGRAM_BRIDGE_ENABLED_KEY = "piabyss.telegram.bridgeEnabled.v1";
 
 export function loadTelegramBridgePrefEnabled(): boolean {
   try {

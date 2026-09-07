@@ -8,7 +8,7 @@ import type {
   HostResponseEnvelope,
   HostStatusSnapshot,
   WorkspaceSnapshot,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { hostClient } from "../../lib/bridge/host-client";
 import { publishValidatedHostEvent } from "../../lib/bridge/validated-host-events";
@@ -520,7 +520,7 @@ describe("ChangesPanel", () => {
       sha: "f".repeat(40),
       shortSha: "ffffffff",
       parents: ["a".repeat(40)],
-      authorName: "PiDeck Test",
+      authorName: "PiAbyss Test",
       authoredAt: "2026-08-02T12:00:00+08:00",
       subject: "History change",
       refs: ["HEAD -> main"],

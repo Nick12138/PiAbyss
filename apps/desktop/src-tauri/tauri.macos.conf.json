@@ -4,7 +4,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "PiDeck",
+        "title": "PiAbyss",
         "width": 1280,
         "height": 800,
         "minWidth": 420,

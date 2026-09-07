@@ -31,7 +31,7 @@ describe("Sidebar", () => {
     // re-import the module so the store's create() initializer sees the
     // collapsed pref.
     vi.stubGlobal("localStorage", {
-      getItem: (key: string) => (key === "pideck.sidebar.collapsed" ? "1" : null),
+      getItem: (key: string) => (key === "piabyss.sidebar.collapsed" ? "1" : null),
       setItem: vi.fn(),
     });
     vi.resetModules();
@@ -53,7 +53,7 @@ describe("Sidebar", () => {
 
   it("renders the workspace nav when expanded", () => {
     vi.stubGlobal("localStorage", {
-      getItem: (key: string) => (key === "pideck.sidebar.width.v1" ? "300" : null),
+      getItem: (key: string) => (key === "piabyss.sidebar.width.v1" ? "300" : null),
       setItem: vi.fn(),
     });
 

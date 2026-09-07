@@ -23,7 +23,7 @@ import {
   type GitMutationResult,
   type GitStatusSnapshot,
   type HostErrorCode,
-} from "@pideck/protocol";
+} from "@piabyss/protocol";
 
 const GIT_READ_TIMEOUT_MS = 10_000;
 const GIT_MUTATION_TIMEOUT_MS = 30_000;
@@ -775,7 +775,7 @@ export class GitService {
     ) {
       throw new GitServiceError(
         "GIT_OPERATION_FAILED",
-        "This change does not support safe hunk operations in PiDeck",
+        "This change does not support safe hunk operations in PiAbyss",
       );
     }
     const diff = await this.getDiff(workspace, path, area, expectedRevision, signal);
@@ -878,7 +878,7 @@ export class GitService {
     ) {
       throw new GitServiceError(
         "GIT_OPERATION_FAILED",
-        "This change cannot be safely discarded from PiDeck",
+        "This change cannot be safely discarded from PiAbyss",
       );
     }
     this.validatePath(status.repositoryRoot, change.path);

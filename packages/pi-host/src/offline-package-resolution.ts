@@ -9,14 +9,14 @@
  *
  * Two problems follow. Host startup, workspace selection, and session
  * create/open are all required to stay offline, and that private package
- * manager is unreachable from PiDeck, so the child process it spawns cannot be
+ * manager is unreachable from PiAbyss, so the child process it spawns cannot be
  * cancelled or bounded.
  *
  * The SDK gates exactly this behaviour on `PI_OFFLINE`, re-reading the variable
  * on every call, so scoping it around implicit reloads makes the offline
  * guarantee structural rather than a convention. Explicit package operations
  * (`installNpm` / `installGit` reached through `package.install` and friends)
- * do not consult the flag, so PiDeck's own install flow is unaffected.
+ * do not consult the flag, so PiAbyss's own install flow is unaffected.
  *
  * Scope matters: the flag is process-wide, and setting it globally would also
  * disable the update-check capability. Every caller below runs under

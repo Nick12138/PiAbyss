@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAttachmentReferenceBlock, type SerializableAgentMessage } from "@pideck/protocol";
+import { buildAttachmentReferenceBlock, type SerializableAgentMessage } from "@piabyss/protocol";
 import {
   buildAttachedFileBlock,
   buildTranscriptRows,

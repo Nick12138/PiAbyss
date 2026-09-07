@@ -93,8 +93,8 @@ export function normalizedReleaseNames({ version, platform, arch, primaryName })
   if (platform === "darwin" && ["arm64", "x64"].includes(arch)) {
     const releaseArch = arch === "arm64" ? "aarch64" : "x64";
     return {
-      primary: `PiDeck_${version}_${releaseArch}.dmg`,
-      updater: `PiDeck_${version}_${releaseArch}.app.tar.gz`,
+      primary: `PiAbyss_${version}_${releaseArch}.dmg`,
+      updater: `PiAbyss_${version}_${releaseArch}.app.tar.gz`,
     };
   }
   fail(`unsupported release artifact target: ${platform}-${arch}`);
@@ -307,7 +307,7 @@ function readArg(args, name) {
 function main() {
   const args = process.argv.slice(2);
   const tag = readArg(args, "--tag") ?? fail("--tag is required (e.g. --tag v0.1.1)");
-  const repo = readArg(args, "--repo") ?? process.env.GITHUB_REPOSITORY ?? "Nick12138/PiDeck";
+  const repo = readArg(args, "--repo") ?? process.env.GITHUB_REPOSITORY ?? "Nick12138/PiAbyss";
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
   if (args.includes("--stage-platform")) {
     const outputDir =
