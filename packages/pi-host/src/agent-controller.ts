@@ -171,6 +171,11 @@ function startDetachedPrompt(args: {
 
   try {
     const runId = randomUUID();
+    // C1: attribute every provider registration inside this turn to the graph
+    // that started it, not to whichever graph happens to be active when a late
+    // pi.registerProvider fires. Captured synchronously: the detached task
+    // below may run after the active graph changed.
+    const initiatingOwner = args.factory.getGraph()?.providerOwner ?? null;
     const runIdentity = args.server.getIdentity();
     const visibleText = stripAttachmentReferenceBlocks(args.text);
     const provisionalTitle =
@@ -196,15 +201,23 @@ function startDetachedPrompt(args: {
             streamingBehavior: args.streamingBehavior,
             ...(args.images ? { images: args.images } : {}),
           });
-        if (extensionCommandInvocation) {
-          await withExtensionCommandOrigin(
-            args.session,
-            runId,
-            extensionCommandInvocation,
-            runPrompt,
-          );
+        // Outermost wrap (C1): withExtensionCommandOrigin stays inside the
+        // ownership scope so the whole turn — extension-command invocations
+        // included — registers against the initiating graph's owner.
+        const runTurn = () =>
+          extensionCommandInvocation
+            ? withExtensionCommandOrigin(
+                args.session,
+                runId,
+                extensionCommandInvocation,
+                runPrompt,
+              )
+            : runPrompt();
+        if (initiatingOwner) {
+          await args.factory.deps.providerOwnership.runAsOwner(initiatingOwner, runTurn);
         } else {
-          await runPrompt();
+          // No owner (e.g. failed graph): keep the ambient fallback behaviour.
+          await runTurn();
         }
         completed = true;
       } catch (err) {
@@ -1056,7 +1069,14 @@ export function createAgentHandlers(
         if (staleAfterLock) return { error: staleAfterLock, identity: requestIdentity };
 
         const params = (ctx.params ?? {}) as { instructions?: string };
-        const result = await session.compact(params.instructions);
+        // C1: compaction runs the session_before_compact extension window, so
+        // a late registration must land on this graph's owner, same as a turn.
+        const owner = g.providerOwner ?? null;
+        const result = owner
+          ? await factory.deps.providerOwnership.runAsOwner(owner, () =>
+              session.compact(params.instructions),
+            )
+          : await session.compact(params.instructions);
         const stillCurrentGraph = factory.getGraph() === g;
         const active = stillCurrentGraph && g.agentSession === session;
         const background =

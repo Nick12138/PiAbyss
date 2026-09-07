@@ -47,7 +47,8 @@ export type MigrationMilestone =
   | "localRefresh"
   | "sessionOpened"
   | "providerSnapshot"
-  | "cleanShutdown";
+  | "cleanShutdown"
+  | "serverStart";
 
 const REQUIRED_MILESTONES: readonly MigrationMilestone[] = [
   "runtimeCreate",

@@ -357,6 +357,28 @@ export class WorkspaceLifecycle {
     return workspaceIdentityKey(canonicalCwd, this.context.platform);
   }
 
+  /**
+   * Read-only lookup by workspaceIdentityKey. The active graph counts as bound:
+   * a matching key returns it even though it never sits in `retainedGraphs`.
+   */
+  getRetainedGraphByKey(key: string): WorkspaceGraph | null {
+    const active = this.context.getGraph();
+    if (active && this.retainedGraphKey(active.canonicalCwd) === key) return active;
+    return this.retainedGraphs.get(key) ?? null;
+  }
+
+  /**
+   * Read-only listing of every bound workspace identity key: the active graph
+   * first, then the retained graphs in LRU order.
+   */
+  listBoundWorkspaceKeys(): string[] {
+    const keys: string[] = [];
+    const active = this.context.getGraph();
+    if (active) keys.push(this.retainedGraphKey(active.canonicalCwd));
+    keys.push(...this.retainedGraphs.keys());
+    return keys;
+  }
+
   private async retainedGraphFingerprint(
     graph: WorkspaceGraph,
     signal?: AbortSignal,
@@ -429,7 +451,9 @@ export class WorkspaceLifecycle {
     this.retainedGraphs.delete(key);
     if (existing && existing !== graph) await this.disposeGraph(existing);
     this.retainedGraphs.set(key, graph);
-    while (this.retainedGraphs.size > WorkspaceLifecycle.MAX_RETAINED_GRAPHS) {
+    const maxRetained =
+      this.context.deps.maxBoundWorkspaces ?? WorkspaceLifecycle.MAX_RETAINED_GRAPHS;
+    while (this.retainedGraphs.size > maxRetained) {
       const oldestKey = this.retainedGraphs.keys().next().value;
       if (oldestKey === undefined) break;
       const evicted = this.retainedGraphs.get(oldestKey);
