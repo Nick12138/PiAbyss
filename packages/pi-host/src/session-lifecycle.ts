@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, rename, unlink } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, join, resolve as pathResolve } from "node:path";
 import {
   AgentSession,
   DefaultResourceLoader,
@@ -24,6 +24,10 @@ import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import type { ManagedSessionInfo, WorkspaceGraph } from "./workspace-graph-types.js";
 import { captureActiveSessionState, commitActiveSessionState } from "./session-runtime-cache.js";
 import { sessionStorageDirs as resolveSessionStorageDirs } from "./session-storage.js";
+import {
+  invalidateSessionListProjection,
+  listSessionProjectionsFromDir,
+} from "./session-list-projection.js";
 import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { createReadAttachmentTool } from "./attachment-tool.js";
 import { createHostAgentSession } from "./agent-session-factory.js";
@@ -61,8 +65,32 @@ async function listSessionFiles(
 ): Promise<ManagedSessionInfo[]> {
   const dirs = sessionStorageDirs(factory, g);
   const dir = archived ? dirs.archiveDir : dirs.activeDir;
-  const sessions = await SessionManager.list(g.canonicalCwd, dir);
-  return sessions.map((session) => ({ ...session, archived }));
+  const projections = await listSessionProjectionsFromDir(dir);
+  const resolvedCwd = pathResolve(g.canonicalCwd);
+  const sessions: ManagedSessionInfo[] = [];
+  for (const projection of projections) {
+    // Parity with SessionManager.list: a file belongs to this workspace only
+    // when its header cwd resolves to the workspace cwd (empty cwd never matches).
+    if (!projection.cwd || pathResolve(projection.cwd) !== resolvedCwd) continue;
+    sessions.push({
+      path: projection.path,
+      id: projection.id,
+      cwd: projection.cwd,
+      ...(projection.name !== undefined ? { name: projection.name } : {}),
+      ...(projection.parentSessionPath !== undefined
+        ? { parentSessionPath: projection.parentSessionPath }
+        : {}),
+      created: new Date(projection.createdMs),
+      modified: new Date(projection.modifiedMs),
+      messageCount: projection.messageCount,
+      firstMessage: projection.firstMessage,
+      // No Host consumer reads the joined transcript, so the projection does
+      // not build it; the SessionInfo type still requires the field.
+      allMessagesText: "",
+      archived,
+    });
+  }
+  return sessions;
 }
 
 export async function listSessions(factory: WorkspaceGraphFactory): Promise<ManagedSessionInfo[]> {
@@ -122,6 +150,9 @@ async function withSessionFileMutation<T>(
       ),
     };
   } finally {
+    // Session files changed (or the operation failed mid-flight); drop the
+    // projection cache so the next listing re-reads from disk.
+    invalidateSessionListProjection();
     server.serviceGraphLock.release(requestId);
     operation.finish();
   }
@@ -789,6 +820,8 @@ export async function createSession(
       ),
     };
   } finally {
+    // The new Session file must be visible to the next listing immediately.
+    invalidateSessionListProjection();
     server.serviceGraphLock.release(requestId);
     operation.finish();
   }
