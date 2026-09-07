@@ -18,6 +18,10 @@ use tokio::task::JoinHandle;
 pub(crate) const HOST_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 pub(crate) const APP_EXIT_HOST_SHUTDOWN_GRACE: Duration = Duration::from_secs(1);
 pub(crate) const IDLE_HOST_RETENTION: Duration = Duration::from_secs(30 * 60);
+/// Minimum idle time before a background Host is probed for RSS. Younger
+/// hosts can only be retired by the base retention rule, so probing them is
+/// wasted work.
+pub(crate) const RSS_PROBE_MIN_IDLE: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -533,7 +537,7 @@ struct HostPoolEntry {
     activity: Arc<StdMutex<HostActivity>>,
 }
 
-struct HostActivity {
+pub(crate) struct HostActivity {
     busy_sessions: HashSet<String>,
     idle_since: Instant,
     /// True once any session has entered a busy state, so the workspace list
@@ -547,6 +551,19 @@ struct HostActivity {
     /// busy→idle completion from a plain idle announcement for a restored
     /// session that never ran.
     last_state: HashMap<String, String>,
+    /// Last observed child working-set size (bytes), cached by the GC tick's
+    /// RSS probe. `None` until the first successful probe or after a failed
+    /// one; never used when `hostIdleRssRetireMb` is 0 (probe disabled).
+    last_rss_bytes: Option<u64>,
+}
+
+impl HostActivity {
+    /// Test hook: age the idle clock so expiry rules are testable without
+    /// waiting out `IDLE_HOST_RETENTION` (which would stall the suite).
+    #[cfg(test)]
+    pub(crate) fn set_idle_since_for_test(&mut self, idle_since: Instant) {
+        self.idle_since = idle_since;
+    }
 }
 
 impl Default for HostActivity {
@@ -558,6 +575,7 @@ impl Default for HostActivity {
             terminal_sessions: HashMap::new(),
             next_terminal_generation: 0,
             last_state: HashMap::new(),
+            last_rss_bytes: None,
         }
     }
 }
@@ -677,11 +695,7 @@ impl PiHostPool {
         let Some(entry) = self.entries.get(&key) else {
             return false;
         };
-        let mut activity = entry
-            .activity
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if activity.terminal_sessions.remove(session_id).is_none() {
+        if !acknowledge_session_terminal_in_activity(&entry.activity, session_id) {
             return false;
         }
         let _ = self.app.emit("pi-host-activity", entry.route_id.clone());
@@ -810,8 +824,23 @@ impl PiHostPool {
         })
     }
 
-    pub fn take_expired_idle_hosts(&mut self) -> Vec<Arc<Mutex<PiHostManager>>> {
-        let expired_keys = self
+    /// Collect Hosts to retire this GC tick:
+    /// - base rule: not the active route, no unacknowledged terminal markers,
+    ///   no busy sessions, and idle for at least `IDLE_HOST_RETENTION`;
+    /// - RSS accelerator (opt-in, `rss_retire_mb > 0`): a background Host idle
+    ///   for at least `RSS_PROBE_MIN_IDLE` whose observed child working set
+    ///   exceeds the threshold retires early instead of waiting out the full
+    ///   retention. Unacknowledged terminal markers pin a Host against both
+    ///   rules.
+    ///
+    /// The probe runs at most once per entry per tick and never blocks: a
+    /// manager mutex held by another task simply skips that entry until the
+    /// next tick (`try_lock`), so the 60 s GC cadence stays cheap.
+    pub fn take_expired_idle_hosts(
+        &mut self,
+        rss_retire_mb: u32,
+    ) -> Vec<Arc<Mutex<PiHostManager>>> {
+        let mut expired_keys = self
             .entries
             .iter()
             .filter_map(|(key, entry)| {
@@ -819,6 +848,49 @@ impl PiHostPool {
                     .then_some(key.clone())
             })
             .collect::<Vec<_>>();
+        if rss_retire_mb > 0 {
+            let threshold_bytes = u64::from(rss_retire_mb) * 1024 * 1024;
+            for (key, entry) in self.entries.iter() {
+                if key == &self.active_key || expired_keys.contains(key) {
+                    continue;
+                }
+                if host_idle_for(&entry.activity) < RSS_PROBE_MIN_IDLE {
+                    continue;
+                }
+                let Ok(manager) = entry.manager.try_lock() else {
+                    continue;
+                };
+                let rss_bytes = manager.probe_child_rss_bytes();
+                {
+                    let mut activity = entry
+                        .activity
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    activity.last_rss_bytes = rss_bytes;
+                }
+                match rss_bytes {
+                    Some(bytes) if bytes > threshold_bytes => {
+                        eprintln!(
+                            "[piabyss] retiring idle background Host {}: working set {} MiB > {} MiB limit",
+                            key,
+                            bytes / (1024 * 1024),
+                            rss_retire_mb
+                        );
+                        expired_keys.push(key.clone());
+                    }
+                    Some(bytes) => eprintln!(
+                        "[piabyss] background Host {} working set {} MiB (limit {} MiB)",
+                        key,
+                        bytes / (1024 * 1024),
+                        rss_retire_mb
+                    ),
+                    None => eprintln!(
+                        "[piabyss] background Host {} RSS probe unavailable; keeping base retention rule",
+                        key
+                    ),
+                }
+            }
+        }
         let mut retired = Vec::with_capacity(expired_keys.len());
         for key in expired_keys {
             if let Some(entry) = self.entries.remove(&key) {
@@ -897,14 +969,43 @@ fn host_activity_busy(activity: &StdMutex<HostActivity>) -> bool {
         .is_empty()
 }
 
-fn host_activity_expired(activity: &StdMutex<HostActivity>) -> bool {
+/// Testable core of `PiHostPool::acknowledge_session_terminal`: clears the
+/// unacknowledged terminal marker for one session. Shared with unit tests so
+/// the acknowledgement path and the retirement gate stay provably symmetric —
+/// both are keyed on the same `terminal_sessions` map.
+pub(crate) fn acknowledge_session_terminal_in_activity(
+    activity: &StdMutex<HostActivity>,
+    session_id: &str,
+) -> bool {
+    let mut activity = activity
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    activity.terminal_sessions.remove(session_id).is_some()
+}
+
+/// Idle reclamation gate. Hosts with unacknowledged terminal markers (red /
+/// gray dots) are pinned: the renderer is still owed the failure/completion
+/// signal, and retiring the Host would drop the only snapshot the workspace
+/// list uses to rebuild those dots. They are retired only after the user
+/// acknowledges (`acknowledge_session_terminal`) — never on idle time alone.
+pub(crate) fn host_activity_expired(activity: &StdMutex<HostActivity>) -> bool {
     let activity = activity
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    activity.busy_sessions.is_empty() && activity.idle_since.elapsed() >= IDLE_HOST_RETENTION
+    activity.terminal_sessions.is_empty()
+        && activity.busy_sessions.is_empty()
+        && activity.idle_since.elapsed() >= IDLE_HOST_RETENTION
 }
 
-fn observe_host_activity(activity: &StdMutex<HostActivity>, line: &str) -> bool {
+fn host_idle_for(activity: &StdMutex<HostActivity>) -> Duration {
+    activity
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .idle_since
+        .elapsed()
+}
+
+pub(crate) fn observe_host_activity(activity: &StdMutex<HostActivity>, line: &str) -> bool {
     let Ok(message) = serde_json::from_str::<serde_json::Value>(line) else {
         return false;
     };
@@ -1637,6 +1738,36 @@ impl PiHostManager {
 
     pub fn host_instance_id(&self) -> Option<&str> {
         self.host_instance_id.as_deref()
+    }
+
+    /// Working-set size of the Host child process, when observable. Returns
+    /// `None` when no child is running, the handle is gone, or the OS query
+    /// fails — callers must treat "unknown" as "keep the base retention rule".
+    /// Cheap single syscall, safe to call once per GC tick per entry.
+    #[cfg(windows)]
+    pub(crate) fn probe_child_rss_bytes(&self) -> Option<u64> {
+        use windows_sys::Win32::System::ProcessStatus::{
+            GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+        };
+        let handle = self.child.as_ref()?.raw_handle()?;
+        let mut counters = PROCESS_MEMORY_COUNTERS {
+            cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: `handle` is the live process handle owned by the child and
+        // `counters` is a valid, correctly sized buffer for this query.
+        if unsafe { GetProcessMemoryInfo(handle, &mut counters, counters.cb) } == 0 {
+            return None;
+        }
+        Some(counters.WorkingSetSize as u64)
+    }
+
+    /// Non-Windows: no cheap child-RSS probe wired up yet (would need sysinfo
+    /// or procfs); RSS-aware retirement stays a Windows accelerator until a
+    /// platform port is needed.
+    #[cfg(not(windows))]
+    pub(crate) fn probe_child_rss_bytes(&self) -> Option<u64> {
+        None
     }
 
     pub fn restart_count(&self) -> u32 {

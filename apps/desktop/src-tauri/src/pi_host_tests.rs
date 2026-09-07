@@ -5,18 +5,19 @@ mod tests {
     #[cfg(windows)]
     use crate::pi_host::WindowsHostJob;
     use crate::pi_host::{
-        build_host_path, build_shutdown_line, drain_complete_lines, extract_host_instance_id,
-        finish_monitor_task, is_current_child_generation, node_executable_name,
-        node_runtime_candidates, push_stderr_tail, read_bounded_lossy_line, read_bounded_utf8_line,
+        acknowledge_session_terminal_in_activity, build_host_path, build_shutdown_line,
+        drain_complete_lines, extract_host_instance_id, finish_monitor_task, host_activity_expired,
+        is_current_child_generation, node_executable_name, node_runtime_candidates,
+        observe_host_activity, push_stderr_tail, read_bounded_lossy_line, read_bounded_utf8_line,
         should_auto_restart, strip_verbatim_prefix, write_host_stdin, AutoRestartEpoch,
-        HostChildSession, APP_EXIT_HOST_SHUTDOWN_GRACE, HOST_SHUTDOWN_GRACE,
-        MAX_HOST_STDOUT_LINE_BYTES,
+        HostActivity, HostChildSession, APP_EXIT_HOST_SHUTDOWN_GRACE, HOST_SHUTDOWN_GRACE,
+        IDLE_HOST_RETENTION, MAX_HOST_STDOUT_LINE_BYTES,
     };
     #[cfg(unix)]
     use crate::pi_host::{is_executable_file, unix_child_exited_without_reaping};
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     #[cfg(unix)]
@@ -743,5 +744,86 @@ rl.on('line', (line) => {
         let mut buf = String::new();
         let lines = drain_complete_lines(&mut buf, "not json\n");
         assert_eq!(lines.len(), 1);
+    }
+
+    fn runtime_line(session_id: &str, state: &str) -> String {
+        serde_json::json!({
+            "event": "session.runtimeChanged",
+            "payload": { "sessionId": session_id, "state": state }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn unacknowledged_terminal_markers_pin_the_host_past_idle_retention() {
+        let activity = Mutex::new(HostActivity::default());
+        // Red dot: failed session the renderer has not acknowledged yet.
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "running")
+        ));
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "error")
+        ));
+        // Gray dot: completed session, still unacknowledged.
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("b", "running")
+        ));
+        assert!(observe_host_activity(&activity, &runtime_line("b", "idle")));
+        activity
+            .lock()
+            .expect("activity lock")
+            .set_idle_since_for_test(std::time::Instant::now() - IDLE_HOST_RETENTION);
+        // Past the 30-minute idle retention, but the unread dots pin the Host.
+        assert!(!host_activity_expired(&activity));
+    }
+
+    #[test]
+    fn acknowledging_the_terminal_marker_restores_idle_retirement() {
+        let activity = Mutex::new(HostActivity::default());
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "running")
+        ));
+        assert!(observe_host_activity(&activity, &runtime_line("a", "idle")));
+        activity
+            .lock()
+            .expect("activity lock")
+            .set_idle_since_for_test(std::time::Instant::now() - IDLE_HOST_RETENTION);
+        assert!(!host_activity_expired(&activity));
+        // The renderer acks by returning to the session — the same clear path
+        // as PiHostPool::acknowledge_session_terminal.
+        assert!(acknowledge_session_terminal_in_activity(&activity, "a"));
+        assert!(host_activity_expired(&activity));
+    }
+
+    #[test]
+    fn acknowledging_one_marker_keeps_the_host_pinned_while_others_remain() {
+        let activity = Mutex::new(HostActivity::default());
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "running")
+        ));
+        assert!(observe_host_activity(&activity, &runtime_line("a", "idle")));
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("b", "running")
+        ));
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("b", "error")
+        ));
+        activity
+            .lock()
+            .expect("activity lock")
+            .set_idle_since_for_test(std::time::Instant::now() - IDLE_HOST_RETENTION);
+        assert!(!host_activity_expired(&activity));
+        assert!(acknowledge_session_terminal_in_activity(&activity, "a"));
+        // b's red dot is still unacked — the Host stays.
+        assert!(!host_activity_expired(&activity));
+        assert!(acknowledge_session_terminal_in_activity(&activity, "b"));
+        assert!(host_activity_expired(&activity));
     }
 }
