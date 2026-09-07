@@ -37,7 +37,7 @@ import { Switch } from "../../components/Switch";
 import type { MessageKey } from "../../lib/i18n";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 import { useImeComposition } from "../../lib/use-ime-composition";
-import { formatTokenCount } from "../../lib/format-token-count";
+import { formatTokenCount, formatTokenCountExact, parseTokenCount } from "../../lib/format-token-count";
 import { ProviderLoginPage } from "./ProviderLoginSection";
 import {
   automaticThinkingConfig,
@@ -65,42 +65,50 @@ const API_OPTIONS: Array<{ value: ProviderDraft["api"]; label: string }> = [
   { value: "google-generative-ai", label: "Google Generative AI" },
 ];
 
-function NumberField({
+const CONTEXT_WINDOW_PRESETS = [128_000, 200_000, 372_000, 1_000_000];
+const MAX_TOKENS_PRESETS = [32_000, 64_000, 128_000];
+
+function TokenCountField({
   label,
   value,
+  presets,
   onCommit,
 }: {
   label: string;
   value: number;
+  presets: number[];
   onCommit: (next: number) => void;
 }) {
   // Keep the raw text while typing; committing on every keystroke would snap
   // a cleared field to the fallback and corrupt the value being entered.
-  const [text, setText] = useState(String(value));
+  const [text, setText] = useState(formatTokenCountExact(value));
   const [committed, setCommitted] = useState(value);
   const skipCommitRef = useRef(false);
   if (value !== committed) {
     // The draft changed underneath us (catalog refetch, host reload): the
     // committed value is the source of truth, stale text must not survive.
     setCommitted(value);
-    setText(String(value));
+    setText(formatTokenCountExact(value));
   }
   const commit = () => {
-    const parsed = Math.floor(Number(text));
-    if (Number.isFinite(parsed) && parsed >= 1) {
+    // Accept plain numbers ("200000"), thousands ("127K") and millions
+    // ("1.05M"); invalid input reverts to the committed value.
+    const parsed = parseTokenCount(text);
+    if (parsed !== null) {
       onCommit(parsed);
       setCommitted(parsed);
-      setText(String(parsed));
+      setText(formatTokenCountExact(parsed));
     } else {
-      setText(String(value));
+      setText(formatTokenCountExact(value));
     }
   };
   return (
     <label className="flex flex-col gap-1 text-[11px] text-muted">
       {label}
       <input
-        type="number"
-        min={1}
+        type="text"
+        inputMode="decimal"
+        spellCheck={false}
         className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-foreground outline-none focus:border-focus"
         value={text}
         onChange={(event) => setText(event.target.value)}
@@ -119,11 +127,34 @@ function NumberField({
             event.preventDefault();
             event.stopPropagation();
             skipCommitRef.current = true;
-            setText(String(value));
+            setText(formatTokenCountExact(value));
             event.currentTarget.blur();
           }
         }}
       />
+      <span className="flex flex-wrap items-center gap-1">
+        {presets.map((preset) => (
+          <button
+            key={preset}
+            type="button"
+            className={`rounded border px-1.5 py-0.5 text-[11px] tabular-nums ${
+              value === preset
+                ? "border-accent/50 bg-accent/15 text-accent"
+                : "border-border text-muted hover:bg-control-hover hover:text-foreground"
+            }`}
+            title={preset.toLocaleString("en-US")}
+            // Keep focus in the input; the chip applies its value directly.
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              onCommit(preset);
+              setCommitted(preset);
+              setText(formatTokenCountExact(preset));
+            }}
+          >
+            {formatTokenCountExact(preset)}
+          </button>
+        ))}
+      </span>
     </label>
   );
 }
@@ -1219,16 +1250,18 @@ export function ProvidersSettings() {
                                 }
                               />
                             </label>
-                            <NumberField
+                            <TokenCountField
                               key={`${model.id}:contextWindow`}
                               label={t("providersContextWindow")}
                               value={model.contextWindow}
+                              presets={CONTEXT_WINDOW_PRESETS}
                               onCommit={(next) => updateModel(model.id, { contextWindow: next })}
                             />
-                            <NumberField
+                            <TokenCountField
                               key={`${model.id}:maxTokens`}
                               label={t("providersMaxTokens")}
                               value={model.maxTokens}
+                              presets={MAX_TOKENS_PRESETS}
                               onCommit={(next) => updateModel(model.id, { maxTokens: next })}
                             />
                             <label className="flex flex-col gap-1 text-[11px] text-muted">
