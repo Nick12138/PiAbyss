@@ -9,6 +9,7 @@ import {
   modelMenuPlacement,
   modelOptionLabel,
   requestModelListWithRetry,
+  resolveThinkingLevels,
   thinkingLevelLabel,
   thinkingLevelsForModel,
 } from "./ModelControls";
@@ -48,6 +49,29 @@ describe("includeCurrentModel", () => {
     ];
     expect(thinkingLevelsForModel(models, current, ["off"])).toEqual(["low", "medium", "high"]);
     expect(thinkingLevelsForModel(models, models[1], ["low"])).toEqual(["off"]);
+  });
+});
+
+describe("resolveThinkingLevels", () => {
+  it("prefers the session model's own non-empty levels", () => {
+    const models: ModelSummary[] = [{ ...current, thinkingLevels: ["off", "high"] }];
+    expect(resolveThinkingLevels({ ...current, thinkingLevels: ["low"] }, models)).toEqual([
+      "low",
+    ]);
+  });
+
+  it("falls back to the catalog entry when the session model omits levels", () => {
+    const models: ModelSummary[] = [{ ...current, thinkingLevels: ["off", "high"] }];
+    expect(resolveThinkingLevels(current, models)).toEqual(["off", "high"]);
+    expect(resolveThinkingLevels({ ...current, thinkingLevels: [] }, models)).toEqual([
+      "off",
+      "high",
+    ]);
+  });
+
+  it("returns no levels when neither the session nor the catalog carries them", () => {
+    expect(resolveThinkingLevels(current, [])).toEqual([]);
+    expect(resolveThinkingLevels(undefined, [{ ...current, thinkingLevels: ["off"] }])).toEqual([]);
   });
 });
 

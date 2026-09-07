@@ -1267,6 +1267,7 @@ export const en = {
   modelSelect: "Select model",
   modelNone: "No model",
   modelMenuLabel: "Models",
+  modelThinkingDepth: "Thinking depth",
   modelThinkingFor: "Thinking level for {model}",
   modelNoThinkingLevels: "No levels",
   modelThinkingOff: "Off",

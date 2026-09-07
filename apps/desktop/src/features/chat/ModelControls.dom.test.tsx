@@ -12,7 +12,7 @@ import type {
 } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
-import { ModelControls, ThinkingControls } from "./ModelControls";
+import { ModelControls } from "./ModelControls";
 
 const HOST_ID = "11111111-1111-4111-8111-111111111111";
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
@@ -107,32 +107,170 @@ function envelope(method: string, result: unknown): HostResponseEnvelope {
   } as HostResponseEnvelope;
 }
 
-describe("ThinkingControls", () => {
+describe("ModelControls thinking-depth footer", () => {
   beforeEach(() => {
-    useAppStore.getState().setHost(host());
-    useAppStore.getState().setWorkspace(workspace());
+    setupModelMenuStore();
+    // The thinking-depth entry stays available while a run is active.
     useAppStore.getState().applySessionSnapshot({ ...session(), isIdle: false });
   });
 
   afterEach(() => {
-    cleanup();
-    vi.restoreAllMocks();
-    useAppStore.getState().setHost(null);
-    useAppStore.getState().setWorkspace(null);
-    useAppStore.getState().applySessionSnapshot(null);
+    teardownModelMenuStore();
   });
 
-  it("keeps the thinking-level control available while the current run is active", async () => {
-    vi.spyOn(hostClient, "request").mockResolvedValue(
-      envelope("model.setThinkingLevel", session()) as never,
+  it("opens the nested level submenu from the pinned footer and applies a level", async () => {
+    const requestSpy = vi.spyOn(hostClient, "request").mockImplementation(
+      async (method: string) => {
+        if (method === "model.list") {
+          return envelope(method, {
+            models: [MODEL],
+            current: MODEL,
+            thinkingLevels: ["off", "high"],
+            enabledProviders: ["muapi"],
+          }) as never;
+        }
+        if (method === "model.setThinkingLevel") {
+          return envelope(method, { ...session(), thinkingLevel: "high", revision: 4 }) as never;
+        }
+        throw new Error(`Unexpected method ${method}`);
+      },
     );
-    render(<ThinkingControls />);
-    const control = screen.getByTitle("Thinking level for muapi/Grok 4.5");
-    expect(control).not.toBeDisabled();
+    // The model catalog is only fetched once the Host connection settles.
+    useAppStore.getState().setConnecting(false);
 
     const user = userEvent.setup();
-    await user.click(control);
-    expect(screen.getByRole("menuitemradio", { name: "High" })).toBeInTheDocument();
+    render(<ModelControls />);
+
+    await user.click(await screen.findByRole("button", { name: "Grok 4.5" }));
+    await screen.findByRole("menu", { name: "Models" });
+
+    // The pinned footer shows the current level and opens the submenu.
+    const footer = screen.getByRole("button", { name: /Thinking depth/ });
+    expect(footer).toHaveTextContent("Off");
+    expect(footer).not.toBeDisabled();
+    await user.click(footer);
+
+    const submenu = await screen.findByRole("menu", {
+      name: "Thinking level for muapi/Grok 4.5",
+    });
+    expect(
+      within(submenu).getByRole("menuitemradio", { name: "Off" }),
+    ).toHaveAttribute("aria-checked", "true");
+
+    await user.click(within(submenu).getByRole("menuitemradio", { name: "High" }));
+    await waitFor(() =>
+      expect(requestSpy).toHaveBeenCalledWith(
+        "model.setThinkingLevel",
+        expect.anything(),
+        { level: "high" },
+      ),
+    );
+
+    // The submenu closes while the model menu stays open, and the pinned
+    // footer reflects the newly applied level.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("menu", { name: "Thinking level for muapi/Grok 4.5" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("menu", { name: "Models" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Thinking depth/ })).toHaveTextContent("High");
+  });
+
+  it("disables the pinned footer when the model has no thinking levels", async () => {
+    vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+      if (method !== "model.list") throw new Error(`Unexpected method ${method}`);
+      return envelope(method, {
+        models: [{ ...MODEL, thinkingLevels: [] }],
+        current: { ...MODEL, thinkingLevels: [] },
+        thinkingLevels: [],
+        enabledProviders: ["muapi"],
+      }) as never;
+    });
+    // The session model itself carries no levels and the catalog agrees —
+    // only then is the pinned footer disabled.
+    useAppStore
+      .getState()
+      .applySessionSnapshot({ ...session({ ...MODEL, thinkingLevels: [] }) });
+    useAppStore.getState().setConnecting(false);
+
+    const user = userEvent.setup();
+    render(<ModelControls />);
+
+    await user.click(await screen.findByRole("button", { name: "Grok 4.5" }));
+    await screen.findByRole("menu", { name: "Models" });
+
+    const footer = screen.getByRole("button", { name: /Thinking depth/ });
+    expect(footer).toBeDisabled();
+    expect(footer).toHaveTextContent("—");
+    useAppStore.getState().setConnecting(true);
+  });
+
+  // F5 regression: the rehydrated session model carries no providerName, so
+  // ModelControls syncs it with model.list's `current`. That summary used to
+  // omit thinkingLevels, which wiped the levels and greyed out the footer.
+  it("keeps the session's thinking levels when model.list reports a level-less current", async () => {
+    vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+      if (method !== "model.list") throw new Error(`Unexpected method ${method}`);
+      return envelope(method, {
+        models: [MODEL],
+        // Legacy host shape: providerName but no thinkingLevels.
+        current: {
+          provider: MODEL.provider,
+          providerName: "Muapi",
+          modelId: MODEL.modelId,
+          name: MODEL.name,
+        },
+        thinkingLevels: ["off", "high"],
+        enabledProviders: ["muapi"],
+      }) as never;
+    });
+    useAppStore.getState().setConnecting(false);
+
+    const user = userEvent.setup();
+    render(<ModelControls />);
+
+    await user.click(await screen.findByRole("button", { name: "Grok 4.5" }));
+    await screen.findByRole("menu", { name: "Models" });
+
+    const footer = screen.getByRole("button", { name: /Thinking depth/ });
+    expect(footer).not.toBeDisabled();
+    expect(footer).toHaveTextContent("Off");
+    useAppStore.getState().setConnecting(true);
+  });
+
+  it("resolves the pinned footer's levels from the catalog when the session model has none", async () => {
+    vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+      if (method !== "model.list") throw new Error(`Unexpected method ${method}`);
+      return envelope(method, {
+        models: [MODEL],
+        current: {
+          provider: MODEL.provider,
+          providerName: "Muapi",
+          modelId: MODEL.modelId,
+          name: MODEL.name,
+        },
+        thinkingLevels: ["off", "high"],
+        enabledProviders: ["muapi"],
+      }) as never;
+    });
+    // Session model without levels and without providerName: the catalog
+    // entry for the same model must backfill the footer's levels.
+    useAppStore
+      .getState()
+      .applySessionSnapshot({ ...session({ ...MODEL, thinkingLevels: [] }) });
+    useAppStore.getState().setConnecting(false);
+
+    const user = userEvent.setup();
+    render(<ModelControls />);
+
+    await user.click(await screen.findByRole("button", { name: "Grok 4.5" }));
+    await screen.findByRole("menu", { name: "Models" });
+
+    const footer = screen.getByRole("button", { name: /Thinking depth/ });
+    expect(footer).not.toBeDisabled();
+    expect(footer).toHaveTextContent("Off");
+    useAppStore.getState().setConnecting(true);
   });
 });
 
@@ -294,7 +432,7 @@ describe("ModelControls model menu width", () => {
 
     await user.click(screen.getByRole("button", { name: "Grok 4.5" }));
     const menu = await screen.findByRole("menu", { name: "Models" });
-    const menuShell = menu.parentElement;
+    const menuShell = menu.parentElement?.parentElement;
 
     // measured content (400) + row controls (96) fits within the default max,
     // so the floated shell matches the measured content width.
@@ -323,7 +461,7 @@ describe("ModelControls model menu width", () => {
 
     await user.click(screen.getByRole("button", { name: "Grok 4.5" }));
     const menu = await screen.findByRole("menu", { name: "Models" });
-    const menuShell = menu.parentElement;
+    const menuShell = menu.parentElement?.parentElement;
 
     // Short names never drop below the minimum width.
     await waitFor(() => expect(menuShell).toHaveStyle({ width: "120px" }));

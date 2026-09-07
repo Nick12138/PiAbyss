@@ -47,7 +47,7 @@ import {
   buildAttachedImageBlock,
   buildAttachedPathBlock,
 } from "./transcript-model";
-import { ContextUsageRing, ModelControls, ThinkingControls } from "./ModelControls";
+import { ContextUsageRing, ModelControls } from "./ModelControls";
 import { QueuePanel } from "./QueuePanel";
 import {
   ExtensionWidgetsPopover,
@@ -1904,7 +1904,6 @@ export function Composer({
             <ExtensionWidgetsButton open={extensionWidgetsOpen} onToggle={toggleExtensionWidgets} />
             <div className="ml-auto flex items-center gap-2.5">
               <ModelControls />
-              <ThinkingControls />
               {busy ? (
                 canSend ? (
                   <button

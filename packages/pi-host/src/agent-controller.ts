@@ -1295,12 +1295,7 @@ export function createAgentHandlers(
             models,
             ...(enabledProviders ? { enabledProviders } : {}),
             current: current
-              ? {
-                  provider: current.provider,
-                  providerName: providerNames.get(current.provider),
-                  modelId: current.id,
-                  name: current.name ?? current.id,
-                }
+              ? summarizeModel(current, providerNames.get(current.provider))
               : undefined,
             thinkingLevels: g.agentSession.getAvailableThinkingLevels().map(String),
             configHealth: factory.deps.getModelConfigHealth(),

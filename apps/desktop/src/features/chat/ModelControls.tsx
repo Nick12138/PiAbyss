@@ -1,4 +1,4 @@
-import { Check, ChevronDown } from "lucide-react";
+import { Brain, Check, ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ModelSummary, SessionContextBreakdown } from "@piabyss/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -119,6 +119,21 @@ export function thinkingLevelsForModel(
     (model) => model.provider === current.provider && model.modelId === current.modelId,
   );
   return selected?.thinkingLevels ?? fallback;
+}
+
+/** Thinking levels for the session's current model. The session summary is
+ *  preferred; when it omits levels (e.g. right after a rehydrate round-trip),
+ *  the model-catalog entry for the same model fills in. */
+export function resolveThinkingLevels(
+  current: ModelSummary | undefined,
+  models: ModelSummary[],
+): string[] {
+  if (current?.thinkingLevels?.length) return current.thinkingLevels;
+  if (!current) return [];
+  const catalogModel = models.find(
+    (model) => model.provider === current.provider && model.modelId === current.modelId,
+  );
+  return catalogModel?.thinkingLevels ?? [];
 }
 
 export function modelOptionLabel(model: ModelSummary): string {
@@ -342,10 +357,13 @@ export function ModelControls() {
   const [models, setModels] = useState<ModelSummary[]>([]);
   const [enabledProviders, setEnabledProviders] = useState<string[] | undefined>();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [thinkingOpen, setThinkingOpen] = useState(false);
   const [modelMenuWidth, setModelMenuWidth] = useState(MODEL_MENU_MIN_WIDTH);
   const [modelMenuAlignRight, setModelMenuAlignRight] = useState(false);
   const modelMenuWidthRef = useRef(modelMenuWidth);
   modelMenuWidthRef.current = modelMenuWidth;
+  const thinkingOpenRef = useRef(false);
+  thinkingOpenRef.current = thinkingOpen;
   const listRequest = useRef(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const modelMenuMeasureRef = useRef<HTMLSpanElement>(null);
@@ -439,7 +457,16 @@ export function ModelControls() {
           ) {
             current.applySessionSnapshot({
               ...latestSession,
-              model: res.result.current,
+              model: {
+                ...res.result.current,
+                // Older hosts summarize `current` without per-model thinking
+                // levels; keep the session's own rather than dropping them.
+                thinkingLevels:
+                  res.result.current.thinkingLevels &&
+                  res.result.current.thinkingLevels.length > 0
+                    ? res.result.current.thinkingLevels
+                    : (selected.thinkingLevels ?? []),
+              },
             });
           }
         }
@@ -485,6 +512,13 @@ export function ModelControls() {
         ]
       : [t("modelNoneEnabled")];
   const modelMenuMeasureKey = modelMenuLabels.join("\n");
+
+  const thinkingLevels = resolveThinkingLevels(session?.model, models);
+  const currentThinkingLevel = session?.thinkingLevel ?? "";
+  const thinkingDisabled = !session || thinkingLevels.length === 0;
+  const thinkingMenuLabel = session?.model
+    ? t("modelThinkingFor", { model: modelOptionLabel(session.model) })
+    : t("modelThinkingDepth");
 
   // Menu width tracks the widest model name so the floated dropdown always
   // fits its contents — no manual drag handle.
@@ -576,6 +610,12 @@ export function ModelControls() {
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        // The nested thinking-depth submenu closes first; a second press
+        // dismisses the model menu itself.
+        if (thinkingOpenRef.current) {
+          setThinkingOpen(false);
+          return;
+        }
         setMenuOpen(false);
       }
     };
@@ -586,6 +626,11 @@ export function ModelControls() {
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [menuOpen]);
+
+  // Reset the nested submenu whenever the model menu itself closes.
+  useEffect(() => {
+    if (!menuOpen && thinkingOpen) setThinkingOpen(false);
+  }, [menuOpen, thinkingOpen]);
 
   async function setModel(provider: string, modelId: string): Promise<boolean> {
     if (!host || !workspace || !session) return false;
@@ -611,6 +656,25 @@ export function ModelControls() {
     }
     pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
     return false;
+  }
+
+  async function setThinkingLevel(level: string): Promise<void> {
+    if (!host || !workspace || !session) return;
+    const generation = captureRequestGeneration(host);
+    const res = await hostClient.request(
+      "model.setThinkingLevel",
+      activeSessionContext(host, workspace, session),
+      { level },
+    );
+    if (!isCurrentRequestGeneration(useAppStore.getState().host, generation, { session: true })) {
+      return;
+    }
+    if (res.ok) {
+      setSession(res.result);
+      setThinkingOpen(false);
+      return;
+    }
+    pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
   }
 
   return (
@@ -649,47 +713,83 @@ export function ModelControls() {
             }`}
             style={{ width: modelMenuWidth }}
           >
-            <div
-              ref={modelMenuPanelRef}
-              className="theme-floating-surface max-h-80 w-full overflow-y-auto rounded-md border border-border bg-surface-raised py-0.5 shadow-lg"
-              role="menu"
-              aria-label={t("modelMenuLabel")}
-            >
-              {modelOptions.length === 0 ? (
-                <p className="px-2 py-1.5 text-xs text-muted">{t("modelNoneEnabled")}</p>
-              ) : (
-                modelGroups.map((group) => (
-                  <div key={group.provider}>
-                    <div className="flex h-7 items-center px-2.5 pt-1 text-xs font-medium text-foreground">
-                      {group.label}
+            <div className="theme-floating-surface w-full rounded-md border border-border bg-surface-raised shadow-lg">
+              <div
+                ref={modelMenuPanelRef}
+                className="max-h-80 w-full overflow-y-auto rounded-t-md py-0.5"
+                role="menu"
+                aria-label={t("modelMenuLabel")}
+              >
+                {modelOptions.length === 0 ? (
+                  <p className="px-2 py-1.5 text-xs text-muted">{t("modelNoneEnabled")}</p>
+                ) : (
+                  modelGroups.map((group) => (
+                    <div key={group.provider}>
+                      <div className="flex h-7 items-center px-2.5 pt-1 text-xs font-medium text-foreground">
+                        {group.label}
+                      </div>
+                      {group.models.map((model) => {
+                        const key = `${model.provider}/${model.modelId}`;
+                        const selected =
+                          session?.model?.provider === model.provider &&
+                          session.model.modelId === model.modelId;
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            className={`flex h-8 w-full items-center gap-1.5 px-2.5 text-left text-xs text-muted ${
+                              selected ? "font-medium" : ""
+                            }`}
+                            role="menuitemradio"
+                            aria-checked={selected}
+                            title={modelOptionLabel(model)}
+                            onClick={() => {
+                              if (selected) {
+                                setMenuOpen(false);
+                                return;
+                              }
+                              void setModel(model.provider, model.modelId).then((changed) => {
+                                if (changed) setMenuOpen(false);
+                              });
+                            }}
+                          >
+                            <span className="whitespace-nowrap">{model.name || model.modelId}</span>
+                            {selected && (
+                              <span className="ml-auto flex shrink-0 items-center justify-center">
+                                <Check size={16} strokeWidth={2.5} />
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
-                    {group.models.map((model) => {
-                      const key = `${model.provider}/${model.modelId}`;
-                      const selected =
-                        session?.model?.provider === model.provider &&
-                        session.model.modelId === model.modelId;
+                  ))
+                )}
+              </div>
+              {/* Fixed thinking-depth entry pinned below the scrolling model
+                  list; clicking it opens the nested level submenu. */}
+              <div className="relative">
+                {thinkingOpen && (
+                  <div
+                    className="theme-floating-surface absolute bottom-full right-0 z-10 mb-1 min-w-[150px] rounded-md border border-border bg-surface-raised py-1 shadow-lg"
+                    role="menu"
+                    aria-label={thinkingMenuLabel}
+                  >
+                    {thinkingLevels.map((level) => {
+                      const active = currentThinkingLevel === level;
                       return (
                         <button
-                          key={key}
+                          key={level}
                           type="button"
-                          className={`flex h-8 w-full items-center gap-1.5 px-2.5 text-left text-xs text-muted ${
-                            selected ? "font-medium" : ""
+                          className={`flex h-8 w-full items-center gap-1.5 whitespace-nowrap px-2.5 text-left text-[11px] capitalize text-muted ${
+                            active ? "font-medium" : ""
                           }`}
                           role="menuitemradio"
-                          aria-checked={selected}
-                          title={modelOptionLabel(model)}
-                          onClick={() => {
-                            if (selected) {
-                              setMenuOpen(false);
-                              return;
-                            }
-                            void setModel(model.provider, model.modelId).then((changed) => {
-                              if (changed) setMenuOpen(false);
-                            });
-                          }}
+                          aria-checked={active}
+                          onClick={() => void setThinkingLevel(level)}
                         >
-                          <span className="whitespace-nowrap">{model.name || model.modelId}</span>
-                          {selected && (
+                          {thinkingLevelLabel(level)}
+                          {active && (
                             <span className="ml-auto flex shrink-0 items-center justify-center">
                               <Check size={16} strokeWidth={2.5} />
                             </span>
@@ -698,8 +798,35 @@ export function ModelControls() {
                       );
                     })}
                   </div>
-                ))
-              )}
+                )}
+                <button
+                  type="button"
+                  className="flex h-8 w-full items-center gap-1.5 rounded-b-md border-t border-border px-2.5 text-left text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-default disabled:opacity-40"
+                  disabled={thinkingDisabled}
+                  aria-haspopup="menu"
+                  aria-expanded={thinkingOpen}
+                  title={
+                    session?.model
+                      ? t("modelThinkingFor", { model: modelOptionLabel(session.model) })
+                      : t("modelThinkingDepth")
+                  }
+                  onClick={() => setThinkingOpen((open) => !open)}
+                >
+                  <Brain size={13} className="shrink-0" />
+                  <span className="whitespace-nowrap">{t("modelThinkingDepth")}</span>
+                  <span className="ml-auto flex shrink-0 items-center gap-1">
+                    <span className="whitespace-nowrap capitalize text-foreground">
+                      {thinkingLevels.length > 0 && currentThinkingLevel
+                        ? thinkingLevelLabel(currentThinkingLevel)
+                        : "—"}
+                    </span>
+                    <ChevronRight
+                      size={13}
+                      className={`shrink-0 transition-transform ${thinkingOpen ? "rotate-90" : ""}`}
+                    />
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -708,109 +835,3 @@ export function ModelControls() {
   );
 }
 
-/** Standalone thinking-level control for the composer toolbar.
- *  Shown only when the active model advertises thinking levels. */
-export function ThinkingControls() {
-  const t = useT();
-  const host = useAppStore((s) => s.host);
-  const workspace = useAppStore((s) => s.workspace);
-  const session = useAppStore((s) => s.session);
-  const setSession = useAppStore((s) => s.applySessionSnapshot);
-  const pushNotification = useAppStore((s) => s.pushNotification);
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const currentModel = session?.model;
-  const levels = currentModel?.thinkingLevels ?? [];
-
-  useEffect(() => {
-    if (!open) return;
-    const closeOnPointerDown = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOnPointerDown);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnPointerDown);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open]);
-
-  if (!session || !host || !workspace || !currentModel || levels.length === 0) return null;
-  const currentLevel = session.thinkingLevel;
-
-  async function applyLevel(level: string) {
-    const current = useAppStore.getState();
-    if (!current.host || !current.workspace || !current.session) return;
-    const generation = captureRequestGeneration(current.host);
-    const res = await hostClient.request(
-      "model.setThinkingLevel",
-      activeSessionContext(current.host, current.workspace, current.session),
-      { level },
-    );
-    if (!isCurrentRequestGeneration(useAppStore.getState().host, generation, { session: true })) {
-      return;
-    }
-    if (res.ok) {
-      setSession(res.result);
-      setOpen(false);
-      return;
-    }
-    pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
-  }
-
-  return (
-    <div ref={containerRef} className="relative flex min-w-0 items-center">
-      <button
-        type="button"
-        className={`composer-control flex h-7 items-center gap-1 rounded-md border border-border-subtle px-1.5 text-[11px] transition-colors ${
-          open
-            ? "bg-surface-overlay text-foreground"
-            : "text-muted hover:bg-surface-overlay hover:text-foreground"
-        } disabled:cursor-default disabled:opacity-40`}
-        disabled={!session}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title={t("modelThinkingFor", { model: modelOptionLabel(currentModel) })}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span className="whitespace-nowrap capitalize leading-none">
-          {thinkingLevelLabel(currentLevel)}
-        </span>
-      </button>
-      {open && (
-        <div
-          className="theme-floating-surface absolute bottom-full right-0 z-50 mb-2 min-w-[150px] overflow-hidden rounded-md border border-border bg-surface-raised py-1 shadow-lg"
-          role="menu"
-          aria-label={t("modelThinkingFor", { model: modelOptionLabel(currentModel) })}
-        >
-          {levels.map((level) => {
-            const active = currentLevel === level;
-            return (
-              <button
-                key={level}
-                type="button"
-                className={`flex h-8 w-full items-center gap-1.5 whitespace-nowrap px-2.5 text-left text-[11px] capitalize text-muted ${
-                  active ? "font-medium" : ""
-                }`}
-                role="menuitemradio"
-                aria-checked={active}
-                onClick={() => void applyLevel(level)}
-              >
-                {thinkingLevelLabel(level)}
-                {active && (
-                  <span className="ml-auto flex shrink-0 items-center justify-center">
-                    <Check size={16} strokeWidth={2.5} />
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
