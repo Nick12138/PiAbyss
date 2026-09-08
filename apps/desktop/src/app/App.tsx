@@ -103,7 +103,13 @@ export async function runFullRehydrate(
     recoveryEvents.cancel();
     const message = err instanceof Error ? err.message : String(err);
     useAppStore.getState().markDesynchronized(message);
-    useAppStore.getState().setHostFatal(message);
+    // Transient rejections (the graph lock briefly held by an in-flight
+    // workspace switch) are exactly what the recovery loop's retries exist
+    // for — painting the terminal "Host unavailable" panel for them made a
+    // self-healing blip flash at the user. Only terminal failures settle it.
+    if ((err as { retryable?: boolean } | null)?.retryable !== true) {
+      useAppStore.getState().setHostFatal(message);
+    }
     throw err;
   } finally {
     useAppStore.getState().setRehydrating(false);
@@ -993,6 +999,10 @@ export function App() {
                   break;
                 } catch (err) {
                   lastError = err;
+                  console.warn(
+                    "[piabyss] recovery attempt failed:",
+                    err instanceof Error ? err.message : String(err),
+                  );
                   if (pendingRecoveryHostId) break;
                   await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
                 }
@@ -1030,6 +1040,7 @@ export function App() {
         };
 
         const requestRecovery = (reason: string) => {
+          console.warn("[piabyss] host recovery requested:", reason);
           cancelAgentEvents();
           useAppStore.getState().markDesynchronized(reason);
           scheduleRecovery(hostClient.getHostInstanceId(), reason);

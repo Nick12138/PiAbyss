@@ -77,7 +77,14 @@ export async function fullRehydrate(expectedHostInstanceId?: string): Promise<Re
     15_000,
   );
   if (!response.ok) {
-    throw new Error(response.error?.message ?? "system.rehydrate failed");
+    // Preserve the Host error classification: runFullRehydrate must be able to
+    // tell transient retryable rejections (e.g. the graph lock briefly held by
+    // an in-flight workspace switch) apart from terminal failures.
+    const error = Object.assign(new Error(response.error?.message ?? "system.rehydrate failed"), {
+      code: response.error?.code,
+      retryable: response.error?.retryable === true,
+    });
+    throw error;
   }
   return response.result;
 }

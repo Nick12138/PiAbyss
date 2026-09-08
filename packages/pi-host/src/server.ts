@@ -18,13 +18,22 @@ import {
   type ExtensionDecisionPresentation,
 } from "@piabyss/protocol";
 import { IdentityState } from "./identity.js";
-import { AgentOperationLock, TryMutex } from "./locks.js";
+import { acquireWithAbort, AgentOperationLock, TryMutex } from "./locks.js";
 import { logger } from "./logger.js";
 import { GraphOperationRegistry } from "./operation-lifecycle.js";
 import { OutboundWriter } from "./outbound-queue.js";
 import { createLineReader } from "./transport.js";
 
 export const HOST_SHUTDOWN_QUIESCE_TIMEOUT_MS = 8_000;
+
+/**
+ * How long `system.rehydrate` queues behind an in-flight graph mutation before
+ * failing with SERVICE_GRAPH_BUSY. Recovery usually lands while a workspace
+ * switch holds the exclusive graph lock; failing fast here made the UI paint
+ * the terminal "Host unavailable" panel for a transient collision that its
+ * retry loop was about to self-heal anyway.
+ */
+const REHYDRATE_LOCK_WAIT_MS = 2_000;
 
 async function completesWithin(operation: Promise<void>, timeoutMs: number): Promise<boolean> {
   if (timeoutMs <= 0) return false;
@@ -466,26 +475,42 @@ export class PiHostServer {
         return;
       }
 
+      // Uncontended fast path stays synchronous: the rehydrate response must
+      // be enqueued between the preceding and following events (atomic
+      // snapshot-at-watermark semantics pinned by tests). Only a real
+      // contention (a workspace switch holding the lock) takes the awaited
+      // bounded wait — ordering there is handled by the response watermark.
       if (
         !this.serviceGraphLock.tryAcquire({
           operationKind: "system.rehydrate",
           requestId: id,
         })
       ) {
-        this.writeResponse(
-          createFailureResponse(
-            this.identity.snapshot(),
-            id,
-            method,
-            createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
-              retryable: true,
-              details: {
-                operationKind: this.serviceGraphLock.getOwner()?.operationKind ?? null,
-              },
-            }),
-          ),
+        const lockState = await acquireWithAbort(
+          this.serviceGraphLock,
+          { operationKind: "system.rehydrate", requestId: id },
+          REHYDRATE_LOCK_WAIT_MS,
+          this.shutdownController.signal,
         );
-        return;
+        if (lockState !== true) {
+          this.writeResponse(
+            createFailureResponse(
+              this.identity.snapshot(),
+              id,
+              method,
+              lockState === "aborted"
+                ? createHostError("HOST_SHUTTING_DOWN", "Host is shutting down")
+                : createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
+                    retryable: true,
+                    details: {
+                      operationKind: this.serviceGraphLock.getOwner()?.operationKind ?? null,
+                      waitedMs: REHYDRATE_LOCK_WAIT_MS,
+                    },
+                  }),
+            ),
+          );
+          return;
+        }
       }
 
       try {
