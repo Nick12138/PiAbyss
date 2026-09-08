@@ -126,7 +126,9 @@ export function FilesPanel({
         });
       } catch (error) {
         if (!isCurrentWorkspace()) return;
-        setErrors((items) => new Map(items).set(path, userErrorMessage(error, t("dockFilesListFailed"))));
+        setErrors((items) =>
+          new Map(items).set(path, userErrorMessage(error, t("dockFilesListFailed"))),
+        );
       } finally {
         if (isCurrentWorkspace()) {
           setLoading((items) => {

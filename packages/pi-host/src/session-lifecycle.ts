@@ -373,11 +373,7 @@ export async function renameSession(
         }),
       };
     }
-    const runtime = await factory.disposeBackgroundSessionRuntimeIfIdle(
-      g,
-      target.id,
-      target.path,
-    );
+    const runtime = await factory.disposeBackgroundSessionRuntimeIfIdle(g, target.id, target.path);
     if (runtime === "busy") {
       return {
         error: createHostError("AGENT_BUSY", "Wait for the Session run to finish", {
@@ -902,7 +898,9 @@ export async function openSession(
     const retained = [
       ...g.backgroundSessions.values(),
       ...(g.idleSessionCache?.values() ?? []),
-    ].find((runtime) => factory.sessionPathsEqual(runtime.sessionSnapshot.sessionPath, sessionPath));
+    ].find((runtime) =>
+      factory.sessionPathsEqual(runtime.sessionSnapshot.sessionPath, sessionPath),
+    );
     if (retained) {
       operation.signal.throwIfAborted();
       return await factory.promoteBackgroundRuntime(g, retained);

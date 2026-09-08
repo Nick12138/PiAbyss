@@ -1,11 +1,4 @@
-import {
-  mkdirSync,
-  mkdtempSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -54,7 +47,10 @@ function sessionHeader(overrides: Record<string, unknown> = {}): Record<string, 
   };
 }
 
-function userMessage(text: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function userMessage(
+  text: string,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     type: "message",
     id: `m-${Math.random().toString(36).slice(2)}`,
@@ -146,11 +142,7 @@ describe("session-list-projection", () => {
     expect(before!.messageCount).toBe(1);
     const parsesBefore = sessionListProjectionParseCountForTests();
 
-    writeLines("a.jsonl", [
-      sessionHeader({ cwd: root }),
-      userMessage("v1"),
-      userMessage("v2"),
-    ]);
+    writeLines("a.jsonl", [sessionHeader({ cwd: root }), userMessage("v1"), userMessage("v2")]);
 
     // Expire the shared stat snapshot (2s TTL) without clearing any caches:
     // the projection must notice the new size/mtime signature and re-parse.
@@ -167,7 +159,10 @@ describe("session-list-projection", () => {
   });
 
   it("reflects a rename after invalidateSessionListProjection", async () => {
-    const pathA = writeLines("a.jsonl", [sessionHeader({ cwd: root }), userMessage("renamed later")]);
+    const pathA = writeLines("a.jsonl", [
+      sessionHeader({ cwd: root }),
+      userMessage("renamed later"),
+    ]);
     await listDir();
     const pathB = join(dir, "b.jsonl");
     renameSync(pathA, pathB);

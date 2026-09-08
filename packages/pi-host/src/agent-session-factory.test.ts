@@ -65,34 +65,31 @@ describe("createHostAgentSession Provider policy", () => {
     session.dispose();
   });
 
-  it("preserves the SDK-restored model when the enabled list is explicitly empty",
-    async () => {
-      const { layout, modelRuntime } = await setup({
-        piabyssEnabledProviders: [],
-        providers: {
-          disabled: provider("disabled", ["disabled-model"]),
-          enabled: provider("enabled", ["enabled-model"]),
-        },
-      });
-      const sessionManager = SessionManager.inMemory(layout.projectDir);
-      sessionManager.appendModelChange("disabled", "disabled-model");
-      sessionManager.appendMessage({ role: "user", content: "restore me", timestamp: Date.now() });
+  it("preserves the SDK-restored model when the enabled list is explicitly empty", async () => {
+    const { layout, modelRuntime } = await setup({
+      piabyssEnabledProviders: [],
+      providers: {
+        disabled: provider("disabled", ["disabled-model"]),
+        enabled: provider("enabled", ["enabled-model"]),
+      },
+    });
+    const sessionManager = SessionManager.inMemory(layout.projectDir);
+    sessionManager.appendModelChange("disabled", "disabled-model");
+    sessionManager.appendMessage({ role: "user", content: "restore me", timestamp: Date.now() });
 
-      const { session } = await createHostAgentSession({
-        cwd: layout.projectDir,
-        agentDir: layout.agentDir,
-        modelRuntime,
-        settingsManager: SettingsManager.inMemory({}, { projectTrusted: true }),
-        sessionManager,
-      });
-
-      // SDK has no clearModel API; without an eligible PiAbyss model the session
-      // falls back to whatever was saved in the session history.
-      expect(session.model).toMatchObject({ provider: "disabled", id: "disabled-model" });
-      session.dispose();
+    const { session } = await createHostAgentSession({
+      cwd: layout.projectDir,
+      agentDir: layout.agentDir,
+      modelRuntime,
+      settingsManager: SettingsManager.inMemory({}, { projectTrusted: true }),
+      sessionManager,
     });
 
-
+    // SDK has no clearModel API; without an eligible PiAbyss model the session
+    // falls back to whatever was saved in the session history.
+    expect(session.model).toMatchObject({ provider: "disabled", id: "disabled-model" });
+    session.dispose();
+  });
 
   it("honors a configured model allow-list during restoration", async () => {
     const { layout, modelRuntime } = await setup(

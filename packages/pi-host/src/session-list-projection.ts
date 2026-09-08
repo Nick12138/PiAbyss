@@ -180,9 +180,7 @@ async function parseSessionProjection(
         id: entry.id,
         cwd: typeof entry.cwd === "string" ? entry.cwd : "",
         ...(typeof entry.timestamp === "string" ? { timestamp: entry.timestamp } : {}),
-        ...(typeof entry.parentSession === "string"
-          ? { parentSession: entry.parentSession }
-          : {}),
+        ...(typeof entry.parentSession === "string" ? { parentSession: entry.parentSession } : {}),
       };
       continue;
     }
@@ -275,12 +273,12 @@ async function projectionForFile(sessionPath: string): Promise<SessionListProjec
  * (mtimeMs, size) signature changes. Cached projections are cloned before
  * being returned, so callers cannot mutate the cache.
  */
-export async function listSessionProjectionsFromDir(
-  dir: string,
-): Promise<SessionListProjection[]> {
+export async function listSessionProjectionsFromDir(dir: string): Promise<SessionListProjection[]> {
   const files = await listJsonlFilesWithTtl(dir);
   const projections = await Promise.all(files.map((file) => projectionForFile(file)));
-  return projections.filter((projection): projection is SessionListProjection => projection !== null);
+  return projections.filter(
+    (projection): projection is SessionListProjection => projection !== null,
+  );
 }
 
 /**

@@ -124,7 +124,11 @@ function reconcilePromptCache(
       },
     );
   } else {
-    logger.debug("Prompt cache fingerprint unchanged", { sessionId, runId, hash: fingerprint.hash });
+    logger.debug("Prompt cache fingerprint unchanged", {
+      sessionId,
+      runId,
+      hash: fingerprint.hash,
+    });
   }
 }
 
@@ -205,12 +209,7 @@ function startDetachedPrompt(args: {
         // included — registers against the initiating graph's owner.
         const runTurn = () =>
           extensionCommandInvocation
-            ? withExtensionCommandOrigin(
-                args.session,
-                runId,
-                extensionCommandInvocation,
-                runPrompt,
-              )
+            ? withExtensionCommandOrigin(args.session, runId, extensionCommandInvocation, runPrompt)
             : runPrompt();
         if (initiatingOwner) {
           await args.factory.deps.providerOwnership.runAsOwner(initiatingOwner, runTurn);

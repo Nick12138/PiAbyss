@@ -176,9 +176,9 @@ describe("QueuePanel Run Now", () => {
     resolveRequest(runNowResponse());
     await waitFor(() => expect(useAppStore.getState().session?.pending.revision).toBe(8));
     // Still present with its marker until the Host's message_start claims it.
-    expect(
-      useAppStore.getState().session?.messages.filter((m) => m._optimisticKey),
-    ).toHaveLength(1);
+    expect(useAppStore.getState().session?.messages.filter((m) => m._optimisticKey)).toHaveLength(
+      1,
+    );
   });
 
   it("rolls the echo back when Run Now did not start the item", async () => {
@@ -200,9 +200,9 @@ describe("QueuePanel Run Now", () => {
     );
 
     await waitFor(() =>
-      expect(
-        useAppStore.getState().session?.messages.filter((m) => m._optimisticKey),
-      ).toHaveLength(0),
+      expect(useAppStore.getState().session?.messages.filter((m) => m._optimisticKey)).toHaveLength(
+        0,
+      ),
     );
   });
 
@@ -284,9 +284,7 @@ describe("QueuePanel Run Now", () => {
     render(<QueuePanel />);
 
     // Idle session: steering item gains Send Now, follow-up keeps Run Now.
-    expect(
-      screen.getByRole("button", { name: "Send this message now" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send this message now" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Interrupt current run and run this now" }),
     ).toBeInTheDocument();

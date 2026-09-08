@@ -96,9 +96,7 @@ describe("SessionList actions", () => {
     fireEvent.click(unpin);
 
     expect(
-      JSON.parse(
-        globalThis.localStorage.getItem("piabyss.sessions.pinned.workspace-1") ?? "[]",
-      ),
+      JSON.parse(globalThis.localStorage.getItem("piabyss.sessions.pinned.workspace-1") ?? "[]"),
     ).toEqual([]);
     expect(screen.queryByRole("button", { name: "Unpin" })).not.toBeInTheDocument();
   });

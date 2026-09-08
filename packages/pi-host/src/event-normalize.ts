@@ -47,9 +47,7 @@ export function normalizeAgentEvent(event: unknown): SerializableAgentSessionEve
   const type = event.type;
   if (type === "message_update") {
     const assistantMessageEvent = normalizeAssistantMessageEvent(event.assistantMessageEvent);
-    return assistantMessageEvent
-      ? { type, assistantMessageEvent }
-      : { type: "unknown" };
+    return assistantMessageEvent ? { type, assistantMessageEvent } : { type: "unknown" };
   }
   const out: EventRecord = { type };
   for (const field of EVENT_FIELDS[type]) {
@@ -75,9 +73,10 @@ function normalizeAssistantMessageEvent(value: unknown): SerializableAssistantMe
   }
   if (type === "error") {
     if (typeof value.reason !== "string") return null;
-    const errorMessage = isRecord(value.error) && typeof value.error.errorMessage === "string"
-      ? value.error.errorMessage
-      : undefined;
+    const errorMessage =
+      isRecord(value.error) && typeof value.error.errorMessage === "string"
+        ? value.error.errorMessage
+        : undefined;
     return { type, reason: value.reason, ...(errorMessage ? { errorMessage } : {}) };
   }
 

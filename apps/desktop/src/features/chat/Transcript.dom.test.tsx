@@ -519,9 +519,7 @@ describe("Transcript Session-open scrolling", () => {
       return element?.tagName === "SPAN" && enVariants.includes(element.textContent ?? "");
     }
     function currentStatus(): string {
-      const span = screen
-        .getAllByText((content, element) => statusSpan(element))
-        .at(-1)!;
+      const span = screen.getAllByText((content, element) => statusSpan(element)).at(-1)!;
       return span.textContent!;
     }
 
@@ -629,12 +627,10 @@ describe("Transcript Session-open scrolling", () => {
           { role: "assistant", content: [], stopReason: "error", errorMessage: "Provider failed" },
         ]),
       );
-      const request = vi
-        .spyOn(hostClient, "request")
-        .mockResolvedValue({
-          ok: true,
-          result: { accepted: true, runId: "run-1" },
-        } as never);
+      const request = vi.spyOn(hostClient, "request").mockResolvedValue({
+        ok: true,
+        result: { accepted: true, runId: "run-1" },
+      } as never);
 
       const { container } = render(<Transcript />);
       const user = userEvent.setup();

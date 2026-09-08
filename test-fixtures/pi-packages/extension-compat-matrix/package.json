@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "pi": {
-    "extensions": ["./extensions/compat-matrix-extension.ts"]
+    "extensions": [
+      "./extensions/compat-matrix-extension.ts"
+    ]
   }
 }

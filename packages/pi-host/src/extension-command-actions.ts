@@ -11,17 +11,9 @@
  * standing in for AgentSessionRuntime.
  */
 import { randomUUID } from "node:crypto";
-import type {
-  AgentSession,
-  ExtensionCommandContextActions,
-} from "@earendil-works/pi-coding-agent";
+import type { AgentSession, ExtensionCommandContextActions } from "@earendil-works/pi-coding-agent";
 import type { HostError } from "@piabyss/protocol";
-import {
-  createSession,
-  openSession,
-  prepareForkFile,
-  reloadSession,
-} from "./session-lifecycle.js";
+import { createSession, openSession, prepareForkFile, reloadSession } from "./session-lifecycle.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 
@@ -50,9 +42,7 @@ export function createExtensionCommandContextActions(args: {
 
     newSession: async (options) => {
       const result = await createSession(factory, randomUUID(), undefined, {
-        ...(options?.parentSession !== undefined
-          ? { parentSession: options.parentSession }
-          : {}),
+        ...(options?.parentSession !== undefined ? { parentSession: options.parentSession } : {}),
         ...(options?.setup !== undefined ? { setup: options.setup } : {}),
       });
       if (isErrorResult(result)) throw new Error(result.error.message);

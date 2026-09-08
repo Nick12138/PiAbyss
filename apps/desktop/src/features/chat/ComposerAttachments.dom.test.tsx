@@ -145,14 +145,12 @@ describe("Composer managed documents", () => {
     desktopMocks.pick.mockReset().mockResolvedValue(["/documents/manual.pdf"]);
     desktopMocks.isDesktop.mockReset().mockResolvedValue(false);
     desktopMocks.readSmall.mockReset();
-    desktopMocks.fileInfo
-      .mockReset()
-      .mockResolvedValue({
-        name: "manual.pdf",
-        sizeBytes: 1024,
-        path: "/documents/manual.pdf",
-        isDirectory: false,
-      });
+    desktopMocks.fileInfo.mockReset().mockResolvedValue({
+      name: "manual.pdf",
+      sizeBytes: 1024,
+      path: "/documents/manual.pdf",
+      isDirectory: false,
+    });
     useAppStore.getState().setHost(null);
     useAppStore.getState().setWorkspace(null);
     useAppStore.getState().applySessionSnapshot(null);
@@ -693,7 +691,7 @@ describe("Composer managed documents", () => {
     const promptCall = request.mock.calls.find(([method]) => method === "agent.prompt");
     const params = promptCall?.[2] as { text: string; images?: unknown[] };
     expect(params.text).toContain('path="/documents/note.ts"');
-    expect(params.text).toContain('const x = 1;');
+    expect(params.text).toContain("const x = 1;");
     expect(params.text).toContain('<attached-image name="photo.png" path="/documents/photo.png"/>');
     expect(params.images).toEqual([{ mediaType: "image/png", data: "aGVsbG8=" }]);
   });
@@ -723,9 +721,7 @@ describe("Composer managed documents", () => {
       "agent.prompt",
       expect.objectContaining({ expectedSessionId: SESSION_ID }),
       {
-        text: expect.stringContaining(
-          '<attached-path name="project" path="/documents/project"/>',
-        ),
+        text: expect.stringContaining('<attached-path name="project" path="/documents/project"/>'),
       },
       null,
     );

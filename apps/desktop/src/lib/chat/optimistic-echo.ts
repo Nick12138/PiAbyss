@@ -46,7 +46,6 @@ export function appendOptimisticUserMessage(
   return key;
 }
 
-
 export function removeOptimisticUserMessage(key: string | null): void {
   if (!key) return;
   const store = useAppStore.getState();

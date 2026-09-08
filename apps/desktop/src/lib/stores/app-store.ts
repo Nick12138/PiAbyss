@@ -82,10 +82,7 @@ const EMPTY_SUBAGENTS_STATUS: SubagentsStatusSnapshot = {
   runs: [],
 };
 
-function optimisticMessageFingerprint(message: {
-  role: string;
-  content: unknown;
-}): string {
+function optimisticMessageFingerprint(message: { role: string; content: unknown }): string {
   const content = message.content;
   // Host-injected attachment blocks must not make an otherwise identical
   // authoritative message look different from the pending optimistic row.
@@ -157,7 +154,9 @@ function mergeOptimisticMessages(
   }
 
   const preserved = pending.filter(({ message }) => {
-    if (incoming.messages.some((candidate) => candidate._optimisticKey === message._optimisticKey)) {
+    if (
+      incoming.messages.some((candidate) => candidate._optimisticKey === message._optimisticKey)
+    ) {
       return false;
     }
     const key = optimisticMessageFingerprint(message);

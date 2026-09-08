@@ -568,12 +568,7 @@ export function RightDock() {
       });
       return;
     }
-    if (
-      tabId === "tree" ||
-      tabId === "changes" ||
-      tabId === "todo" ||
-      tabId === "subagents"
-    ) {
+    if (tabId === "tree" || tabId === "changes" || tabId === "todo" || tabId === "subagents") {
       closeOrderTab(tabId);
       return;
     }

@@ -265,9 +265,7 @@ function GeneralSettings() {
               <div className="flex items-center justify-between gap-4">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("generalSharedHostMode")}</span>
-                  <span className="block text-xs text-muted">
-                    {t("generalSharedHostModeDesc")}
-                  </span>
+                  <span className="block text-xs text-muted">{t("generalSharedHostModeDesc")}</span>
                 </span>
                 <Switch
                   checked={desktopSettings?.sharedHostMode ?? false}

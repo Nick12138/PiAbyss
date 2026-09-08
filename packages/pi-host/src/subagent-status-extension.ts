@@ -78,11 +78,7 @@ export function normalizeSubagentRuns(
   ownedRunIds: Set<string> | null = null,
 ): SubagentsStatusSnapshot {
   const scoped = runs.filter((run) => {
-    if (
-      typeof run.sessionId === "string" &&
-      run.sessionId &&
-      run.sessionId === sessionId
-    ) {
+    if (typeof run.sessionId === "string" && run.sessionId && run.sessionId === sessionId) {
       return true;
     }
     return ownedRunIds?.has(run.id) ?? false;

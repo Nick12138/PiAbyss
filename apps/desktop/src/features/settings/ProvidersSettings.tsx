@@ -37,7 +37,11 @@ import { Switch } from "../../components/Switch";
 import type { MessageKey } from "../../lib/i18n";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 import { useImeComposition } from "../../lib/use-ime-composition";
-import { formatTokenCount, formatTokenCountExact, parseTokenCount } from "../../lib/format-token-count";
+import {
+  formatTokenCount,
+  formatTokenCountExact,
+  parseTokenCount,
+} from "../../lib/format-token-count";
 import { ProviderLoginPage } from "./ProviderLoginSection";
 import {
   automaticThinkingConfig,
@@ -349,9 +353,7 @@ export function ProvidersSettings() {
     if (!draft || saving || fetching || testing) return;
     const copiedModels = draft.models.map((model) => ({
       ...model,
-      ...(model.thinkingLevelMap
-        ? { thinkingLevelMap: { ...model.thinkingLevelMap } }
-        : {}),
+      ...(model.thinkingLevelMap ? { thinkingLevelMap: { ...model.thinkingLevelMap } } : {}),
       input: [...model.input],
     }));
     // Repeated copies keep a single " copy" suffix instead of stacking.

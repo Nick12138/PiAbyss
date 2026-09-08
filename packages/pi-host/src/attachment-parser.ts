@@ -114,7 +114,10 @@ function splitUtf8(text: string, maxBytes: number): string[] {
 }
 
 function chunkDocument(text: string): string[] {
-  const paragraphs = text.split(/\n{2,}/u).map((part) => part.trim()).filter(Boolean);
+  const paragraphs = text
+    .split(/\n{2,}/u)
+    .map((part) => part.trim())
+    .filter(Boolean);
   const chunks: string[] = [];
   let current = "";
   for (const paragraph of paragraphs) {
@@ -173,8 +176,7 @@ function chunkPlainText(text: string): string[] {
 }
 
 function elementChildren(node: unknown): { nodeName: string }[] {
-  const children = (node as { childNodes?: ArrayLike<{ nodeName: string }> } | null)
-    ?.childNodes;
+  const children = (node as { childNodes?: ArrayLike<{ nodeName: string }> } | null)?.childNodes;
   return children ? Array.from(children) : [];
 }
 
@@ -212,7 +214,10 @@ async function parseDocx(args: AttachmentParseArgs): Promise<AttachmentParseResu
     filter: "table",
     replacement: (content) => `\n\n${content.trim()}\n\n`,
   });
-  const markdown = turndown.turndown(converted.value).replace(/^- {2,}/gmu, "- ").trim();
+  const markdown = turndown
+    .turndown(converted.value)
+    .replace(/^- {2,}/gmu, "- ")
+    .trim();
   if (Buffer.byteLength(markdown, "utf8") > MAX_EXTRACTED_BYTES) {
     throw new Error("Extracted DOCX text exceeds the 100 MiB safety limit");
   }

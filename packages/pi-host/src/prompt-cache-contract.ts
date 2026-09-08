@@ -15,8 +15,6 @@ import { createHash } from "node:crypto";
 /** Stable part ordering for diffs, so log output is deterministic. */
 const FINGERPRINT_PART_ORDER = ["model", "systemPrompt", "tools", "thinkingLevel"] as const;
 
-export type PromptCachePartName = (typeof FINGERPRINT_PART_ORDER)[number];
-
 export interface PromptCacheFingerprint {
   /** SHA-256 over the canonical JSON of `parts`. */
   hash: string;

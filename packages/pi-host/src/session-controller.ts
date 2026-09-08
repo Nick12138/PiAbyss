@@ -12,10 +12,7 @@ import { buildSessionUsageReport } from "./session-usage-report.js";
 import { searchSessions } from "./session-search.js";
 import { invalidateSessionListProjection } from "./session-list-projection.js";
 import { isObject, readModelsConfig } from "./provider-models-config.js";
-import {
-  postSubagentApi,
-  type SubagentHttpControlResponse,
-} from "./subagent-api.js";
+import { postSubagentApi, type SubagentHttpControlResponse } from "./subagent-api.js";
 import {
   mapSubagentRunState,
   readSubagentRunStatus,
@@ -68,11 +65,9 @@ async function controlSubagentRun(
   }
   if (!outcome.ok) {
     return {
-      error: createHostError(
-        "AGENT_BUSY",
-        outcome.error ?? `Unable to ${action} subagent`,
-        { retryable: true },
-      ),
+      error: createHostError("AGENT_BUSY", outcome.error ?? `Unable to ${action} subagent`, {
+        retryable: true,
+      }),
     };
   }
   return { result: { [resultKey]: true } };
@@ -216,13 +211,9 @@ export function createSessionHandlers(
       const runId = resolveSubagentRunId(nodeId);
       if (!subagentRunExists(runId)) {
         return {
-          error: createHostError(
-            "SESSION_NOT_FOUND",
-            "Subagent run transcript is not available",
-            {
-              retryable: true,
-            },
-          ),
+          error: createHostError("SESSION_NOT_FOUND", "Subagent run transcript is not available", {
+            retryable: true,
+          }),
         };
       }
       const title = readSubagentRunTitle(runId);

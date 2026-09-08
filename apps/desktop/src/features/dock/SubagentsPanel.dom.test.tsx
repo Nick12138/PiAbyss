@@ -201,9 +201,7 @@ describe("SubagentsPanel", () => {
       desktopSettings: { language: "en" } as never,
       subagentsStatus: {
         ...baseStatus,
-        runs: [
-          { id: "run-ctl", kind: "subagent", label: "Ctl task", state: "running" },
-        ],
+        runs: [{ id: "run-ctl", kind: "subagent", label: "Ctl task", state: "running" }],
       },
     });
 
@@ -307,9 +305,7 @@ describe("SubagentsPanel", () => {
       desktopSettings: { language: "en" } as never,
       subagentsStatus: {
         ...baseStatus,
-        runs: [
-          { id: "run-collapse", kind: "subagent", label: "Collapse task", state: "complete" },
-        ],
+        runs: [{ id: "run-collapse", kind: "subagent", label: "Collapse task", state: "complete" }],
       },
     });
 

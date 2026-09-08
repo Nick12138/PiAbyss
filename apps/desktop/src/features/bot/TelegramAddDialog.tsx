@@ -171,129 +171,131 @@ export function TelegramAddDialog({ onCancel }: { onCancel: () => void }) {
   return createPortal(
     (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="telegram-add-dialog-title"
-        className="theme-floating-surface w-full max-w-lg overflow-auto rounded-xl border border-border bg-surface-raised p-5 shadow-2xl"
-      >
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 rounded-md bg-accent/15 p-1.5 text-accent">
-            <Bot size={18} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h2 id="telegram-add-dialog-title" className="text-base font-semibold">
-              {t("botAddTelegramTitle")}
-            </h2>
-            <p className="mt-1 text-xs text-muted">{t("botAddTelegramSubtitle")}</p>
+        <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="telegram-add-dialog-title"
+          className="theme-floating-surface w-full max-w-lg overflow-auto rounded-xl border border-border bg-surface-raised p-5 shadow-2xl"
+        >
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 rounded-md bg-accent/15 p-1.5 text-accent">
+              <Bot size={18} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 id="telegram-add-dialog-title" className="text-base font-semibold">
+                {t("botAddTelegramTitle")}
+              </h2>
+              <p className="mt-1 text-xs text-muted">{t("botAddTelegramSubtitle")}</p>
 
-            <form
-              className="mt-4 flex flex-col gap-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-              }}
-            >
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-muted">
-                  {t("botAddTelegramTokenLabel")}
-                </span>
-                <div className="flex gap-2">
-                  <input
-                    type="password"
-                    value={token}
-                    onChange={(e) => {
-                      setToken(e.target.value);
-                      setPreview(null);
-                      setError(null);
-                    }}
-                    placeholder={t("botAddTelegramTokenPlaceholder")}
-                    className="h-9 flex-1 rounded-md border border-border bg-surface px-3 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                  />
+              <form
+                className="mt-4 flex flex-col gap-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                }}
+              >
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-muted">
+                    {t("botAddTelegramTokenLabel")}
+                  </span>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={token}
+                      onChange={(e) => {
+                        setToken(e.target.value);
+                        setPreview(null);
+                        setError(null);
+                      }}
+                      placeholder={t("botAddTelegramTokenPlaceholder")}
+                      className="h-9 flex-1 rounded-md border border-border bg-surface px-3 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void validate()}
+                      disabled={!token.trim() || validating || !host}
+                      className="interface-density-control inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-border px-3 text-xs hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {validating ? (
+                        <LoaderCircle size={14} className="animate-spin" />
+                      ) : (
+                        <span>{t("botAddTelegramValidate")}</span>
+                      )}
+                    </button>
+                  </div>
+                </label>
+
+                {preview && (
+                  <div className="flex flex-col gap-2 rounded-md border border-success/40 bg-success/10 px-3 py-2.5 text-sm">
+                    <div className="flex items-center gap-3">
+                      <Bot size={14} className="shrink-0 text-success" />
+                      <div className="min-w-0">
+                        <span className="block font-medium text-foreground">
+                          {preview.username
+                            ? `@${preview.username}`
+                            : t("botAddTelegramUnknownBot")}
+                        </span>
+                        {(preview.firstName || preview.username) && (
+                          <span className="block truncate text-xs text-muted">
+                            {preview.firstName ?? t("botAddTelegramUnknownName")}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted">{t("botAddTelegramGuidance")}</p>
+                    {[{ command: "/telegram-connect", label: t("botAddTelegramConnectCmd") }].map(
+                      ({ command, label }) => (
+                        <div key={command} className="flex items-center gap-2">
+                          <code className="min-w-0 flex-1 truncate rounded bg-surface px-2 py-1 font-mono text-[11px]">
+                            {command}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => void copyCommand(command)}
+                            className="inline-flex shrink-0 items-center gap-1 rounded border border-border px-1.5 py-1 text-[10px] hover:bg-surface-overlay"
+                            aria-label={label}
+                          >
+                            {copied === command ? (
+                              <Check size={11} className="text-success" />
+                            ) : (
+                              <Copy size={11} />
+                            )}
+                            <span>{copied === command ? t("commonCopied") : label}</span>
+                          </button>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                )}
+
+                {error && (
+                  <p role="status" className="text-xs text-danger">
+                    {error}
+                  </p>
+                )}
+
+                <div className="mt-1 flex justify-end gap-2">
                   <button
                     type="button"
-                    onClick={() => void validate()}
-                    disabled={!token.trim() || validating || !host}
-                    className="interface-density-control inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-border px-3 text-xs hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
+                    className="interface-density-control inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs hover:bg-surface-overlay"
+                    onClick={onCancel}
                   >
-                    {validating ? (
-                      <LoaderCircle size={14} className="animate-spin" />
-                    ) : (
-                      <span>{t("botAddTelegramValidate")}</span>
-                    )}
+                    {t("commonCancel")}
+                  </button>
+                  <button
+                    type="button"
+                    className="interface-density-control inline-flex h-8 items-center justify-center rounded-md bg-accent px-2.5 text-xs text-accent-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={() => void finish()}
+                    disabled={!preview || saving}
+                  >
+                    {saving ? <LoaderCircle size={13} className="animate-spin" /> : t("commonDone")}
                   </button>
                 </div>
-              </label>
-
-              {preview && (
-                <div className="flex flex-col gap-2 rounded-md border border-success/40 bg-success/10 px-3 py-2.5 text-sm">
-                  <div className="flex items-center gap-3">
-                    <Bot size={14} className="shrink-0 text-success" />
-                    <div className="min-w-0">
-                      <span className="block font-medium text-foreground">
-                        {preview.username ? `@${preview.username}` : t("botAddTelegramUnknownBot")}
-                      </span>
-                      {(preview.firstName || preview.username) && (
-                        <span className="block truncate text-xs text-muted">
-                          {preview.firstName ?? t("botAddTelegramUnknownName")}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted">{t("botAddTelegramGuidance")}</p>
-                  {[{ command: "/telegram-connect", label: t("botAddTelegramConnectCmd") }].map(
-                    ({ command, label }) => (
-                      <div key={command} className="flex items-center gap-2">
-                        <code className="min-w-0 flex-1 truncate rounded bg-surface px-2 py-1 font-mono text-[11px]">
-                          {command}
-                        </code>
-                        <button
-                          type="button"
-                          onClick={() => void copyCommand(command)}
-                          className="inline-flex shrink-0 items-center gap-1 rounded border border-border px-1.5 py-1 text-[10px] hover:bg-surface-overlay"
-                          aria-label={label}
-                        >
-                          {copied === command ? (
-                            <Check size={11} className="text-success" />
-                          ) : (
-                            <Copy size={11} />
-                          )}
-                          <span>{copied === command ? t("commonCopied") : label}</span>
-                        </button>
-                      </div>
-                    ),
-                  )}
-                </div>
-              )}
-
-              {error && (
-                <p role="status" className="text-xs text-danger">
-                  {error}
-                </p>
-              )}
-
-              <div className="mt-1 flex justify-end gap-2">
-                <button
-                  type="button"
-                  className="interface-density-control inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs hover:bg-surface-overlay"
-                  onClick={onCancel}
-                >
-                  {t("commonCancel")}
-                </button>
-                <button
-                  type="button"
-                  className="interface-density-control inline-flex h-8 items-center justify-center rounded-md bg-accent px-2.5 text-xs text-accent-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
-                  onClick={() => void finish()}
-                  disabled={!preview || saving}
-                >
-                  {saving ? <LoaderCircle size={13} className="animate-spin" /> : t("commonDone")}
-                </button>
-              </div>
-            </form>
+              </form>
+            </div>
           </div>
         </div>
       </div>
-    </div>
     ) as ReactNode,
     document.body,
   );

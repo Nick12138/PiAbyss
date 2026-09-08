@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  ensureMigrationBackup,
-  MIGRATION_ID,
-  type MigrationManifest,
-} from "./migration-backup.js";
+import { ensureMigrationBackup, MIGRATION_ID, type MigrationManifest } from "./migration-backup.js";
 
 const roots: string[] = [];
 let counter = 0;
@@ -148,9 +152,7 @@ describe("ensureMigrationBackup", () => {
     // A later run must still see the migration as incomplete.
     const second = await ensureMigrationBackup(agentDir, nextTimestamp);
     expect(second).not.toBeNull();
-    expect(second!.milestones).toEqual(
-      expect.arrayContaining(["runtimeCreate", "localRefresh"]),
-    );
+    expect(second!.milestones).toEqual(expect.arrayContaining(["runtimeCreate", "localRefresh"]));
 
     await second!.recordMilestone("sessionOpened");
     await second!.recordMilestone("providerSnapshot");

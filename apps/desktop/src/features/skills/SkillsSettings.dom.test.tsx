@@ -419,9 +419,7 @@ describe("SkillsSettings", () => {
       expect(invokeMock).toHaveBeenCalledWith("desktop_read_small_file", {
         path: "C:/agent/skills/review/SKILL.md",
       });
-      await waitFor(() =>
-        expect(screen.getByText(/Review the code changes/)).toBeInTheDocument(),
-      );
+      await waitFor(() => expect(screen.getByText(/Review the code changes/)).toBeInTheDocument());
       // The dialog does not bind Escape (the app-level shortcut owns it);
       // close via the ✕ button instead.
       await user.keyboard("{Escape}");
@@ -444,9 +442,7 @@ describe("SkillsSettings", () => {
       const nameButton = await screen.findByRole("button", { name: "Preview skill review" });
       await user.click(nameButton);
       expect(await screen.findByRole("dialog")).toBeInTheDocument();
-      await waitFor(() =>
-        expect(screen.getByText(/not valid UTF-8/)).toBeInTheDocument(),
-      );
+      await waitFor(() => expect(screen.getByText(/not valid UTF-8/)).toBeInTheDocument());
     } finally {
       invokeMock.mockReset();
     }
@@ -524,17 +520,17 @@ describe("SkillsSettings", () => {
     try {
       const user = userEvent.setup();
       render(<SkillsSettings />);
-      const previewButton = (await screen.findAllByRole("button", {
-        name: "Preview prompt SYSTEM.md",
-      }))[0];
+      const previewButton = (
+        await screen.findAllByRole("button", {
+          name: "Preview prompt SYSTEM.md",
+        })
+      )[0];
       await user.click(previewButton);
       expect(await screen.findByRole("dialog")).toBeInTheDocument();
       expect(invokeMock).toHaveBeenCalledWith("desktop_read_small_file", {
         path: "C:/workspace/.pi/SYSTEM.md",
       });
-      await waitFor(() =>
-        expect(screen.getByText(/Project instructions/)).toBeInTheDocument(),
-      );
+      await waitFor(() => expect(screen.getByText(/Project instructions/)).toBeInTheDocument());
       await user.click(screen.getByRole("button", { name: "Close" }));
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     } finally {

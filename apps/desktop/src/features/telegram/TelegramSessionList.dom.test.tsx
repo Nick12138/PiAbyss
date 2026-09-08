@@ -4,7 +4,11 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TelegramSessionSummary } from "@piabyss/protocol";
-import { TelegramSessionList, telegramSessionTime, telegramSessionTitle } from "./TelegramSessionList";
+import {
+  TelegramSessionList,
+  telegramSessionTime,
+  telegramSessionTitle,
+} from "./TelegramSessionList";
 import { useTelegramViewStore } from "./telegram-view-store";
 
 const sessions: TelegramSessionSummary[] = [
@@ -40,16 +44,14 @@ describe("TelegramSessionList", () => {
     openSession = vi.fn().mockImplementation(async (path: string) => {
       useTelegramViewStore.setState({ openSessionPath: path });
     });
-    useTelegramViewStore.setState(
-      {
-        sessions,
-        loaded: true,
-        loading: false,
-        error: null,
-        refreshTelegramSessions,
-        openTelegramSession: openSession,
-      },
-    );
+    useTelegramViewStore.setState({
+      sessions,
+      loaded: true,
+      loading: false,
+      error: null,
+      refreshTelegramSessions,
+      openTelegramSession: openSession,
+    });
   });
   afterEach(() => {
     cleanup();
@@ -69,9 +71,7 @@ describe("TelegramSessionList", () => {
     render(<TelegramSessionList />);
     await user.click(screen.getByRole("button", { name: /新会话/ }));
     expect(openSession).toHaveBeenCalledWith("C:/agent/sessions/--P--/b.jsonl");
-    expect(
-      screen.getByRole("button", { name: /新会话/ }),
-    ).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("button", { name: /新会话/ })).toHaveAttribute("aria-current", "true");
   });
 
   it("shows the empty state when there are no sessions", () => {
@@ -81,7 +81,12 @@ describe("TelegramSessionList", () => {
   });
 
   it("surfaces an error with a retry action", () => {
-    useTelegramViewStore.setState({ sessions: [], loaded: false, error: "boom", refreshTelegramSessions });
+    useTelegramViewStore.setState({
+      sessions: [],
+      loaded: false,
+      error: "boom",
+      refreshTelegramSessions,
+    });
     render(<TelegramSessionList />);
     expect(screen.getByText("boom")).toBeInTheDocument();
   });

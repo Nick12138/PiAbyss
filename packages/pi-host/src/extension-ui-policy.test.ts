@@ -16,9 +16,7 @@ const toolOrigin: ExtensionUiOrigin = {
   toolCallId: "tool-call-1",
 };
 
-function routeInput(
-  patch: Partial<DecisionRouteInput> = {},
-): DecisionRouteInput {
+function routeInput(patch: Partial<DecisionRouteInput> = {}): DecisionRouteInput {
   return {
     mode: "auto",
     kind: "select",
@@ -124,9 +122,7 @@ describe("resolveDecisionRoute", () => {
       ),
     ).toMatchObject({ presentation: "modal", risk: "high", reason: "project-trust" });
     expect(
-      resolveDecisionRoute(
-        routeInput({ hasDestructiveOption: true, riskHint: "normal" }),
-      ),
+      resolveDecisionRoute(routeInput({ hasDestructiveOption: true, riskHint: "normal" })),
     ).toMatchObject({
       presentation: "modal",
       risk: "high",
@@ -163,9 +159,10 @@ describe("resolveDecisionRoute", () => {
   });
 
   it("honors explicit modal and only honors explicit inline when available", () => {
-    expect(
-      resolveDecisionRoute(routeInput({ presentationHint: "modal" })),
-    ).toMatchObject({ presentation: "modal", reason: "explicit-modal" });
+    expect(resolveDecisionRoute(routeInput({ presentationHint: "modal" }))).toMatchObject({
+      presentation: "modal",
+      reason: "explicit-modal",
+    });
     expect(
       resolveDecisionRoute(
         routeInput({
@@ -175,18 +172,19 @@ describe("resolveDecisionRoute", () => {
         }),
       ),
     ).toMatchObject({ presentation: "modal", reason: "inline-unavailable" });
-    expect(
-      resolveDecisionRoute(routeInput({ presentationHint: "inline" })),
-    ).toMatchObject({ presentation: "inline", reason: "explicit-inline" });
+    expect(resolveDecisionRoute(routeInput({ presentationHint: "inline" }))).toMatchObject({
+      presentation: "inline",
+      reason: "explicit-inline",
+    });
   });
 
   it("cancels stale owners and queues background owners with a final presentation", () => {
-    expect(
-      resolveDecisionRoute(routeInput({ ownerSessionState: "stale" })),
-    ).toEqual({ disposition: "cancel", risk: "normal", reason: "stale-owner" });
-    expect(
-      resolveDecisionRoute(routeInput({ ownerSessionState: "background" })),
-    ).toEqual({
+    expect(resolveDecisionRoute(routeInput({ ownerSessionState: "stale" }))).toEqual({
+      disposition: "cancel",
+      risk: "normal",
+      reason: "stale-owner",
+    });
+    expect(resolveDecisionRoute(routeInput({ ownerSessionState: "background" }))).toEqual({
       disposition: "queue",
       presentation: "inline",
       risk: "normal",
@@ -208,9 +206,7 @@ const identity: HostIdentity = {
 describe("resolveExtensionUiOwnerSessionState", () => {
   it("distinguishes active, candidate, background, and stale bindings", () => {
     expect(resolveExtensionUiOwnerSessionState(identity, identity, true)).toBe("active");
-    expect(resolveExtensionUiOwnerSessionState(identity, identity, false)).toBe(
-      "candidate",
-    );
+    expect(resolveExtensionUiOwnerSessionState(identity, identity, false)).toBe("candidate");
     expect(
       resolveExtensionUiOwnerSessionState(
         identity,
@@ -219,11 +215,7 @@ describe("resolveExtensionUiOwnerSessionState", () => {
       ),
     ).toBe("background");
     expect(
-      resolveExtensionUiOwnerSessionState(
-        identity,
-        { ...identity, workspaceRevision: 3 },
-        true,
-      ),
+      resolveExtensionUiOwnerSessionState(identity, { ...identity, workspaceRevision: 3 }, true),
     ).toBe("stale");
     expect(
       resolveExtensionUiOwnerSessionState(

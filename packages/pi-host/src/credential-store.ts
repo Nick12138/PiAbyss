@@ -26,11 +26,7 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import lockfile from "proper-lockfile";
-import type {
-  Credential,
-  CredentialInfo,
-  CredentialStore,
-} from "@earendil-works/pi-ai";
+import type { Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
 import { resolveCredentialConfigValue } from "./credential-config-value.js";
 import { logger } from "./logger.js";
 
@@ -215,11 +211,9 @@ export class FileCredentialStore implements CredentialStore {
 
   async restore(snapshot: CredentialSnapshot): Promise<void> {
     if (snapshot.path !== this.authPath) {
-      throw new CredentialStoreError(
-        "io",
-        "Credential snapshot belongs to a different auth file",
-        { path: this.authPath },
-      );
+      throw new CredentialStoreError("io", "Credential snapshot belongs to a different auth file", {
+        path: this.authPath,
+      });
     }
     await this.withLock(async () => {
       if (snapshot.content === null) {

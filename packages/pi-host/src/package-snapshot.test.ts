@@ -11,11 +11,7 @@ function packageManagerFixture() {
     { source: "npm:shared", scope: "user", filtered: false, installedPath: "C:/user/shared" },
     { source: "npm:shared", scope: "project", filtered: false, installedPath: "C:/project/shared" },
   ];
-  const resource = (
-    path: string,
-    origin: "package" | "top-level",
-    scope: "user" | "project",
-  ) => ({
+  const resource = (path: string, origin: "package" | "top-level", scope: "user" | "project") => ({
     path,
     enabled: true,
     metadata: {

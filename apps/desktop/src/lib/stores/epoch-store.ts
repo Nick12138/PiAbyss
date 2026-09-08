@@ -81,7 +81,9 @@ export function applySessionSnapshot(
   // (for example the Git watcher in ChangesPanel) from tearing down and
   // re-arming for every streamed token.
   const host =
-    state.host && state.host.sessionId === sessionId && state.host.sessionRevision === sessionRevision
+    state.host &&
+    state.host.sessionId === sessionId &&
+    state.host.sessionRevision === sessionRevision
       ? state.host
       : state.host
         ? { ...state.host, sessionId, sessionRevision }

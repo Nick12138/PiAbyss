@@ -91,9 +91,7 @@ function renderMode(
       role: "custom",
       customType: entry.customType,
       content:
-        typeof entry.content === "string" || Array.isArray(entry.content)
-          ? entry.content
-          : "",
+        typeof entry.content === "string" || Array.isArray(entry.content) ? entry.content : "",
       display: entry.display === true,
       details: entry.details,
       timestamp: timestampForEntry(entry),
@@ -118,8 +116,8 @@ export function renderExtensionMessageEntry(
   const collapsed = renderMode(session, entry, false);
   const expanded = renderMode(session, entry, true);
   if (!collapsed && !expanded) return undefined;
-  const effectiveCollapsed = collapsed?.length ? collapsed : expanded ?? [];
-  const effectiveExpanded = expanded?.length ? expanded : collapsed ?? [];
+  const effectiveCollapsed = collapsed?.length ? collapsed : (expanded ?? []);
+  const effectiveExpanded = expanded?.length ? expanded : (collapsed ?? []);
   if (effectiveCollapsed.length === 0 && effectiveExpanded.length === 0) return undefined;
   return {
     version: 1,

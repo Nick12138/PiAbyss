@@ -91,11 +91,9 @@ export async function withStableGraphRead<T>(args: {
     ) {
       return {
         ok: false,
-        error: createHostError(
-          "STALE_REVISION",
-          "Graph replaced during stable read",
-          { retryable: true },
-        ),
+        error: createHostError("STALE_REVISION", "Graph replaced during stable read", {
+          retryable: true,
+        }),
         identity: after,
       };
     }
@@ -103,10 +101,7 @@ export async function withStableGraphRead<T>(args: {
   } catch (err) {
     return {
       ok: false,
-      error: createHostError(
-        "INTERNAL_ERROR",
-        err instanceof Error ? err.message : String(err),
-      ),
+      error: createHostError("INTERNAL_ERROR", err instanceof Error ? err.message : String(err)),
       identity: identity.snapshot(),
     };
   } finally {

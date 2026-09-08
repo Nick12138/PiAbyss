@@ -36,8 +36,7 @@ function redactText(value: string): string {
 function isSensitiveKey(key: string): boolean {
   const normalized = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
   return (
-    normalized === "auth" ||
-    SENSITIVE_KEY_SUFFIXES.some((suffix) => normalized.endsWith(suffix))
+    normalized === "auth" || SENSITIVE_KEY_SUFFIXES.some((suffix) => normalized.endsWith(suffix))
   );
 }
 

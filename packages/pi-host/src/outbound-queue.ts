@@ -461,16 +461,13 @@ export class OutboundWriter {
               createEvent(entry.identity, entry.event, sequence, shrunk as never),
             );
             if (resized.bytes <= this.maxFrameBytes) {
-              logger.warn(
-                "Outbound event exceeded frame limit; downgraded agent event payload",
-                {
-                  event: entry.event,
-                  sequence,
-                  frameBytes: serialized.bytes,
-                  downgradedBytes: resized.bytes,
-                  maxFrameBytes: this.maxFrameBytes,
-                },
-              );
+              logger.warn("Outbound event exceeded frame limit; downgraded agent event payload", {
+                event: entry.event,
+                sequence,
+                frameBytes: serialized.bytes,
+                downgradedBytes: resized.bytes,
+                maxFrameBytes: this.maxFrameBytes,
+              });
               serialized = resized;
             }
           }

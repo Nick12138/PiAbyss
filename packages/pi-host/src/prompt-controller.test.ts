@@ -81,11 +81,10 @@ describe("prompt-controller", () => {
   });
 
   it("lists only prompt files that exist on disk, grouped by scope", async () => {
-    const { factory } = fixture(
-      layout,
-      true,
-      { agentDir: ["SYSTEM.md", "AGENTS.md"], projectDir: ["APPEND_SYSTEM.md"] },
-    );
+    const { factory } = fixture(layout, true, {
+      agentDir: ["SYSTEM.md", "AGENTS.md"],
+      projectDir: ["APPEND_SYSTEM.md"],
+    });
     handlers = createPromptHandlers(factory);
 
     const outcome = (await handlers["prompt.list"]!(context("prompt.list", null))) as {
@@ -99,18 +98,35 @@ describe("prompt-controller", () => {
     expect(snapshot.projectTrusted).toBe(true);
     // Missing files (CLAUDE.md, project SYSTEM.md/AGENTS.md) are not listed.
     expect(snapshot.prompts).toEqual([
-      { name: "SYSTEM.md", kind: "system", scope: "user", filePath: join(layout.agentDir, "SYSTEM.md"), loaded: true },
-      { name: "AGENTS.md", kind: "context", scope: "user", filePath: join(layout.agentDir, "AGENTS.md"), loaded: true },
-      { name: "APPEND_SYSTEM.md", kind: "append", scope: "project", filePath: join(layout.projectDir, ".pi", "APPEND_SYSTEM.md"), loaded: true },
+      {
+        name: "SYSTEM.md",
+        kind: "system",
+        scope: "user",
+        filePath: join(layout.agentDir, "SYSTEM.md"),
+        loaded: true,
+      },
+      {
+        name: "AGENTS.md",
+        kind: "context",
+        scope: "user",
+        filePath: join(layout.agentDir, "AGENTS.md"),
+        loaded: true,
+      },
+      {
+        name: "APPEND_SYSTEM.md",
+        kind: "append",
+        scope: "project",
+        filePath: join(layout.projectDir, ".pi", "APPEND_SYSTEM.md"),
+        loaded: true,
+      },
     ]);
   });
 
   it("shadows the global SYSTEM.md when a trusted project file overrides it", async () => {
-    const { factory } = fixture(
-      layout,
-      true,
-      { agentDir: ["SYSTEM.md", "APPEND_SYSTEM.md"], projectDir: ["SYSTEM.md"] },
-    );
+    const { factory } = fixture(layout, true, {
+      agentDir: ["SYSTEM.md", "APPEND_SYSTEM.md"],
+      projectDir: ["SYSTEM.md"],
+    });
     handlers = createPromptHandlers(factory);
 
     const outcome = (await handlers["prompt.list"]!(context("prompt.list", null))) as {
@@ -128,11 +144,10 @@ describe("prompt-controller", () => {
   });
 
   it("does not shadow the global file when the project is untrusted", async () => {
-    const { factory } = fixture(
-      layout,
-      false,
-      { agentDir: ["SYSTEM.md"], projectDir: ["SYSTEM.md"] },
-    );
+    const { factory } = fixture(layout, false, {
+      agentDir: ["SYSTEM.md"],
+      projectDir: ["SYSTEM.md"],
+    });
     handlers = createPromptHandlers(factory);
 
     const outcome = (await handlers["prompt.list"]!(context("prompt.list", null))) as {
@@ -154,11 +169,10 @@ describe("prompt-controller", () => {
     for (const trusted of [true, false]) {
       const layout2 = createTempAgentLayout("piabyss-prompt-ctx-");
       try {
-        const { factory } = fixture(
-          layout2,
-          trusted,
-          { agentDir: [], projectDir: ["AGENTS.md", "CLAUDE.md"] },
-        );
+        const { factory } = fixture(layout2, trusted, {
+          agentDir: [],
+          projectDir: ["AGENTS.md", "CLAUDE.md"],
+        });
         const h = createPromptHandlers(factory);
         const outcome = (await h["prompt.list"]!(context("prompt.list", null))) as {
           result?: PromptSnapshot;

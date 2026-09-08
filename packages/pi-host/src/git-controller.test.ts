@@ -540,9 +540,7 @@ describe("Git controller", () => {
       truncated: false,
     });
     vi.mocked(completeSimple).mockResolvedValueOnce({
-      content: [
-        { type: "text", text: "<think>Analyze the diff.</think>\nfeat: 更新应用" },
-      ],
+      content: [{ type: "text", text: "<think>Analyze the diff.</think>\nfeat: 更新应用" }],
       stopReason: "stop",
     } as never);
 

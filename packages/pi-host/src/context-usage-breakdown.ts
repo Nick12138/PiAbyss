@@ -117,7 +117,9 @@ export function reconcileContextBreakdown(
       remaining -= 1;
     });
 
-  return Object.fromEntries(weighted.map(({ key, value }) => [key, value])) as SessionContextBreakdown;
+  return Object.fromEntries(
+    weighted.map(({ key, value }) => [key, value]),
+  ) as SessionContextBreakdown;
 }
 
 export function buildContextUsageBreakdown(args: {
@@ -133,7 +135,8 @@ export function buildContextUsageBreakdown(args: {
     .map(({ name, description, parameters }) => ({ name, description, parameters }));
   const breakdown: SessionContextBreakdown = {
     systemPrompt: tokensForChars(args.systemPrompt.length),
-    toolDefinitions: activeTools.length > 0 ? tokensForChars(safeJsonStringify(activeTools).length) : 0,
+    toolDefinitions:
+      activeTools.length > 0 ? tokensForChars(safeJsonStringify(activeTools).length) : 0,
     userPrompts: 0,
     assistantMessages: 0,
     toolResults: 0,

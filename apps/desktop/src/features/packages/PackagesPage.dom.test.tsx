@@ -505,9 +505,11 @@ describe("PackagesPage DOM workflows", () => {
 
     await waitFor(() => {
       expect(
-        useAppStore.getState().transientNotifications.some((notification) =>
-          /Another package operation is running/.test(notification.message),
-        ),
+        useAppStore
+          .getState()
+          .transientNotifications.some((notification) =>
+            /Another package operation is running/.test(notification.message),
+          ),
       ).toBe(true);
     });
     expect(useAppStore.getState().notifications).toHaveLength(0);

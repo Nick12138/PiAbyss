@@ -626,10 +626,7 @@ function mergeContentTiming(
   });
 }
 
-function streamRunMatches(
-  row: SerializableAgentMessage,
-  runId: string | undefined,
-): boolean {
+function streamRunMatches(row: SerializableAgentMessage, runId: string | undefined): boolean {
   // Events without a runId (older hosts / hand-built frames) keep the legacy
   // tail-merge behavior. With a runId the tail row must have been opened by
   // the same run — appending across a turn boundary corrupts the previous

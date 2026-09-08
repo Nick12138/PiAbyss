@@ -148,9 +148,7 @@ describe("compaction actions", () => {
       null,
     );
     expect(useAppStore.getState().session?.thinkingLevel).toBe("high");
-    expect(toasts()).toEqual([
-      { message: "Context compacted: 120k → 8k tokens", level: "info" },
-    ]);
+    expect(toasts()).toEqual([{ message: "Context compacted: 120k → 8k tokens", level: "info" }]);
   });
 
   it("sends null params when no instructions are given", async () => {

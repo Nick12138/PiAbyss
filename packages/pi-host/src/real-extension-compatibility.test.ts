@@ -17,18 +17,11 @@ import {
   type ExtensionUiBinding,
 } from "./extension-ui-bridge.js";
 import { createTestModelServices } from "./test-helpers/model-runtime.js";
-import {
-  createTempAgentLayout,
-  type TempAgentLayout,
-} from "./test-helpers/temp-agent.js";
+import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp-agent.js";
 
 const require = createRequire(import.meta.url);
-const RPIV_V1_ENTRYPOINT = require.resolve(
-  "@piabyss-test/rpiv-ask-user-question-v1",
-);
-const RPIV_V2_ENTRYPOINT = require.resolve(
-  "@piabyss-test/rpiv-ask-user-question-v2",
-);
+const RPIV_V1_ENTRYPOINT = require.resolve("@piabyss-test/rpiv-ask-user-question-v1");
+const RPIV_V2_ENTRYPOINT = require.resolve("@piabyss-test/rpiv-ask-user-question-v2");
 
 type EmittedEvent = { event: HostEventName; payload: unknown };
 
@@ -82,11 +75,9 @@ async function loadPublishedExtension(
   eventBus.on("rpiv:ask-user:prompt", (payload) => promptEvents.push(payload));
   eventBus.on("rpiv:ask-user:blocked", (payload) => blockedEvents.push(payload));
 
-  const settingsManager = SettingsManager.create(
-    layout.projectDir,
-    layout.agentDir,
-    { projectTrusted: true },
-  );
+  const settingsManager = SettingsManager.create(layout.projectDir, layout.agentDir, {
+    projectTrusted: true,
+  });
   const { modelRuntime } = await createTestModelServices(layout.agentDir);
   const resourceLoader = new DefaultResourceLoader({
     cwd: layout.projectDir,
@@ -188,12 +179,7 @@ describe("pinned published Extension compatibility", () => {
     const loaded = await loadPublishedExtension(RPIV_V2_ENTRYPOINT, "session-rpiv-v2");
     try {
       const tool = registeredAskUserTool(loaded.session);
-      const running = tool.execute(
-        "tool-call-rpiv-v2",
-        QUESTIONNAIRE,
-        undefined,
-        undefined,
-      );
+      const running = tool.execute("tool-call-rpiv-v2", QUESTIONNAIRE, undefined, undefined);
 
       const first = await waitForEvent<DecisionPayload>(
         loaded.events,
@@ -220,17 +206,10 @@ describe("pinned published Extension compatibility", () => {
           ]),
         }),
       ]);
-      const shipNowOption = first.options?.find((option) =>
-        option.label.includes("Ship now"),
-      );
+      const shipNowOption = first.options?.find((option) => option.label.includes("Ship now"));
       expect(shipNowOption).toBeDefined();
       expect(
-        respondExtensionUi(
-          first.requestId,
-          "resolved",
-          shipNowOption!.id,
-          loaded.identity,
-        ),
+        respondExtensionUi(first.requestId, "resolved", shipNowOption!.id, loaded.identity),
       ).toBe(true);
 
       const second = await waitForEvent<DecisionPayload>(
@@ -254,12 +233,7 @@ describe("pinned published Extension compatibility", () => {
       );
       expect(third.groupKey).toBe(first.groupKey);
       expect(
-        respondExtensionUi(
-          third.requestId,
-          "resolved",
-          "Add audit logging",
-          loaded.identity,
-        ),
+        respondExtensionUi(third.requestId, "resolved", "Add audit logging", loaded.identity),
       ).toBe(true);
 
       await expect(running).resolves.toMatchObject({
@@ -278,17 +252,15 @@ describe("pinned published Extension compatibility", () => {
         },
       });
       expect(loaded.blockedEvents).toEqual([{ active: true }, { active: false }]);
-      expect(
-        loaded.events.filter((event) => event.event === "extensionUi.groupClosed"),
-      ).toEqual([
+      expect(loaded.events.filter((event) => event.event === "extensionUi.groupClosed")).toEqual([
         {
           event: "extensionUi.groupClosed",
           payload: { groupKey: first.groupKey, status: "completed" },
         },
       ]);
-      expect(
-        loaded.events.some((event) => event.event === "extensionUi.customStarted"),
-      ).toBe(false);
+      expect(loaded.events.some((event) => event.event === "extensionUi.customStarted")).toBe(
+        false,
+      );
     } finally {
       loaded.cleanup();
     }
@@ -308,17 +280,10 @@ describe("pinned published Extension compatibility", () => {
         "extensionUi.request",
         (payload) => payload.origin.toolCallId === "tool-call-rpiv-v2-cancel",
       );
-      const shipNowOption = first.options?.find((option) =>
-        option.label.includes("Ship now"),
-      );
+      const shipNowOption = first.options?.find((option) => option.label.includes("Ship now"));
       expect(shipNowOption).toBeDefined();
       expect(
-        respondExtensionUi(
-          first.requestId,
-          "resolved",
-          shipNowOption!.id,
-          loaded.identity,
-        ),
+        respondExtensionUi(first.requestId, "resolved", shipNowOption!.id, loaded.identity),
       ).toBe(true);
 
       const second = await waitForEvent<DecisionPayload>(
@@ -329,9 +294,9 @@ describe("pinned published Extension compatibility", () => {
           payload.requestId !== first.requestId,
       );
       expect(second.groupKey).toBe(first.groupKey);
-      expect(
-        respondExtensionUi(second.requestId, "cancelled", undefined, loaded.identity),
-      ).toBe(true);
+      expect(respondExtensionUi(second.requestId, "cancelled", undefined, loaded.identity)).toBe(
+        true,
+      );
 
       await expect(running).resolves.toMatchObject({
         details: {
@@ -345,9 +310,7 @@ describe("pinned published Extension compatibility", () => {
         },
       });
       expect(loaded.blockedEvents).toEqual([{ active: true }, { active: false }]);
-      expect(respondExtensionUi(second.requestId, "resolved", "late", loaded.identity)).toBe(
-        false,
-      );
+      expect(respondExtensionUi(second.requestId, "resolved", "late", loaded.identity)).toBe(false);
     } finally {
       loaded.cleanup();
     }
@@ -395,9 +358,7 @@ describe("pinned published Extension compatibility", () => {
           questions: [expect.objectContaining({ multiSelect: true })],
         }),
       ]);
-      expect(
-        respondExtensionUi(request.requestId, "resolved", "1,2", loaded.identity),
-      ).toBe(true);
+      expect(respondExtensionUi(request.requestId, "resolved", "1,2", loaded.identity)).toBe(true);
 
       await expect(running).resolves.toMatchObject({
         details: {
@@ -444,9 +405,9 @@ describe("pinned published Extension compatibility", () => {
         details: { answers: [], cancelled: true },
       });
       expect(loaded.blockedEvents).toEqual([{ active: true }, { active: false }]);
-      expect(
-        respondExtensionUi(request.requestId, "resolved", "late", loaded.identity),
-      ).toBe(false);
+      expect(respondExtensionUi(request.requestId, "resolved", "late", loaded.identity)).toBe(
+        false,
+      );
     } finally {
       loaded.cleanup();
     }
@@ -508,12 +469,12 @@ describe("pinned published Extension compatibility", () => {
       const alpha = first.options?.find((option) => option.label.includes("Alpha"));
       expect(stable).toBeDefined();
       expect(alpha).toBeDefined();
-      expect(
-        respondExtensionUi(second.requestId, "resolved", stable!.id, loaded.identity),
-      ).toBe(true);
-      expect(
-        respondExtensionUi(first.requestId, "resolved", alpha!.id, loaded.identity),
-      ).toBe(true);
+      expect(respondExtensionUi(second.requestId, "resolved", stable!.id, loaded.identity)).toBe(
+        true,
+      );
+      expect(respondExtensionUi(first.requestId, "resolved", alpha!.id, loaded.identity)).toBe(
+        true,
+      );
 
       await expect(secondRun).resolves.toMatchObject({
         details: { answers: [expect.objectContaining({ answer: "Stable" })] },
@@ -555,18 +516,14 @@ describe("pinned published Extension compatibility", () => {
           questions: [expect.objectContaining({ question: "When should this ship?" })],
         }),
       ]);
-      expect(
-        loaded.events.some((event) => event.event === "extensionUi.request"),
-      ).toBe(false);
-      expect(
-        respondExtensionUi(started.requestId, "cancelled", undefined, loaded.identity),
-      ).toBe(true);
+      expect(loaded.events.some((event) => event.event === "extensionUi.request")).toBe(false);
+      expect(respondExtensionUi(started.requestId, "cancelled", undefined, loaded.identity)).toBe(
+        true,
+      );
       await expect(running).resolves.toMatchObject({
         details: { answers: [], cancelled: true },
       });
-      expect(
-        loaded.events.filter((event) => event.event === "extensionUi.customClosed"),
-      ).toEqual([
+      expect(loaded.events.filter((event) => event.event === "extensionUi.customClosed")).toEqual([
         {
           event: "extensionUi.customClosed",
           payload: { requestId: started.requestId },

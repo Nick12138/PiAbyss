@@ -408,12 +408,46 @@ describe("config helpers", () => {
     });
 
     it("maps config items to the model list kind they need", () => {
-      const visionSelect = { key: "visionModel", type: "select" as const, label: "l", env: "PI_VISION_MODEL", optionsSource: OPTIONS_SOURCE_VISION_MODELS };
-      const allSelect = { key: "defaultModel", type: "select" as const, label: "l", env: "SUBAGENT_DEFAULT_MODEL", optionsSource: OPTIONS_SOURCE_MODELS };
-      const visionFallback = { key: "fallbackModels", type: "select" as const, label: "l", env: "PI_VISION_FALLBACK_MODELS", optionsSource: OPTIONS_SOURCE_VISION_FALLBACK_MODELS };
-      const allFallback = { key: "fallbackModels", type: "select" as const, label: "l", env: "SUBAGENT_FALLBACK_MODELS", optionsSource: OPTIONS_SOURCE_MODELS_FALLBACK };
-      const legacyVision = { key: "fallbackModels", type: "text" as const, label: "l", env: "PI_VISION_FALLBACK_MODELS" };
-      const legacySubagent = { key: "fallbackModels", type: "text" as const, label: "l", env: "SUBAGENT_FALLBACK_MODELS" };
+      const visionSelect = {
+        key: "visionModel",
+        type: "select" as const,
+        label: "l",
+        env: "PI_VISION_MODEL",
+        optionsSource: OPTIONS_SOURCE_VISION_MODELS,
+      };
+      const allSelect = {
+        key: "defaultModel",
+        type: "select" as const,
+        label: "l",
+        env: "SUBAGENT_DEFAULT_MODEL",
+        optionsSource: OPTIONS_SOURCE_MODELS,
+      };
+      const visionFallback = {
+        key: "fallbackModels",
+        type: "select" as const,
+        label: "l",
+        env: "PI_VISION_FALLBACK_MODELS",
+        optionsSource: OPTIONS_SOURCE_VISION_FALLBACK_MODELS,
+      };
+      const allFallback = {
+        key: "fallbackModels",
+        type: "select" as const,
+        label: "l",
+        env: "SUBAGENT_FALLBACK_MODELS",
+        optionsSource: OPTIONS_SOURCE_MODELS_FALLBACK,
+      };
+      const legacyVision = {
+        key: "fallbackModels",
+        type: "text" as const,
+        label: "l",
+        env: "PI_VISION_FALLBACK_MODELS",
+      };
+      const legacySubagent = {
+        key: "fallbackModels",
+        type: "text" as const,
+        label: "l",
+        env: "SUBAGENT_FALLBACK_MODELS",
+      };
       expect(modelOptionsKind(visionSelect)).toBe("vision");
       expect(modelOptionsKind(allSelect)).toBe("all");
       expect(modelOptionsKind(visionFallback)).toBe("vision");

@@ -97,8 +97,7 @@ export function QueuePanel() {
 
   async function runNow(kind: "followUp" | "steering", index: number) {
     if (!host || !workspace || !session || busyOp) return;
-    const queuedText =
-      kind === "followUp" ? followUp[index] : (steering[index] ?? undefined);
+    const queuedText = kind === "followUp" ? followUp[index] : (steering[index] ?? undefined);
     if (queuedText === undefined) return;
     const targetSessionId = session.sessionId;
     const targetSessionRevision = session.revision;
@@ -112,9 +111,7 @@ export function QueuePanel() {
       const context = activeSessionContext(host, workspace, session);
       const response = await hostClient.request("agent.runNow", context, {
         expectedRevision: session.pending.revision,
-        ...(kind === "followUp"
-          ? { followUpIndex: index }
-          : { steeringIndex: index }),
+        ...(kind === "followUp" ? { followUpIndex: index } : { steeringIndex: index }),
       });
       if (!response.ok) {
         removeOptimisticUserMessage(optimisticKey);

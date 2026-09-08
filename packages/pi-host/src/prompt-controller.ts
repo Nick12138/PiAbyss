@@ -55,7 +55,13 @@ function buildPromptSnapshot(
     } else {
       // system/append: the global file is shadowed by a trusted project file.
       const shadowed = projectTrusted && projectOverrides[file.fileName] === true;
-      prompts.push({ name: file.name, kind: file.kind, scope: "user", filePath, loaded: !shadowed });
+      prompts.push({
+        name: file.name,
+        kind: file.kind,
+        scope: "user",
+        filePath,
+        loaded: !shadowed,
+      });
     }
   }
 
@@ -68,7 +74,13 @@ function buildPromptSnapshot(
       prompts.push({ name: file.name, kind: file.kind, scope: "project", filePath, loaded: true });
     } else {
       // system/append: project files only load when the workspace is trusted.
-      prompts.push({ name: file.name, kind: file.kind, scope: "project", filePath, loaded: projectTrusted });
+      prompts.push({
+        name: file.name,
+        kind: file.kind,
+        scope: "project",
+        filePath,
+        loaded: projectTrusted,
+      });
     }
   }
 

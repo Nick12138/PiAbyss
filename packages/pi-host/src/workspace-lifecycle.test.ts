@@ -1,11 +1,4 @@
-import {
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -80,10 +73,7 @@ describe("Workspace lifecycle", () => {
       retainedGraphs: Map<string, WorkspaceGraph>;
     };
     internal.retainedGraphs.set(workspaceIdentityKey(target.canonicalCwd, "linux"), target);
-    internal.retainedGraphs.set(
-      workspaceIdentityKey(unrelated.canonicalCwd, "linux"),
-      unrelated,
-    );
+    internal.retainedGraphs.set(workspaceIdentityKey(unrelated.canonicalCwd, "linux"), unrelated);
     const dispose = vi.spyOn(subject, "disposeGraph").mockResolvedValue();
 
     await subject.invalidateRetainedWorkspaceGraph(target.canonicalCwd);
@@ -167,11 +157,13 @@ describe("Workspace lifecycle", () => {
 });
 
 /** Lifecycle with a controllable active graph and an optional C1 bound cap. */
-function lifecycleWith(options: {
-  platform?: NodeJS.Platform;
-  maxBoundWorkspaces?: number;
-  active?: WorkspaceGraph | null;
-} = {}): WorkspaceLifecycle {
+function lifecycleWith(
+  options: {
+    platform?: NodeJS.Platform;
+    maxBoundWorkspaces?: number;
+    active?: WorkspaceGraph | null;
+  } = {},
+): WorkspaceLifecycle {
   const active = options.active ?? null;
   return new WorkspaceLifecycle(
     {
@@ -210,9 +202,11 @@ function retainableGraph(canonicalCwd: string): WorkspaceGraph {
 }
 
 async function retain(subject: WorkspaceLifecycle, graph: WorkspaceGraph): Promise<void> {
-  await (subject as unknown as {
-    retainGraph: (graph: WorkspaceGraph) => Promise<void>;
-  }).retainGraph(graph);
+  await (
+    subject as unknown as {
+      retainGraph: (graph: WorkspaceGraph) => Promise<void>;
+    }
+  ).retainGraph(graph);
 }
 
 function retainedMap(subject: WorkspaceLifecycle): Map<string, WorkspaceGraph> {

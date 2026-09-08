@@ -35,12 +35,7 @@ const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
 
 /** Cwd-independent files the 0.82.1 runtime may rewrite. */
-const TRACKED_FILES = [
-  "auth.json",
-  "models.json",
-  "models-store.json",
-  "settings.json",
-] as const;
+const TRACKED_FILES = ["auth.json", "models.json", "models-store.json", "settings.json"] as const;
 
 export type MigrationMilestone =
   | "runtimeCreate"
@@ -242,7 +237,10 @@ async function findExistingBackup(
   return null;
 }
 
-async function captureBackup(agentDir: string, timestamp: string): Promise<{
+async function captureBackup(
+  agentDir: string,
+  timestamp: string,
+): Promise<{
   directory: string;
   manifest: MigrationManifest;
 }> {

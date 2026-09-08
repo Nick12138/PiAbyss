@@ -63,9 +63,7 @@ describe("createSubagentStatusBridge reload resilience", () => {
       for (const cb of lifecycle.get(event) ?? []) cb(data);
     };
     const getMock = vi.mocked(getSubagentApi);
-    getMock.mockResolvedValue(
-      runs === null ? null : ({ runs, runsRoot: "/tmp/runs" } as never),
-    );
+    getMock.mockResolvedValue(runs === null ? null : ({ runs, runsRoot: "/tmp/runs" } as never));
     const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
     return { api, fire, flush, getMock };
   }

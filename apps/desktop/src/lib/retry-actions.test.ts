@@ -132,9 +132,11 @@ describe("requestRetry", () => {
   });
 
   it("re-sends the plain user text via agent.prompt", async () => {
-    const request = vi.spyOn(hostClient, "request").mockResolvedValue(
-      envelope("agent.prompt", { ok: true, result: { accepted: true, runId: "r1" } }) as never,
-    );
+    const request = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue(
+        envelope("agent.prompt", { ok: true, result: { accepted: true, runId: "r1" } }) as never,
+      );
 
     await expect(requestRetry(userRow("please review"))).resolves.toBe(true);
 
@@ -162,9 +164,11 @@ describe("requestRetry", () => {
       buildAttachedFileBlock("main.rs", "fn main() {}\n"),
       documentBlock,
     ].join("\n\n");
-    const request = vi.spyOn(hostClient, "request").mockResolvedValue(
-      envelope("agent.prompt", { ok: true, result: { accepted: true, runId: "r1" } }) as never,
-    );
+    const request = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue(
+        envelope("agent.prompt", { ok: true, result: { accepted: true, runId: "r1" } }) as never,
+      );
 
     await expect(
       requestRetry(
@@ -233,9 +237,11 @@ describe("requestGoOn", () => {
   });
 
   it("sends a bare Continue prompt to the active session", async () => {
-    const request = vi.spyOn(hostClient, "request").mockResolvedValue(
-      envelope("agent.prompt", { ok: true, result: { accepted: true, runId: "r2" } }) as never,
-    );
+    const request = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue(
+        envelope("agent.prompt", { ok: true, result: { accepted: true, runId: "r2" } }) as never,
+      );
 
     await expect(requestGoOn()).resolves.toBe(true);
 

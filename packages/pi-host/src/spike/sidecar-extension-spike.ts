@@ -23,9 +23,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /** The canonical SDK version source is the Host manifest, not a literal here. */
 function readHostSdkVersion(): string {
-  const manifest = JSON.parse(
-    readFileSync(join(__dirname, "../../package.json"), "utf8"),
-  ) as { dependencies?: Record<string, string> };
+  const manifest = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf8")) as {
+    dependencies?: Record<string, string>;
+  };
   const version = manifest.dependencies?.["@earendil-works/pi-coding-agent"];
   if (!version) throw new Error("Host manifest does not declare @earendil-works/pi-coding-agent");
   return version;
@@ -34,8 +34,14 @@ function readHostSdkVersion(): string {
 function findFixtureExtension(): string {
   // Prefer repo test-fixtures
   const candidates = [
-    join(__dirname, "../../../../test-fixtures/pi-packages/extension-only/extensions/spike-extension.ts"),
-    join(__dirname, "../../../test-fixtures/pi-packages/extension-only/extensions/spike-extension.ts"),
+    join(
+      __dirname,
+      "../../../../test-fixtures/pi-packages/extension-only/extensions/spike-extension.ts",
+    ),
+    join(
+      __dirname,
+      "../../../test-fixtures/pi-packages/extension-only/extensions/spike-extension.ts",
+    ),
     join(process.cwd(), "test-fixtures/pi-packages/extension-only/extensions/spike-extension.ts"),
   ];
   for (const c of candidates) {
@@ -82,7 +88,8 @@ async function main(): Promise<void> {
 
   await loader.reload();
   const extensions = loader.getExtensions();
-  const paths = extensions.extensions?.map((e: { path?: string; name?: string }) => e.path ?? e.name) ??
+  const paths =
+    extensions.extensions?.map((e: { path?: string; name?: string }) => e.path ?? e.name) ??
     (extensions as { loaded?: Array<{ path?: string }> }).loaded?.map((e) => e.path) ??
     [];
 
@@ -101,8 +108,7 @@ async function main(): Promise<void> {
   } else {
     // Fallback: loader accepted the path without throwing — still validates jiti/TS load path
     // Try loading via jiti-compatible dynamic if extension registered diagnostics
-    const diagnostics =
-      (extensions as { diagnostics?: unknown[] }).diagnostics ?? [];
+    const diagnostics = (extensions as { diagnostics?: unknown[] }).diagnostics ?? [];
     console.log(`[spike] Diagnostics: ${JSON.stringify(diagnostics)}`);
     // Success criterion: reload completed without throw and fixture path was requested
     eventOk = true;
@@ -118,7 +124,9 @@ async function main(): Promise<void> {
     throw new Error("Spike failed: extension did not load");
   }
 
-  console.log("[spike] SUCCESS: controlled Node loaded TypeScript Extension via DefaultResourceLoader");
+  console.log(
+    "[spike] SUCCESS: controlled Node loaded TypeScript Extension via DefaultResourceLoader",
+  );
   console.log(`[spike] agentDir=${agentDir}`);
   console.log(`[spike] projectDir=${projectDir}`);
   process.exitCode = 0;

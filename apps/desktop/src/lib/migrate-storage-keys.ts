@@ -10,7 +10,7 @@ const KEY_PREFIX = "piabyss.";
  * first import of `main.tsx`), because several stores read their storage keys
  * at module-evaluation time.
  */
-export function migrateLegacyStorageKeys(): void {
+function migrateLegacyStorageKeys(): void {
   try {
     const storage = window.localStorage;
     const legacyKeys: string[] = [];

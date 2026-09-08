@@ -21,10 +21,7 @@ import { createHash, randomUUID } from "node:crypto";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const hostEntry = join(__dirname, "main.ts");
 const fixturePkg = join(__dirname, "../../../test-fixtures/pi-packages/full-package");
-const peerConflictPkg = join(
-  __dirname,
-  "../../../test-fixtures/pi-packages/peer-conflict-package",
-);
+const peerConflictPkg = join(__dirname, "../../../test-fixtures/pi-packages/peer-conflict-package");
 
 class HostProcess {
   proc: ChildProcessWithoutNullStreams;
@@ -33,18 +30,14 @@ class HostProcess {
   private waiters: Array<() => void> = [];
 
   constructor(agentDir: string) {
-    this.proc = spawn(
-      process.execPath,
-      ["--import", "tsx", hostEntry, `--agent-dir=${agentDir}`],
-      {
-        env: {
-          ...process.env,
-          PI_CODING_AGENT_DIR: agentDir,
-          PIABYSS_TEST_FAUX: "1",
-        },
-        stdio: ["pipe", "pipe", "pipe"],
+    this.proc = spawn(process.execPath, ["--import", "tsx", hostEntry, `--agent-dir=${agentDir}`], {
+      env: {
+        ...process.env,
+        PI_CODING_AGENT_DIR: agentDir,
+        PIABYSS_TEST_FAUX: "1",
       },
-    );
+      stdio: ["pipe", "pipe", "pipe"],
+    });
     this.proc.stdout.setEncoding("utf8");
     this.proc.stdout.on("data", (chunk: string) => {
       this.buffer += chunk;
@@ -422,9 +415,7 @@ describe("package + workspace integration", () => {
       packageSnapshot: { configured: Array<{ id: string }> };
     };
     expect(["committed", "partialFailure"]).toContain(removeResult.status);
-    expect(removeResult.packageSnapshot.configured.some((c) => c.id === installed!.id)).toBe(
-      false,
-    );
+    expect(removeResult.packageSnapshot.configured.some((c) => c.id === installed!.id)).toBe(false);
   }, 300_000);
 
   it("enables the last filtered prompt in a mixed package", async () => {
@@ -462,13 +453,17 @@ describe("package + workspace integration", () => {
       180_000,
     );
     expect(install.ok, JSON.stringify(install.error)).toBe(true);
-    const installedSnapshot = (install.result as {
-      packageSnapshot: {
-        configured: Array<{ id: string; source: string }>;
-        resources: Array<{ id: string; type: string; relativePath?: string }>;
-      };
-    }).packageSnapshot;
-    const packageRecord = installedSnapshot.configured.find((item) => item.source.includes("full-package"));
+    const installedSnapshot = (
+      install.result as {
+        packageSnapshot: {
+          configured: Array<{ id: string; source: string }>;
+          resources: Array<{ id: string; type: string; relativePath?: string }>;
+        };
+      }
+    ).packageSnapshot;
+    const packageRecord = installedSnapshot.configured.find((item) =>
+      item.source.includes("full-package"),
+    );
     const prompt = installedSnapshot.resources.find(
       (item) => item.type === "prompt" && item.relativePath === "prompts/test-prompt.md",
     );
@@ -494,7 +489,9 @@ describe("package + workspace integration", () => {
     const disabledResult = disabled.result as {
       packageSnapshot: { resources: Array<{ id: string; enabled: boolean }> };
     };
-    expect(disabledResult.packageSnapshot.resources.find((item) => item.id === prompt!.id)?.enabled).toBe(false);
+    expect(
+      disabledResult.packageSnapshot.resources.find((item) => item.id === prompt!.id)?.enabled,
+    ).toBe(false);
 
     const enabled = await host.request(
       "resource.setPreferences",
@@ -515,14 +512,20 @@ describe("package + workspace integration", () => {
     const enabledResult = enabled.result as {
       packageSnapshot: { resources: Array<{ id: string; enabled: boolean }> };
     };
-    expect(enabledResult.packageSnapshot.resources.find((item) => item.id === prompt!.id)?.enabled).toBe(true);
+    expect(
+      enabledResult.packageSnapshot.resources.find((item) => item.id === prompt!.id)?.enabled,
+    ).toBe(true);
 
     const settingsText = await import("node:fs/promises").then(({ readFile }) =>
       readFile(join(agentDir, "settings.json"), "utf8"),
     );
     const settings = JSON.parse(settingsText) as { packages?: unknown[] };
     expect(settings.packages).toContainEqual(expect.stringContaining("full-package"));
-    expect(settings.packages?.some((item) => typeof item === "object" && item !== null && "prompts" in item)).toBe(false);
+    expect(
+      settings.packages?.some(
+        (item) => typeof item === "object" && item !== null && "prompts" in item,
+      ),
+    ).toBe(false);
 
     const remove = await host.request(
       "package.remove",
@@ -562,9 +565,11 @@ describe("package + workspace integration", () => {
       60_000,
     );
     expect(selected.ok).toBe(true);
-    const workspace = (selected.result as {
-      workspace: { id: string; revision: number; servicesReady: boolean };
-    }).workspace;
+    const workspace = (
+      selected.result as {
+        workspace: { id: string; revision: number; servicesReady: boolean };
+      }
+    ).workspace;
     expect(workspace.servicesReady).toBe(true);
 
     const install = await host.request(
@@ -581,9 +586,11 @@ describe("package + workspace integration", () => {
       120_000,
     );
     expect(install.ok).toBe(true);
-    const installed = (install.result as {
-      packageSnapshot: { configured: Array<{ id: string; source: string; scope: string }> };
-    }).packageSnapshot.configured.find(
+    const installed = (
+      install.result as {
+        packageSnapshot: { configured: Array<{ id: string; source: string; scope: string }> };
+      }
+    ).packageSnapshot.configured.find(
       (pkg) =>
         pkg.scope === "project" &&
         (pkg.source === fixturePkg || pkg.source.includes("full-package")),
@@ -604,9 +611,11 @@ describe("package + workspace integration", () => {
       120_000,
     );
     expect(remove.ok, JSON.stringify(remove.error)).toBe(true);
-    const after = (remove.result as {
-      packageSnapshot: { configured: Array<{ id: string }> };
-    }).packageSnapshot;
+    const after = (
+      remove.result as {
+        packageSnapshot: { configured: Array<{ id: string }> };
+      }
+    ).packageSnapshot;
     expect(after.configured.some((pkg) => pkg.id === installed!.id)).toBe(false);
   }, 300_000);
 
@@ -630,8 +639,9 @@ describe("package + workspace integration", () => {
       60_000,
     );
     expect(setA.ok).toBe(true);
-    const wsA = (setA.result as { workspace: { id: string; revision: number; canonicalCwd: string } })
-      .workspace;
+    const wsA = (
+      setA.result as { workspace: { id: string; revision: number; canonicalCwd: string } }
+    ).workspace;
     const sessionA = setA.sessionId;
     const sessionRevA = setA.sessionRevision as number;
     const pkgRevA = setA.packageRevision as number;
@@ -909,12 +919,7 @@ describe("package + workspace integration", () => {
     };
     // Launch two installs in parallel against real host
     const [a, b] = await Promise.all([
-      host.request(
-        "package.install",
-        ctx,
-        { source: fixturePkg, scope: "user" },
-        180_000,
-      ),
+      host.request("package.install", ctx, { source: fixturePkg, scope: "user" }, 180_000),
       host.request(
         "package.install",
         { ...ctx },
@@ -992,10 +997,12 @@ describe("package + workspace integration", () => {
       180_000,
     );
     expect(installPeer.ok).toBe(true);
-    const peerSnap = (installPeer.result as {
-      status: string;
-      packageSnapshot: { configured: Array<{ id: string; source: string }> };
-    }).packageSnapshot;
+    const peerSnap = (
+      installPeer.result as {
+        status: string;
+        packageSnapshot: { configured: Array<{ id: string; source: string }> };
+      }
+    ).packageSnapshot;
     expect(["committed", "partialFailure"]).toContain(
       (installPeer.result as { status: string }).status,
     );
@@ -1020,9 +1027,11 @@ describe("package + workspace integration", () => {
       120_000,
     );
     expect(removePeer.ok).toBe(true);
-    const after = (removePeer.result as {
-      packageSnapshot: { configured: Array<{ source: string }> };
-    }).packageSnapshot;
+    const after = (
+      removePeer.result as {
+        packageSnapshot: { configured: Array<{ source: string }> };
+      }
+    ).packageSnapshot;
     expect(
       after.configured.some((c) => c.source.includes("full-package") || c.source === fixturePkg),
     ).toBe(true);
@@ -1030,11 +1039,7 @@ describe("package + workspace integration", () => {
   }, 360_000);
   it("session.reload rebuilds the active Runtime from its JSONL file", async () => {
     const project = emptyProject(root, "session-reload");
-    const status = await host.request(
-      "system.getStatus",
-      { expectedHostInstanceId: hostId },
-      null,
-    );
+    const status = await host.request("system.getStatus", { expectedHostInstanceId: hostId }, null);
     const set = await host.request(
       "workspace.setCurrent",
       {
@@ -1045,8 +1050,7 @@ describe("package + workspace integration", () => {
       { cwd: project },
     );
     expect(set.ok).toBe(true);
-    const workspace = (set.result as { workspace: { id: string; revision: number } })
-      .workspace;
+    const workspace = (set.result as { workspace: { id: string; revision: number } }).workspace;
     const sessionId = randomUUID();
     const sessionDir = sessionDirFor(agentDir, project);
     mkdirSync(sessionDir, { recursive: true });
@@ -1109,18 +1113,12 @@ describe("package + workspace integration", () => {
 
     expect(reloaded.ok).toBe(true);
     expect((reloaded.result as { name?: string }).name).toBe("After disk reload");
-    expect(Number(reloaded.sessionRevision)).toBeGreaterThan(
-      Number(opened.sessionRevision),
-    );
+    expect(Number(reloaded.sessionRevision)).toBeGreaterThan(Number(opened.sessionRevision));
   }, 90_000);
 
   it("keeps opening Sessions after forward and reverse cache churn", async () => {
     const project = projectWithStaleContextTimer(root, "session-open-cache-churn");
-    const status = await host.request(
-      "system.getStatus",
-      { expectedHostInstanceId: hostId },
-      null,
-    );
+    const status = await host.request("system.getStatus", { expectedHostInstanceId: hostId }, null);
     const selected = await host.request(
       "workspace.setCurrent",
       {
@@ -1132,9 +1130,11 @@ describe("package + workspace integration", () => {
     );
     expect(selected.ok).toBe(true);
 
-    const workspace = (selected.result as {
-      workspace: { id: string; revision: number };
-    }).workspace;
+    const workspace = (
+      selected.result as {
+        workspace: { id: string; revision: number };
+      }
+    ).workspace;
     const sessionDir = sessionDirFor(agentDir, project);
     mkdirSync(sessionDir, { recursive: true });
     const sessionPaths = Array.from({ length: 6 }, (_, index) => {
@@ -1171,12 +1171,7 @@ describe("package + workspace integration", () => {
     };
     const sequence = [...sessionPaths, ...[...sessionPaths].reverse()];
     for (const [index, sessionPath] of sequence.entries()) {
-      const opened = await host.request(
-        "session.open",
-        identity,
-        { sessionPath },
-        60_000,
-      );
+      const opened = await host.request("session.open", identity, { sessionPath }, 60_000);
       expect(opened, `session.open failed at switch ${index}`).toMatchObject({ ok: true });
       identity = {
         expectedHostInstanceId: hostId,
@@ -1207,11 +1202,7 @@ describe("package + workspace integration", () => {
 
   it("publishes the target snapshot before previous idle shutdown settles", async () => {
     const project = projectWithSlowSessionShutdown(root, "session-open-slow-shutdown");
-    const status = await host.request(
-      "system.getStatus",
-      { expectedHostInstanceId: hostId },
-      null,
-    );
+    const status = await host.request("system.getStatus", { expectedHostInstanceId: hostId }, null);
     const selected = await host.request(
       "workspace.setCurrent",
       {
@@ -1223,14 +1214,13 @@ describe("package + workspace integration", () => {
     );
     expect(selected.ok).toBe(true);
 
-    const workspace = (selected.result as {
-      workspace: { id: string; revision: number };
-    }).workspace;
+    const workspace = (
+      selected.result as {
+        workspace: { id: string; revision: number };
+      }
+    ).workspace;
     const targetSessionId = randomUUID();
-    const targetSessionPath = join(
-      sessionDirFor(agentDir, project),
-      `${targetSessionId}.jsonl`,
-    );
+    const targetSessionPath = join(sessionDirFor(agentDir, project), `${targetSessionId}.jsonl`);
     mkdirSync(dirname(targetSessionPath), { recursive: true });
     writeFileSync(
       targetSessionPath,

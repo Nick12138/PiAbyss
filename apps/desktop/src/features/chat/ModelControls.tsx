@@ -462,8 +462,7 @@ export function ModelControls() {
                 // Older hosts summarize `current` without per-model thinking
                 // levels; keep the session's own rather than dropping them.
                 thinkingLevels:
-                  res.result.current.thinkingLevels &&
-                  res.result.current.thinkingLevels.length > 0
+                  res.result.current.thinkingLevels && res.result.current.thinkingLevels.length > 0
                     ? res.result.current.thinkingLevels
                     : (selected.thinkingLevels ?? []),
               },
@@ -834,4 +833,3 @@ export function ModelControls() {
     </div>
   );
 }
-

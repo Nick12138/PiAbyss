@@ -8,10 +8,16 @@
     "react-dom": "^19.0.0"
   },
   "peerDependenciesMeta": {
-    "react": { "optional": true },
-    "react-dom": { "optional": true }
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
   },
   "pi": {
-    "extensions": ["./extensions/peer-ext.ts"]
+    "extensions": [
+      "./extensions/peer-ext.ts"
+    ]
   }
 }

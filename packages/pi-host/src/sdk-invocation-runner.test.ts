@@ -10,10 +10,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { HostEventName, HostIdentity } from "@piabyss/protocol";
 import { describe, expect, it } from "vitest";
-import {
-  createExtensionUiContext,
-  respondExtensionUi,
-} from "./extension-ui-bridge.js";
+import { createExtensionUiContext, respondExtensionUi } from "./extension-ui-bridge.js";
 import {
   createExtensionInvocationRunner,
   getActiveExtensionInvocation,
@@ -48,7 +45,9 @@ function extension(name: string, handler: () => void | Promise<void>): Extension
     path: sourceInfo(name).path,
     resolvedPath: sourceInfo(name).path,
     sourceInfo: sourceInfo(name),
-    handlers: new Map(EVENT_TYPES.map((eventType) => [eventType, [handler]])) as Extension["handlers"],
+    handlers: new Map(
+      EVENT_TYPES.map((eventType) => [eventType, [handler]]),
+    ) as Extension["handlers"],
     tools: new Map(),
     messageRenderers: new Map(),
     entryRenderers: new Map(),
@@ -116,7 +115,10 @@ describe("SDK Extension invocation runner patch", () => {
     const second = extension("second", () => {});
     const { runner } = runnerWithExtensions([first, second]);
     const captured: ExtensionInvocationMetadata[] = [];
-    const invocationRunner: ExtensionInvocationRunner = async <T>(metadata: ExtensionInvocationMetadata, invoke: () => T | Promise<T>) => {
+    const invocationRunner: ExtensionInvocationRunner = async <T>(
+      metadata: ExtensionInvocationMetadata,
+      invoke: () => T | Promise<T>,
+    ) => {
       captured.push(metadata);
       return await invoke();
     };
@@ -129,26 +131,32 @@ describe("SDK Extension invocation runner patch", () => {
       Array(EVENT_TYPES.length * 2).fill("event"),
     );
     expect(
-      captured.map((metadata) => metadata.kind === "event" ? metadata.eventType : "tool"),
+      captured.map((metadata) => (metadata.kind === "event" ? metadata.eventType : "tool")),
     ).toEqual(EVENT_TYPES.flatMap((eventType) => [eventType, eventType]));
     for (let index = 0; index < EVENT_TYPES.length; index += 1) {
       expect(captured[index * 2]!.sourceInfo).toBe(first.sourceInfo);
       expect(captured[index * 2 + 1]!.sourceInfo).toBe(second.sourceInfo);
     }
-    expect(captured.find((metadata) => metadata.kind === "event" && metadata.eventType === "tool_call"))
-      .toMatchObject({ toolName: "read", toolCallId: "tool-call-start" });
-    expect(captured.find((metadata) => metadata.kind === "event" && metadata.eventType === "tool_result"))
-      .toMatchObject({ toolName: "read", toolCallId: "tool-call-result" });
+    expect(
+      captured.find((metadata) => metadata.kind === "event" && metadata.eventType === "tool_call"),
+    ).toMatchObject({ toolName: "read", toolCallId: "tool-call-start" });
+    expect(
+      captured.find(
+        (metadata) => metadata.kind === "event" && metadata.eventType === "tool_result",
+      ),
+    ).toMatchObject({ toolName: "read", toolCallId: "tool-call-result" });
   });
 
   it("wraps Extension tool execution without bypassing the original context factory", async () => {
     const owner = extension("tools", () => {});
     const { runner } = runnerWithExtensions([owner]);
     const captured: ExtensionInvocationMetadata[] = [];
-    runner.setInvocationRunner(async <T>(metadata: ExtensionInvocationMetadata, invoke: () => T | Promise<T>) => {
-      captured.push(metadata);
-      return await invoke();
-    });
+    runner.setInvocationRunner(
+      async <T>(metadata: ExtensionInvocationMetadata, invoke: () => T | Promise<T>) => {
+        captured.push(metadata);
+        return await invoke();
+      },
+    );
     let contextCwd: string | undefined;
     const tool = wrapRegisteredTool(
       {

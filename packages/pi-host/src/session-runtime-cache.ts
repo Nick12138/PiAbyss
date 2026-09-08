@@ -31,12 +31,7 @@ function integerFromEnv(name: string, fallback: number, min: number, max: number
 }
 
 /** Number of hot Sessions (the active Session plus idle cached Sessions). */
-export const MAX_IDLE_SESSION_CACHE = integerFromEnv(
-  "PIABYSS_IDLE_SESSION_CACHE_LIMIT",
-  5,
-  1,
-  20,
-);
+export const MAX_IDLE_SESSION_CACHE = integerFromEnv("PIABYSS_IDLE_SESSION_CACHE_LIMIT", 5, 1, 20);
 export const IDLE_SESSION_CACHE_TTL_MS =
   integerFromEnv("PIABYSS_IDLE_SESSION_TIMEOUT_MINUTES", 30, 1, 24 * 60) * 60 * 1000;
 
@@ -416,10 +411,11 @@ export class SessionRuntimeCache {
 
   /** Record a manual activation or one-time background completion in the hot queue. */
   touchIdleSession(graph: WorkspaceGraph, sessionId: string): void {
-    const active =
-      graph.sessionSnapshot?.sessionId === sessionId ? graph.agentSession : undefined;
+    const active = graph.sessionSnapshot?.sessionId === sessionId ? graph.agentSession : undefined;
     const runtime =
-      active ?? graph.idleSessionCache?.get(sessionId)?.agentSession ?? graph.backgroundSessions.get(sessionId)?.agentSession;
+      active ??
+      graph.idleSessionCache?.get(sessionId)?.agentSession ??
+      graph.backgroundSessions.get(sessionId)?.agentSession;
     if (runtime && !runtime.isIdle) {
       this.dropIdleSessionRecency(graph, sessionId);
       return;
@@ -437,10 +433,7 @@ export class SessionRuntimeCache {
   }
 
   /** Move a finished background runtime into the idle cache and refresh its TTL once. */
-  cacheSettledBackgroundRuntime(
-    graph: WorkspaceGraph,
-    runtime: BackgroundSessionRuntime,
-  ): void {
+  cacheSettledBackgroundRuntime(graph: WorkspaceGraph, runtime: BackgroundSessionRuntime): void {
     if (
       graph.backgroundSessions.get(runtime.sessionId) !== runtime ||
       !runtime.agentSession.isIdle
@@ -460,7 +453,8 @@ export class SessionRuntimeCache {
   }
 
   private armIdleCacheTimer(graph: WorkspaceGraph, runtime: BackgroundSessionRuntime): void {
-    const timers = this.idleCacheTimers.get(graph) ?? new Map<string, ReturnType<typeof setTimeout>>();
+    const timers =
+      this.idleCacheTimers.get(graph) ?? new Map<string, ReturnType<typeof setTimeout>>();
     this.idleCacheTimers.set(graph, timers);
     const previous = timers.get(runtime.sessionId);
     if (previous) clearTimeout(previous);
@@ -630,11 +624,12 @@ export class SessionRuntimeCache {
       : [...graph.backgroundSessions.values()].find(
           (runtime) => runtime.agentSession === sourceSession,
         );
-    const cached = active || background
-      ? undefined
-      : [...(graph.idleSessionCache?.values() ?? [])].find(
-          (runtime) => runtime.agentSession === sourceSession,
-        );
+    const cached =
+      active || background
+        ? undefined
+        : [...(graph.idleSessionCache?.values() ?? [])].find(
+            (runtime) => runtime.agentSession === sourceSession,
+          );
     const retained = background ?? cached;
     const sessionManager = active ? graph.sessionManager : retained?.sessionManager;
     const currentSnapshot = active ? graph.sessionSnapshot : retained?.sessionSnapshot;

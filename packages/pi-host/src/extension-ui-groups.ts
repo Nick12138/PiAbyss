@@ -14,9 +14,7 @@ type ActiveDecisionGroup = {
   unregisterCompletion: () => void;
 };
 
-function decisionGroupKind(
-  context: ExtensionInvocationContext,
-): "tool" | "command" | undefined {
+function decisionGroupKind(context: ExtensionInvocationContext): "tool" | "command" | undefined {
   if (context.origin.invocationKind === "tool") return "tool";
   if (context.origin.invocationKind === "command") return "command";
   return undefined;
@@ -72,15 +70,9 @@ export class ExtensionUiGroupRegistry {
       unregisterCompletion: () => {},
     };
     this.groupsByInvocation.set(context.invocationId, group);
-    group.unregisterCompletion = registerExtensionInvocationCompletion(
-      context,
-      (status) => {
-        this.closeInvocation(
-          context.invocationId,
-          status === "completed" ? "completed" : "failed",
-        );
-      },
-    );
+    group.unregisterCompletion = registerExtensionInvocationCompletion(context, (status) => {
+      this.closeInvocation(context.invocationId, status === "completed" ? "completed" : "failed");
+    });
     return groupKey;
   }
 
@@ -90,10 +82,7 @@ export class ExtensionUiGroupRegistry {
     }
   }
 
-  private closeInvocation(
-    invocationId: string,
-    status: ExtensionUiGroupStatus,
-  ): void {
+  private closeInvocation(invocationId: string, status: ExtensionUiGroupStatus): void {
     const group = this.groupsByInvocation.get(invocationId);
     if (!group) return;
     this.groupsByInvocation.delete(invocationId);

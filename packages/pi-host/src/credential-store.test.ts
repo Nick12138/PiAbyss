@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  mkdirSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Credential } from "@earendil-works/pi-ai";
@@ -412,9 +420,11 @@ describe("FileCredentialStore logging", () => {
       await store.modify("p", async () => ({ type: "api_key", key: secrets[0] }));
       await store.snapshot();
       await store.delete("o");
-      await store.modify("p", async () => {
-        throw new Error("write failed");
-      }).catch(() => undefined);
+      await store
+        .modify("p", async () => {
+          throw new Error("write failed");
+        })
+        .catch(() => undefined);
     } finally {
       process.stderr.write = original;
     }

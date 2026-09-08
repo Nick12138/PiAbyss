@@ -135,9 +135,7 @@ export class ExtensionProviderOwnership {
       } else {
         // The effective config, not the owner's last registration: merges from
         // maintenance passes (thinking profiles) must survive suspend/resume.
-        const config =
-          this.originals.getRegisteredProviderConfig(providerId) ??
-          undefined;
+        const config = this.originals.getRegisteredProviderConfig(providerId) ?? undefined;
         if (config) suspended.classic.push({ providerId, config });
       }
       this.removeOwner(providerId, owner);

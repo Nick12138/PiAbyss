@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildPromptCacheFingerprint, diffPromptCacheFingerprints } from "./prompt-cache-contract.js";
+import {
+  buildPromptCacheFingerprint,
+  diffPromptCacheFingerprints,
+} from "./prompt-cache-contract.js";
 
 const BASE_INPUT = {
   modelId: "claude-sonnet-4-5",
@@ -82,7 +85,11 @@ describe("buildPromptCacheFingerprint", () => {
       toolNames: ["edit"],
     });
     // Fixed part order wins over insertion or set order.
-    expect(diffPromptCacheFingerprints(a.parts, b.parts)).toEqual(["model", "tools", "thinkingLevel"]);
+    expect(diffPromptCacheFingerprints(a.parts, b.parts)).toEqual([
+      "model",
+      "tools",
+      "thinkingLevel",
+    ]);
   });
 
   it("ignores surrounding whitespace in string parts", () => {

@@ -112,10 +112,7 @@ export async function migrateLegacyPiAbyssData(
   // Adopt the legacy `pideck` namespace from older versions. When the Rust
   // shell already renamed it, this is a no-op; when both exist (partial
   // migration), moveLegacyTree merges under its collision rules.
-  await moveLegacyTree(
-    join(resolvedAgentDir, "pideck"),
-    piabyssDataDir(resolvedAgentDir),
-  );
+  await moveLegacyTree(join(resolvedAgentDir, "pideck"), piabyssDataDir(resolvedAgentDir));
 
   await moveLegacyTree(
     join(resolvedAgentDir, "backups", migrationId),

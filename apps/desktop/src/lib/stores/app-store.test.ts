@@ -145,8 +145,7 @@ describe("app-store epoch wiring", () => {
     expect(useAppStore.getState().session?.messages[1]?._optimisticKey).toBeUndefined();
   });
   it("treats an authoritative message with attachment blocks as the pending row", () => {
-    const block =
-      '<piabyss-attachments version="1">\n[{"id":"a1"}]\n</piabyss-attachments>';
+    const block = '<piabyss-attachments version="1">\n[{"id":"a1"}]\n</piabyss-attachments>';
     const current = session("s1");
     current.messages = [
       ...current.messages,

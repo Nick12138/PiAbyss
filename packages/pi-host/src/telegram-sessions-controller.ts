@@ -159,10 +159,7 @@ function boundUser(
   return { userId, ...findBoundName(userId, inboxDir) };
 }
 
-function findBoundName(
-  userId: number,
-  inboxDir: string,
-): { username?: string; name?: string } {
+function findBoundName(userId: number, inboxDir: string): { username?: string; name?: string } {
   const segmentsDir = join(inboxDir, "inbox.json.segments");
   let names: string[] = [];
   try {
@@ -181,10 +178,10 @@ function findBoundName(
     for (const entry of parsed.upsertedEntries) {
       const update = isRecord(entry) && isRecord(entry.update) ? entry.update : undefined;
       const message = update && isRecord(update.message) ? update.message : undefined;
-      const callback = update && isRecord(update.callback_query) ? update.callback_query : undefined;
+      const callback =
+        update && isRecord(update.callback_query) ? update.callback_query : undefined;
       const from = (message?.from ?? (callback ? callback.from : undefined)) as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       if (isRecord(from) && from.id === userId) {
         const username = typeof from.username === "string" ? from.username : undefined;
         const firstName = typeof from.first_name === "string" ? from.first_name : undefined;
@@ -245,9 +242,13 @@ function sanitizeThreadsConfig(value: unknown): TelegramThreadsConfig {
 }
 
 /** Counts telegram user messages in a session file and returns context. */
-async function scanSession(
-  sessionPath: string,
-): Promise<{ sessionId?: string; cwd?: string; name?: string; count: number; preview?: string } | null> {
+async function scanSession(sessionPath: string): Promise<{
+  sessionId?: string;
+  cwd?: string;
+  name?: string;
+  count: number;
+  preview?: string;
+} | null> {
   let sessionId: string | undefined;
   let cwd: string | undefined;
   let name: string | undefined;
@@ -285,7 +286,11 @@ async function scanSession(
     if (message.role !== "user") continue;
     for (const rawText of textBlocksOf(message.content)) {
       const offset = rawText.indexOf(TELEGRAM_MARKER);
-      if (offset >= 0 && offset <= TELEGRAM_MARKER_MAX_OFFSET && isTelegramMarkerAt(rawText, offset)) {
+      if (
+        offset >= 0 &&
+        offset <= TELEGRAM_MARKER_MAX_OFFSET &&
+        isTelegramMarkerAt(rawText, offset)
+      ) {
         count += 1;
         if (preview === undefined) preview = cleanTelegramPreview(rawText);
         break;
@@ -310,7 +315,9 @@ async function readJson(path: string): Promise<unknown | null> {
   }
 }
 
-export function createTelegramSessionHandlers(agentDir: string): Partial<Record<string, MethodHandler>> {
+export function createTelegramSessionHandlers(
+  agentDir: string,
+): Partial<Record<string, MethodHandler>> {
   const configPath = join(agentDir, TELEGRAM_CONFIG_FILE);
   const inboxDir = join(agentDir, TELEGRAM_TMP_DIR);
   const ownersPath = join(inboxDir, TELEGRAM_OWNERS_FILE);
@@ -338,7 +345,9 @@ export function createTelegramSessionHandlers(agentDir: string): Partial<Record<
         ? profile.botUsername
         : undefined;
     const botName =
-      typeof profile.botName === "string" && profile.botName.length > 0 ? profile.botName : undefined;
+      typeof profile.botName === "string" && profile.botName.length > 0
+        ? profile.botName
+        : undefined;
     return {
       profile: "default",
       ...(typeof profile.botId === "number" ? { botId: profile.botId } : {}),
@@ -352,9 +361,7 @@ export function createTelegramSessionHandlers(agentDir: string): Partial<Record<
   const listTelegramWorkspaceSessionFiles = async (): Promise<string[]> => {
     const paths: string[] = [];
     try {
-      const files = (await readdir(telegramSessionsDir)).filter((f) =>
-        f.endsWith(".jsonl"),
-      );
+      const files = (await readdir(telegramSessionsDir)).filter((f) => f.endsWith(".jsonl"));
       for (const file of files) paths.push(join(telegramSessionsDir, file));
     } catch {
       /* telegram workspace has no sessions yet — nothing to list */
@@ -420,7 +427,9 @@ export function createTelegramSessionHandlers(agentDir: string): Partial<Record<
      * first; this only persists the result so the plugin's
      * `/telegram-connect` can start polling without re-entering the token.
      */
-    "telegram.saveProfile": async (ctx): Promise<{ result: { saved: true } } | { error: ReturnType<typeof createHostError> }> => {
+    "telegram.saveProfile": async (
+      ctx,
+    ): Promise<{ result: { saved: true } } | { error: ReturnType<typeof createHostError> }> => {
       const { token, botId, botUsername, botName } = ctx.params as {
         token: string;
         botId?: number;
@@ -442,7 +451,11 @@ export function createTelegramSessionHandlers(agentDir: string): Partial<Record<
           ...(botUsername ? { botUsername } : {}),
           ...(botName ? { botName } : {}),
         };
-        await writeFile(configPath, `${JSON.stringify({ ...config, profiles }, null, 2)}\n`, "utf8");
+        await writeFile(
+          configPath,
+          `${JSON.stringify({ ...config, profiles }, null, 2)}\n`,
+          "utf8",
+        );
         return { result: { saved: true } };
       } catch (err) {
         return {
@@ -475,9 +488,9 @@ export function createTelegramSessionHandlers(agentDir: string): Partial<Record<
       };
     },
 
-    "telegram.updateConfig": async (ctx): Promise<
-      { result: { saved: true } } | { error: ReturnType<typeof createHostError> }
-    > => {
+    "telegram.updateConfig": async (
+      ctx,
+    ): Promise<{ result: { saved: true } } | { error: ReturnType<typeof createHostError> }> => {
       const { assistant, voice, threads } = ctx.params as {
         assistant?: TelegramAssistantConfig;
         voice?: TelegramVoiceConfig;
@@ -551,7 +564,9 @@ export function createTelegramSessionHandlers(agentDir: string): Partial<Record<
       return { result: { sessions } };
     },
 
-    "telegram.getSession": async (ctx): Promise<
+    "telegram.getSession": async (
+      ctx,
+    ): Promise<
       { result: TelegramSessionDetail } | { error: ReturnType<typeof createHostError> }
     > => {
       const { sessionPath } = ctx.params as { sessionPath: string };
@@ -560,7 +575,10 @@ export function createTelegramSessionHandlers(agentDir: string): Partial<Record<
         resolved === resolve(sessionsRoot) || resolved.startsWith(sessionsRootResolved);
       if (!inSessionsRoot || !sessionPath.endsWith(".jsonl")) {
         return {
-          error: createHostError("INVALID_REQUEST", "sessionPath must be inside the sessions directory"),
+          error: createHostError(
+            "INVALID_REQUEST",
+            "sessionPath must be inside the sessions directory",
+          ),
         };
       }
 

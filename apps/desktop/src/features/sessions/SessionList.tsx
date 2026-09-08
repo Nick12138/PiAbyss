@@ -76,7 +76,9 @@ type SessionConfirmAction =
 
 const SESSION_GROUPS_COLLAPSED_KEY = "piabyss.sidebar.sessionGroupsCollapsed.v1";
 
-function sessionGroupLabelKey(group: SessionTimeGroup): "sessionsGroupToday" | "sessionsGroupThisWeek" | "sessionsGroupEarlier" {
+function sessionGroupLabelKey(
+  group: SessionTimeGroup,
+): "sessionsGroupToday" | "sessionsGroupThisWeek" | "sessionsGroupEarlier" {
   return group === "today"
     ? "sessionsGroupToday"
     : group === "thisWeek"
@@ -844,7 +846,11 @@ export function SessionList({
                     type="button"
                     aria-expanded={!collapsedGroups.has(group)}
                     aria-controls={`session-group-${group}`}
-                    title={collapsedGroups.has(group) ? t("sessionsGroupExpand") : t("sessionsGroupCollapse")}
+                    title={
+                      collapsedGroups.has(group)
+                        ? t("sessionsGroupExpand")
+                        : t("sessionsGroupCollapse")
+                    }
                     onClick={() => toggleGroupCollapsed(group)}
                     className="group flex min-w-0 items-center gap-1 px-1 pb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted transition-colors hover:text-foreground"
                   >
@@ -856,315 +862,320 @@ export function SessionList({
                       }`}
                     />
                   </button>
-                  <CollapsibleRegion open={!collapsedGroups.has(group)} id={`session-group-${group}`}>
+                  <CollapsibleRegion
+                    open={!collapsedGroups.has(group)}
+                    id={`session-group-${group}`}
+                  >
                     <ul className="flex flex-col gap-0.5">
-                    {items.map((item) => {
-                      const active = !item.archived && session?.sessionId === item.sessionId;
-                      const editing = editingSessionId === item.sessionId;
-                      const pinned = pinnedSessionIds.includes(item.sessionId);
-                      const canRename = canRenameSession(item, session);
-                      const canDelete = canDeleteSession(item, session);
-                      const canReload = canReloadSession(item, session);
-                      const canArchive = canArchiveSession(item, session);
-                      const terminalState = item.archived
-                        ? undefined
-                        : sessionTerminalStates[workspace?.id ?? ""]?.[item.sessionId];
-                      const statusDot = item.archived
-                        ? null
-                        : sessionStatusDotClass(item.runtimeState, terminalState);
-                      const statusLabelKey = item.archived
-                        ? null
-                        : sessionStatusLabelKey(item.runtimeState, terminalState);
-                      const statusLabel = statusLabelKey ? t(statusLabelKey) : null;
-                      const decisionWaiting = item.archived
-                        ? undefined
-                        : extensionUiWaitingBySession[item.sessionId];
-                      const decisionWaitingLabel = decisionWaiting
-                        ? t(
-                            decisionWaiting.hasHighRisk
-                              ? "sessionsDecisionWaitingHighRisk"
-                              : "sessionsDecisionWaiting",
-                            { count: decisionWaiting.count },
-                          )
-                        : undefined;
-                      return (
-                        <li
-                          key={item.sessionId}
-                          data-ui="nav-item"
-                          data-state={active ? "active" : "inactive"}
-                          className={`interface-density-nav-row group flex h-9 items-center rounded-md text-[13px] ${
-                            active
-                              ? "theme-nav-active bg-nav-active text-nav-active-foreground"
-                              : "hover:bg-surface-overlay/70"
-                          }`}
-                          onContextMenu={(event) => {
-                            if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
-                            if (
-                              event.target instanceof Element &&
-                              event.target.closest("input, textarea, [contenteditable='true']")
-                            ) {
-                              return;
-                            }
-                            event.preventDefault();
-                            event.stopPropagation();
-                            openContextMenu({
-                              x: event.clientX,
-                              y: event.clientY,
-                              trigger: contextMenuTrigger(event.target),
-                              items: [
-                                {
-                                  id: "session.open",
-                                  label: t("menuOpenSession"),
-                                  disabled:
-                                    item.archived ||
-                                    !item.sessionPath ||
-                                    sessionMutationPending ||
-                                    sessionOpenBlocked,
-                                  onSelect: () => openSession(item.sessionPath),
-                                },
-                                {
-                                  id: "session.rename",
-                                  label: t("sessionsRename"),
-                                  icon: Pencil,
-                                  disabled: !canRename,
-                                  onSelect: () => beginRename(item),
-                                },
-                                {
-                                  id: "session.pin",
-                                  label: pinned ? t("sessionsUnpin") : t("sessionsPin"),
-                                  icon: pinned ? PinOff : Pin,
-                                  onSelect: () => togglePinnedSession(item),
-                                },
-                                {
-                                  id: "session.reload",
-                                  label: t("sessionsReload"),
-                                  icon: RefreshCw,
-                                  disabled: !canReload,
-                                  onSelect: () => void reloadSessionFromDisk(),
-                                },
-                                {
-                                  id: item.archived ? "session.restore" : "session.archive",
-                                  label: item.archived
-                                    ? t("sessionsRestore")
-                                    : t("sessionsArchive"),
-                                  icon: item.archived ? ArchiveRestore : Archive,
-                                  separatorBefore: true,
-                                  disabled: !item.archived && !canArchive,
-                                  onSelect: () =>
-                                    runSessionFileAction(
-                                      item.archived ? "session.restore" : "session.archive",
-                                      item,
-                                    ),
-                                },
-                                {
-                                  id: "session.exportHtml",
-                                  label: t("statsExportHtml"),
-                                  icon: FileOutput,
-                                  disabled: !active || !session?.isIdle,
-                                  onSelect: () => requestExport("html"),
-                                },
-                                {
-                                  id: "session.exportJsonl",
-                                  label: t("statsExportJsonl"),
-                                  icon: FileOutput,
-                                  disabled: !active || !session?.isIdle,
-                                  onSelect: () => requestExport("jsonl"),
-                                },
-                                {
-                                  id: "session.reveal",
-                                  label: t("menuRevealSession"),
-                                  icon: FolderOpen,
-                                  separatorBefore: true,
-                                  onSelect: async () => {
-                                    try {
-                                      const { invoke } = await import("@tauri-apps/api/core");
-                                      await invoke("desktop_open_path", {
-                                        path: item.sessionPath,
-                                        mode: "reveal",
-                                      });
-                                    } catch {
-                                      pushNotification(t("sessionsRevealFailed"), "warning");
-                                    }
+                      {items.map((item) => {
+                        const active = !item.archived && session?.sessionId === item.sessionId;
+                        const editing = editingSessionId === item.sessionId;
+                        const pinned = pinnedSessionIds.includes(item.sessionId);
+                        const canRename = canRenameSession(item, session);
+                        const canDelete = canDeleteSession(item, session);
+                        const canReload = canReloadSession(item, session);
+                        const canArchive = canArchiveSession(item, session);
+                        const terminalState = item.archived
+                          ? undefined
+                          : sessionTerminalStates[workspace?.id ?? ""]?.[item.sessionId];
+                        const statusDot = item.archived
+                          ? null
+                          : sessionStatusDotClass(item.runtimeState, terminalState);
+                        const statusLabelKey = item.archived
+                          ? null
+                          : sessionStatusLabelKey(item.runtimeState, terminalState);
+                        const statusLabel = statusLabelKey ? t(statusLabelKey) : null;
+                        const decisionWaiting = item.archived
+                          ? undefined
+                          : extensionUiWaitingBySession[item.sessionId];
+                        const decisionWaitingLabel = decisionWaiting
+                          ? t(
+                              decisionWaiting.hasHighRisk
+                                ? "sessionsDecisionWaitingHighRisk"
+                                : "sessionsDecisionWaiting",
+                              { count: decisionWaiting.count },
+                            )
+                          : undefined;
+                        return (
+                          <li
+                            key={item.sessionId}
+                            data-ui="nav-item"
+                            data-state={active ? "active" : "inactive"}
+                            className={`interface-density-nav-row group flex h-9 items-center rounded-md text-[13px] ${
+                              active
+                                ? "theme-nav-active bg-nav-active text-nav-active-foreground"
+                                : "hover:bg-surface-overlay/70"
+                            }`}
+                            onContextMenu={(event) => {
+                              if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
+                              if (
+                                event.target instanceof Element &&
+                                event.target.closest("input, textarea, [contenteditable='true']")
+                              ) {
+                                return;
+                              }
+                              event.preventDefault();
+                              event.stopPropagation();
+                              openContextMenu({
+                                x: event.clientX,
+                                y: event.clientY,
+                                trigger: contextMenuTrigger(event.target),
+                                items: [
+                                  {
+                                    id: "session.open",
+                                    label: t("menuOpenSession"),
+                                    disabled:
+                                      item.archived ||
+                                      !item.sessionPath ||
+                                      sessionMutationPending ||
+                                      sessionOpenBlocked,
+                                    onSelect: () => openSession(item.sessionPath),
                                   },
-                                },
-                                {
-                                  id: "session.copyPath",
-                                  label: t("menuCopySessionPath"),
-                                  icon: Copy,
-                                  onSelect: async () => {
-                                    try {
-                                      await navigator.clipboard.writeText(item.sessionPath);
-                                      pushNotification(t("sessionsPathCopied"), "info");
-                                    } catch {
-                                      pushNotification(t("sessionsCopyPathFailed"), "warning");
-                                    }
+                                  {
+                                    id: "session.rename",
+                                    label: t("sessionsRename"),
+                                    icon: Pencil,
+                                    disabled: !canRename,
+                                    onSelect: () => beginRename(item),
                                   },
-                                },
-                                {
-                                  id: "session.delete",
-                                  label: t("commonDelete"),
-                                  icon: Trash2,
-                                  danger: true,
-                                  separatorBefore: true,
-                                  disabled: !canDelete,
-                                  onSelect: () => setConfirmAction({ kind: "delete", item }),
-                                },
-                              ],
-                            });
-                          }}
-                        >
-                          {editing ? (
-                            <form
-                              className="flex min-w-0 flex-1 items-center gap-1 px-1.5 py-1"
-                              onSubmit={(event) => {
-                                event.preventDefault();
-                                void renameSession();
-                              }}
-                            >
-                              <input
-                                autoFocus
-                                aria-label={t("sessionsNameAria")}
-                                value={nameDraft}
-                                maxLength={120}
-                                onChange={(event) => setNameDraft(event.target.value)}
-                                onCompositionStart={ime.onCompositionStart}
-                                onCompositionEnd={ime.onCompositionEnd}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter" && ime.isImeKey(event)) {
-                                    event.preventDefault();
-                                    return;
-                                  }
-                                  if (event.key === "Escape") cancelRename();
+                                  {
+                                    id: "session.pin",
+                                    label: pinned ? t("sessionsUnpin") : t("sessionsPin"),
+                                    icon: pinned ? PinOff : Pin,
+                                    onSelect: () => togglePinnedSession(item),
+                                  },
+                                  {
+                                    id: "session.reload",
+                                    label: t("sessionsReload"),
+                                    icon: RefreshCw,
+                                    disabled: !canReload,
+                                    onSelect: () => void reloadSessionFromDisk(),
+                                  },
+                                  {
+                                    id: item.archived ? "session.restore" : "session.archive",
+                                    label: item.archived
+                                      ? t("sessionsRestore")
+                                      : t("sessionsArchive"),
+                                    icon: item.archived ? ArchiveRestore : Archive,
+                                    separatorBefore: true,
+                                    disabled: !item.archived && !canArchive,
+                                    onSelect: () =>
+                                      runSessionFileAction(
+                                        item.archived ? "session.restore" : "session.archive",
+                                        item,
+                                      ),
+                                  },
+                                  {
+                                    id: "session.exportHtml",
+                                    label: t("statsExportHtml"),
+                                    icon: FileOutput,
+                                    disabled: !active || !session?.isIdle,
+                                    onSelect: () => requestExport("html"),
+                                  },
+                                  {
+                                    id: "session.exportJsonl",
+                                    label: t("statsExportJsonl"),
+                                    icon: FileOutput,
+                                    disabled: !active || !session?.isIdle,
+                                    onSelect: () => requestExport("jsonl"),
+                                  },
+                                  {
+                                    id: "session.reveal",
+                                    label: t("menuRevealSession"),
+                                    icon: FolderOpen,
+                                    separatorBefore: true,
+                                    onSelect: async () => {
+                                      try {
+                                        const { invoke } = await import("@tauri-apps/api/core");
+                                        await invoke("desktop_open_path", {
+                                          path: item.sessionPath,
+                                          mode: "reveal",
+                                        });
+                                      } catch {
+                                        pushNotification(t("sessionsRevealFailed"), "warning");
+                                      }
+                                    },
+                                  },
+                                  {
+                                    id: "session.copyPath",
+                                    label: t("menuCopySessionPath"),
+                                    icon: Copy,
+                                    onSelect: async () => {
+                                      try {
+                                        await navigator.clipboard.writeText(item.sessionPath);
+                                        pushNotification(t("sessionsPathCopied"), "info");
+                                      } catch {
+                                        pushNotification(t("sessionsCopyPathFailed"), "warning");
+                                      }
+                                    },
+                                  },
+                                  {
+                                    id: "session.delete",
+                                    label: t("commonDelete"),
+                                    icon: Trash2,
+                                    danger: true,
+                                    separatorBefore: true,
+                                    disabled: !canDelete,
+                                    onSelect: () => setConfirmAction({ kind: "delete", item }),
+                                  },
+                                ],
+                              });
+                            }}
+                          >
+                            {editing ? (
+                              <form
+                                className="flex min-w-0 flex-1 items-center gap-1 px-1.5 py-1"
+                                onSubmit={(event) => {
+                                  event.preventDefault();
+                                  void renameSession();
                                 }}
-                                className="h-7 min-w-0 flex-1 rounded border border-accent bg-surface px-1.5 text-xs text-foreground outline-none"
-                              />
-                              <button
-                                type="submit"
-                                title={t("sessionsSaveName")}
-                                disabled={sessionMutationBlocked || !nameDraft.trim()}
-                                className="rounded p-1 text-accent hover:bg-surface-overlay disabled:opacity-40"
                               >
-                                <Check size={14} />
-                              </button>
-                              <button
-                                type="button"
-                                title={t("sessionsCancelRename")}
-                                onClick={cancelRename}
-                                disabled={sessionMutationBlocked}
-                                className="rounded p-1 text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
-                              >
-                                <X size={14} />
-                              </button>
-                            </form>
-                          ) : (
-                            <>
-                              <button
-                                type="button"
-                                aria-current={active ? "page" : undefined}
-                                onClick={() => openSession(item.sessionPath)}
-                                disabled={
-                                  sessionMutationPending ||
-                                  sessionOpenBlocked ||
-                                  !item.sessionPath ||
-                                  item.archived
-                                }
-                                className="min-w-0 flex-1 px-2.5 py-2 text-left"
-                                title={
-                                  item.runtimeState === "error" && item.lastError
-                                    ? `${sessionDisplayName(item, t("sessionsUntitled"))} — ${item.lastError}`
-                                    : sessionDisplayName(item, t("sessionsUntitled"))
-                                }
-                              >
-                                <div className="flex min-w-0 items-center gap-2">
-                                  <span
-                                    className={`min-w-0 flex-1 truncate ${active ? "font-medium" : ""}`}
-                                  >
-                                    {sessionDisplayName(item, t("sessionsUntitled"))}
-                                  </span>
-                                  {decisionWaiting && decisionWaitingLabel ? (
-                                    <span
-                                      aria-label={decisionWaitingLabel}
-                                      title={decisionWaitingLabel}
-                                      data-session-decision-count={decisionWaiting.count}
-                                      className={`ml-auto inline-flex h-5 shrink-0 items-center gap-1 rounded border px-1.5 text-[10px] tabular-nums ${
-                                        decisionWaiting.hasHighRisk
-                                          ? "border-warning/40 bg-warning/10 text-warning"
-                                          : "border-border bg-surface text-muted"
-                                      }`}
-                                    >
-                                      {decisionWaiting.hasHighRisk ? (
-                                        <CircleAlert size={11} aria-hidden="true" />
-                                      ) : (
-                                        <MessageCircleQuestion size={11} aria-hidden="true" />
-                                      )}
-                                      <span aria-hidden="true">{decisionWaiting.count}</span>
-                                    </span>
-                                  ) : null}
-                                  {statusDot && (
-                                    <span
-                                      className="flex size-[9.2px] shrink-0 items-center justify-center"
-                                      aria-label={statusLabel ?? undefined}
-                                      title={statusLabel ?? undefined}
-                                    >
-                                      <span className={`size-[8.2px] rounded-full ${statusDot}`} />
-                                    </span>
-                                  )}
-                                </div>
-                              </button>
-                              {pinned && (
+                                <input
+                                  autoFocus
+                                  aria-label={t("sessionsNameAria")}
+                                  value={nameDraft}
+                                  maxLength={120}
+                                  onChange={(event) => setNameDraft(event.target.value)}
+                                  onCompositionStart={ime.onCompositionStart}
+                                  onCompositionEnd={ime.onCompositionEnd}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" && ime.isImeKey(event)) {
+                                      event.preventDefault();
+                                      return;
+                                    }
+                                    if (event.key === "Escape") cancelRename();
+                                  }}
+                                  className="h-7 min-w-0 flex-1 rounded border border-accent bg-surface px-1.5 text-xs text-foreground outline-none"
+                                />
+                                <button
+                                  type="submit"
+                                  title={t("sessionsSaveName")}
+                                  disabled={sessionMutationBlocked || !nameDraft.trim()}
+                                  className="rounded p-1 text-accent hover:bg-surface-overlay disabled:opacity-40"
+                                >
+                                  <Check size={14} />
+                                </button>
                                 <button
                                   type="button"
-                                  title={t("sessionsUnpin")}
-                                  aria-label={t("sessionsUnpin")}
-                                  onClick={() => removePinnedSessions([item.sessionId])}
-                                  className="mr-1 flex size-[22px] shrink-0 items-center justify-center rounded text-muted transition-colors hover:bg-surface hover:text-foreground"
+                                  title={t("sessionsCancelRename")}
+                                  onClick={cancelRename}
+                                  disabled={sessionMutationBlocked}
+                                  className="rounded p-1 text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
                                 >
-                                  <Pin size={12} aria-hidden="true" />
+                                  <X size={14} />
                                 </button>
-                              )}
-                              {/* A session showing any status dot (live green/yellow or
+                              </form>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  aria-current={active ? "page" : undefined}
+                                  onClick={() => openSession(item.sessionPath)}
+                                  disabled={
+                                    sessionMutationPending ||
+                                    sessionOpenBlocked ||
+                                    !item.sessionPath ||
+                                    item.archived
+                                  }
+                                  className="min-w-0 flex-1 px-2.5 py-2 text-left"
+                                  title={
+                                    item.runtimeState === "error" && item.lastError
+                                      ? `${sessionDisplayName(item, t("sessionsUntitled"))} — ${item.lastError}`
+                                      : sessionDisplayName(item, t("sessionsUntitled"))
+                                  }
+                                >
+                                  <div className="flex min-w-0 items-center gap-2">
+                                    <span
+                                      className={`min-w-0 flex-1 truncate ${active ? "font-medium" : ""}`}
+                                    >
+                                      {sessionDisplayName(item, t("sessionsUntitled"))}
+                                    </span>
+                                    {decisionWaiting && decisionWaitingLabel ? (
+                                      <span
+                                        aria-label={decisionWaitingLabel}
+                                        title={decisionWaitingLabel}
+                                        data-session-decision-count={decisionWaiting.count}
+                                        className={`ml-auto inline-flex h-5 shrink-0 items-center gap-1 rounded border px-1.5 text-[10px] tabular-nums ${
+                                          decisionWaiting.hasHighRisk
+                                            ? "border-warning/40 bg-warning/10 text-warning"
+                                            : "border-border bg-surface text-muted"
+                                        }`}
+                                      >
+                                        {decisionWaiting.hasHighRisk ? (
+                                          <CircleAlert size={11} aria-hidden="true" />
+                                        ) : (
+                                          <MessageCircleQuestion size={11} aria-hidden="true" />
+                                        )}
+                                        <span aria-hidden="true">{decisionWaiting.count}</span>
+                                      </span>
+                                    ) : null}
+                                    {statusDot && (
+                                      <span
+                                        className="flex size-[9.2px] shrink-0 items-center justify-center"
+                                        aria-label={statusLabel ?? undefined}
+                                        title={statusLabel ?? undefined}
+                                      >
+                                        <span
+                                          className={`size-[8.2px] rounded-full ${statusDot}`}
+                                        />
+                                      </span>
+                                    )}
+                                  </div>
+                                </button>
+                                {pinned && (
+                                  <button
+                                    type="button"
+                                    title={t("sessionsUnpin")}
+                                    aria-label={t("sessionsUnpin")}
+                                    onClick={() => removePinnedSessions([item.sessionId])}
+                                    className="mr-1 flex size-[22px] shrink-0 items-center justify-center rounded text-muted transition-colors hover:bg-surface hover:text-foreground"
+                                  >
+                                    <Pin size={12} aria-hidden="true" />
+                                  </button>
+                                )}
+                                {/* A session showing any status dot (live green/yellow or
                                   unacknowledged terminal red/gray) is not archivable
                                   right now — hide the action instead of offering a
                                   disabled button. Archived entries have no dot and
                                   keep their restore action. */}
-                              {statusDot ? null : (
-                                <div className="relative mr-1 flex size-[22px] shrink-0 items-center justify-center">
-                                  <button
-                                    type="button"
-                                    title={
-                                      item.archived
-                                        ? t("sessionsRestoreTitle")
-                                        : canArchive
-                                          ? t("sessionsArchiveTitle")
-                                          : t("sessionsArchiveWait")
-                                    }
-                                    aria-label={
-                                      item.archived ? t("sessionsRestore") : t("sessionsArchive")
-                                    }
-                                    onClick={() =>
-                                      void runSessionFileAction(
-                                        item.archived ? "session.restore" : "session.archive",
-                                        item,
-                                      )
-                                    }
-                                    disabled={
-                                      sessionMutationBlocked || (!item.archived && !canArchive)
-                                    }
-                                    className="pointer-events-none rounded p-1 text-muted opacity-0 transition-opacity hover:bg-surface hover:text-foreground group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:disabled:opacity-30 group-focus-within:disabled:opacity-30"
-                                  >
-                                    {item.archived ? (
-                                      <ArchiveRestore size={14} />
-                                    ) : (
-                                      <Archive size={14} />
-                                    )}
-                                  </button>
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </li>
-                      );
-                    })}
+                                {statusDot ? null : (
+                                  <div className="relative mr-1 flex size-[22px] shrink-0 items-center justify-center">
+                                    <button
+                                      type="button"
+                                      title={
+                                        item.archived
+                                          ? t("sessionsRestoreTitle")
+                                          : canArchive
+                                            ? t("sessionsArchiveTitle")
+                                            : t("sessionsArchiveWait")
+                                      }
+                                      aria-label={
+                                        item.archived ? t("sessionsRestore") : t("sessionsArchive")
+                                      }
+                                      onClick={() =>
+                                        void runSessionFileAction(
+                                          item.archived ? "session.restore" : "session.archive",
+                                          item,
+                                        )
+                                      }
+                                      disabled={
+                                        sessionMutationBlocked || (!item.archived && !canArchive)
+                                      }
+                                      className="pointer-events-none rounded p-1 text-muted opacity-0 transition-opacity hover:bg-surface hover:text-foreground group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:disabled:opacity-30 group-focus-within:disabled:opacity-30"
+                                    >
+                                      {item.archived ? (
+                                        <ArchiveRestore size={14} />
+                                      ) : (
+                                        <Archive size={14} />
+                                      )}
+                                    </button>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </CollapsibleRegion>
                 </div>

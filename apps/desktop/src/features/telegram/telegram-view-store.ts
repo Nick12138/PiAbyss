@@ -245,7 +245,12 @@ export const useTelegramViewStore = create<TelegramViewState>((set, get) => ({
         hostClient.request("telegram.listSessions", hostContext(host), null, 15_000),
         hostClient.request("telegram.getConfig", hostContext(host), null, 15_000),
         openPath
-          ? hostClient.request("telegram.getSession", hostContext(host), { sessionPath: openPath }, 15_000)
+          ? hostClient.request(
+              "telegram.getSession",
+              hostContext(host),
+              { sessionPath: openPath },
+              15_000,
+            )
           : Promise.resolve(null),
       ]);
       if (!listRes.ok) {

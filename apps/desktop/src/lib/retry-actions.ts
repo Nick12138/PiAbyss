@@ -4,10 +4,7 @@ import { hostClient } from "./bridge/host-client";
 import { activeSessionContext } from "./bridge/host-context";
 import { hostErrorLevel, localizeHostError } from "./bridge/localize-host-error";
 import { tCurrent } from "./i18n/use-t";
-import {
-  appendOptimisticUserMessage,
-  removeOptimisticUserMessage,
-} from "./chat/optimistic-echo";
+import { appendOptimisticUserMessage, removeOptimisticUserMessage } from "./chat/optimistic-echo";
 import {
   buildAttachedFileBlock,
   buildAttachedPathBlock,
@@ -61,11 +58,7 @@ async function promptActiveSession(params: ActiveSessionPromptParams): Promise<b
   // Same optimistic echo as the Composer: the retry/Go On bubble should show
   // immediately, not after the Host's message_start clears preflight. A
   // rejected send rolls the bubble back.
-  const optimisticKey = appendOptimisticUserMessage(
-    params.text,
-    session.sessionId,
-    params.images,
-  );
+  const optimisticKey = appendOptimisticUserMessage(params.text, session.sessionId, params.images);
   try {
     const res = await hostClient.request(
       "agent.prompt",

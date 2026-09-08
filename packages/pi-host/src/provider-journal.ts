@@ -18,16 +18,7 @@
  * Host genuinely does not know whether the configuration is coherent.
  */
 import { randomUUID } from "node:crypto";
-import {
-  mkdir,
-  open,
-  readFile,
-  readdir,
-  rename,
-  rm,
-  unlink,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, open, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ProviderMutationStage } from "@piabyss/protocol";
 import { logger } from "./logger.js";

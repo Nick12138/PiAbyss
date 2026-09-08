@@ -88,8 +88,7 @@ function fallbackCommitMessage(patch: string): string {
   for (const line of patch.split("\n")) {
     if (line.startsWith("diff --git ")) {
       const match =
-        /^diff --git a\/(.*?) b\/(.*)$/u.exec(line) ??
-        /^diff --git (.*?) (.*)$/u.exec(line);
+        /^diff --git a\/(.*?) b\/(.*)$/u.exec(line) ?? /^diff --git (.*?) (.*)$/u.exec(line);
       if (!match) continue;
       const fromPath = match[1] === "/dev/null" ? undefined : match[1];
       const toPath = match[2] === "/dev/null" ? undefined : match[2];
@@ -142,9 +141,7 @@ function fallbackCommitMessage(patch: string): string {
   const MAX_LISTED = 10;
   const bullets = files.slice(0, MAX_LISTED).map((file) => {
     const name =
-      file.kind === "renamed" && file.fromPath
-        ? `${file.fromPath} → ${file.path}`
-        : file.path;
+      file.kind === "renamed" && file.fromPath ? `${file.fromPath} → ${file.path}` : file.path;
     const stats =
       file.additions > 0 && file.deletions > 0
         ? `（+${file.additions} -${file.deletions}）`
@@ -453,7 +450,10 @@ export function createGitHandlers(
             "INTERNAL_ERROR",
             response.errorMessage ?? `Commit message generation ${response.stopReason}`,
           );
-        let response = await attempt({ maxTokens: COMMIT_MESSAGE_MAX_TOKENS, reasoning: "minimal" });
+        let response = await attempt({
+          maxTokens: COMMIT_MESSAGE_MAX_TOKENS,
+          reasoning: "minimal",
+        });
         if (response.stopReason === "error" || response.stopReason === "aborted") {
           return { error: fail(response) };
         }

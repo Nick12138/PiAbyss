@@ -166,9 +166,7 @@ export function SkillsSettings() {
   const [busy, setBusy] = useState(false);
   const [newPath, setNewPath] = useState("");
   const [newScope, setNewScope] = useState<SkillSettingsScope>("project");
-  const [previewSkill, setPreviewSkill] = useState<{ name: string; filePath: string } | null>(
-    null,
-  );
+  const [previewSkill, setPreviewSkill] = useState<{ name: string; filePath: string } | null>(null);
   const [showPromptHelp, setShowPromptHelp] = useState(false);
   // 全局/项目 default expanded; bundle (packages & extensions) default collapsed.
   const [collapsed, setCollapsed] = useState<Record<SkillGroupId, boolean>>({
@@ -618,7 +616,10 @@ export function SkillsSettings() {
                                       title={t("promptsPreviewToggle", { name: prompt.name })}
                                       aria-label={t("promptsPreviewToggle", { name: prompt.name })}
                                       onClick={() =>
-                                        setPreviewSkill({ name: prompt.name, filePath: prompt.filePath })
+                                        setPreviewSkill({
+                                          name: prompt.name,
+                                          filePath: prompt.filePath,
+                                        })
                                       }
                                     >
                                       {prompt.name}
@@ -645,7 +646,10 @@ export function SkillsSettings() {
                                     title={t("promptsPreviewToggle", { name: prompt.name })}
                                     aria-label={t("promptsPreviewToggle", { name: prompt.name })}
                                     onClick={() =>
-                                      setPreviewSkill({ name: prompt.name, filePath: prompt.filePath })
+                                      setPreviewSkill({
+                                        name: prompt.name,
+                                        filePath: prompt.filePath,
+                                      })
                                     }
                                   >
                                     <Eye size={14} />

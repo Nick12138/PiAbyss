@@ -437,11 +437,7 @@ async function main(): Promise<void> {
   await server.start();
   logger.info("host server started", {
     ms: Date.now() - serverStartStarted,
-    initialWorkspace: initialCwd
-      ? deferPreload
-        ? "deferred"
-        : "preloaded"
-      : "none",
+    initialWorkspace: initialCwd ? (deferPreload ? "deferred" : "preloaded") : "none",
   });
   await migrationBackup?.recordMilestone("serverStart");
 }

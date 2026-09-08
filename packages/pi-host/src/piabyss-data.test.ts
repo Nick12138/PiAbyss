@@ -1,11 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -49,9 +42,7 @@ describe("PiAbyss data paths", () => {
     expect(migrationBackupRoot(agentDir, MIGRATION_ID)).toBe(
       join(agentDir, "piabyss", "migration-backups", MIGRATION_ID),
     );
-    expect(providerJournalRoot(agentDir)).toBe(
-      join(agentDir, "piabyss", "provider-journal"),
-    );
+    expect(providerJournalRoot(agentDir)).toBe(join(agentDir, "piabyss", "provider-journal"));
     expect(modelBackupDir(agentDir)).toBe(join(agentDir, "piabyss", "model-backups"));
     expect(sessionArchiveDir(agentDir, cwd)).toBe(
       join(agentDir, "piabyss", "session-archive", safePath),
@@ -83,7 +74,10 @@ describe("migrateLegacyPiAbyssData", () => {
     await expect(migrateLegacyPiAbyssData(agentDir, MIGRATION_ID)).resolves.toBeUndefined();
 
     expect(
-      readFileSync(join(migrationBackupRoot(agentDir, MIGRATION_ID), "snapshot", "manifest.json"), "utf8"),
+      readFileSync(
+        join(migrationBackupRoot(agentDir, MIGRATION_ID), "snapshot", "manifest.json"),
+        "utf8",
+      ),
     ).toBe("migration");
     expect(
       readFileSync(join(providerJournalRoot(agentDir), "journal-1", "journal.json"), "utf8"),
@@ -108,10 +102,12 @@ describe("migrateLegacyPiAbyssData", () => {
 
     await migrateLegacyPiAbyssData(agentDir, MIGRATION_ID);
 
-    expect(readFileSync(join(providerJournalRoot(agentDir), "legacy-entry", "journal.json"), "utf8"))
-      .toBe("legacy");
-    expect(readFileSync(join(providerJournalRoot(agentDir), "new-entry", "journal.json"), "utf8"))
-      .toBe("new");
+    expect(
+      readFileSync(join(providerJournalRoot(agentDir), "legacy-entry", "journal.json"), "utf8"),
+    ).toBe("legacy");
+    expect(
+      readFileSync(join(providerJournalRoot(agentDir), "new-entry", "journal.json"), "utf8"),
+    ).toBe("new");
     expect(existsSync(join(agentDir, "provider-journal"))).toBe(false);
   });
 

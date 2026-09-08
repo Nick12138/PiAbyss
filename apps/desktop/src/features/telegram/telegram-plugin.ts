@@ -8,8 +8,7 @@ export function isTelegramPluginRecord(record: PackageRecord): boolean {
   if (!record.installed) return false;
   const wanted = TELEGRAM_PLUGIN_SOURCE.toLocaleLowerCase();
   return (
-    record.identity.toLocaleLowerCase() === wanted ||
-    record.source.toLocaleLowerCase() === wanted
+    record.identity.toLocaleLowerCase() === wanted || record.source.toLocaleLowerCase() === wanted
   );
 }
 

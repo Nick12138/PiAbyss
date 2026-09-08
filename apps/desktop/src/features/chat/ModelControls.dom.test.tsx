@@ -119,8 +119,9 @@ describe("ModelControls thinking-depth footer", () => {
   });
 
   it("opens the nested level submenu from the pinned footer and applies a level", async () => {
-    const requestSpy = vi.spyOn(hostClient, "request").mockImplementation(
-      async (method: string) => {
+    const requestSpy = vi
+      .spyOn(hostClient, "request")
+      .mockImplementation(async (method: string) => {
         if (method === "model.list") {
           return envelope(method, {
             models: [MODEL],
@@ -133,8 +134,7 @@ describe("ModelControls thinking-depth footer", () => {
           return envelope(method, { ...session(), thinkingLevel: "high", revision: 4 }) as never;
         }
         throw new Error(`Unexpected method ${method}`);
-      },
-    );
+      });
     // The model catalog is only fetched once the Host connection settles.
     useAppStore.getState().setConnecting(false);
 
@@ -153,17 +153,16 @@ describe("ModelControls thinking-depth footer", () => {
     const submenu = await screen.findByRole("menu", {
       name: "Thinking level for muapi/Grok 4.5",
     });
-    expect(
-      within(submenu).getByRole("menuitemradio", { name: "Off" }),
-    ).toHaveAttribute("aria-checked", "true");
+    expect(within(submenu).getByRole("menuitemradio", { name: "Off" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
 
     await user.click(within(submenu).getByRole("menuitemradio", { name: "High" }));
     await waitFor(() =>
-      expect(requestSpy).toHaveBeenCalledWith(
-        "model.setThinkingLevel",
-        expect.anything(),
-        { level: "high" },
-      ),
+      expect(requestSpy).toHaveBeenCalledWith("model.setThinkingLevel", expect.anything(), {
+        level: "high",
+      }),
     );
 
     // The submenu closes while the model menu stays open, and the pinned
@@ -189,9 +188,7 @@ describe("ModelControls thinking-depth footer", () => {
     });
     // The session model itself carries no levels and the catalog agrees —
     // only then is the pinned footer disabled.
-    useAppStore
-      .getState()
-      .applySessionSnapshot({ ...session({ ...MODEL, thinkingLevels: [] }) });
+    useAppStore.getState().applySessionSnapshot({ ...session({ ...MODEL, thinkingLevels: [] }) });
     useAppStore.getState().setConnecting(false);
 
     const user = userEvent.setup();
@@ -256,9 +253,7 @@ describe("ModelControls thinking-depth footer", () => {
     });
     // Session model without levels and without providerName: the catalog
     // entry for the same model must backfill the footer's levels.
-    useAppStore
-      .getState()
-      .applySessionSnapshot({ ...session({ ...MODEL, thinkingLevels: [] }) });
+    useAppStore.getState().applySessionSnapshot({ ...session({ ...MODEL, thinkingLevels: [] }) });
     useAppStore.getState().setConnecting(false);
 
     const user = userEvent.setup();
@@ -500,7 +495,9 @@ describe("ModelControls selected-model centering", () => {
     // jsdom has no layout, so pin the menu viewport to 320px tall and place
     // the selected row 960px below the panel's top edge.
     vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(320);
-    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
       if (this.getAttribute("role") === "menu") return domRect(100, 320);
       if (this.getAttribute("aria-checked") === "true") return domRect(1060, 32);
       return domRect(0, 0);

@@ -258,8 +258,7 @@ export function WorkspacePicker() {
       // prepareForHostSwitch/replay needed) and register the workspace via
       // rebindActiveWorkspaceHost below. Defaults to false while settings
       // are still loading, keeping the dedicated-Host flow.
-      const sharedHostMode =
-        useAppStore.getState().desktopSettings?.sharedHostMode === true;
+      const sharedHostMode = useAppStore.getState().desktopSettings?.sharedHostMode === true;
       const connectDedicatedHost = async (force: boolean): Promise<boolean> => {
         const activated = force
           ? await activateWorkspaceHost(cwd)

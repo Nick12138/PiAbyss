@@ -258,9 +258,7 @@ describe("getPluginLibraryCatalog", () => {
           icon: "x",
           version: "1",
           install: { type: "npm", source: "npm:x" },
-          config: [
-            { key: "k", type: "select", label: "l", env: "X_OK", optionsSource: 42 },
-          ],
+          config: [{ key: "k", type: "select", label: "l", env: "X_OK", optionsSource: 42 }],
         },
       ],
     };

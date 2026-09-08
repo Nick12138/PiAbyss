@@ -144,7 +144,7 @@ function catalogWithVision(includeUnknownSource = false): PluginLibraryCatalog {
         label: "Fallback models",
         env: "PI_VISION_FALLBACK_MODELS",
         optionsSource: "pi:vision-models-fallback",
-      }
+      },
     ],
   };
   const unknownPlugin: PluginLibraryCatalog["plugins"][number] = {
@@ -161,7 +161,7 @@ function catalogWithVision(includeUnknownSource = false): PluginLibraryCatalog {
         label: "Custom value",
         env: "PI_UNKNOWN_VALUE",
         optionsSource: "pi:everything",
-      }
+      },
     ],
   };
   return {
@@ -620,7 +620,9 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot = snapshotWithRepo(false);
     currentSnapshot.revision = 3;
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
-    await waitFor(() => expect(within(card).getByRole("switch")).toHaveAttribute("aria-checked", "false"));
+    await waitFor(() =>
+      expect(within(card).getByRole("switch")).toHaveAttribute("aria-checked", "false"),
+    );
     await user.click(within(card).getByRole("switch"));
     await waitFor(() =>
       expect(request).toHaveBeenCalledWith(
@@ -687,26 +689,34 @@ describe("PluginLibraryPage DOM workflows", () => {
     expect(listbox).toHaveClass("fixed", "overflow-y-auto");
     expect(listbox.style.maxHeight).toBeTruthy();
     expect(within(listbox).getByRole("option", { name: /Automatic/ })).toBeInTheDocument();
-    expect(within(listbox).getByRole("option", { name: "OpenAI · GPT-4o mini" })).toBeInTheDocument();
-    expect(within(listbox).getByRole("option", { name: "Anthropic · Claude Sonnet 4.5" })).toBeInTheDocument();
+    expect(
+      within(listbox).getByRole("option", { name: "OpenAI · GPT-4o mini" }),
+    ).toBeInTheDocument();
+    expect(
+      within(listbox).getByRole("option", { name: "Anthropic · Claude Sonnet 4.5" }),
+    ).toBeInTheDocument();
     expect(listbox).not.toHaveTextContent("GPT Text");
     expect(listbox).not.toHaveTextContent("openai/gpt-4o-mini");
 
     await user.click(within(listbox).getByRole("option", { name: "OpenAI · GPT-4o mini" }));
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(tauriMocks.invoke).toHaveBeenCalledWith(
-      "desktop_settings_patch",
-      expect.objectContaining({
-        patch: { pluginEnv: { "pi-vision": { PI_VISION_MODEL: "openai/gpt-4o-mini" } } },
-      }),
-    ));
-    await waitFor(() => expect(request).toHaveBeenCalledWith(
-      "pluginLibrary.setEnv",
-      expect.objectContaining({ expectedHostInstanceId: "h1" }),
-      { vars: { PI_VISION_MODEL: "openai/gpt-4o-mini", PI_VISION_FALLBACK_MODELS: null } },
-      expect.any(Number),
-    ));
+    await waitFor(() =>
+      expect(tauriMocks.invoke).toHaveBeenCalledWith(
+        "desktop_settings_patch",
+        expect.objectContaining({
+          patch: { pluginEnv: { "pi-vision": { PI_VISION_MODEL: "openai/gpt-4o-mini" } } },
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "pluginLibrary.setEnv",
+        expect.objectContaining({ expectedHostInstanceId: "h1" }),
+        { vars: { PI_VISION_MODEL: "openai/gpt-4o-mini", PI_VISION_FALLBACK_MODELS: null } },
+        expect.any(Number),
+      ),
+    );
   });
 
   it("uses null for the live env value when automatic vision model selection is chosen", async () => {

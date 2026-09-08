@@ -74,8 +74,7 @@ export async function openSessionAcrossWorkspaces(
     // Host activation entirely and take the in-place `workspace.setCurrent`
     // path below (same connection, so no prepareForHostSwitch/replay). False
     // while settings are still loading, keeping the dedicated-Host flow.
-    const sharedHostMode =
-      useAppStore.getState().desktopSettings?.sharedHostMode === true;
+    const sharedHostMode = useAppStore.getState().desktopSettings?.sharedHostMode === true;
     const connectDedicatedHost = async (force: boolean): Promise<boolean> => {
       const activated = force
         ? await activateWorkspaceHost(target.cwd)

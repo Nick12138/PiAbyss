@@ -4,7 +4,7 @@ import type { JournalRecovery } from "./provider-journal.js";
 const MIGRATION_HINT = {
   code: "SESSION_AFFINITY_FORMAT_REQUIRED" as const,
   message:
-    "Use sessionAffinityFormat; the old sendSessionIdHeader:false maps to sessionAffinityFormat:\"openai-nosession\".",
+    'Use sessionAffinityFormat; the old sendSessionIdHeader:false maps to sessionAffinityFormat:"openai-nosession".',
 };
 
 /**

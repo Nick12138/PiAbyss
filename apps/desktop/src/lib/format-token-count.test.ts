@@ -38,7 +38,10 @@ describe("parseTokenCount", () => {
 
 describe("formatTokenCountExact", () => {
   it("round-trips every formatted value through parseTokenCount", () => {
-    for (const tokens of [1, 999, 1_000, 15_742, 64_000, 128_000, 131_072, 372_000, 1_000_000, 1_050_000, 1_005_000, 999_999_999]) {
+    for (const tokens of [
+      1, 999, 1_000, 15_742, 64_000, 128_000, 131_072, 372_000, 1_000_000, 1_050_000, 1_005_000,
+      999_999_999,
+    ]) {
       expect(parseTokenCount(formatTokenCountExact(tokens))).toBe(tokens);
     }
   });

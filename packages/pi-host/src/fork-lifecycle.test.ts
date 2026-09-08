@@ -51,16 +51,16 @@ function createSessionFile(
             }),
           ]
         : options.name
-        ? [
-            JSON.stringify({
-              type: "session_info",
-              id: "info-1",
-              parentId: null,
-              timestamp: stamp(0),
-              name: options.name,
-            }),
-          ]
-        : []),
+          ? [
+              JSON.stringify({
+                type: "session_info",
+                id: "info-1",
+                parentId: null,
+                timestamp: stamp(0),
+                name: options.name,
+              }),
+            ]
+          : []),
       JSON.stringify({
         type: "message",
         id: "u1",

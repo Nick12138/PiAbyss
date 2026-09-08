@@ -4,9 +4,17 @@
   "private": true,
   "description": "Full Pi Package fixture with extension, skill, prompt, theme",
   "pi": {
-    "extensions": ["./extensions/test-extension.ts"],
-    "skills": ["./skills/test-skill"],
-    "prompts": ["./prompts/test-prompt.md"],
-    "themes": ["./themes/test-theme.json"]
+    "extensions": [
+      "./extensions/test-extension.ts"
+    ],
+    "skills": [
+      "./skills/test-skill"
+    ],
+    "prompts": [
+      "./prompts/test-prompt.md"
+    ],
+    "themes": [
+      "./themes/test-theme.json"
+    ]
   }
 }

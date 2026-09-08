@@ -1,10 +1,7 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  DefaultResourceLoader,
-  SettingsManager,
-} from "@earendil-works/pi-coding-agent";
+import { DefaultResourceLoader, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
 
 type CacheState = { imports: number; factories: number };
@@ -45,7 +42,7 @@ describe("SDK extension module cache", () => {
         "state.imports += 1;",
         "export default function (pi) {",
         "  state.factories += 1;",
-        "  pi.on(\"resources_discover\", async () => ({ promptPaths: [] }));",
+        '  pi.on("resources_discover", async () => ({ promptPaths: [] }));',
         "}",
       ].join("\n"),
     );

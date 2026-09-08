@@ -258,9 +258,7 @@ describe("session.getTree", () => {
     const tree = (response.result as { tree: Record<string, unknown>[] }).tree;
     expect("label" in tree[0]!).toBe(false);
     expect("labelTimestamp" in tree[0]!).toBe(false);
-    expect(
-      (tree[0]!.children as Record<string, unknown>[])[0]!.label,
-    ).toBe("experiment");
+    expect((tree[0]!.children as Record<string, unknown>[])[0]!.label).toBe("experiment");
   });
 });
 

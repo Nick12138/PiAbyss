@@ -4,6 +4,8 @@
   "private": true,
   "description": "Minimal TypeScript Extension fixture for PiAbyss spike and tests",
   "pi": {
-    "extensions": ["./extensions/spike-extension.ts"]
+    "extensions": [
+      "./extensions/spike-extension.ts"
+    ]
   }
 }

@@ -43,7 +43,12 @@ describe("extractLatestTodos", () => {
               arguments: {
                 todos: [
                   { id: "a", content: "Inspect the app", status: "completed" },
-                  { id: "b", content: "Build the panel", status: "in_progress", activeForm: "Building the panel" },
+                  {
+                    id: "b",
+                    content: "Build the panel",
+                    status: "in_progress",
+                    activeForm: "Building the panel",
+                  },
                 ],
               },
             },

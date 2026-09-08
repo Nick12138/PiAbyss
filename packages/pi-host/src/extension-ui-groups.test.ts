@@ -6,10 +6,7 @@ import {
   getActiveExtensionInvocation,
   withExtensionCommandOrigin,
 } from "./extension-invocation-context.js";
-import {
-  createExtensionUiGroupKey,
-  ExtensionUiGroupRegistry,
-} from "./extension-ui-groups.js";
+import { createExtensionUiGroupKey, ExtensionUiGroupRegistry } from "./extension-ui-groups.js";
 
 const identity: HostIdentity = {
   hostInstanceId: "host-1",
@@ -87,9 +84,7 @@ describe("ExtensionUiGroupRegistry", () => {
     expect(events).toHaveLength(2);
     expect(new Set(events.map((event) => event.groupKey)).size).toBe(2);
     expect(events).toContainEqual({ groupKey: firstKey, status: "completed" });
-    expect(events).toContainEqual(
-      expect.objectContaining({ status: "failed" }),
-    );
+    expect(events).toContainEqual(expect.objectContaining({ status: "failed" }));
   });
 
   it("groups repeated command runs by their distinct Host invocation IDs", async () => {

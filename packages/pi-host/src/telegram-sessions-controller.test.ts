@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -81,7 +89,13 @@ describe("telegram sessions controller", () => {
         "utf8",
       );
       expect(await call(agentDir, "telegram.getProfiles")).toEqual({
-        default: { profile: "default", botId: 7, botUsername: "bot", botName: "B", configured: true },
+        default: {
+          profile: "default",
+          botId: 7,
+          botUsername: "bot",
+          botName: "B",
+          configured: true,
+        },
       });
     });
   });
@@ -107,7 +121,10 @@ describe("telegram sessions controller", () => {
       );
       writeSession(
         join(telegramSessionsDir(agentDir), "plain.jsonl"),
-        [sessionOpen("22222222-2222-4222-8222-222222222222", "C:/work/b"), userMessage("u1", "没有标记")],
+        [
+          sessionOpen("22222222-2222-4222-8222-222222222222", "C:/work/b"),
+          userMessage("u1", "没有标记"),
+        ],
         2_000,
       );
       const result = (await call(agentDir, "telegram.listSessions")) as {
@@ -133,10 +150,22 @@ describe("telegram sessions controller", () => {
 
     it("sorts sessions by last write, newest first", async () => {
       agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
-      writeSession(join(telegramSessionsDir(agentDir), "old.jsonl"), [sessionOpen("11111111-1111-4111-8111-111111111111", "C:/w"),
-        userMessage("u1", telegramText("老消息"))], 1_000);
-      writeSession(join(telegramSessionsDir(agentDir), "new.jsonl"), [sessionOpen("22222222-2222-4222-8222-222222222222", "C:/w"),
-        userMessage("u1", telegramText("新消息"))], 3_000);
+      writeSession(
+        join(telegramSessionsDir(agentDir), "old.jsonl"),
+        [
+          sessionOpen("11111111-1111-4111-8111-111111111111", "C:/w"),
+          userMessage("u1", telegramText("老消息")),
+        ],
+        1_000,
+      );
+      writeSession(
+        join(telegramSessionsDir(agentDir), "new.jsonl"),
+        [
+          sessionOpen("22222222-2222-4222-8222-222222222222", "C:/w"),
+          userMessage("u1", telegramText("新消息")),
+        ],
+        3_000,
+      );
       const result = (await call(agentDir, "telegram.listSessions")) as {
         sessions: Array<{ sessionPath: string }>;
       };
@@ -197,7 +226,11 @@ describe("telegram sessions controller", () => {
       agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       const response = await handlers(agentDir)["telegram.getConfig"]!({} as never);
       if (!("result" in response)) throw new Error("expected result");
-      const result = response.result as { default: unknown; workspacePath: string; assistant?: unknown };
+      const result = response.result as {
+        default: unknown;
+        workspacePath: string;
+        assistant?: unknown;
+      };
       expect(result.default).toBeNull();
       expect(result.workspacePath).toBe(join(agentDir, "workspace", "telegram"));
       expect(existsSync(result.workspacePath)).toBe(true);
@@ -209,7 +242,9 @@ describe("telegram sessions controller", () => {
       writeFileSync(
         join(agentDir, "telegram.json"),
         JSON.stringify({
-          profiles: { default: { botToken: "1234567890:SECRET_ABCD_TAIL", botUsername: "bot", botId: 7 } },
+          profiles: {
+            default: { botToken: "1234567890:SECRET_ABCD_TAIL", botUsername: "bot", botId: 7 },
+          },
           assistant: { rendering: "rich", activity: "verbose", proactivePush: false },
           voice: { replyMode: "mirror" },
           threads: { automaticCleanup: true },
@@ -224,7 +259,11 @@ describe("telegram sessions controller", () => {
       expect(JSON.stringify(result)).not.toContain("unknownExtra");
       expect(result.tokenMasked).toBe("12345678****TAIL");
       expect(result.default).toMatchObject({ botUsername: "bot", botId: 7, configured: true });
-      expect(result.assistant).toEqual({ rendering: "rich", activity: "verbose", proactivePush: false });
+      expect(result.assistant).toEqual({
+        rendering: "rich",
+        activity: "verbose",
+        proactivePush: false,
+      });
       expect(result.voice).toEqual({ replyMode: "mirror" });
       expect(result.threads).toEqual({ automaticCleanup: true });
     });
@@ -254,7 +293,11 @@ describe("telegram sessions controller", () => {
         voice: Record<string, unknown>;
       };
       expect(saved.profiles.default).toEqual({ botToken: "T", botUsername: "bot" });
-      expect(saved.assistant).toEqual({ rendering: "html", activity: "quiet", proactivePush: true });
+      expect(saved.assistant).toEqual({
+        rendering: "html",
+        activity: "quiet",
+        proactivePush: true,
+      });
       expect(saved.voice).toEqual({ replyMode: "always" });
     });
 
@@ -274,14 +317,25 @@ describe("telegram sessions controller", () => {
   describe("telegram.reset", () => {
     it("removes config, temp state, workspace dir and telegram sessions only", async () => {
       agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
-      writeFileSync(join(agentDir, "telegram.json"), JSON.stringify({ profiles: { default: {} } }), "utf8");
+      writeFileSync(
+        join(agentDir, "telegram.json"),
+        JSON.stringify({ profiles: { default: {} } }),
+        "utf8",
+      );
       mkdirSync(join(agentDir, "tmp", "telegram", "inbox.json.segments"), { recursive: true });
-      writeFileSync(join(agentDir, "tmp", "telegram", "inbox.json.segments", "0000000000000001.json"), "{}", "utf8");
+      writeFileSync(
+        join(agentDir, "tmp", "telegram", "inbox.json.segments", "0000000000000001.json"),
+        "{}",
+        "utf8",
+      );
       mkdirSync(join(agentDir, "workspace", "telegram"), { recursive: true });
       writeFileSync(join(agentDir, "workspace", "telegram", "note.txt"), "x", "utf8");
       const tgSession = writeSession(
         join(telegramSessionsDir(agentDir), "tg.jsonl"),
-        [sessionOpen("11111111-1111-4111-8111-111111111111", "C:/w"), userMessage("u1", telegramText("hi"))],
+        [
+          sessionOpen("11111111-1111-4111-8111-111111111111", "C:/w"),
+          userMessage("u1", telegramText("hi")),
+        ],
         1_000,
       );
       const plainSession = writeSession(
@@ -316,7 +370,13 @@ describe("telegram sessions controller", () => {
         botName: "B",
       });
       expect(await call(agentDir, "telegram.getProfiles")).toEqual({
-        default: { profile: "default", botId: 7, botUsername: "bot", botName: "B", configured: true },
+        default: {
+          profile: "default",
+          botId: 7,
+          botUsername: "bot",
+          botName: "B",
+          configured: true,
+        },
       });
     });
 
@@ -373,7 +433,10 @@ describe("telegram sessions controller", () => {
         params: { sessionPath: path },
       } as never);
       if (!("result" in response)) throw new Error("expected result");
-      const result = response.result as { summary: { sessionPath: string; telegramMessageCount: number }; entries: Array<{ id: string; message: { role: string } }> };
+      const result = response.result as {
+        summary: { sessionPath: string; telegramMessageCount: number };
+        entries: Array<{ id: string; message: { role: string } }>;
+      };
       expect(result.summary.telegramMessageCount).toBe(1);
       expect(result.entries.map((e) => e.message.role)).toEqual(["user", "assistant"]);
       expect(result.entries[0]?.id).toBe("u1");

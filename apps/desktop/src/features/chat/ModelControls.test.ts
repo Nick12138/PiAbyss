@@ -55,9 +55,7 @@ describe("includeCurrentModel", () => {
 describe("resolveThinkingLevels", () => {
   it("prefers the session model's own non-empty levels", () => {
     const models: ModelSummary[] = [{ ...current, thinkingLevels: ["off", "high"] }];
-    expect(resolveThinkingLevels({ ...current, thinkingLevels: ["low"] }, models)).toEqual([
-      "low",
-    ]);
+    expect(resolveThinkingLevels({ ...current, thinkingLevels: ["low"] }, models)).toEqual(["low"]);
   });
 
   it("falls back to the catalog entry when the session model omits levels", () => {

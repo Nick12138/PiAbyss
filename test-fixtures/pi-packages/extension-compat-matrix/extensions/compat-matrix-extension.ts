@@ -33,7 +33,7 @@ export default function extensionCompatibilityMatrix(pi: ExtensionAPI) {
       const requestId = (message.details as { requestId?: unknown } | undefined)?.requestId;
       const state =
         typeof requestId === "string"
-          ? messageRendererStates.get(requestId) ?? "Matrix renderer missing state"
+          ? (messageRendererStates.get(requestId) ?? "Matrix renderer missing state")
           : "Matrix renderer missing request";
       return [expanded ? `${state}: full report` : state];
     },
@@ -47,11 +47,7 @@ export default function extensionCompatibilityMatrix(pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
     if (!ctx.hasUI) return;
     ctx.ui.setWidget("matrix-persistent", ["Matrix widget: starting"]);
-    ctx.ui.setWidget(
-      "matrix-persistent",
-      ["Matrix widget: ready"],
-      { placement: "belowEditor" },
-    );
+    ctx.ui.setWidget("matrix-persistent", ["Matrix widget: ready"], { placement: "belowEditor" });
     ctx.ui.setStatus("matrix-watcher", "watching");
     watcher = setInterval(() => {
       ctx.ui.setStatus("matrix-watcher", "watching");
@@ -103,10 +99,7 @@ export default function extensionCompatibilityMatrix(pi: ExtensionAPI) {
       ctx.ui.setStatus("matrix-subagent", "running");
       ctx.ui.notify("Matrix subagent activity", "info");
       try {
-        const next = await ctx.ui.select("Subagent next step", [
-          "Continue",
-          "Open terminal",
-        ]);
+        const next = await ctx.ui.select("Subagent next step", ["Continue", "Open terminal"]);
         let terminalResult: string | undefined;
         if (next === "Open terminal") {
           terminalResult = await ctx.ui.custom<string>((tui, _theme, _keybindings, done) => ({
@@ -133,9 +126,10 @@ export default function extensionCompatibilityMatrix(pi: ExtensionAPI) {
     description: "Exercises a planning select followed by an editor.",
     handler: async (_args, ctx) => {
       const next = await ctx.ui.select("Plan next step", ["Edit plan", "Accept plan"]);
-      const plan = next === "Edit plan"
-        ? await ctx.ui.editor("Edit matrix plan", "Initial matrix plan")
-        : "Initial matrix plan";
+      const plan =
+        next === "Edit plan"
+          ? await ctx.ui.editor("Edit matrix plan", "Initial matrix plan")
+          : "Initial matrix plan";
       pi.events.emit("piabyss:matrix:plan-result", { next, plan });
     },
   });

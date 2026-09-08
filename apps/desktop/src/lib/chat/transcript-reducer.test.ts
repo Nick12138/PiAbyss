@@ -1098,7 +1098,6 @@ describe("optimistic user echo", () => {
     expect(s.messages).toHaveLength(2);
   });
 
-
   it("message_end updates the newest matching user row after a same-text retry", () => {
     let s = baseSession();
     s.messages = [
@@ -1160,5 +1159,4 @@ describe("optimistic user echo", () => {
     expect(s.messages).toHaveLength(1);
     expect(s.messages[0]?._optimisticKey).toBeUndefined();
   });
-
 });

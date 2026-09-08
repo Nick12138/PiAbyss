@@ -23,11 +23,15 @@ describe("isTelegramPluginRecord", () => {
   it("matches identity or source case-insensitively when installed", () => {
     expect(isTelegramPluginRecord(record({}))).toBe(true);
     expect(isTelegramPluginRecord(record({ identity: "NPM:@LLBLAB/PI-TELEGRAM" }))).toBe(true);
-    expect(isTelegramPluginRecord(record({ identity: "npm:other", source: "npm:other" }))).toBe(false);
+    expect(isTelegramPluginRecord(record({ identity: "npm:other", source: "npm:other" }))).toBe(
+      false,
+    );
   });
 
   it("requires installed", () => {
-    expect(isTelegramPluginRecord(record({ installed: false, installedPath: undefined }))).toBe(false);
+    expect(isTelegramPluginRecord(record({ installed: false, installedPath: undefined }))).toBe(
+      false,
+    );
   });
 });
 
