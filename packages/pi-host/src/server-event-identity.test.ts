@@ -84,6 +84,133 @@ describe("PiHostServer.emitForIdentity", () => {
   });
 });
 
+describe("PiHostServer.emitForBoundIdentity", () => {
+  function runtimeEvent(sessionId = BACKGROUND_SESSION_ID, sessionRevision = 7) {
+    return {
+      sessionId,
+      sessionRevision,
+      state: "running" as const,
+      updatedAt: 1,
+    };
+  }
+
+  it("passes through unchanged when the identity matches the current one", async () => {
+    const host = server();
+    const lines: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation(((chunk: string | Uint8Array) => {
+      lines.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write);
+    host.setBoundWorkspaceChecker(() => false);
+
+    host.emitForBoundIdentity(host.getIdentity(), "session.runtimeChanged", runtimeEvent());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const first = JSON.parse(lines[0]!) as Record<string, unknown>;
+    expect(first.workspaceId).toBe(WORKSPACE_ID);
+    expect(first.sessionId).toBe(ACTIVE_SESSION_ID);
+  });
+
+  it("emits for a bound (parked) workspace identity when the checker accepts it", async () => {
+    const host = server();
+    const lines: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation(((chunk: string | Uint8Array) => {
+      lines.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write);
+    const checked: Array<[string, number]> = [];
+    host.setBoundWorkspaceChecker((workspaceId, revision) => {
+      checked.push([workspaceId, revision]);
+      return true;
+    });
+    const parked: HostIdentity = {
+      ...host.getIdentity(),
+      workspaceId: "99999999-9999-4999-8999-999999999999",
+      workspaceRevision: 3,
+      sessionId: null,
+      sessionRevision: 0,
+    };
+
+    host.emitForBoundIdentity(
+      { ...parked, sessionId: BACKGROUND_SESSION_ID, sessionRevision: 7 },
+      "session.runtimeChanged",
+      runtimeEvent(),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(checked).toEqual([["99999999-9999-4999-8999-999999999999", 3]]);
+    const first = JSON.parse(lines[0]!) as Record<string, unknown>;
+    expect(first.workspaceId).toBe("99999999-9999-4999-8999-999999999999");
+    expect(first.workspaceRevision).toBe(3);
+    expect(first.sessionId).toBe(BACKGROUND_SESSION_ID);
+  });
+
+  it("rejects a workspace identity that is neither current nor bound", () => {
+    const host = server();
+    host.setBoundWorkspaceChecker(() => false);
+
+    expect(() =>
+      host.emitForBoundIdentity(
+        { ...host.getIdentity(), workspaceId: "88888888-8888-4888-8888-888888888888" },
+        "session.runtimeChanged",
+        runtimeEvent(),
+      ),
+    ).toThrow("stale Host or Workspace identity");
+  });
+
+  it("rejects a non-current workspace identity when no checker is installed", () => {
+    const host = server();
+
+    expect(() =>
+      host.emitForBoundIdentity(
+        { ...host.getIdentity(), workspaceId: "88888888-8888-4888-8888-888888888888" },
+        "session.runtimeChanged",
+        runtimeEvent(),
+      ),
+    ).toThrow("stale Host or Workspace identity");
+  });
+
+  it("rejects a foreign hostInstanceId even when the checker accepts the workspace", () => {
+    const host = server();
+    host.setBoundWorkspaceChecker(() => true);
+
+    expect(() =>
+      host.emitForBoundIdentity(
+        {
+          ...host.getIdentity(),
+          hostInstanceId: "00000000-0000-4000-8000-000000000000",
+          workspaceId: "88888888-8888-4888-8888-888888888888",
+        },
+        "session.runtimeChanged",
+        runtimeEvent(),
+      ),
+    ).toThrow("stale Host or Workspace identity");
+  });
+
+  it("reports boundWorkspaces in buildStatus only while a provider is wired", () => {
+    const host = server();
+    expect(host.buildStatus().boundWorkspaces).toBeUndefined();
+
+    host.setBoundWorkspacesProvider(() => [
+      {
+        workspaceId: "99999999-9999-4999-8999-999999999999",
+        revision: 3,
+        cwd: "C:/parked",
+      },
+    ]);
+    expect(host.buildStatus().boundWorkspaces).toEqual([
+      {
+        workspaceId: "99999999-9999-4999-8999-999999999999",
+        revision: 3,
+        cwd: "C:/parked",
+      },
+    ]);
+
+    host.setBoundWorkspacesProvider(() => undefined);
+    expect(host.buildStatus().boundWorkspaces).toBeUndefined();
+  });
+});
+
 describe("PiHostServer Extension UI presentation handshake", () => {
   it("defaults to auto and applies the optional hello mode", async () => {
     const host = server();

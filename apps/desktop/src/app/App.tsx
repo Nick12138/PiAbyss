@@ -241,7 +241,19 @@ export function handleHostEvent(
   }
 
   const hostId = store.host?.hostInstanceId ?? hostClient.getHostInstanceId();
+  // Shared-host multi-workspace: parked (bound but not active) workspaces emit
+  // session-scoped events whose workspace identity never matches the active
+  // one. Such events are legitimate — route them into the store's per-
+  // workspace bookkeeping instead of tearing the epoch down for recovery.
+  const parkedWorkspaceEvent =
+    (event.event === "session.runtimeChanged" || event.event === "session.infoChanged") &&
+    hostId !== null &&
+    event.hostInstanceId === hostId &&
+    event.workspaceId !== null &&
+    store.boundWorkspaces[event.workspaceId] !== undefined &&
+    event.workspaceId !== (store.workspace?.id ?? null);
   if (
+    !parkedWorkspaceEvent &&
     !lifecycleEvent &&
     !hostClient.shouldAcceptEvent(
       event,
@@ -271,6 +283,9 @@ export function handleHostEvent(
       break;
     }
     case "host.statusChanged": {
+      // Replace the bound-workspace map whenever the Host reports one; an
+      // absent field (older Host) keeps the current bindings.
+      store.applyBoundWorkspaces(event.payload.boundWorkspaces);
       store.setHost(event.payload);
       break;
     }
@@ -317,6 +332,7 @@ export function handleHostEvent(
         event.payload.state,
         event.payload.error,
         event.payload.updatedAt,
+        event.workspaceId,
       );
       acknowledgeHostTerminalIfFocused(event.payload.sessionId, event.payload.state);
       break;
@@ -527,7 +543,9 @@ export function handleHostEvent(
             : typeof event.payload.event.message === "string"
               ? event.payload.event.message
               : "Agent error";
-        useAppStore.getState().setSessionRuntimeState(event.sessionId, "error", message);
+        useAppStore
+          .getState()
+          .setSessionRuntimeState(event.sessionId, "error", message, undefined, event.workspaceId);
         acknowledgeHostTerminalIfFocused(event.sessionId, "error");
         useAppStore
           .getState()

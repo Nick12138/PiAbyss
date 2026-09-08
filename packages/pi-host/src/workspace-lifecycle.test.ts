@@ -162,6 +162,7 @@ function lifecycleWith(
     platform?: NodeJS.Platform;
     maxBoundWorkspaces?: number;
     active?: WorkspaceGraph | null;
+    onBoundWorkspacesChanged?: () => void;
   } = {},
 ): WorkspaceLifecycle {
   const active = options.active ?? null;
@@ -179,10 +180,14 @@ function lifecycleWith(
       getServer: () => null,
       onModelHealthChanged: vi.fn(),
       platform: options.platform,
+      ...(options.onBoundWorkspacesChanged
+        ? { onBoundWorkspacesChanged: options.onBoundWorkspacesChanged }
+        : {}),
     },
     {
       disposeIdleSessionRuntimes: vi.fn().mockResolvedValue(undefined),
       disposeGraphSessionRuntimes: vi.fn().mockResolvedValue(undefined),
+      isSessionBusy: vi.fn((session: { isIdle?: boolean }) => session?.isIdle === false),
     } as unknown as SessionRuntimeCache,
   );
 }
@@ -247,5 +252,143 @@ describe("Workspace lifecycle bound cap (C1 maxBoundWorkspaces)", () => {
     expect(retainedMap(subject).has(workspaceIdentityKey("/repo/2", "linux"))).toBe(true);
     expect(dispose).toHaveBeenCalledTimes(1);
     expect(dispose).toHaveBeenCalledWith(graphs[0]);
+  });
+});
+
+/** A graph that is busy when parked: its sessions must keep running. */
+function busyGraph(canonicalCwd: string, workspaceId: string): WorkspaceGraph {
+  const unsubscribeAgent = vi.fn();
+  const extensionUiCleanup = vi.fn();
+  return {
+    workspaceId,
+    cwd: canonicalCwd,
+    canonicalCwd,
+    revision: 3,
+    servicesReady: true,
+    agentSession: { isIdle: false },
+    backgroundSessions: new Map(),
+    resourceIdMap: new Map(),
+    providerOwner: null,
+    unsubscribeAgent,
+    extensionUiActivate: null,
+    extensionUiCleanup,
+    extensionUiUpdateIdentity: vi.fn(),
+    extensionUiReplayState: vi.fn(),
+  } as unknown as WorkspaceGraph;
+}
+
+describe("Workspace lifecycle busy-graph parking", () => {
+  it("parks a busy graph with its own identity and keeps its live wiring", async () => {
+    const onBoundWorkspacesChanged = vi.fn();
+    const subject = lifecycleWith({ platform: "linux", onBoundWorkspacesChanged });
+    const parked = busyGraph("/repo/busy", "workspace-busy");
+    const unsubscribeAgent = parked.unsubscribeAgent as unknown as ReturnType<typeof vi.fn>;
+    const extensionUiCleanup = parked.extensionUiCleanup as unknown as ReturnType<typeof vi.fn>;
+
+    await retain(subject, parked);
+
+    expect(parked.backgroundRunning).toBe(true);
+    expect(parked.parkedIdentity).toMatchObject({
+      workspaceId: "workspace-busy",
+      workspaceRevision: 3,
+    });
+    // Parked graphs keep running: their subscription, Extension UI binding
+    // and provider registration must all survive retention untouched.
+    expect(unsubscribeAgent).not.toHaveBeenCalled();
+    expect(extensionUiCleanup).not.toHaveBeenCalled();
+    expect(parked.suspendedProviders).toBeUndefined();
+    expect(retainedMap(subject).get(workspaceIdentityKey("/repo/busy", "linux"))).toBe(parked);
+    expect(onBoundWorkspacesChanged).toHaveBeenCalled();
+
+    // An idle graph still takes the plain retention path.
+    const idle = retainableGraph("/repo/idle");
+    await retain(subject, idle);
+    expect(idle.backgroundRunning).toBe(false);
+    expect(idle.parkedIdentity).toBeUndefined();
+  });
+
+  it("evicts idle graphs but never busy parked ones, exceeding the bound if needed", async () => {
+    const subject = lifecycleWith({ platform: "linux", maxBoundWorkspaces: 2 });
+    const busy = busyGraph("/repo/busy", "workspace-busy");
+    const idle = retainableGraph("/repo/idle");
+    await retain(subject, busy);
+    await retain(subject, idle);
+    const dispose = vi.spyOn(subject, "disposeGraph").mockResolvedValue();
+
+    const incoming = retainableGraph("/repo/incoming");
+    await retain(subject, incoming);
+
+    // Cap is 2 but only the stale idle graph is evictable; the busy parked
+    // graph and the graph retained by this very switch are protected.
+    expect(retainedMap(subject).size).toBe(2);
+    expect(retainedMap(subject).has(workspaceIdentityKey("/repo/busy", "linux"))).toBe(true);
+    expect(retainedMap(subject).has(workspaceIdentityKey("/repo/incoming", "linux"))).toBe(true);
+    expect(retainedMap(subject).has(workspaceIdentityKey("/repo/idle", "linux"))).toBe(false);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(dispose).toHaveBeenCalledWith(idle);
+  });
+
+  it("temporarily exceeds the bound when every retained graph is busy", async () => {
+    const subject = lifecycleWith({ platform: "linux", maxBoundWorkspaces: 1 });
+    const first = busyGraph("/repo/first", "workspace-first");
+    const second = busyGraph("/repo/second", "workspace-second");
+    await retain(subject, first);
+    const dispose = vi.spyOn(subject, "disposeGraph").mockResolvedValue();
+
+    await retain(subject, second);
+
+    expect(retainedMap(subject).size).toBe(2);
+    expect(dispose).not.toHaveBeenCalled();
+
+    // A parked graph stays protected even after its sessions settle; only a
+    // fresh retention (reactivation → re-retain) clears backgroundRunning.
+    (first.agentSession as unknown as { isIdle: boolean }).isIdle = true;
+    const third = retainableGraph("/repo/third");
+    await retain(subject, third);
+    expect(retainedMap(subject).size).toBe(3);
+    expect(dispose).not.toHaveBeenCalled();
+  });
+
+  it("keeps busy parked graphs bound when skipping them during invalidation", async () => {
+    const subject = lifecycleWith({ platform: "linux" });
+    const busy = busyGraph("/repo/busy", "workspace-busy");
+    const idle = retainableGraph("/repo/idle");
+    await retain(subject, busy);
+    await retain(subject, idle);
+    const dispose = vi.spyOn(subject, "disposeGraph").mockResolvedValue();
+
+    await subject.invalidateRetainedRuntimeCaches();
+
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(dispose).toHaveBeenCalledWith(idle);
+    expect(subject.isBoundGraph(busy)).toBe(true);
+    expect(retainedMap(subject).has(workspaceIdentityKey("/repo/busy", "linux"))).toBe(true);
+
+    // Full disposal (shutdown path) still disposes everything.
+    await subject.disposeRetainedGraphs();
+    expect(dispose).toHaveBeenCalledTimes(2);
+    expect(dispose).toHaveBeenLastCalledWith(busy);
+    expect(subject.isBoundGraph(busy)).toBe(false);
+  });
+
+  it("answers bound-workspace identity questions across active and retained graphs", async () => {
+    const active = { ...retainableGraph("/repo/active"), workspaceId: "workspace-a", revision: 7 };
+    const subject = lifecycleWith({ platform: "linux", active });
+    const parked = busyGraph("/repo/parked", "workspace-b");
+    await retain(subject, parked);
+
+    expect(subject.isBoundGraph(active)).toBe(true);
+    expect(subject.isBoundGraph(parked)).toBe(true);
+    expect(subject.isBoundGraph(retainableGraph("/repo/stranger"))).toBe(false);
+    expect(subject.isBoundWorkspaceIdentity("workspace-a", 7)).toBe(true);
+    expect(subject.isBoundWorkspaceIdentity("workspace-b", 3)).toBe(true);
+    expect(subject.isBoundWorkspaceIdentity("workspace-b", 4)).toBe(false);
+    expect(subject.isBoundWorkspaceIdentity("workspace-stranger", 1)).toBe(false);
+    expect(subject.hasBusyRetainedGraphs()).toBe(true);
+
+    // Only service-ready graphs count as bound identities.
+    (parked as { servicesReady: boolean }).servicesReady = false;
+    expect(subject.isBoundWorkspaceIdentity("workspace-b", 3)).toBe(false);
+    expect(subject.hasBusyRetainedGraphs()).toBe(true);
   });
 });

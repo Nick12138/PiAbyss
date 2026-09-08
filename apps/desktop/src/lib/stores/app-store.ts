@@ -250,7 +250,7 @@ export type AppNotification = {
  * Priority is red (unacknowledged failure) > green/yellow (busy) > gray
  * (unacknowledged completion) > none.
  */
-type WorkspaceActivity = {
+export type WorkspaceActivity = {
   busy: boolean;
   hasBeenBusy: boolean;
   errorCount: number;
@@ -270,6 +270,23 @@ type AppUpdatePhase =
       totalBytes: number | null;
     }
   | { state: "installing"; update: AppUpdate };
+
+/** Live membership of one workspace in the Host's bound-workspace set. */
+export type BoundWorkspaceInfo = { revision: number; cwd: string };
+
+/**
+ * Index a Host status's `boundWorkspaces` list (shared-host multi-workspace)
+ * by workspaceId. An absent list (older Hosts) yields an empty map.
+ */
+function boundWorkspacesFromStatus(
+  status: Pick<HostStatusSnapshot, "boundWorkspaces"> | null | undefined,
+): Record<string, BoundWorkspaceInfo> {
+  const map: Record<string, BoundWorkspaceInfo> = {};
+  for (const ref of status?.boundWorkspaces ?? []) {
+    map[ref.workspaceId] = { revision: ref.revision, cwd: ref.cwd };
+  }
+  return map;
+}
 
 /**
  * Close the extension terminal panel, restoring the dock to its pre-panel
@@ -386,6 +403,19 @@ export type AppState = EpochState & {
   /** Last explicit session.runtimeChanged state per session. Session snapshots
    * may arrive first and must not erase the busy-to-terminal event edge. */
   sessionRuntimeStates: Record<string, SessionRuntimeState>;
+  /** Workspaces bound to the live Host (active plus parked graphs), keyed by
+   *  workspaceId. Fed by HostStatusSnapshot.boundWorkspaces and kept fresh via
+   *  workspace snapshots; lets the renderer accept and attribute events from
+   *  parked workspaces in shared-host multi-workspace mode without recovery. */
+  boundWorkspaces: Record<string, BoundWorkspaceInfo>;
+  /** Replace the bound-workspace map with a Host-provided list. An undefined
+   *  list (older Hosts / field omitted) is a no-op — absence carries no
+   *  information, so it must not clear known bindings. */
+  applyBoundWorkspaces: (
+    entries: readonly { workspaceId: string; revision: number; cwd: string }[] | undefined,
+  ) => void;
+  /** Refresh (or add) a single bound workspace entry. */
+  upsertBoundWorkspace: (workspaceId: string, revision: number, cwd: string) => void;
   /** Unseen terminal (done/error) markers per session, keyed by workspace. */
   sessionTerminalStates: SessionTerminalStates;
   /** True while the session is pinned to a tree-navigated position, so an empty
@@ -455,11 +485,18 @@ export type AppState = EpochState & {
   replaceSessionCatalog: (workspaceId: string, items: SessionSummary[]) => void;
   clearSessionCatalog: () => void;
   updateSessionCatalogInfo: (sessionId: string, name?: string) => void;
+  /**
+   * Record an explicit session.runtimeChanged edge. `owningWorkspaceId` is the
+   * event envelope's workspaceId: the Session Catalog is only touched for the
+   * active workspace, and terminal markers are keyed by the event's owning
+   * workspace (falling back to the active one for local optimistic updates).
+   */
   setSessionRuntimeState: (
     sessionId: string,
     state: SessionRuntimeState,
     error?: string,
     updatedAt?: number,
+    owningWorkspaceId?: string | null,
   ) => void;
   /** Acknowledge a session's terminal (done/error) marker when the user returns to it. */
   acknowledgeSessionTerminalState: (
@@ -560,6 +597,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   providerNames: EMPTY_PROVIDER_NAMES,
   sessionCatalog: emptySessionCatalog(),
   sessionRuntimeStates: {},
+  boundWorkspaces: {},
   sessionTerminalStates: readTerminalStates(),
   workspaceActivities: {},
   sessionTreeNavigated: false,
@@ -701,6 +739,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       providerNames: EMPTY_PROVIDER_NAMES,
       sessionCatalog: emptySessionCatalog(),
       sessionRuntimeStates: {},
+      boundWorkspaces: boundWorkspacesFromStatus(host),
       hostFatal: null,
       desynchronized: false,
       desyncReason: undefined,
@@ -733,6 +772,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       previousWorkspace &&
       (previousWorkspace.id !== workspace.id || previousWorkspace.revision !== workspace.revision),
     );
+    // The active workspace is always bound to the Host: keep the bound map
+    // fresh (shared-host multi-workspace event routing) even when the Host's
+    // own boundWorkspaces list has not been observed yet.
+    get().upsertBoundWorkspace(workspace.id, workspace.revision, workspace.canonicalCwd);
     set({
       ...next,
       ...(switchedWorkspace ? { settingsNavCache: null } : {}),
@@ -1209,7 +1252,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       sessionCatalog: updateCatalogInfo(state.sessionCatalog, sessionId, name),
     })),
-  setSessionRuntimeState: (sessionId, runtimeState, error, updatedAt) =>
+  applyBoundWorkspaces: (entries) =>
+    set(() => {
+      // An undefined list means the Host did not report bindings (older pool);
+      // absence is not emptiness, so keep whatever is already known.
+      if (entries === undefined) return {};
+      const boundWorkspaces: Record<string, BoundWorkspaceInfo> = {};
+      for (const entry of entries) {
+        boundWorkspaces[entry.workspaceId] = { revision: entry.revision, cwd: entry.cwd };
+      }
+      return { boundWorkspaces };
+    }),
+  upsertBoundWorkspace: (workspaceId, revision, cwd) =>
+    set((state) => {
+      const current = state.boundWorkspaces[workspaceId];
+      if (current && current.revision === revision && current.cwd === cwd) return {};
+      return {
+        boundWorkspaces: { ...state.boundWorkspaces, [workspaceId]: { revision, cwd } },
+      };
+    }),
+  setSessionRuntimeState: (sessionId, runtimeState, error, updatedAt, owningWorkspaceId) =>
     set((state) => {
       // A plain idle announcement for a session that was never busy (freshly
       // opened or restored) is not a completion — only a busy→idle transition
@@ -1219,14 +1281,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         ...state.sessionRuntimeStates,
         [sessionId]: runtimeState,
       };
-      const sessionCatalog = setCatalogRuntimeState(
-        state.sessionCatalog,
-        sessionId,
-        runtimeState,
-        error,
-        updatedAt,
-      );
-      const workspaceId = state.workspace?.id;
+      // The Session Catalog is scoped to the active workspace; shared-host
+      // multi-workspace events from parked workspaces keep their own books.
+      const activeWorkspaceId = state.workspace?.id;
+      const sessionCatalog =
+        !activeWorkspaceId || !owningWorkspaceId || owningWorkspaceId === activeWorkspaceId
+          ? setCatalogRuntimeState(state.sessionCatalog, sessionId, runtimeState, error, updatedAt)
+          : state.sessionCatalog;
+      // Terminal markers are keyed by the event's owning workspace so a parked
+      // workspace's completion dots its own row instead of the active one.
+      const workspaceId = owningWorkspaceId ?? activeWorkspaceId;
       if (!workspaceId) return { sessionCatalog, sessionRuntimeStates };
       let sessionTerminalStates = state.sessionTerminalStates;
       const current = sessionTerminalStates[workspaceId]?.[sessionId];
@@ -1456,6 +1520,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           : snap.session !== undefined
             ? (snap.session?.tools ?? null)
             : current.tools,
+      // The rehydrate Host snapshot is authoritative for bindings too; an
+      // undefined boundWorkspaces (older Host) keeps the current map.
+      ...(snap.host !== undefined ? { boundWorkspaces: boundWorkspacesFromStatus(snap.host) } : {}),
       sessionCatalog:
         workspace && session
           ? upsertCatalogSnapshot(current.sessionCatalog, workspace.id, session)
@@ -1501,6 +1568,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       providerConfigRevision: 0,
       sessionCatalog: emptySessionCatalog(),
       sessionRuntimeStates: {},
+      boundWorkspaces: {},
       hostFatal: reason,
       rehydrating: false,
     });

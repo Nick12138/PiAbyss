@@ -6,6 +6,7 @@ import { MIGRATION_ID } from "./migration-backup.js";
 import {
   migrateLegacyPiAbyssData,
   migrationBackupRoot,
+  migrationConflictsRoot,
   modelBackupDir,
   piabyssDataDir,
   providerJournalRoot,
@@ -71,7 +72,9 @@ describe("migrateLegacyPiAbyssData", () => {
     write(legacyArchive, "session");
 
     await migrateLegacyPiAbyssData(agentDir, MIGRATION_ID);
-    await expect(migrateLegacyPiAbyssData(agentDir, MIGRATION_ID)).resolves.toBeUndefined();
+    await expect(migrateLegacyPiAbyssData(agentDir, MIGRATION_ID)).resolves.toEqual({
+      quarantined: [],
+    });
 
     expect(
       readFileSync(
@@ -111,18 +114,52 @@ describe("migrateLegacyPiAbyssData", () => {
     expect(existsSync(join(agentDir, "provider-journal"))).toBe(false);
   });
 
-  it("rejects conflicting files without overwriting either copy", async () => {
+  it("quarantines a conflicting file without overwriting either copy", async () => {
     const { agentDir } = createFixture();
     const legacy = join(agentDir, "provider-journal", "same-entry", "journal.json");
     const target = join(providerJournalRoot(agentDir), "same-entry", "journal.json");
     write(legacy, "legacy");
     write(target, "target");
 
-    await expect(migrateLegacyPiAbyssData(agentDir, MIGRATION_ID)).rejects.toThrow(
-      /conflicting PiAbyss data/i,
-    );
+    const result = await migrateLegacyPiAbyssData(agentDir, MIGRATION_ID);
 
-    expect(readFileSync(legacy, "utf8")).toBe("legacy");
+    // Destination stays authoritative and untouched.
     expect(readFileSync(target, "utf8")).toBe("target");
+    // The source copy survives in quarantine — nothing is silently lost.
+    expect(result.quarantined).toHaveLength(1);
+    expect(readFileSync(result.quarantined[0]!, "utf8")).toBe("legacy");
+    expect(result.quarantined[0]!.startsWith(migrationConflictsRoot(agentDir, MIGRATION_ID))).toBe(
+      true,
+    );
+    expect(existsSync(join(agentDir, "provider-journal"))).toBe(false);
+  });
+
+  it("drops a byte-identical conflicting file and keeps the adopted copy", async () => {
+    const { agentDir } = createFixture();
+    const legacy = join(agentDir, "provider-journal", "same-entry", "journal.json");
+    const target = join(providerJournalRoot(agentDir), "same-entry", "journal.json");
+    write(legacy, "same-bytes");
+    write(target, "same-bytes");
+
+    const result = await migrateLegacyPiAbyssData(agentDir, MIGRATION_ID);
+
+    expect(result.quarantined).toHaveLength(0);
+    expect(readFileSync(target, "utf8")).toBe("same-bytes");
+    expect(existsSync(join(agentDir, "provider-journal"))).toBe(false);
+  });
+
+  it("quarantines a directory/file collision instead of failing startup", async () => {
+    const { agentDir } = createFixture();
+    // Legacy side is a directory where the adopted side already has a file.
+    const legacyDir = join(agentDir, "provider-journal", "clash");
+    write(join(legacyDir, "inner.json"), "legacy-tree");
+    write(join(providerJournalRoot(agentDir), "clash"), "adopted-file");
+
+    const result = await migrateLegacyPiAbyssData(agentDir, MIGRATION_ID);
+
+    expect(readFileSync(join(providerJournalRoot(agentDir), "clash"), "utf8")).toBe("adopted-file");
+    expect(result.quarantined).toHaveLength(1);
+    expect(readFileSync(join(result.quarantined[0]!, "inner.json"), "utf8")).toBe("legacy-tree");
+    expect(existsSync(join(agentDir, "provider-journal"))).toBe(false);
   });
 });

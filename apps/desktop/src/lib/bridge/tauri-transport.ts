@@ -65,17 +65,30 @@ export async function replayActiveHostReady(): Promise<boolean> {
   }
 }
 
+/** One unacknowledged terminal (done/error) marker for a session. */
+export type HostTerminalMarker = {
+  state: "error" | "done";
+  generation: number;
+  /** Workspace cwd the session belongs to (shared-host multi-workspace).
+   *  Older Rust pools omit it — the marker then mirrors every bound cwd. */
+  workspaceCwd?: string | null;
+};
+
 export type HostActivitySummary = {
   cwd: string;
   /** Pool keys of every workspace bound to this Host, first binding first.
    *  One element in dedicated mode; grows in shared-host mode. Older Rust
    *  pools omit it — fall back to `cwd`. */
   cwds?: string[];
+  /** sessionId → owning workspace cwd for every session currently running
+   *  or queued on this Host. Older Rust pools omit it — the entry-level
+   *  `busy` flag is then the only busy signal. */
+  busySessions?: Record<string, string>;
   busy: boolean;
   hasBeenBusy: boolean;
   errorCount: number;
   doneCount: number;
-  terminalSessions: Record<string, { state: "error" | "done"; generation: number }>;
+  terminalSessions: Record<string, HostTerminalMarker>;
 };
 
 /** Every workspace a snapshot entry covers: `cwds` when present, else `cwd`. */

@@ -115,6 +115,15 @@ export type HostPhase =
   | "shuttingDown"
   | "fatal";
 
+/** One workspace graph currently bound to (active or parked in) the Host. */
+export type BoundWorkspaceRef = {
+  workspaceId: string;
+  /** The graph's current revision; events from this workspace carry it. */
+  revision: number;
+  /** Canonical workspace directory for cwd-based matching. */
+  cwd: string;
+};
+
 export type HostStatusSnapshot = HostIdentity & {
   protocolVersion: 1;
   sdkVersion: string;
@@ -126,6 +135,12 @@ export type HostStatusSnapshot = HostIdentity & {
   extensionDecisionPresentation?: ExtensionDecisionPresentation;
   lastError?: HostError;
   fatalError?: HostError;
+  /**
+   * Every workspace graph bound to this Host (the active one plus parked
+   * retained graphs), present on shared-host Hosts. Lets clients accept
+   * workspace-scoped events from parked graphs and map workspaceId → cwd.
+   */
+  boundWorkspaces?: BoundWorkspaceRef[];
 };
 
 export type WorkspaceSnapshot = {

@@ -3,6 +3,7 @@ import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
   createHostError,
   type HostError,
+  type HostEventName,
   type HostIdentity,
   type QueueSnapshot,
   type SessionRuntimeState,
@@ -149,6 +150,10 @@ export type SessionRuntimeCacheContext = {
   getServer: () => PiHostServer | null;
   getCurrentRunId: () => string | null;
   sessionPathsEqual: (left: string | undefined, right: string) => boolean;
+  /** True when the graph is active or parked (bound) — events may flow. */
+  isGraphBound?: (graph: WorkspaceGraph) => boolean;
+  /** Busy check across every bound workspace graph, not just the active one. */
+  hasAnyBusySessions?: () => boolean;
 };
 
 export class SessionRuntimeCache {
@@ -616,7 +621,9 @@ export class SessionRuntimeCache {
 
   handleAgentEvent(graph: WorkspaceGraph, sourceSession: AgentSession, event: unknown): void {
     const server = this.context.getServer();
-    if (!server || this.context.getGraph() !== graph) return;
+    if (!server) return;
+    const isGraphActive = this.context.getGraph() === graph;
+    if (!isGraphActive && !this.context.isGraphBound?.(graph)) return;
 
     const active = graph.agentSession === sourceSession;
     const background = active
@@ -634,11 +641,31 @@ export class SessionRuntimeCache {
     const sessionManager = active ? graph.sessionManager : retained?.sessionManager;
     const currentSnapshot = active ? graph.sessionSnapshot : retained?.sessionSnapshot;
     if (!sessionManager || !currentSnapshot) return;
+    // Active graph: strict current identity. Parked graph: its own identity
+    // captured at park time (never the current one — the foreground moved).
+    const baseIdentity: HostIdentity = isGraphActive
+      ? server.getIdentity()
+      : (graph.parkedIdentity ?? {
+          hostInstanceId: server.identity.hostInstanceId,
+          workspaceId: graph.workspaceId,
+          workspaceRevision: graph.revision,
+          sessionId: null,
+          sessionRevision: 0,
+          packageRevision: 0,
+        });
     const eventIdentity: HostIdentity = {
-      ...server.getIdentity(),
+      ...baseIdentity,
       sessionId: currentSnapshot.sessionId,
       sessionRevision: currentSnapshot.revision,
     };
+    // Parked graphs keep updating runtime state but only emit the
+    // session-scoped events the foreground can safely attribute to their own
+    // workspace; agent payloads and snapshots stay active-graph-only.
+    const emit = isGraphActive
+      ? (name: HostEventName, payload: unknown) =>
+          server.emitForIdentity(eventIdentity, name, payload)
+      : (name: HostEventName, payload: unknown) =>
+          server.emitForBoundIdentity(eventIdentity, name, payload);
 
     const eventType =
       typeof event === "object" && event !== null && "type" in event
@@ -678,18 +705,20 @@ export class SessionRuntimeCache {
       });
       if (active) graph.sessionSnapshot = nextSnapshot;
       else retained!.sessionSnapshot = nextSnapshot;
-      server.emitForIdentity(eventIdentity, "session.infoChanged", {
+      emit("session.infoChanged", {
         sessionId: nextSnapshot.sessionId,
         ...(nextSnapshot.name ? { name: nextSnapshot.name } : {}),
       });
-      if (active) server.emitForIdentity(eventIdentity, "session.snapshot", nextSnapshot);
+      if (isGraphActive && active) {
+        server.emitForIdentity(eventIdentity, "session.snapshot", nextSnapshot);
+      }
       return;
     }
 
     const runId = this.runIds.get(sourceSession) ?? this.context.getCurrentRunId() ?? randomUUID();
     const serialized = normalizeAgentEvent(event);
     this.observeRuntimeOutcome(sourceSession, eventType, serialized);
-    if (active) {
+    if (isGraphActive && active) {
       server.emitForIdentity(eventIdentity, "agent.event", { runId, event: serialized });
     }
     this.publishRuntimeState(sourceSession, eventIdentity, eventType, serialized);
@@ -705,7 +734,9 @@ export class SessionRuntimeCache {
       });
       if (active && graph.sessionSnapshot) graph.sessionSnapshot.tools = tools;
       if (!active && retained) retained.sessionSnapshot.tools = tools;
-      if (active) server.emitForIdentity(eventIdentity, "agent.toolsChanged", tools);
+      if (isGraphActive && active) {
+        server.emitForIdentity(eventIdentity, "agent.toolsChanged", tools);
+      }
     }
 
     const snapshot = active ? graph.sessionSnapshot : retained?.sessionSnapshot;
@@ -723,17 +754,31 @@ export class SessionRuntimeCache {
       workspaceId: graph.workspaceId,
       toolRevision: active ? graph.toolRevision : retained!.toolRevision,
     });
-    if (active) {
+    if (isGraphActive && active) {
       graph.sessionSnapshot = lifecycleSnapshot;
       this.touchIdleSession(graph, lifecycleSnapshot.sessionId);
       server.emitForIdentity(eventIdentity, "session.snapshot", lifecycleSnapshot);
+    } else if (active) {
+      // A parked graph's active session settled: keep its snapshot fresh
+      // (silently — no emission for the foreground) so reactivation reads an
+      // accurate isIdle state even before the rebuild.
+      graph.sessionSnapshot = lifecycleSnapshot;
     } else if (retained) {
       retained.sessionSnapshot = lifecycleSnapshot;
       if (background && eventType === "agent_settled") {
         this.cacheSettledBackgroundRuntime(graph, background);
       }
     }
-    if (!this.hasBusySessions()) server.setPhase("ready");
+    // Only an agent-busy Host may settle to ready here. The busyness check is
+    // Host-wide (the factory's hasAnyBusySessions covers parked workspaces);
+    // other phases (packageBusy, workspaceError, …) carry their own meaning
+    // and must survive an interleaved session settle untouched.
+    if (
+      server.getPhase() === "agentBusy" &&
+      !(this.context.hasAnyBusySessions?.() ?? this.hasBusySessions())
+    ) {
+      server.setPhase("ready");
+    }
   }
 
   private runtimeStateForSession(session: AgentSession): SessionRuntimeState {
@@ -787,8 +832,11 @@ export class SessionRuntimeCache {
     const sessionSnapshot = active ? graph.sessionSnapshot : background?.sessionSnapshot;
     if (!sessionSnapshot) return;
     sessionSnapshot.pending = queue;
-    if (!active) return;
-    server.emitForIdentity(
+    // Emit only for the foreground graph: a parked graph's active session must
+    // update its snapshot locally but never emit under the CURRENT workspace's
+    // identity (that would mis-attribute the queue to another workspace).
+    if (!active || this.context.getGraph() !== graph) return;
+    server.emitForBoundIdentity(
       {
         ...server.getIdentity(),
         sessionId: sessionSnapshot.sessionId,
@@ -839,7 +887,7 @@ export class SessionRuntimeCache {
       state === "error"
         ? (this.pendingRuntimeErrors.get(session) ?? runtimeErrorMessage(serializedEvent))
         : undefined;
-    server.emitForIdentity(identity, "session.runtimeChanged", {
+    server.emitForBoundIdentity(identity, "session.runtimeChanged", {
       sessionId: identity.sessionId,
       sessionRevision: identity.sessionRevision,
       state,

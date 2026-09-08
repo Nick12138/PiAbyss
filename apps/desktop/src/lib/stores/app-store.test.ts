@@ -92,6 +92,7 @@ describe("app-store epoch wiring", () => {
       providerConfigRevision: 0,
       sessionCatalog: emptySessionCatalog(),
       sessionRuntimeStates: {},
+      boundWorkspaces: {},
       sessionTerminalStates: {},
       workspaceActivities: {},
       draftTexts: {},
@@ -1404,5 +1405,122 @@ describe("settings nav cache", () => {
     useAppStore.getState().setSettingsSection("host");
     useAppStore.getState().setPage("chat");
     expect(useAppStore.getState().settingsSection).toBeNull();
+  });
+});
+
+describe("bound-workspace bookkeeping (shared-host multi-workspace)", () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      host: null,
+      workspace: null,
+      session: null,
+      sessionCatalog: emptySessionCatalog(),
+      sessionRuntimeStates: {},
+      boundWorkspaces: {},
+      sessionTerminalStates: {},
+      desynchronized: false,
+      lastSequence: 0,
+    });
+  });
+
+  it("seeds the map from the hello status's boundWorkspaces", () => {
+    useAppStore.getState().beginHostEpoch({
+      ...host("h1"),
+      boundWorkspaces: [
+        { workspaceId: "w-active", revision: 1, cwd: "/p/active" },
+        { workspaceId: "w-parked", revision: 3, cwd: "/p/parked" },
+      ],
+    });
+    expect(useAppStore.getState().boundWorkspaces).toEqual({
+      "w-active": { revision: 1, cwd: "/p/active" },
+      "w-parked": { revision: 3, cwd: "/p/parked" },
+    });
+
+    // A new epoch without the field (older Host) resets the map.
+    useAppStore.getState().beginHostEpoch(host("h2"));
+    expect(useAppStore.getState().boundWorkspaces).toEqual({});
+  });
+
+  it("replaces the map from a status list and keeps it on undefined", () => {
+    useAppStore.getState().applyBoundWorkspaces([{ workspaceId: "w1", revision: 1, cwd: "/p/1" }]);
+    useAppStore.getState().applyBoundWorkspaces([
+      { workspaceId: "w2", revision: 2, cwd: "/p/2" },
+      { workspaceId: "w3", revision: 3, cwd: "/p/3" },
+    ]);
+    expect(useAppStore.getState().boundWorkspaces).toEqual({
+      w2: { revision: 2, cwd: "/p/2" },
+      w3: { revision: 3, cwd: "/p/3" },
+    });
+
+    // An undefined list (older Host / field omitted) is not emptiness.
+    useAppStore.getState().applyBoundWorkspaces(undefined);
+    expect(useAppStore.getState().boundWorkspaces["w2"]).toBeDefined();
+  });
+
+  it("upserts and refreshes single entries", () => {
+    useAppStore.getState().upsertBoundWorkspace("w1", 1, "/p/1");
+    expect(useAppStore.getState().boundWorkspaces["w1"]).toEqual({ revision: 1, cwd: "/p/1" });
+    useAppStore.getState().upsertBoundWorkspace("w1", 2, "/p/1");
+    expect(useAppStore.getState().boundWorkspaces["w1"]).toEqual({ revision: 2, cwd: "/p/1" });
+  });
+
+  it("upserts the active workspace from workspace snapshots", () => {
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    expect(useAppStore.getState().boundWorkspaces["w1"]).toEqual({ revision: 1, cwd: "/p/w1" });
+
+    // A revision bump refreshes the entry; a parked entry is not dropped.
+    useAppStore.getState().upsertBoundWorkspace("w2", 5, "/p/w2");
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 2));
+    expect(useAppStore.getState().boundWorkspaces).toEqual({
+      w1: { revision: 2, cwd: "/p/w1" },
+      w2: { revision: 5, cwd: "/p/w2" },
+    });
+  });
+
+  it("re-seeds from the rehydrate Host snapshot", () => {
+    useAppStore
+      .getState()
+      .applyBoundWorkspaces([{ workspaceId: "w-old", revision: 1, cwd: "/p/old" }]);
+    useAppStore.getState().completeRehydrate({
+      host: {
+        ...host("h1"),
+        boundWorkspaces: [{ workspaceId: "w-new", revision: 2, cwd: "/p/new" }],
+      },
+    });
+    expect(useAppStore.getState().boundWorkspaces).toEqual({
+      "w-new": { revision: 2, cwd: "/p/new" },
+    });
+  });
+
+  it("keys runtime markers by the owning workspace for parked events", () => {
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().applySessionSnapshot(session("s1"));
+
+    // Parked workspace w2's session settles: busy→idle edge arrives from w2.
+    useAppStore.getState().setSessionRuntimeState("s2", "running", undefined, 10, "w2");
+    useAppStore.getState().setSessionRuntimeState("s2", "idle", undefined, 20, "w2");
+
+    const state = useAppStore.getState();
+    expect(state.sessionTerminalStates.w2?.s2).toEqual({ state: "done", acknowledged: false });
+    expect(state.sessionTerminalStates.w1?.s2).toBeUndefined();
+    // Flat runtime state is recorded regardless of ownership.
+    expect(state.sessionRuntimeStates.s2).toBe("idle");
+    // The active workspace's catalog is untouched by parked events.
+    expect(state.sessionCatalog.entries.s2).toBeUndefined();
+  });
+
+  it("keeps the active workspace's catalog and markers without ownership info", () => {
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().applySessionSnapshot(session("s1"));
+
+    // Local optimistic rollback (no owning workspace) keeps legacy behavior.
+    useAppStore.getState().setSessionRuntimeState("s1", "error", "boom");
+    expect(useAppStore.getState().sessionTerminalStates.w1?.s1).toEqual({
+      state: "error",
+      acknowledged: false,
+    });
+    expect(useAppStore.getState().sessionCatalog.entries.s1?.lastError).toBe("boom");
   });
 });

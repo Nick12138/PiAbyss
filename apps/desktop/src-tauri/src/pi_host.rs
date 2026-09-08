@@ -39,6 +39,14 @@ pub struct HostActivitySnapshot {
     /// renderers only read `cwd`, which mirrors the first binding.
     pub cwds: Vec<String>,
     pub busy: bool,
+    /// Busy sessions attributed to the workspace cwd that owns them
+    /// (sessionId → cwd), so the workspace list can show which workspace's
+    /// Host still has a turn running in shared-host mode. Sessions that
+    /// cannot be attributed yet — the Host has not broadcast its workspace
+    /// bindings, or the envelope carried no workspaceId — are skipped, and
+    /// the whole map is omitted from the JSON while empty.
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub busy_sessions: HashMap<String, String>,
     pub has_been_busy: bool,
     /// Unacknowledged failed sessions (red dot).
     pub error_count: usize,
@@ -56,6 +64,12 @@ pub struct HostTerminalActivity {
     /// Monotonic within this Host. A later run of the same session gets a new
     /// generation, so an acknowledgement for an older run cannot hide it.
     pub generation: u64,
+    /// Workspace cwd the session was bound to when it settled, resolved from
+    /// the session's runtime envelope plus the Host's `host.statusChanged`
+    /// bindings. `None` (and omitted from JSON) while the Host has not
+    /// announced bindings for that session's workspace.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_cwd: Option<String>,
 }
 
 #[cfg(unix)]
@@ -719,6 +733,13 @@ pub(crate) struct HostActivity {
     /// busy→idle completion from a plain idle announcement for a restored
     /// session that never ran.
     last_state: HashMap<String, String>,
+    /// workspaceId → cwd, rebuilt wholesale from each `host.statusChanged`
+    /// broadcast's `boundWorkspaces` list. Attribution source for busy
+    /// sessions and terminal markers in shared-host mode.
+    pub(crate) workspace_cwds: HashMap<String, String>,
+    /// sessionId → workspaceId, recorded from the top-level `workspaceId`
+    /// envelope field of `session.runtimeChanged` events.
+    pub(crate) session_workspace: HashMap<String, String>,
 }
 
 impl HostActivity {
@@ -739,6 +760,8 @@ impl Default for HostActivity {
             terminal_sessions: HashMap::new(),
             next_terminal_generation: 0,
             last_state: HashMap::new(),
+            workspace_cwds: HashMap::new(),
+            session_workspace: HashMap::new(),
         }
     }
 }
@@ -1161,6 +1184,19 @@ pub(crate) fn host_activity_snapshot(
         cwd: canonical_cwd.to_string_lossy().to_string(),
         cwds: workspaces.to_vec(),
         busy: !activity.busy_sessions.is_empty(),
+        // Same attribution chain as terminal markers (session → workspace →
+        // cwd); busy sessions whose links are not yet known are skipped.
+        busy_sessions: activity
+            .busy_sessions
+            .iter()
+            .filter_map(|session_id| {
+                activity
+                    .session_workspace
+                    .get(session_id)
+                    .and_then(|workspace_id| activity.workspace_cwds.get(workspace_id))
+                    .map(|cwd| (session_id.clone(), cwd.clone()))
+            })
+            .collect(),
         has_been_busy: activity.has_been_busy,
         error_count: activity
             .terminal_sessions
@@ -1231,12 +1267,60 @@ pub(crate) fn host_activity_rss_eligible(activity: &StdMutex<HostActivity>) -> b
     !host_activity_pinned(activity) && host_idle_for(activity) >= RSS_PROBE_MIN_IDLE
 }
 
+/// Resolve the workspace cwd a session belongs to: sessionId → workspaceId
+/// (recorded from runtime envelopes) → cwd (rebuilt from `host.statusChanged`
+/// bindings). `None` while either link is missing — a normal state before the
+/// Host's first status broadcast after (re)start.
+fn session_workspace_cwd(activity: &HostActivity, session_id: &str) -> Option<String> {
+    activity
+        .session_workspace
+        .get(session_id)
+        .and_then(|workspace_id| activity.workspace_cwds.get(workspace_id))
+        .cloned()
+}
+
+/// `host.statusChanged` broadcast: the payload's `boundWorkspaces` array is
+/// the authoritative workspaceId→cwd binding list for this Host, so it is
+/// rebuilt wholesale (an empty or missing array clears every binding).
+/// Returns whether bindings changed, so the caller refreshes snapshots.
+fn observe_host_status_changed(
+    activity: &StdMutex<HostActivity>,
+    message: &serde_json::Value,
+) -> bool {
+    let mut activity = activity
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut rebuilt = HashMap::new();
+    if let Some(bound) = message
+        .get("payload")
+        .and_then(|payload| payload.get("boundWorkspaces"))
+        .and_then(|value| value.as_array())
+    {
+        for binding in bound {
+            let (Some(workspace_id), Some(cwd)) = (
+                binding.get("workspaceId").and_then(|value| value.as_str()),
+                binding.get("cwd").and_then(|value| value.as_str()),
+            ) else {
+                continue;
+            };
+            rebuilt.insert(workspace_id.to_string(), cwd.to_string());
+        }
+    }
+    let changed = rebuilt != activity.workspace_cwds;
+    activity.workspace_cwds = rebuilt;
+    changed
+}
+
 pub(crate) fn observe_host_activity(activity: &StdMutex<HostActivity>, line: &str) -> bool {
     let Ok(message) = serde_json::from_str::<serde_json::Value>(line) else {
         return false;
     };
-    if message.get("event").and_then(|value| value.as_str()) != Some("session.runtimeChanged") {
-        return false;
+    match message.get("event").and_then(|value| value.as_str()) {
+        Some("host.statusChanged") => {
+            return observe_host_status_changed(activity, &message);
+        }
+        Some("session.runtimeChanged") => {}
+        _ => return false,
     }
     let Some(session_id) = message
         .get("payload")
@@ -1255,6 +1339,14 @@ pub(crate) fn observe_host_activity(activity: &StdMutex<HostActivity>, line: &st
     let mut activity = activity
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    // Shared hosts interleave several workspaces' events on one stdout
+    // stream, so record which workspace this session belongs to — busy
+    // sessions and terminal markers are attributed through it.
+    if let Some(workspace_id) = message.get("workspaceId").and_then(|value| value.as_str()) {
+        activity
+            .session_workspace
+            .insert(session_id.to_string(), workspace_id.to_string());
+    }
     let was_busy = !activity.busy_sessions.is_empty();
     let mut changed = false;
     match state {
@@ -1277,11 +1369,13 @@ pub(crate) fn observe_host_activity(activity: &StdMutex<HostActivity>, line: &st
             if terminal_changed {
                 activity.next_terminal_generation += 1;
                 let generation = activity.next_terminal_generation;
+                let workspace_cwd = session_workspace_cwd(&activity, session_id);
                 activity.terminal_sessions.insert(
                     session_id.to_string(),
                     HostTerminalActivity {
                         state: "error".to_string(),
                         generation,
+                        workspace_cwd,
                     },
                 );
                 changed = true;
@@ -1305,11 +1399,13 @@ pub(crate) fn observe_host_activity(activity: &StdMutex<HostActivity>, line: &st
             if was_running {
                 activity.next_terminal_generation += 1;
                 let generation = activity.next_terminal_generation;
+                let workspace_cwd = session_workspace_cwd(&activity, session_id);
                 activity.terminal_sessions.insert(
                     session_id.to_string(),
                     HostTerminalActivity {
                         state: "done".to_string(),
                         generation,
+                        workspace_cwd,
                     },
                 );
                 changed = true;

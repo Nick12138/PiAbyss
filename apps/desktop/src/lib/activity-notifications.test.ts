@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchHostActivity, type HostActivitySummary } from "./bridge/tauri-transport";
+import {
+  fetchHostActivity,
+  type HostActivitySummary,
+  type HostTerminalMarker,
+} from "./bridge/tauri-transport";
 import type { SystemNotificationCandidate } from "./system-notifications";
 import { ActivityNotificationObserver, activityPathKey } from "./activity-notifications";
 
@@ -12,7 +16,7 @@ vi.mock("./bridge/tauri-transport", () => ({
 
 function summary(
   cwd: string,
-  terminalSessions: Record<string, { state: "error" | "done"; generation: number }>,
+  terminalSessions: Record<string, HostTerminalMarker>,
 ): HostActivitySummary {
   return {
     cwd,
@@ -183,6 +187,50 @@ describe("ActivityNotificationObserver", () => {
     isActiveWorkspace = (cwd) => cwd === "/b";
     observer.observeSnapshot([shared(2)]);
     expect(notified).toHaveLength(0);
+    observer.dispose();
+  });
+
+  it("notifies a parked completion even when the entry also covers the active workspace", () => {
+    isActiveWorkspace = (cwd) => cwd === "/a";
+    const observer = makeObserver();
+    const shared = (generation: number) => ({
+      ...summary("/a", {
+        // The active workspace's own marker stays event-stream-covered…
+        "s-active": { state: "done", generation },
+        // …while the parked workspace's completion must not be swallowed.
+        "s-parked": { state: "done", generation, workspaceCwd: "/b" },
+      }),
+      cwds: ["/a", "/b"],
+    });
+    observer.observeSnapshot([shared(1)]); // prime
+    observer.observeSnapshot([shared(2)]);
+    expect(notified).toHaveLength(1);
+    expect(notified[0]).toMatchObject({
+      kind: "response-ready",
+      target: { workspaceId: null, workspacePath: "/b", sessionId: "s-parked" },
+    });
+    observer.dispose();
+  });
+
+  it("skips a completion whose workspaceCwd is the active workspace", () => {
+    isActiveWorkspace = (cwd) => cwd === "/b";
+    const observer = makeObserver();
+    const shared = (generation: number) => ({
+      ...summary("/a", {
+        "s-active": { state: "error", generation, workspaceCwd: "/b" },
+        "s-parked": { state: "done", generation, workspaceCwd: "/a" },
+      }),
+      cwds: ["/a", "/b"],
+    });
+    observer.observeSnapshot([shared(1)]); // prime
+    observer.observeSnapshot([shared(2)]);
+    // Only the parked completion is delivered; the one owned by the active
+    // workspace is suppressed (the event stream already notified it).
+    expect(notified).toHaveLength(1);
+    expect(notified[0]).toMatchObject({
+      kind: "response-ready",
+      target: { workspacePath: "/a", sessionId: "s-parked" },
+    });
     observer.dispose();
   });
 

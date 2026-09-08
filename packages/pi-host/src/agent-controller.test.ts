@@ -171,6 +171,7 @@ function stableHandlerFixture(wait: Promise<void>) {
       return observed.queue;
     },
     hasBusySessions: () => false,
+    hasAnyBusySessions: () => false,
     setSessionRunId: vi.fn(),
     clearSessionRunId: vi.fn(),
     publishCurrentRuntimeState: vi.fn(),
@@ -380,6 +381,33 @@ describe("agent.prompt startup", () => {
     expect(fixture.factory.currentRunId).toBeNull();
     expect(fixture.server.getPhase()).toBe("ready");
     expect(fixture.session.prompt).not.toHaveBeenCalled();
+  });
+
+  it("keeps the phase agentBusy when the active run settles but a parked workspace still runs", async () => {
+    const gate = deferred();
+    const fixture = stableHandlerFixture(gate.promise);
+    // A parked (retained) graph is still mid-run: the factory's Host-wide
+    // busy check must keep the global phase agentBusy after the active
+    // workspace's own run settles.
+    const factoryInternals = fixture.factory as unknown as {
+      hasAnyBusySessions: () => boolean;
+    };
+    const original = factoryInternals.hasAnyBusySessions;
+    factoryInternals.hasAnyBusySessions = () => true;
+    const handler = createAgentHandlers(fixture.factory)["agent.prompt"]!;
+
+    await handler({
+      id: "prompt-parked-still-busy",
+      context: {},
+      params: { text: "finish while parked runs" },
+    } as never);
+    (fixture.session as unknown as { isIdle: boolean }).isIdle = true;
+    gate.resolve();
+    await vi.waitFor(() => expect(fixture.factory.publishCurrentRuntimeState).toHaveBeenCalled());
+
+    expect(fixture.sessionOperationLock.isHeld()).toBe(false);
+    expect(fixture.server.getPhase()).toBe("agentBusy");
+    factoryInternals.hasAnyBusySessions = original;
   });
 });
 

@@ -167,6 +167,7 @@ function mockFactory(opts: {
     getServer: () => server,
     getSessionOperationLock: () => server.agentOperationLock,
     hasBusySessions: () => opts.agentBusy === true || !g.agentSession.isIdle,
+    hasAnyBusySessions: () => opts.agentBusy === true || !g.agentSession.isIdle,
     setSessionRunId: () => {},
     clearSessionRunId: () => {},
     publishCurrentRuntimeState: vi.fn(),

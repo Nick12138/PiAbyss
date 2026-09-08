@@ -19,8 +19,14 @@ export function bindForCandidate(
   commandContextActions?: ExtensionCommandContextActions,
 ): Promise<ExtensionUiBinding> {
   return bindExtensionUi(session, extensionsResult, {
-    emit: (event, payload) => server.emitForIdentity(candidateIdentity, event, payload),
-    emitForIdentity: (identity, event, payload) => server.emitForIdentity(identity, event, payload),
+    // The static emit closure carries the candidate identity. Between bind
+    // and commit there is no emission point (the bridge queues events until
+    // activation), and a re-bound parked graph still holds the old workspace
+    // identity, so route through the relaxed bound-identity emit: identical
+    // to emitForIdentity once the candidate is committed and current.
+    emit: (event, payload) => server.emitForBoundIdentity(candidateIdentity, event, payload),
+    emitForIdentity: (identity, event, payload) =>
+      server.emitForBoundIdentity(identity, event, payload),
     getIdentity: () => candidateIdentity,
     getCurrentIdentity: () => server.getIdentity(),
     getExtensionDecisionPresentation: () => server.getExtensionDecisionPresentation(),

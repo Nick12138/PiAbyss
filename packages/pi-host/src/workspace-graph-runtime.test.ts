@@ -226,6 +226,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
     const server = {
       getIdentity: () => identity,
       emitForIdentity: vi.fn(),
+      emitForBoundIdentity: vi.fn(),
     } as unknown as PiHostServer;
     const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
     factory.bindServer(server);
@@ -258,14 +259,14 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       followUp: [...followUp],
     });
 
-    expect(server.emitForIdentity).not.toHaveBeenCalled();
+    expect(server.emitForBoundIdentity).not.toHaveBeenCalled();
     expect(factory.finishQueueTransaction(session)).toEqual({
       revision: 1,
       steering: ["steer first"],
       followUp: ["then this"],
     });
-    expect(server.emitForIdentity).toHaveBeenCalledOnce();
-    expect(server.emitForIdentity).toHaveBeenCalledWith(identity, "agent.queueChanged", {
+    expect(server.emitForBoundIdentity).toHaveBeenCalledOnce();
+    expect(server.emitForBoundIdentity).toHaveBeenCalledWith(identity, "agent.queueChanged", {
       revision: 1,
       steering: ["steer first"],
       followUp: ["then this"],
@@ -290,6 +291,11 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
     const server = {
       getIdentity: () => identity,
       emitForIdentity: vi.fn(
+        (eventIdentity: HostIdentity, event: HostEventName, payload: unknown) => {
+          events.push({ identity: eventIdentity, event, payload });
+        },
+      ),
+      emitForBoundIdentity: vi.fn(
         (eventIdentity: HostIdentity, event: HostEventName, payload: unknown) => {
           events.push({ identity: eventIdentity, event, payload });
         },
@@ -376,6 +382,12 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       emitForIdentity: vi.fn((_identity: HostIdentity, event: HostEventName, payload: unknown) => {
         events.push({ event, payload });
       }),
+      emitForBoundIdentity: vi.fn(
+        (_identity: HostIdentity, event: HostEventName, payload: unknown) => {
+          events.push({ event, payload });
+        },
+      ),
+      getPhase: vi.fn(() => "agentBusy"),
       setPhase: vi.fn(),
     } as unknown as PiHostServer;
     const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
@@ -428,6 +440,12 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       emitForIdentity: vi.fn((_identity: HostIdentity, event: HostEventName, payload: unknown) => {
         events.push({ event, payload });
       }),
+      emitForBoundIdentity: vi.fn(
+        (_identity: HostIdentity, event: HostEventName, payload: unknown) => {
+          events.push({ event, payload });
+        },
+      ),
+      getPhase: vi.fn(() => "agentBusy"),
       setPhase: vi.fn(),
     } as unknown as PiHostServer;
     const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
@@ -487,6 +505,12 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       emitForIdentity: vi.fn((_identity: HostIdentity, event: HostEventName, payload: unknown) => {
         events.push({ event, payload });
       }),
+      emitForBoundIdentity: vi.fn(
+        (_identity: HostIdentity, event: HostEventName, payload: unknown) => {
+          events.push({ event, payload });
+        },
+      ),
+      getPhase: vi.fn(() => "agentBusy"),
       setPhase: vi.fn(),
     } as unknown as PiHostServer;
     const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
@@ -572,6 +596,11 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       emitForIdentity: vi.fn((_identity: HostIdentity, event: HostEventName, payload: unknown) => {
         events.push({ event, payload });
       }),
+      emitForBoundIdentity: vi.fn(
+        (_identity: HostIdentity, event: HostEventName, payload: unknown) => {
+          events.push({ event, payload });
+        },
+      ),
       setPhase: vi.fn(),
       serviceGraphLock: new TryMutex(),
     } as unknown as PiHostServer;
@@ -641,6 +670,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
         getIdentity: () => identity,
         getPhase: vi.fn(() => "agentBusy"),
         emitForIdentity: vi.fn(),
+        emitForBoundIdentity: vi.fn(),
         setPhase: vi.fn(),
         serviceGraphLock,
       } as unknown as PiHostServer;
@@ -718,6 +748,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       getIdentity: () => ({ ...identity }),
       emit: vi.fn((event: HostEventName) => emitted.push(event)),
       emitForIdentity: vi.fn(),
+      emitForBoundIdentity: vi.fn(),
     } as unknown as PiHostServer;
     const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
     factory.bindServer(server);
@@ -825,9 +856,11 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       packageRevision: 1,
     };
     const emitForIdentity = vi.fn();
+    const emitForBoundIdentity = vi.fn();
     const server = {
       getIdentity: () => ({ ...identity }),
       emitForIdentity,
+      emitForBoundIdentity,
     } as unknown as PiHostServer;
     const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
     factory.bindServer(server);
@@ -843,7 +876,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
 
     factory.announceRetainedRuntime(runtime);
 
-    expect(emitForIdentity).toHaveBeenCalledWith(
+    expect(emitForBoundIdentity).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: ACTIVE_SESSION_ID, sessionRevision: 5 }),
       "session.runtimeChanged",
       expect.objectContaining({
@@ -853,11 +886,11 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       }),
     );
 
-    emitForIdentity.mockClear();
+    emitForBoundIdentity.mockClear();
     graph.backgroundSessions.delete(ACTIVE_SESSION_ID);
     factory.announceRetainedRuntime(runtime);
 
-    expect(emitForIdentity).not.toHaveBeenCalled();
+    expect(emitForBoundIdentity).not.toHaveBeenCalled();
   });
 
   it("rejects disk reload while the active Session is running", async () => {
@@ -925,8 +958,10 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
       serviceGraphLock: new TryMutex(),
       graphOperations: new GraphOperationRegistry(),
       getIdentity: () => ({ ...identity }),
+      getPhase: vi.fn(() => "agentBusy"),
       emit: vi.fn(),
       emitForIdentity: vi.fn(),
+      emitForBoundIdentity: vi.fn(),
       setPhase: vi.fn(),
       setLastError: vi.fn(),
     } as unknown as PiHostServer;
@@ -1467,6 +1502,168 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
       await state.factory.invalidateRetainedRuntimeCaches();
 
       expect(disposeWorkspaces).toHaveBeenCalledTimes(1);
+    } finally {
+      rmSync(state.root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a busy parked graph emitting under its own identity while another workspace is active", async () => {
+    const state = setup();
+    try {
+      const busySession = fakeSession(false, BACKGROUND_SESSION_ID);
+      const busyWorkspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+      const parked = fakeWorkspaceGraph(state.retainedDir, busyWorkspaceId, busySession);
+      await state.internal.retainGraph(parked);
+
+      expect(parked.backgroundRunning).toBe(true);
+      expect(parked.parkedIdentity).toMatchObject({
+        hostInstanceId: HOST_ID,
+        workspaceId: busyWorkspaceId,
+        workspaceRevision: 1,
+      });
+
+      // While the unrelated workspace is active, the parked graph's session
+      // keeps emitting runtime changes under the parked graph's identity.
+      state.factory.handleAgentEvent(parked, busySession, { type: "agent_start" });
+
+      expect(state.server.emitForIdentity).not.toHaveBeenCalled();
+      expect(state.server.emitForBoundIdentity).toHaveBeenCalledWith(
+        expect.objectContaining({
+          hostInstanceId: HOST_ID,
+          workspaceId: busyWorkspaceId,
+          workspaceRevision: 1,
+          sessionId: BACKGROUND_SESSION_ID,
+        }),
+        "session.runtimeChanged",
+        expect.objectContaining({ sessionId: BACKGROUND_SESSION_ID, state: "running" }),
+      );
+
+      // The global phase must not flip to ready while a parked graph runs.
+      state.factory.handleAgentEvent(parked, busySession, { type: "agent_end" });
+      expect(state.server.setPhase).not.toHaveBeenCalledWith("ready");
+
+      // After the parked run settles nothing is busy anymore.
+      Reflect.set(busySession, "isIdle", true);
+      state.factory.handleAgentEvent(parked, busySession, { type: "agent_settled" });
+      expect(state.server.setPhase).toHaveBeenCalledWith("ready");
+
+      // Bound-workspace projection: active graph first, then parked.
+      expect(state.factory.buildBoundWorkspaces()).toEqual([
+        {
+          workspaceId: WORKSPACE_ID,
+          revision: state.previous.revision,
+          cwd: state.previous.canonicalCwd,
+        },
+        { workspaceId: busyWorkspaceId, revision: 1, cwd: state.retainedDir },
+      ]);
+      expect(state.factory.hasAnyBusySessions()).toBe(false);
+    } finally {
+      rmSync(state.root, { recursive: true, force: true });
+    }
+  });
+
+  it("reactivates a busy parked graph without rebuilding it", async () => {
+    const state = setup();
+    try {
+      const busySession = fakeSession(false, BACKGROUND_SESSION_ID);
+      const busyWorkspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+      const parked = fakeWorkspaceGraph(state.retainedDir, busyWorkspaceId, busySession);
+      const unsubscribeDuringPark = parked.unsubscribeAgent as unknown as ReturnType<typeof vi.fn>;
+      const backgroundUpdateIdentity = vi.fn();
+      parked.backgroundSessions = new Map([
+        [
+          "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          {
+            sessionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            sessionRevision: 2,
+            extensionUiUpdateIdentity: backgroundUpdateIdentity,
+          } as unknown as BackgroundSessionRuntime,
+        ],
+      ]);
+      await state.internal.retainGraph(parked);
+
+      const result = await state.factory.setCurrent(state.retainedDir, "switch-back-busy");
+
+      expect("error" in result).toBe(false);
+      expect(state.factory.getGraph()).toBe(parked);
+      expect(state.identity.workspaceId).toBe(busyWorkspaceId);
+      // Reused as-is: the busy session was never disposed, and park state is
+      // cleared once the graph is the foreground owner again.
+      expect(busySession.dispose).not.toHaveBeenCalled();
+      expect(parked.backgroundRunning).toBe(false);
+      expect(parked.parkedIdentity).toBeUndefined();
+      expect("session" in result && result.session?.sessionId).toBe(BACKGROUND_SESSION_ID);
+      // The old park-era subscription was dropped exactly once before
+      // re-subscribing.
+      expect(unsubscribeDuringPark).toHaveBeenCalledTimes(1);
+      // Parked background runtimes are re-pointed at the promoted identity.
+      expect(backgroundUpdateIdentity).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workspaceId: busyWorkspaceId,
+          sessionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          sessionRevision: 2,
+        }),
+      );
+      expect(state.server.setPhase).toHaveBeenCalledWith("agentBusy");
+    } finally {
+      rmSync(state.root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the Host phase agentBusy after switching away from a busy workspace", async () => {
+    const state = setup();
+    try {
+      // The ACTIVE graph goes busy, then the user switches to the retained
+      // workspace: the busy graph parks with live sessions while an idle
+      // workspace becomes the foreground. The Host-wide phase must stay
+      // agentBusy — the parked run is still consuming the Host.
+      const busySession = fakeSession(false, ACTIVE_SESSION_ID);
+      state.previous.agentSession = busySession;
+      state.previous.sessionSnapshot = fakeSessionSnapshot(ACTIVE_SESSION_ID, 9, false);
+      const idleWorkspaceId = "77777777-7777-4777-8777-777777777777";
+      const idle = fakeWorkspaceGraph(state.retainedDir, idleWorkspaceId, fakeSession(true));
+      const buildServices = vi
+        .spyOn(
+          state.internal as unknown as {
+            buildServices: () => Promise<{ graph: WorkspaceGraph }>;
+          },
+          "buildServices",
+        )
+        .mockResolvedValue({ graph: idle });
+
+      const result = await state.factory.setCurrent(state.retainedDir, "switch-away-busy");
+
+      expect("error" in result).toBe(false);
+      expect(state.factory.getGraph()).toBe(idle);
+      expect(state.previous.backgroundRunning).toBe(true);
+      expect(state.factory.hasAnyBusySessions()).toBe(true);
+      expect(state.server.setPhase).not.toHaveBeenCalledWith("ready");
+      expect(state.server.setPhase).toHaveBeenCalledWith("agentBusy");
+      buildServices.mockRestore();
+    } finally {
+      rmSync(state.root, { recursive: true, force: true });
+    }
+  });
+
+  it("reuses a busy parked graph when its fingerprint drifted instead of rebuilding", async () => {
+    const state = setup();
+    try {
+      const busySession = fakeSession(false, BACKGROUND_SESSION_ID);
+      const busyWorkspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+      const parked = fakeWorkspaceGraph(state.retainedDir, busyWorkspaceId, busySession);
+      await state.internal.retainGraph(parked);
+
+      const extensionsDir = join(state.retainedDir, ".pi", "extensions");
+      mkdirSync(extensionsDir, { recursive: true });
+      writeFileSync(join(extensionsDir, "changed.ts"), "export default () => {};\n");
+
+      const result = await state.factory.setCurrent(state.retainedDir, "switch-back-drifted");
+
+      expect("error" in result).toBe(false);
+      expect(state.factory.getGraph()).toBe(parked);
+      expect(busySession.dispose).not.toHaveBeenCalled();
+      expect(busySession.bindExtensions).toHaveBeenCalled();
+      expect(parked.backgroundRunning).toBe(false);
     } finally {
       rmSync(state.root, { recursive: true, force: true });
     }

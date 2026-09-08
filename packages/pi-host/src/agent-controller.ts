@@ -165,7 +165,9 @@ function startDetachedPrompt(args: {
         args.factory.publishCurrentRuntimeState(args.session, settledIdentity);
       }
       args.factory.clearSessionRunId(args.session);
-      if (args.server.getPhase() === "agentBusy" && !args.factory.hasBusySessions()) {
+      // Host-wide: a parked workspace graph may still be mid-run, and the
+      // phase must stay agentBusy until the LAST bound session settles.
+      if (args.server.getPhase() === "agentBusy" && !args.factory.hasAnyBusySessions()) {
         args.server.setPhase("ready");
       }
       args.factory.currentRunId = null;

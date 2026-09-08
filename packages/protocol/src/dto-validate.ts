@@ -309,7 +309,7 @@ export function isHostStatusSnapshot(value: unknown): boolean {
         "capabilities",
         "modelConfigHealth",
       ],
-      ["extensionDecisionPresentation", "lastError", "fatalError"],
+      ["extensionDecisionPresentation", "lastError", "fatalError", "boundWorkspaces"],
     )
   ) {
     return false;
@@ -344,7 +344,22 @@ export function isHostStatusSnapshot(value: unknown): boolean {
         String(value.extensionDecisionPresentation),
       )) &&
     (value.lastError === undefined || isHostErrorRecord(value.lastError)) &&
-    (value.fatalError === undefined || isHostErrorRecord(value.fatalError))
+    (value.fatalError === undefined || isHostErrorRecord(value.fatalError)) &&
+    (value.boundWorkspaces === undefined || isBoundWorkspaceRefs(value.boundWorkspaces))
+  );
+}
+
+function isBoundWorkspaceRefs(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  return value.every(
+    (entry) =>
+      isPlainObject(entry) &&
+      hasExactKeys(entry, ["workspaceId", "revision", "cwd"]) &&
+      isString(entry.workspaceId) &&
+      entry.workspaceId.length > 0 &&
+      isSafeRevision(entry.revision) &&
+      isString(entry.cwd) &&
+      entry.cwd.length > 0,
   );
 }
 
@@ -386,11 +401,7 @@ function isModelSummary(value: unknown): boolean {
 function isTelegramProfileSummary(value: unknown): boolean {
   return (
     isPlainObject(value) &&
-    hasExactKeys(
-      value,
-      ["profile", "configured"],
-      ["botId", "botUsername", "botName"],
-    ) &&
+    hasExactKeys(value, ["profile", "configured"], ["botId", "botUsername", "botName"]) &&
     isNonEmptyString(value.profile) &&
     isBoolean(value.configured) &&
     (value.botId === undefined || isSafeRevision(value.botId)) &&
@@ -473,11 +484,7 @@ function isTelegramSessionSummary(value: unknown): boolean {
 
 /** `entries` are loose SDK session records; only the composite shape is pinned. */
 function isTelegramSessionEntry(value: unknown): boolean {
-  return (
-    isPlainObject(value) &&
-    isNonEmptyString(value.id) &&
-    isNonEmptyString(value.type)
-  );
+  return isPlainObject(value) && isNonEmptyString(value.id) && isNonEmptyString(value.type);
 }
 
 const PROVIDER_APIS = [
@@ -2178,7 +2185,9 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         ? null
         : "invalid subagent pause result";
     case "subagents.continue":
-      return isPlainObject(result) && hasExactKeys(result, ["continued"]) && isBoolean(result.continued)
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["continued"]) &&
+        isBoolean(result.continued)
         ? null
         : "invalid subagent continue result";
     case "subagents.resume":
@@ -2583,7 +2592,9 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         (result.default === null || isTelegramProfileSummary(result.default)) &&
         isNonEmptyString(result.workspacePath) &&
         (result.tokenMasked === undefined || isString(result.tokenMasked)) &&
-        (result.bound === undefined || result.bound === null || isTelegramBoundUser(result.bound)) &&
+        (result.bound === undefined ||
+          result.bound === null ||
+          isTelegramBoundUser(result.bound)) &&
         (result.assistant === undefined || isTelegramAssistantConfig(result.assistant)) &&
         (result.voice === undefined || isTelegramVoiceConfig(result.voice)) &&
         (result.threads === undefined || isTelegramThreadsConfig(result.threads))
@@ -2601,8 +2612,7 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
       return isPlainObject(result) &&
         hasExactKeys(result, ["connected"], ["profile", "botId", "ownerPid"]) &&
         isBoolean(result.connected) &&
-        (result.profile === undefined ||
-          (isString(result.profile) && result.profile.length > 0)) &&
+        (result.profile === undefined || (isString(result.profile) && result.profile.length > 0)) &&
         (result.botId === undefined || isSafeRevision(result.botId)) &&
         (result.ownerPid === undefined || isSafeRevision(result.ownerPid))
         ? null

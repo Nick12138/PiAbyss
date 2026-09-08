@@ -170,7 +170,21 @@ async function main(): Promise<void> {
 
   // Keep the shared Pi directory native-compatible: adopt PiAbyss-owned data
   // into one private namespace before recovery reads any persisted state.
-  await migrateLegacyPiAbyssData(agentDir, MIGRATION_ID);
+  // Best-effort: a migration failure degrades to a warning (the next start
+  // retries; recovery paths handle missing adoptions safely) — it must never
+  // brick Host startup.
+  try {
+    const migration = await migrateLegacyPiAbyssData(agentDir, MIGRATION_ID);
+    if (migration.quarantined.length > 0) {
+      logger.warn("Quarantined conflicting legacy PiAbyss data", {
+        quarantined: migration.quarantined,
+      });
+    }
+  } catch (err) {
+    logger.warn("Legacy PiAbyss data migration failed; continuing with existing state", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
   const attachmentStore = new AttachmentStore({ agentDir });
   await attachmentStore.initialize();
 

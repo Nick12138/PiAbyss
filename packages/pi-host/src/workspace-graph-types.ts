@@ -56,6 +56,10 @@ export type WorkspaceGraph = {
   backgroundSessions: Map<string, BackgroundSessionRuntime>;
   /** Disk/config fingerprint captured when this graph was parked. */
   retainedFingerprint?: string;
+  /** True while a busy graph is parked in the background with live sessions. */
+  backgroundRunning?: boolean;
+  /** Identity captured when the graph was parked; events from parked sessions carry it. */
+  parkedIdentity?: HostIdentity;
   /** Ownership token for providers registered by this workspace's extensions. */
   providerOwner?: ProviderOwnerToken | null;
   /** Extension providers unregistered while this graph is parked. */

@@ -997,4 +997,173 @@ rl.on('line', (line) => {
         // The bootstrap entry (no workspace yet) is filtered out.
         assert!(host_activity_snapshot(Path::new(""), &[], &activity).is_none());
     }
+
+    // --- Workspace attribution (shared-host mode) ---
+
+    /// A `session.runtimeChanged` envelope with the top-level `workspaceId`
+    /// field shared hosts attach to every emitted event.
+    fn runtime_line_in(session_id: &str, state: &str, workspace_id: &str) -> String {
+        serde_json::json!({
+            "event": "session.runtimeChanged",
+            "workspaceId": workspace_id,
+            "payload": { "sessionId": session_id, "state": state }
+        })
+        .to_string()
+    }
+
+    fn status_changed_line(bound: &[(&str, &str)]) -> String {
+        let workspaces: Vec<serde_json::Value> = bound
+            .iter()
+            .map(|(workspace_id, cwd)| {
+                serde_json::json!({ "workspaceId": workspace_id, "revision": 1, "cwd": cwd })
+            })
+            .collect();
+        serde_json::json!({
+            "event": "host.statusChanged",
+            "payload": { "boundWorkspaces": workspaces }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn status_changed_rebuilds_workspace_bindings() {
+        let activity = Mutex::new(HostActivity::default());
+        assert!(observe_host_activity(
+            &activity,
+            &status_changed_line(&[("ws-a", "c:\\ws\\a"), ("ws-b", "c:\\ws\\b")])
+        ));
+        // Rebinding replaces the whole map — a workspace that left the Host
+        // must not keep a stale binding.
+        assert!(observe_host_activity(
+            &activity,
+            &status_changed_line(&[("ws-b", "c:\\ws\\b2")])
+        ));
+        {
+            let seen = activity.lock().expect("activity lock");
+            assert_eq!(seen.workspace_cwds.len(), 1);
+            assert_eq!(
+                seen.workspace_cwds.get("ws-b").map(String::as_str),
+                Some("c:\\ws\\b2")
+            );
+        }
+
+        // An empty boundWorkspaces list clears every binding.
+        assert!(observe_host_activity(&activity, &status_changed_line(&[])));
+        assert!(activity
+            .lock()
+            .expect("activity lock")
+            .workspace_cwds
+            .is_empty());
+        // Clearing an already-empty map reports no change.
+        assert!(!observe_host_activity(&activity, &status_changed_line(&[])));
+    }
+
+    #[test]
+    fn runtime_changed_records_session_workspace_attribution() {
+        let activity = Mutex::new(HostActivity::default());
+        observe_host_activity(&activity, &runtime_line_in("s1", "running", "ws-a"));
+        observe_host_activity(&activity, &runtime_line_in("s1", "idle", "ws-a"));
+        let seen = activity.lock().expect("activity lock");
+        assert_eq!(
+            seen.session_workspace.get("s1").map(String::as_str),
+            Some("ws-a")
+        );
+    }
+
+    #[test]
+    fn terminal_markers_carry_the_session_workspace_cwd() {
+        let activity = Mutex::new(HostActivity::default());
+        observe_host_activity(&activity, &status_changed_line(&[("ws-a", "c:\\ws\\a")]));
+        // Busy→idle completion of an attributed session → attributed done.
+        observe_host_activity(&activity, &runtime_line_in("s1", "running", "ws-a"));
+        observe_host_activity(&activity, &runtime_line_in("s1", "idle", "ws-a"));
+        // Error of an attributed session → attributed error marker.
+        observe_host_activity(&activity, &runtime_line_in("s2", "running", "ws-a"));
+        observe_host_activity(&activity, &runtime_line_in("s2", "error", "ws-a"));
+        // A session whose envelope carried no workspaceId stays unattributed.
+        observe_host_activity(&activity, &runtime_line("s3", "running"));
+        observe_host_activity(&activity, &runtime_line("s3", "error"));
+        // Markers are inspected through the snapshot, the same view the
+        // renderer rebuilds its dots from.
+        let snapshot: HostActivitySnapshot = host_activity_snapshot(
+            Path::new("c:\\ws\\a"),
+            &["c:\\ws\\a".to_string()],
+            &activity,
+        )
+        .expect("snapshot for a bound entry");
+        assert_eq!(
+            snapshot.terminal_sessions["s1"].workspace_cwd.as_deref(),
+            Some("c:\\ws\\a")
+        );
+        assert_eq!(
+            snapshot.terminal_sessions["s2"].workspace_cwd.as_deref(),
+            Some("c:\\ws\\a")
+        );
+        assert_eq!(snapshot.terminal_sessions["s3"].workspace_cwd, None);
+        // The unattributed marker omits workspaceCwd from its JSON.
+        let json = serde_json::to_value(&snapshot.terminal_sessions["s3"]).expect("marker json");
+        assert!(json.get("workspaceCwd").is_none());
+    }
+
+    #[test]
+    fn snapshot_attributes_busy_sessions_to_workspace_cwds() {
+        let activity = Mutex::new(HostActivity::default());
+        observe_host_activity(
+            &activity,
+            &status_changed_line(&[("ws-a", "c:\\ws\\a"), ("ws-b", "c:\\ws\\b")]),
+        );
+        observe_host_activity(&activity, &runtime_line_in("s1", "running", "ws-a"));
+        observe_host_activity(&activity, &runtime_line_in("s2", "running", "ws-b"));
+        // No envelope workspaceId for this one → not attributable yet.
+        observe_host_activity(&activity, &runtime_line("s3", "running"));
+        let snapshot: HostActivitySnapshot = host_activity_snapshot(
+            Path::new("c:\\ws\\a"),
+            &["c:\\ws\\a".to_string()],
+            &activity,
+        )
+        .expect("snapshot for a bound entry");
+        assert!(snapshot.busy);
+        assert_eq!(
+            snapshot.busy_sessions.get("s1").map(String::as_str),
+            Some("c:\\ws\\a")
+        );
+        assert_eq!(
+            snapshot.busy_sessions.get("s2").map(String::as_str),
+            Some("c:\\ws\\b")
+        );
+        assert!(!snapshot.busy_sessions.contains_key("s3"));
+
+        // Once a session settles, its attribution disappears with its busy
+        // marker.
+        observe_host_activity(&activity, &runtime_line_in("s1", "idle", "ws-a"));
+        let snapshot = host_activity_snapshot(
+            Path::new("c:\\ws\\a"),
+            &["c:\\ws\\a".to_string()],
+            &activity,
+        )
+        .expect("snapshot for a bound entry");
+        assert!(!snapshot.busy_sessions.contains_key("s1"));
+        assert_eq!(
+            snapshot.busy_sessions.get("s2").map(String::as_str),
+            Some("c:\\ws\\b")
+        );
+    }
+
+    #[test]
+    fn snapshot_omits_busy_sessions_without_bindings() {
+        let activity = Mutex::new(HostActivity::default());
+        // No host.statusChanged ever arrived — the normal pre-broadcast state.
+        observe_host_activity(&activity, &runtime_line("s1", "running"));
+        let snapshot: HostActivitySnapshot = host_activity_snapshot(
+            Path::new("c:\\ws\\a"),
+            &["c:\\ws\\a".to_string()],
+            &activity,
+        )
+        .expect("snapshot for a bound entry");
+        assert!(snapshot.busy);
+        assert!(snapshot.busy_sessions.is_empty());
+        // The empty map is skipped entirely in the serialized snapshot.
+        let json = serde_json::to_value(&snapshot).expect("snapshot json");
+        assert!(json.get("busySessions").is_none());
+    }
 }

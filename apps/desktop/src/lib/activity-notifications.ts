@@ -34,9 +34,10 @@ export type ActivityNotificationObserverOptions = {
  * that already exist (app start, renderer reload) were visible through the
  * sidebar badges before this observer existed and must not replay as alerts.
  * Afterwards, every NEW terminal generation for a non-active workspace becomes
- * a candidate while the window is in the background. The active workspace is
- * always skipped — its completions already flow through the event-stream
- * tracker, and double-delivering them would duplicate every foreground alert.
+ * a candidate while the window is in the background. With per-session
+ * ownership (the marker's `workspaceCwd`) the active-workspace suppression is
+ * decided per session; markers without it fall back to the legacy entry-level
+ * check.
  */
 export class ActivityNotificationObserver {
   private readonly baselines = new Map<string, number>();
@@ -87,9 +88,10 @@ export class ActivityNotificationObserver {
     for (const entry of entries) {
       // One entry covers every workspace its Host serves. In shared-host mode
       // that is all registered workspaces of the single active Host, whose
-      // stdout IS routed to the renderer — so if any of them is the active
-      // workspace, the event-stream tracker already delivered those
-      // completions and the whole entry is skipped to avoid double alerts.
+      // stdout IS routed to the renderer. Completions owned by the active
+      // workspace were already delivered by the event-stream tracker and must
+      // not alert twice; completions owned by parked workspaces of the same
+      // Host reach only this seam, so suppression is decided per session.
       const cwds = hostActivityCwds(entry);
       const coversActiveWorkspace = cwds.some((cwd) => this.options.isActiveWorkspace(cwd));
       for (const [sessionId, terminal] of Object.entries(entry.terminalSessions ?? {})) {
@@ -106,8 +108,14 @@ export class ActivityNotificationObserver {
           advanced = true;
         }
         if (!this.primed || !advanced) continue;
+        // Known ownership: skip only when THIS session's workspace is active.
+        // Unknown ownership (older Hosts): fall back to the entry-level check.
+        const ownedByActiveWorkspace =
+          terminal.workspaceCwd != null
+            ? this.options.isActiveWorkspace(terminal.workspaceCwd)
+            : coversActiveWorkspace;
         if (
-          coversActiveWorkspace ||
+          ownedByActiveWorkspace ||
           this.options.attention() !== "background" ||
           !this.options.enabled()
         ) {
@@ -118,9 +126,10 @@ export class ActivityNotificationObserver {
           target: {
             workspaceId: null,
             workspaceRevision: undefined,
-            // entry.cwd stays the Host-canonical display path; cwds are pool
-            // keys used for matching (lowercased on Windows) only.
-            workspacePath: entry.cwd,
+            // The owning workspace cwd is the accurate routing target; entry.cwd
+            // stays the Host display path. cwds are pool keys used for matching
+            // (lowercased on Windows) only.
+            workspacePath: terminal.workspaceCwd ?? entry.cwd,
             sessionId,
           },
         });

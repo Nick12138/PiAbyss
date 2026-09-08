@@ -2,6 +2,7 @@ import { resolve as pathResolve } from "node:path";
 import type { AgentSession, ExtensionCommandContextActions } from "@earendil-works/pi-coding-agent";
 import {
   createHostError,
+  type BoundWorkspaceRef,
   type HostError,
   type HostIdentity,
   type SessionSnapshot,
@@ -53,6 +54,8 @@ export class WorkspaceGraphFactory {
       getServer: () => this.server,
       getCurrentRunId: () => this.currentRunId,
       sessionPathsEqual: (left, right) => this.sessionPathsEqual(left, right),
+      isGraphBound: (graph) => this.workspaceLifecycle.isBoundGraph(graph),
+      hasAnyBusySessions: () => this.hasAnyBusySessions(),
     });
     this.workspaceLifecycle = new WorkspaceLifecycle(
       {
@@ -64,6 +67,16 @@ export class WorkspaceGraphFactory {
         getServer: () => this.server,
         onModelHealthChanged: () => this.onModelHealthChanged?.(),
         getCommandContextActions: (session) => this.extensionCommandContextActions(session),
+        onBoundWorkspacesChanged: () => {
+          // Bound set/state changed (park, eviction, reactivation). Test
+          // fakes may not implement the full server surface; status is
+          // best-effort and must never break the switch itself.
+          try {
+            this.server?.emit("host.statusChanged", this.server.buildStatus());
+          } catch {
+            /* ignore */
+          }
+        },
       },
       this.sessionRuntimeCache,
     );
@@ -76,6 +89,24 @@ export class WorkspaceGraphFactory {
 
   bindServer(server: PiHostServer): void {
     this.server = server;
+    // Optional-callable so graph-level controller tests with minimal server
+    // fakes keep working; the real host always wires both.
+    server.setBoundWorkspaceChecker?.((workspaceId, revision) =>
+      this.workspaceLifecycle.isBoundWorkspaceIdentity(workspaceId, revision),
+    );
+    server.setBoundWorkspacesProvider?.(() => this.buildBoundWorkspaces());
+  }
+
+  /** Active graph first, then retained service-ready graphs (LRU order). */
+  buildBoundWorkspaces(): BoundWorkspaceRef[] {
+    return this.workspaceLifecycle
+      .boundGraphs()
+      .filter((graph) => graph.servicesReady)
+      .map((graph) => ({
+        workspaceId: graph.workspaceId,
+        revision: graph.revision,
+        cwd: graph.canonicalCwd,
+      }));
   }
 
   getGraph(): WorkspaceGraph | null {
@@ -120,6 +151,13 @@ export class WorkspaceGraphFactory {
 
   hasBusySessions(): boolean {
     return this.sessionRuntimeCache.hasBusySessions();
+  }
+
+  /** Busy across every bound workspace graph — active and parked. */
+  hasAnyBusySessions(): boolean {
+    return (
+      this.sessionRuntimeCache.hasBusySessions() || this.workspaceLifecycle.hasBusyRetainedGraphs()
+    );
   }
 
   getSessionRuntimeInfo(

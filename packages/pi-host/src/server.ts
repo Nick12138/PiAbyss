@@ -5,6 +5,7 @@ import {
   parseHostRequest,
   validateEventPayload,
   validateSuccessResult,
+  type BoundWorkspaceRef,
   type HostError,
   type HostEventName,
   type HostIdentity,
@@ -87,6 +88,10 @@ export class PiHostServer {
   private shuttingDown = false;
   private lastError?: HostError;
   private fatalError?: HostError;
+  /** Decides whether a non-current workspace identity is still bound (parked). */
+  private boundWorkspaceChecker?: (workspaceId: string, revision: number) => boolean;
+  /** Projects the currently bound (active + parked) workspace graphs into status. */
+  private boundWorkspacesProvider?: () => BoundWorkspaceRef[] | undefined;
   private readonly deps: HostRuntimeDeps;
   private stopReader: (() => void) | null = null;
   private cleanupPromise: Promise<boolean> | null = null;
@@ -108,6 +113,16 @@ export class PiHostServer {
 
   getIdentity(): HostIdentity {
     return this.identity.snapshot();
+  }
+
+  /** Injected by the graph factory: is (workspaceId, revision) still bound? */
+  setBoundWorkspaceChecker(fn: (workspaceId: string, revision: number) => boolean): void {
+    this.boundWorkspaceChecker = fn;
+  }
+
+  /** Injected by the graph factory: lists the bound workspace graphs for status. */
+  setBoundWorkspacesProvider(fn: () => BoundWorkspaceRef[] | undefined): void {
+    this.boundWorkspacesProvider = fn;
   }
 
   getExtensionDecisionPresentation(): ExtensionDecisionPresentation {
@@ -140,6 +155,7 @@ export class PiHostServer {
   }
 
   buildStatus(): HostStatusSnapshot {
+    const boundWorkspaces = this.boundWorkspacesProvider?.();
     return {
       ...this.identity.snapshot(),
       protocolVersion: 1,
@@ -152,6 +168,7 @@ export class PiHostServer {
       extensionDecisionPresentation: this.extensionDecisionPresentation,
       ...(this.lastError ? { lastError: this.lastError } : {}),
       ...(this.fatalError ? { fatalError: this.fatalError } : {}),
+      ...(boundWorkspaces ? { boundWorkspaces } : {}),
     };
   }
 
@@ -168,6 +185,47 @@ export class PiHostServer {
     ) {
       throw new Error("Cannot emit an event for a stale Host or Workspace identity");
     }
+    const validation = validateEventPayload(event, payload);
+    if (!validation.ok) {
+      const error = createHostError("INTERNAL_ERROR", `Invalid outbound ${event} payload`, {
+        details: { event, validation: validation.error.message },
+      });
+      this.setFatalError(error);
+      logger.error("Rejected invalid outbound Host event", {
+        event,
+        validation: validation.error.message,
+      });
+      throw new Error(error.message);
+    }
+
+    this.outbound.enqueueEvent(identity, event, payload);
+  }
+
+  /**
+   * Relaxed emit path for events that originate from a parked (background)
+   * workspace graph. The identity must still belong to this Host instance;
+   * its workspace must either be the current one — exactly the
+   * `emitForIdentity` contract — or a graph currently bound (parked) to the
+   * Host, as decided by the injected bound-workspace checker. Everything else
+   * (payload validation, enqueue) matches `emitForIdentity`.
+   */
+  emitForBoundIdentity(identity: HostIdentity, event: HostEventName, payload: unknown): void {
+    const current = this.identity.snapshot();
+    if (identity.hostInstanceId !== current.hostInstanceId) {
+      throw new Error("Cannot emit an event for a stale Host or Workspace identity");
+    }
+    const workspaceMatches =
+      identity.workspaceId === current.workspaceId &&
+      identity.workspaceRevision === current.workspaceRevision;
+    if (!workspaceMatches) {
+      const bound =
+        identity.workspaceId !== null &&
+        this.boundWorkspaceChecker?.(identity.workspaceId, identity.workspaceRevision) === true;
+      if (!bound) {
+        throw new Error("Cannot emit an event for a stale Host or Workspace identity");
+      }
+    }
+
     const validation = validateEventPayload(event, payload);
     if (!validation.ok) {
       const error = createHostError("INTERNAL_ERROR", `Invalid outbound ${event} payload`, {

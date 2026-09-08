@@ -23,7 +23,10 @@ import {
   rebindActiveWorkspaceHost,
   replayActiveHostReady,
   subscribeHostActivity,
+  type HostActivitySummary,
 } from "../../lib/bridge/tauri-transport";
+import type { WorkspaceActivity } from "../../lib/stores/app-store";
+import type { SessionTerminalSnapshot } from "../../lib/session-terminal-states";
 import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import {
   notifyDesktopSettingsSaveFailure,
@@ -61,6 +64,55 @@ function samePath(a: string, b: string): boolean {
  */
 function normalizedActivityKey(path: string): string {
   return /^win/i.test(navigator.platform) ? path.toLowerCase() : path;
+}
+
+/**
+ * Projects one pool snapshot entry onto a single workspace cwd.
+ *
+ * Shared-host mode binds several workspaces to one Host, so entry-level
+ * numbers describe the Host, not each workspace. When the pool reports
+ * per-session ownership (busySessions / terminal workspaceCwd), busy and the
+ * terminal markers are scoped to the cwd they belong to. Markers without an
+ * owning cwd mirror every bound cwd (legacy semantics — scoping never hides
+ * a completion), and when no marker carries ownership at all the aggregate
+ * counters and whole-entry mirroring are kept.
+ */
+export function summarizeWorkspaceActivity(
+  entry: HostActivitySummary,
+  cwd: string,
+): WorkspaceActivity {
+  const key = normalizedActivityKey(cwd);
+  const markers = Object.entries(entry.terminalSessions ?? {});
+  const ownershipKnown = markers.some(([, marker]) => marker.workspaceCwd != null);
+  const terminalSessions: Record<string, SessionTerminalSnapshot> = {};
+  let errorCount = 0;
+  let doneCount = 0;
+  for (const [sessionId, marker] of markers) {
+    const ownedHere =
+      marker.workspaceCwd == null || normalizedActivityKey(marker.workspaceCwd) === key;
+    if (!ownedHere) continue;
+    terminalSessions[sessionId] = marker;
+    if (marker.state === "error") errorCount += 1;
+    else doneCount += 1;
+  }
+  if (!ownershipKnown) {
+    // Aggregate counters stay authoritative when nothing is scoped: they may
+    // include markers the pool has already acknowledged away.
+    errorCount = entry.errorCount;
+    doneCount = entry.doneCount;
+  }
+  return {
+    busy:
+      entry.busySessions !== undefined
+        ? Object.values(entry.busySessions).some(
+            (sessionCwd) => normalizedActivityKey(sessionCwd) === key,
+          )
+        : entry.busy,
+    hasBeenBusy: entry.hasBeenBusy,
+    errorCount,
+    doneCount,
+    terminalSessions,
+  };
 }
 
 export function addKnownWorkspace(list: string[], path: string): string[] {
@@ -207,17 +259,12 @@ export function WorkspacePicker() {
       if (!alive || request !== latestRefresh) return;
       // One snapshot entry covers every workspace its Host serves (a single
       // cwd in dedicated mode; all registered workspaces in shared-host mode).
+      // Per-cwd projection scopes busy/terminal signals to their owning
+      // workspace when the pool reports session ownership.
       const activities: typeof workspaceActivities = {};
       for (const entry of list) {
-        const summary = {
-          busy: entry.busy,
-          hasBeenBusy: entry.hasBeenBusy,
-          errorCount: entry.errorCount,
-          doneCount: entry.doneCount,
-          terminalSessions: entry.terminalSessions ?? {},
-        };
         for (const cwd of hostActivityCwds(entry)) {
-          activities[normalizedActivityKey(cwd)] = summary;
+          activities[normalizedActivityKey(cwd)] = summarizeWorkspaceActivity(entry, cwd);
         }
       }
       const current = useAppStore.getState();

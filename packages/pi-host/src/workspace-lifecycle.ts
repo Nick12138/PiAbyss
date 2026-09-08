@@ -17,7 +17,7 @@ import {
   type WorkspaceSnapshot,
   toJsonValue,
 } from "@piabyss/protocol";
-import { activateOnce, bindForCandidate } from "./extension-ui-lifecycle.js";
+import { activateOnce, bindForCandidate, clearSlots } from "./extension-ui-lifecycle.js";
 import type { ProviderOwnerToken } from "./extension-provider-ownership.js";
 import { captureFilesystemFingerprint } from "./filesystem-fingerprint.js";
 import { logger } from "./logger.js";
@@ -39,6 +39,8 @@ export type WorkspaceLifecycleContext = {
   onModelHealthChanged: () => void;
   getCommandContextActions?: (session: AgentSession) => ExtensionCommandContextActions;
   platform?: NodeJS.Platform;
+  /** Fired whenever the set/state of bound (active + parked) workspaces changed. */
+  onBoundWorkspacesChanged?: () => void;
 };
 
 export function workspaceIdentityKey(
@@ -59,6 +61,10 @@ function workspaceCanonicalPathsEqual(
 export class WorkspaceLifecycle {
   private static readonly MAX_RETAINED_GRAPHS = 5;
   private readonly retainedGraphs = new Map<string, WorkspaceGraph>();
+  /** Graph currently being re-activated by a switch (bound, but in neither set). */
+  private reactivatingGraph: WorkspaceGraph | null = null;
+  /** Outgoing graph mid-switch (bound for event flow, not yet parked). */
+  private parkingGraph: WorkspaceGraph | null = null;
 
   constructor(
     private readonly context: WorkspaceLifecycleContext,
@@ -139,6 +145,8 @@ export class WorkspaceLifecycle {
   }
 
   async disposeGraph(graph: WorkspaceGraph): Promise<void> {
+    graph.backgroundRunning = false;
+    graph.parkedIdentity = undefined;
     await this.sessionRuntimeCache.disposeGraphSessionRuntimes(graph);
     if (graph.providerOwner) {
       this.context.deps.providerOwnership.releaseOwner(graph.providerOwner);
@@ -154,12 +162,19 @@ export class WorkspaceLifecycle {
     graph.servicesReady = false;
   }
 
-  async disposeRetainedGraphs(): Promise<void> {
-    const graphs = [...this.retainedGraphs.values()];
+  async disposeRetainedGraphs(options?: { skipBusy?: boolean }): Promise<void> {
+    const graphs = [...this.retainedGraphs.entries()];
     this.retainedGraphs.clear();
-    for (const graph of graphs) {
+    for (const [key, graph] of graphs) {
+      if (options?.skipBusy && graph.backgroundRunning) {
+        // Parked graphs with live sessions must stay bound: they keep running
+        // and emitting for their workspace.
+        this.retainedGraphs.set(key, graph);
+        continue;
+      }
       await this.disposeGraph(graph);
     }
+    if (graphs.length > 0) this.context.onBoundWorkspacesChanged?.();
   }
 
   async invalidateRetainedWorkspaceGraph(canonicalCwd: string): Promise<void> {
@@ -168,12 +183,15 @@ export class WorkspaceLifecycle {
     if (!graph) return;
     this.retainedGraphs.delete(key);
     await this.disposeGraph(graph);
+    this.context.onBoundWorkspacesChanged?.();
   }
 
   async invalidateRetainedRuntimeCaches(): Promise<void> {
     const activeGraph = this.context.getGraph();
     if (activeGraph) await this.sessionRuntimeCache.disposeIdleSessionRuntimes(activeGraph);
-    await this.disposeRetainedGraphs();
+    // Parked graphs with live sessions stay bound — disposing them would
+    // abort runs the user still expects to complete.
+    await this.disposeRetainedGraphs({ skipBusy: true });
   }
 
   async setCurrent(
@@ -214,15 +232,6 @@ export class WorkspaceLifecycle {
     let previousGraph: WorkspaceGraph | null = null;
     try {
       operation.signal.throwIfAborted();
-      if (this.sessionRuntimeCache.hasBusySessions()) {
-        return {
-          error: createHostError(
-            "AGENT_BUSY",
-            "Agent is busy; stop it before switching workspace",
-            { retryable: true },
-          ),
-        };
-      }
 
       let canonical: string;
       try {
@@ -238,6 +247,12 @@ export class WorkspaceLifecycle {
       }
 
       previousGraph = this.context.getGraph();
+      // The outgoing graph is not in the retained set yet (retention happens
+      // after the identity commit). Keep it recognizable as bound while the
+      // switch is in flight so a busy graph's live sessions keep emitting —
+      // otherwise an "idle" runtimeChanged landing inside this window would
+      // be dropped and the pool's busy marker would leak forever.
+      this.parkingGraph = previousGraph;
       const workspaceId = randomUUID();
       const revision = server.identity.workspaceRevision + 1;
       const invalidatedSessionRevision =
@@ -255,7 +270,12 @@ export class WorkspaceLifecycle {
       });
       if (reactivated) return reactivated;
 
-      if (previousGraph) this.suspendGraphProviders(previousGraph);
+      // Suspending a busy graph's providers would break its in-flight model
+      // calls during the build window. Skip the pre-merge suspension there:
+      // the retention park branch keeps those providers registered anyway.
+      if (previousGraph && !this.graphIsBusy(previousGraph)) {
+        this.suspendGraphProviders(previousGraph);
+      }
       const built = await this.buildServices({
         workspaceId,
         cwd,
@@ -304,7 +324,7 @@ export class WorkspaceLifecycle {
           this.context.setGraph(previousGraph);
           this.restoreIdentity(server, previousIdentity);
           this.resumeGraphProviders(previousGraph);
-          server.setPhase("ready");
+          this.refreshAgentPhase();
           server.setLastError(undefined);
           return { error };
         }
@@ -325,13 +345,14 @@ export class WorkspaceLifecycle {
       if (previousIdentity.sessionId && previousIdentity.sessionId !== server.identity.sessionId) {
         await this.context.deps.attachmentStore?.discardSessionDrafts(previousIdentity.sessionId);
       }
-      server.setPhase("ready");
+      this.refreshAgentPhase();
       server.setLastError(undefined);
       const workspace = this.buildWorkspaceSnapshot(built.graph);
       this.publishWorkspaceSnapshots(server, built.graph, workspace);
       built.graph.subagentStatusBridge?.setIdentity(server.getIdentity());
       built.graph.subagentStatusBridge?.markReady();
       publishExtensionUi();
+      this.context.onBoundWorkspacesChanged?.();
       return {
         workspace,
         ...(built.graph.sessionSnapshot ? { session: built.graph.sessionSnapshot } : {}),
@@ -348,6 +369,7 @@ export class WorkspaceLifecycle {
         ),
       };
     } finally {
+      this.parkingGraph = null;
       server.serviceGraphLock.release(requestId);
       operation.finish();
     }
@@ -388,34 +410,91 @@ export class WorkspaceLifecycle {
     return captureFilesystemFingerprint({ roots, markers, signal });
   }
 
+  private graphIsBusy(graph: WorkspaceGraph): boolean {
+    return (
+      (graph.agentSession !== null && this.sessionRuntimeCache.isSessionBusy(graph.agentSession)) ||
+      graph.backgroundSessions.size > 0
+    );
+  }
+
+  /**
+   * The Host-level phase is a whole-Host property: `agentBusy` while ANY bound
+   * graph (active or parked) still has live sessions, `ready` otherwise. The
+   * check deliberately runs against the post-switch bound set (retention has
+   * already parked the outgoing graph), and non-agent phases (packageBusy,
+   * workspaceError, …) are never touched here — they carry their own meaning.
+   */
+  private refreshAgentPhase(): void {
+    const server = this.context.getServer();
+    if (!server) return;
+    server.setPhase(this.hasAnyBoundBusySessions() ? "agentBusy" : "ready");
+  }
+
+  /** True when the active graph or any parked retained graph has live sessions. */
+  private hasAnyBoundBusySessions(): boolean {
+    return (
+      this.sessionRuntimeCache.hasBusySessions() ||
+      this.hasBusyRetainedGraphs() ||
+      (this.parkingGraph ? this.graphIsBusy(this.parkingGraph) : false) ||
+      (this.reactivatingGraph ? this.graphIsBusy(this.reactivatingGraph) : false)
+    );
+  }
+
+  /**
+   * Identity captured at park time, entirely from the graph's own fields —
+   * never from server.getIdentity(), which by now points at the incoming
+   * workspace.
+   */
+  private captureParkedIdentity(graph: WorkspaceGraph): HostIdentity {
+    const sessionId = graph.sessionSnapshot?.sessionId ?? graph.agentSession?.sessionId ?? null;
+    return {
+      hostInstanceId: this.context.getServer()?.identity.hostInstanceId ?? "",
+      workspaceId: graph.workspaceId,
+      workspaceRevision: graph.revision,
+      sessionId,
+      sessionRevision: graph.sessionSnapshot?.revision ?? 0,
+      packageRevision: graph.packageSnapshot?.revision ?? 0,
+    };
+  }
+
   private async retainGraph(graph: WorkspaceGraph, signal?: AbortSignal): Promise<void> {
     // Same-workspace Session cache is deliberately in-memory only. Releasing
     // it here lets the workspace graph retain its established fingerprint and
     // provider lifecycle without carrying arbitrary conversation runtimes.
     await this.sessionRuntimeCache.disposeIdleSessionRuntimes(graph);
-    if (
-      !graph.servicesReady ||
-      !graph.agentSession ||
-      !graph.agentSession.isIdle ||
-      graph.backgroundSessions.size > 0
-    ) {
+    if (!graph.servicesReady || !graph.agentSession) {
       await this.disposeGraph(graph);
       return;
     }
-    graph.unsubscribeAgent?.();
-    graph.unsubscribeAgent = null;
-    graph.extensionUiActivate = null;
-    try {
-      graph.extensionUiCleanup?.();
-    } catch {
-      /* ignore */
+    if (this.graphIsBusy(graph)) {
+      // Park: keep the busy graph fully alive in the background. Its sessions
+      // keep running and emitting under the graph's own identity, so the
+      // agent subscription, provider registration and Extension UI binding
+      // must all survive retention untouched.
+      graph.backgroundRunning = true;
+      graph.parkedIdentity = this.captureParkedIdentity(graph);
+      // The switch path suspended this owner before building the incoming
+      // graph (to avoid same-id provider merges). A parked graph keeps its
+      // providers registered, so undo that pre-merge suspension.
+      this.resumeGraphProviders(graph);
+    } else {
+      graph.backgroundRunning = false;
+      graph.parkedIdentity = undefined;
+      graph.unsubscribeAgent?.();
+      graph.unsubscribeAgent = null;
+      graph.extensionUiActivate = null;
+      try {
+        graph.extensionUiCleanup?.();
+      } catch {
+        /* ignore */
+      }
+      graph.extensionUiCleanup = null;
+      graph.extensionUiUpdateIdentity = null;
+      graph.extensionUiReplayState = null;
+      // The switch path may already have parked this owner before building the
+      // incoming graph. Preserve that pre-merge snapshot when retention finishes.
+      this.suspendGraphProviders(graph);
     }
-    graph.extensionUiCleanup = null;
-    graph.extensionUiUpdateIdentity = null;
-    graph.extensionUiReplayState = null;
-    // The switch path may already have parked this owner before building the
-    // incoming graph. Preserve that pre-merge snapshot when retention finishes.
-    this.suspendGraphProviders(graph);
     try {
       graph.retainedFingerprint = await this.retainedGraphFingerprint(graph, signal);
     } catch (error) {
@@ -429,16 +508,73 @@ export class WorkspaceLifecycle {
     this.retainedGraphs.delete(key);
     if (existing && existing !== graph) await this.disposeGraph(existing);
     this.retainedGraphs.set(key, graph);
+    this.context.onBoundWorkspacesChanged?.();
     const maxRetained =
       this.context.deps.maxBoundWorkspaces ?? WorkspaceLifecycle.MAX_RETAINED_GRAPHS;
     while (this.retainedGraphs.size > maxRetained) {
-      const oldestKey = this.retainedGraphs.keys().next().value;
-      if (oldestKey === undefined) break;
-      const evicted = this.retainedGraphs.get(oldestKey);
-      this.retainedGraphs.delete(oldestKey);
+      // Busy parked graphs are never evicted, and neither is the graph this
+      // very switch just retained. When only such graphs remain, temporarily
+      // exceed the bound rather than abort runs or drop the freshest return
+      // target.
+      let evictableKey: string | undefined;
+      for (const candidateKey of this.retainedGraphs.keys()) {
+        if (candidateKey === key && maxRetained > 0) continue;
+        if (!this.retainedGraphs.get(candidateKey)?.backgroundRunning) {
+          evictableKey = candidateKey;
+          break;
+        }
+      }
+      if (evictableKey === undefined) break;
+      const evicted = this.retainedGraphs.get(evictableKey);
+      this.retainedGraphs.delete(evictableKey);
       if (evicted) await this.disposeGraph(evicted);
+      this.context.onBoundWorkspacesChanged?.();
     }
   }
+
+  /** True when the graph is bound to this Host: active, parked, or mid-switch. */
+  isBoundGraph(graph: WorkspaceGraph): boolean {
+    return (
+      this.context.getGraph() === graph ||
+      this.reactivatingGraph === graph ||
+      this.parkingGraph === graph ||
+      [...this.retainedGraphs.values()].includes(graph)
+    );
+  }
+
+  /** True when (workspaceId, revision) identifies a bound, service-ready graph. */
+  isBoundWorkspaceIdentity(workspaceId: string, revision: number): boolean {
+    const active = this.context.getGraph();
+    const candidates = [
+      ...(active ? [active] : []),
+      ...this.retainedGraphs.values(),
+      ...(this.reactivatingGraph ? [this.reactivatingGraph] : []),
+      ...(this.parkingGraph ? [this.parkingGraph] : []),
+    ];
+    return candidates.some(
+      (graph) =>
+        graph.servicesReady && graph.workspaceId === workspaceId && graph.revision === revision,
+    );
+  }
+
+  /** True when any parked retained graph still has live sessions. */
+  hasBusyRetainedGraphs(): boolean {
+    for (const graph of this.retainedGraphs.values()) {
+      if (this.graphIsBusy(graph)) return true;
+    }
+    return false;
+  }
+
+  /** All bound graphs: active first, then retained in insertion (LRU) order. */
+  boundGraphs(): WorkspaceGraph[] {
+    const active = this.context.getGraph();
+    const retained = [...this.retainedGraphs.values()];
+    return active ? [active, ...retained] : retained;
+  }
+
+  // NOTE: `parkingGraph` is deliberately excluded from boundGraphs() — status
+  // projection lists settled bindings only; the transient mid-switch graph is
+  // covered by isBoundWorkspaceIdentity for the event emit check.
 
   private takeRetainedGraph(canonicalCwd: string): WorkspaceGraph | null {
     const key = this.retainedGraphKey(canonicalCwd);
@@ -469,15 +605,49 @@ export class WorkspaceLifecycle {
     if (!server) return null;
     const graph = this.takeRetainedGraph(args.canonical);
     if (!graph) return null;
+    // The graph has left the retained set and is not active yet. Keep it
+    // recognizable as bound while the switch is in flight so events from its
+    // parked sessions keep flowing (and passing the bound-identity emit
+    // check) instead of being dropped or rejected mid-reactivation.
+    this.reactivatingGraph = graph;
+    try {
+      return await this.commitReactivateRetainedGraph(graph, args);
+    } finally {
+      if (this.reactivatingGraph === graph) this.reactivatingGraph = null;
+    }
+  }
+
+  private async commitReactivateRetainedGraph(
+    graph: WorkspaceGraph,
+    args: {
+      canonical: string;
+      previousGraph: WorkspaceGraph | null;
+      revision: number;
+      sessionRevision: number;
+      packageRevision: number;
+      signal?: AbortSignal;
+    },
+  ): Promise<{ workspace: WorkspaceSnapshot; session?: SessionSnapshot } | null> {
+    const server = this.context.getServer()!;
 
     const retainedFingerprint = graph.retainedFingerprint;
     graph.retainedFingerprint = undefined;
     if (!retainedFingerprint) {
-      logger.info("Retained workspace changed on disk; rebuilding", {
-        cwd: args.canonical,
-      });
-      await this.disposeGraph(graph);
-      return null;
+      if (graph.backgroundRunning) {
+        // A parked graph may have lost its fingerprint (e.g. an invalidation
+        // pass). Rebuilding would abort its live background sessions, so
+        // reuse the graph as-is and let the next retention capture a fresh
+        // fingerprint.
+        logger.warn("Parked workspace has no retained fingerprint; reusing graph", {
+          cwd: args.canonical,
+        });
+      } else {
+        logger.info("Retained workspace changed on disk; rebuilding", {
+          cwd: args.canonical,
+        });
+        await this.disposeGraph(graph);
+        return null;
+      }
     }
 
     let currentFingerprint: string;
@@ -487,12 +657,20 @@ export class WorkspaceLifecycle {
       await this.disposeGraph(graph);
       throw err;
     }
-    if (retainedFingerprint !== currentFingerprint) {
-      logger.info("Retained workspace changed on disk; rebuilding", {
-        cwd: args.canonical,
-      });
-      await this.disposeGraph(graph);
-      return null;
+    if (retainedFingerprint !== undefined && retainedFingerprint !== currentFingerprint) {
+      if (graph.backgroundRunning) {
+        // Fingerprint drift on a parked graph must never trigger a rebuild:
+        // that would abort its live background sessions. Reuse as-is.
+        logger.warn("Parked workspace changed on disk; reusing graph without rebuild", {
+          cwd: args.canonical,
+        });
+      } else {
+        logger.info("Retained workspace changed on disk; rebuilding", {
+          cwd: args.canonical,
+        });
+        await this.disposeGraph(graph);
+        return null;
+      }
     }
     if (!graph.servicesReady || !graph.agentSession || !graph.sessionManager) {
       await this.disposeGraph(graph);
@@ -510,8 +688,16 @@ export class WorkspaceLifecycle {
 
     // The incoming owner must never re-register while the outgoing owner is
     // still present: ModelRuntime merges same-id extension Provider configs.
-    if (args.previousGraph) this.suspendGraphProviders(args.previousGraph);
+    // A busy outgoing graph keeps its providers registered instead — its
+    // in-flight model calls must survive the reactivation window.
+    if (args.previousGraph && !this.graphIsBusy(args.previousGraph)) {
+      this.suspendGraphProviders(args.previousGraph);
+    }
     this.resumeGraphProviders(graph);
+    // A parked graph kept its previous Extension UI binding (park retention
+    // preserves it); drop it before binding the candidate identity so no
+    // stale emit closure survives the switch.
+    if (graph.extensionUiCleanup) clearSlots(graph);
     const candidateIdentity: HostIdentity = {
       hostInstanceId: server.identity.hostInstanceId,
       workspaceId: graph.workspaceId,
@@ -546,6 +732,17 @@ export class WorkspaceLifecycle {
       graph.extensionUiUpdateIdentity = binding.updateIdentity;
       graph.extensionUiReplayState = binding.replayState;
       binding.updateIdentity(candidateIdentity);
+      // Parked background runtimes kept their Extension UI bindings through
+      // the park; re-point them at the candidate identity (mirrors
+      // promoteBackgroundRuntime) so their extensions emit under the
+      // promoted session identity.
+      for (const runtime of graph.backgroundSessions.values()) {
+        runtime.extensionUiUpdateIdentity?.({
+          ...candidateIdentity,
+          sessionId: runtime.sessionId,
+          sessionRevision: runtime.sessionRevision,
+        });
+      }
       graph.packageSnapshot = await buildPackageSnapshot({
         revision: args.packageRevision,
         workspaceId: graph.workspaceId,
@@ -568,6 +765,14 @@ export class WorkspaceLifecycle {
         workspaceId: graph.workspaceId,
         toolRevision: graph.toolRevision,
       });
+      // A parked graph still carries its agent subscription from before the
+      // park; drop it before re-subscribing so events are never delivered
+      // twice.
+      try {
+        graph.unsubscribeAgent?.();
+      } catch {
+        /* ignore */
+      }
       graph.unsubscribeAgent = session.subscribe((event) => {
         this.sessionRuntimeCache.handleAgentEvent(graph, session, event);
       });
@@ -594,6 +799,11 @@ export class WorkspaceLifecycle {
     server.identity.sessionId = sessionId;
     server.identity.sessionRevision = args.sessionRevision;
     server.identity.packageRevision = args.packageRevision;
+    // The graph is the foreground owner again; drop park state. This runs in
+    // the same synchronous block as the commit, so no event can interleave
+    // with a half-cleared park state.
+    graph.backgroundRunning = false;
+    graph.parkedIdentity = undefined;
 
     let publishExtensionUi = () => {};
     try {
@@ -613,13 +823,14 @@ export class WorkspaceLifecycle {
     if (previousIdentity.sessionId && previousIdentity.sessionId !== server.identity.sessionId) {
       await this.context.deps.attachmentStore?.discardSessionDrafts(previousIdentity.sessionId);
     }
-    server.setPhase("ready");
+    this.refreshAgentPhase();
     server.setLastError(undefined);
     const workspace = this.buildWorkspaceSnapshot(graph);
     this.publishWorkspaceSnapshots(server, graph, workspace);
     graph.subagentStatusBridge?.setIdentity(server.getIdentity());
     graph.subagentStatusBridge?.markReady();
     publishExtensionUi();
+    this.context.onBoundWorkspacesChanged?.();
     return {
       workspace,
       ...(graph.sessionSnapshot ? { session: graph.sessionSnapshot } : {}),
