@@ -149,6 +149,66 @@ export class WorkspaceGraphFactory {
     this.sessionRuntimeCache.publishCurrentRuntimeState(session, identity);
   }
 
+  /**
+   * Identity to attribute `session`'s events to RIGHT NOW, computed from the
+   * bound graph that currently owns the session. A detached run can outlive
+   * the identity captured at prompt start: switching away parks the graph and
+   * every switch bumps workspaceRevision, so by settle time the captured
+   * identity may match no bound graph at all — emitting under it would throw
+   * on the stale-revision check and lose the terminal runtime signal (the
+   * session's dot then sticks on "running" forever). Null when no bound
+   * graph owns the session any more (disposed mid-run).
+   */
+  currentSessionIdentity(session: AgentSession): HostIdentity | null {
+    const server = this.server;
+    if (!server) return null;
+    for (const graph of this.workspaceLifecycle.boundGraphs()) {
+      const isGraphActive = this.graph === graph;
+      const active = graph.agentSession === session;
+      const runtime = active
+        ? null
+        : ([...graph.backgroundSessions.values()].find(
+            (candidate) => candidate.agentSession === session,
+          ) ??
+          [...(graph.idleSessionCache?.values() ?? [])].find(
+            (candidate) => candidate.agentSession === session,
+          ));
+      if (!active && !runtime) continue;
+      const snapshot = active ? graph.sessionSnapshot : runtime?.sessionSnapshot;
+      if (!snapshot) continue;
+      // Mirrors handleAgentEvent's attribution: the active graph uses the
+      // strict current identity; a parked graph attributes under its own
+      // identity captured at park time (never the foreground's).
+      const baseIdentity: HostIdentity = isGraphActive
+        ? server.getIdentity()
+        : (graph.parkedIdentity ?? {
+            hostInstanceId: server.identity.hostInstanceId,
+            workspaceId: graph.workspaceId,
+            workspaceRevision: graph.revision,
+            sessionId: null,
+            sessionRevision: 0,
+            packageRevision: 0,
+          });
+      return {
+        ...baseIdentity,
+        sessionId: snapshot.sessionId,
+        sessionRevision: snapshot.revision,
+      };
+    }
+    return null;
+  }
+
+  /**
+   * Terminal runtime publication for a detached prompt, attributed via the
+   * owning graph's current bound identity (see currentSessionIdentity). No-op
+   * when no bound graph owns the session any more.
+   */
+  publishCurrentRuntimeStateForSession(session: AgentSession): void {
+    const identity = this.currentSessionIdentity(session);
+    if (!identity) return;
+    this.sessionRuntimeCache.publishCurrentRuntimeState(session, identity);
+  }
+
   hasBusySessions(): boolean {
     return this.sessionRuntimeCache.hasBusySessions();
   }

@@ -8,7 +8,6 @@ import {
   stripAttachmentReferenceBlocks,
   type AttachmentSnapshot,
   type HostError,
-  type HostIdentity,
   type ModelSummary,
   type QueueSnapshot,
   type SerializableImage,
@@ -154,15 +153,20 @@ function startDetachedPrompt(args: {
 }): string {
   let runStatePublished = false;
   let detachedTaskStarted = false;
-  const cleanup = (settledIdentity?: HostIdentity) => {
+  const cleanup = (settled: boolean) => {
     args.operationLock.release(args.requestId);
     if (runStatePublished) {
       // agent_settled fires before AgentSession.prompt() resolves. Until this
       // lock is released, isSessionBusy() still reports running and suppresses
       // the idle edge. Publish once more after release so completion reaches
-      // the desktop and the cross-workspace activity tracker.
-      if (settledIdentity) {
-        args.factory.publishCurrentRuntimeState(args.session, settledIdentity);
+      // the desktop and the cross-workspace activity tracker. The publication
+      // resolves the owning graph's CURRENT bound identity: a run can outlive
+      // the identity captured at start (park + re-activation bump
+      // workspaceRevision), and emitting under the captured one would throw on
+      // the stale-revision check — losing the terminal idle edge and sticking
+      // the session's dot on "running" forever.
+      if (settled) {
+        args.factory.publishCurrentRuntimeStateForSession(args.session);
       }
       args.factory.clearSessionRunId(args.session);
       // Host-wide: a parked workspace graph may still be mid-run, and the
@@ -221,22 +225,31 @@ function startDetachedPrompt(args: {
         }
         completed = true;
       } catch (err) {
-        args.server.emitForIdentity(runIdentity, "agent.event", {
+        const message = err instanceof Error ? err.message : String(err);
+        // The graph may have been parked or re-activated while the run was in
+        // flight (workspaceRevision moved); emitForIdentity with the captured
+        // identity would throw on the stale-revision check and lose the
+        // failure signal entirely — no error event, no error dot, runtime
+        // stuck on "running". Attribute via the owning graph's current bound
+        // identity instead; fall back to the captured one when no bound graph
+        // owns the session (disposed mid-run).
+        const identity = args.factory.currentSessionIdentity(args.session) ?? runIdentity;
+        args.server.emitForBoundIdentity(identity, "agent.event", {
           runId,
           event: {
             type: "error",
-            message: err instanceof Error ? err.message : String(err),
+            message,
           },
         });
-        args.server.emitForIdentity(runIdentity, "session.runtimeChanged", {
-          sessionId: runIdentity.sessionId!,
-          sessionRevision: runIdentity.sessionRevision,
+        args.server.emitForBoundIdentity(identity, "session.runtimeChanged", {
+          sessionId: identity.sessionId!,
+          sessionRevision: identity.sessionRevision,
           state: "error",
           updatedAt: Date.now(),
-          error: err instanceof Error ? err.message : String(err),
+          error: message,
         });
       } finally {
-        cleanup(completed ? runIdentity : undefined);
+        cleanup(completed);
       }
       if (completed && provisionalTitle && titleSessionId) {
         await args.factory.refineActiveSessionName({
@@ -256,7 +269,7 @@ function startDetachedPrompt(args: {
     detachedTaskStarted = true;
     return runId;
   } finally {
-    if (!detachedTaskStarted) cleanup();
+    if (!detachedTaskStarted) cleanup(false);
   }
 }
 

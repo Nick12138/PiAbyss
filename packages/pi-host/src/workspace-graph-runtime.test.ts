@@ -1562,6 +1562,38 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
     }
   });
 
+  it("publishes a parked graph's settled run under its parked identity", async () => {
+    const state = setup();
+    try {
+      const busySession = fakeSession(false, BACKGROUND_SESSION_ID);
+      const busyWorkspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+      const parked = fakeWorkspaceGraph(state.retainedDir, busyWorkspaceId, busySession);
+      await state.internal.retainGraph(parked);
+
+      // The run settles while the user is on another workspace. The prompt
+      // cleanup publishes via currentSessionIdentity: the identity captured
+      // at prompt start matches no bound graph any more (the parked graph
+      // keeps its park-time identity; the active one belongs to another
+      // workspace), and a stale-revision emit would lose the idle edge —
+      // sticking the session's dot on "running" forever.
+      Reflect.set(busySession, "isIdle", true);
+      state.factory.publishCurrentRuntimeStateForSession(busySession);
+
+      expect(state.server.emitForBoundIdentity).toHaveBeenCalledWith(
+        expect.objectContaining({
+          hostInstanceId: HOST_ID,
+          workspaceId: busyWorkspaceId,
+          workspaceRevision: 1,
+          sessionId: BACKGROUND_SESSION_ID,
+        }),
+        "session.runtimeChanged",
+        expect.objectContaining({ sessionId: BACKGROUND_SESSION_ID, state: "idle" }),
+      );
+    } finally {
+      rmSync(state.root, { recursive: true, force: true });
+    }
+  });
+
   it("reactivates a busy parked graph without rebuilding it", async () => {
     const state = setup();
     try {

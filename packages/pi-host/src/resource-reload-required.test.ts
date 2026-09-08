@@ -153,6 +153,7 @@ function mockFactory(opts: {
       isHeld: () => opts.agentBusy === true,
     },
     emit: () => {},
+    emitForBoundIdentity: () => {},
     getIdentity: () => identity.snapshot(),
     setPhase: (p: string) => {
       phase = p;
@@ -171,6 +172,8 @@ function mockFactory(opts: {
     setSessionRunId: () => {},
     clearSessionRunId: () => {},
     publishCurrentRuntimeState: vi.fn(),
+    publishCurrentRuntimeStateForSession: vi.fn(),
+    currentSessionIdentity: vi.fn(() => null),
     invalidateRetainedRuntimeCaches: vi.fn(async () => {}),
     setActiveSessionName: vi.fn((name: string) => {
       g.agentSession.setSessionName(name);

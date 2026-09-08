@@ -175,6 +175,7 @@ function stableHandlerFixture(wait: Promise<void>) {
     setSessionRunId: vi.fn(),
     clearSessionRunId: vi.fn(),
     publishCurrentRuntimeState: vi.fn(),
+    publishCurrentRuntimeStateForSession: vi.fn(),
     setActiveSessionName: vi.fn(),
     refineActiveSessionName: vi.fn(async () => {}),
     currentRunId: null,
@@ -344,15 +345,14 @@ describe("agent.prompt startup", () => {
     expect("result" in outcome).toBe(true);
     await vi.waitFor(() => expect(fixture.session.prompt).toHaveBeenCalledOnce());
     expect(fixture.sessionOperationLock.isHeld()).toBe(true);
-    expect(fixture.factory.publishCurrentRuntimeState).not.toHaveBeenCalled();
+    expect(fixture.factory.publishCurrentRuntimeStateForSession).not.toHaveBeenCalled();
 
     (fixture.session as unknown as { isIdle: boolean }).isIdle = true;
     gate.resolve();
 
     await vi.waitFor(() =>
-      expect(fixture.factory.publishCurrentRuntimeState).toHaveBeenCalledExactlyOnceWith(
+      expect(fixture.factory.publishCurrentRuntimeStateForSession).toHaveBeenCalledExactlyOnceWith(
         fixture.session,
-        fixture.server.getIdentity(),
       ),
     );
     expect(fixture.sessionOperationLock.isHeld()).toBe(false);
@@ -403,7 +403,7 @@ describe("agent.prompt startup", () => {
     } as never);
     (fixture.session as unknown as { isIdle: boolean }).isIdle = true;
     gate.resolve();
-    await vi.waitFor(() => expect(fixture.factory.publishCurrentRuntimeState).toHaveBeenCalled());
+    await vi.waitFor(() => expect(fixture.factory.publishCurrentRuntimeStateForSession).toHaveBeenCalled());
 
     expect(fixture.sessionOperationLock.isHeld()).toBe(false);
     expect(fixture.server.getPhase()).toBe("agentBusy");
