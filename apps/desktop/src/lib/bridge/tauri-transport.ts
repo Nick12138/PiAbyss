@@ -67,12 +67,22 @@ export async function replayActiveHostReady(): Promise<boolean> {
 
 export type HostActivitySummary = {
   cwd: string;
+  /** Pool keys of every workspace bound to this Host, first binding first.
+   *  One element in dedicated mode; grows in shared-host mode. Older Rust
+   *  pools omit it — fall back to `cwd`. */
+  cwds?: string[];
   busy: boolean;
   hasBeenBusy: boolean;
   errorCount: number;
   doneCount: number;
   terminalSessions: Record<string, { state: "error" | "done"; generation: number }>;
 };
+
+/** Every workspace a snapshot entry covers: `cwds` when present, else `cwd`. */
+export function hostActivityCwds(entry: HostActivitySummary): string[] {
+  if (entry.cwds && entry.cwds.length > 0) return entry.cwds;
+  return [entry.cwd];
+}
 
 /**
  * Live per-workspace session activity from the Host pool. Background Hosts do

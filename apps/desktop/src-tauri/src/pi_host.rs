@@ -18,6 +18,10 @@ use tokio::task::JoinHandle;
 pub(crate) const HOST_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 pub(crate) const APP_EXIT_HOST_SHUTDOWN_GRACE: Duration = Duration::from_secs(1);
 pub(crate) const IDLE_HOST_RETENTION: Duration = Duration::from_secs(30 * 60);
+/// Minimum idle time before a background Host is probed for RSS. Younger
+/// hosts can only be retired by the base retention rule, so probing them is
+/// wasted work.
+pub(crate) const RSS_PROBE_MIN_IDLE: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +34,10 @@ pub struct HostTransportFrame {
 #[serde(rename_all = "camelCase")]
 pub struct HostActivitySnapshot {
     pub cwd: String,
+    /// Pool keys of every workspace bound to this Host, the entry's own key
+    /// first. One element in dedicated mode; grows in shared-host mode. Old
+    /// renderers only read `cwd`, which mirrors the first binding.
+    pub cwds: Vec<String>,
     pub busy: bool,
     pub has_been_busy: bool,
     /// Unacknowledged failed sessions (red dot).
@@ -516,6 +524,10 @@ pub struct PiHostManager {
     /// Idle Session hot-queue policy, applied to the next spawned Host.
     idle_session_cache_limit: u32,
     idle_session_timeout_minutes: u32,
+    /// Shared-host mode: when true the next spawned Host is told (via
+    /// `PIABYSS_MAX_BOUND_WORKSPACES`) to keep every workspace graph bound so
+    /// in-place switches return instantly.
+    shared_host_mode: bool,
     /// Monotonic child generation used to retire delayed stdout/stderr monitors.
     child_generation: Arc<AtomicU32>,
     stdout_task: Option<JoinHandle<()>>,
@@ -526,14 +538,174 @@ pub struct PiHostManager {
     unix_process_group: Option<UnixHostProcessGroup>,
 }
 
-struct HostPoolEntry {
-    route_id: String,
-    canonical_cwd: PathBuf,
+/// Pure pool bookkeeping — which route serves which workspace, which entry
+/// is active, and which workspaces each entry serves — kept free of Tauri and
+/// manager types so the shared-host routing decisions stay unit-testable
+/// without an app handle. Every key in `entries` has a matching `hosts` slot.
+pub(crate) struct PoolBook {
+    pub(crate) entries: HashMap<String, BookEntry>,
+    pub(crate) route_to_key: HashMap<String, String>,
+    pub(crate) active_key: String,
+}
+
+#[derive(Clone)]
+pub(crate) struct BookEntry {
+    pub(crate) route_id: String,
+    pub(crate) canonical_cwd: PathBuf,
+    /// Pool keys of every workspace this entry serves, including the entry's
+    /// own `entries` key first. One element in dedicated mode; shared-host
+    /// mode appends a key on every in-place rebind instead of re-keying.
+    pub(crate) workspaces: Vec<String>,
+}
+
+impl PoolBook {
+    pub(crate) fn new(key: String, route_id: String, canonical_cwd: PathBuf) -> Self {
+        let mut entries = HashMap::new();
+        entries.insert(
+            key.clone(),
+            BookEntry {
+                route_id: route_id.clone(),
+                canonical_cwd,
+                workspaces: vec![key.clone()],
+            },
+        );
+        Self {
+            entries,
+            route_to_key: HashMap::from([(route_id, key.clone())]),
+            active_key: key,
+        }
+    }
+
+    /// Which entry should serve a workspace activation request under the given
+    /// mode. Dedicated mode reuses an exact key match (1:1 entry ↔ workspace);
+    /// shared-host mode reuses the ACTIVE entry whenever one exists, so the
+    /// pool never grows a second Host — only the cold bootstrap (no active
+    /// entry at all) returns `Spawn`.
+    pub(crate) fn activation_target(&self, key: &str, shared_host_mode: bool) -> ActivationTarget {
+        if shared_host_mode {
+            return if self.entries.contains_key(&self.active_key) {
+                ActivationTarget::Reuse(self.active_key.clone())
+            } else {
+                ActivationTarget::Spawn
+            };
+        }
+        if self.entries.contains_key(key) {
+            ActivationTarget::Reuse(key.to_string())
+        } else {
+            ActivationTarget::Spawn
+        }
+    }
+
+    /// The pool key of the entry serving `key`: a direct map hit first, then a
+    /// scan of every entry's bound workspaces. The fallback matters in
+    /// shared-host mode where one entry registers several workspace keys.
+    pub(crate) fn key_for_workspace<'a>(&'a self, key: &str) -> Option<&'a String> {
+        if self.entries.contains_key(key) {
+            return self.entries.get_key_value(key).map(|(found, _)| found);
+        }
+        self.entries
+            .iter()
+            .find(|(_, entry)| entry.workspaces.iter().any(|bound| bound == key))
+            .map(|(found, _)| found)
+    }
+
+    /// Registers a freshly spawned Host under `key` (bookkeeping only; the
+    /// active route is set separately by `set_active_route`).
+    pub(crate) fn register_spawn(&mut self, key: String, route_id: String, canonical_cwd: PathBuf) {
+        self.route_to_key.insert(route_id.clone(), key.clone());
+        self.entries.insert(
+            key.clone(),
+            BookEntry {
+                route_id,
+                canonical_cwd,
+                workspaces: vec![key],
+            },
+        );
+    }
+
+    /// Shared-host rebind: register `target_key` as another workspace served
+    /// by the active entry. The entry key, route and `route_to_key` mapping
+    /// stay untouched — this is registration, not re-keying. The bootstrap
+    /// entry is born with an empty `canonical_cwd` when the last workspace
+    /// could not be canonicalized at startup; the first successful shared-mode
+    /// binding fills it so the activity snapshot chain has a display cwd.
+    pub(crate) fn register_workspace_on_active(
+        &mut self,
+        target_key: String,
+        canonical_cwd: PathBuf,
+    ) {
+        let entry = self
+            .entries
+            .get_mut(&self.active_key)
+            .expect("active HostPool entry must exist");
+        if entry.canonical_cwd.as_os_str().is_empty() {
+            entry.canonical_cwd = canonical_cwd;
+        }
+        if !entry.workspaces.iter().any(|bound| bound == &target_key) {
+            entry.workspaces.push(target_key);
+        }
+    }
+
+    /// Dedicated-mode rebind: move the active entry to `target_key` (1:1
+    /// entry ↔ workspace), returning the entry's unchanged route id.
+    pub(crate) fn rekey_active(&mut self, target_key: String, canonical_cwd: PathBuf) -> String {
+        let mut entry = self
+            .entries
+            .remove(&self.active_key)
+            .expect("active HostPool entry must exist");
+        self.route_to_key.remove(&entry.route_id);
+        entry.canonical_cwd = canonical_cwd;
+        entry.workspaces = vec![target_key.clone()];
+        self.route_to_key
+            .insert(entry.route_id.clone(), target_key.clone());
+        self.entries.insert(target_key.clone(), entry);
+        self.active_key = target_key;
+        self.entries[&self.active_key].route_id.clone()
+    }
+
+    pub(crate) fn remove_entry(&mut self, key: &str) -> Option<String> {
+        let entry = self.entries.remove(key)?;
+        self.route_to_key.remove(&entry.route_id);
+        Some(entry.route_id)
+    }
+
+    pub(crate) fn set_active_route(&mut self, route_id: &str) -> Result<(), String> {
+        let key = self
+            .route_to_key
+            .get(route_id)
+            .cloned()
+            .ok_or_else(|| "unknown Host route".to_string())?;
+        self.active_key = key;
+        Ok(())
+    }
+}
+
+/// Activation decision returned by `PoolBook::activation_target`.
+pub(crate) enum ActivationTarget {
+    /// An existing entry (by pool key) serves the workspace — reuse it.
+    Reuse(String),
+    /// No entry serves the workspace; the caller may spawn a fresh Host.
+    Spawn,
+}
+
+struct PoolHost {
     manager: Arc<Mutex<PiHostManager>>,
     activity: Arc<StdMutex<HostActivity>>,
 }
 
-struct HostActivity {
+pub struct WorkspaceHostActivation {
+    pub route_id: String,
+    pub manager: Arc<Mutex<PiHostManager>>,
+    pub created: bool,
+}
+
+pub struct WorkspaceHostRebind {
+    pub manager: Arc<Mutex<PiHostManager>>,
+    pub canonical_workspace: PathBuf,
+    pub retired: Vec<Arc<Mutex<PiHostManager>>>,
+}
+
+pub(crate) struct HostActivity {
     busy_sessions: HashSet<String>,
     idle_since: Instant,
     /// True once any session has entered a busy state, so the workspace list
@@ -549,6 +721,15 @@ struct HostActivity {
     last_state: HashMap<String, String>,
 }
 
+impl HostActivity {
+    /// Test hook: age the idle clock so expiry rules are testable without
+    /// waiting out `IDLE_HOST_RETENTION` (which would stall the suite).
+    #[cfg(test)]
+    pub(crate) fn set_idle_since_for_test(&mut self, idle_since: Instant) {
+        self.idle_since = idle_since;
+    }
+}
+
 impl Default for HostActivity {
     fn default() -> Self {
         Self {
@@ -562,25 +743,13 @@ impl Default for HostActivity {
     }
 }
 
-pub struct WorkspaceHostActivation {
-    pub route_id: String,
-    pub manager: Arc<Mutex<PiHostManager>>,
-    pub created: bool,
-}
-
-pub struct WorkspaceHostRebind {
-    pub manager: Arc<Mutex<PiHostManager>>,
-    pub canonical_workspace: PathBuf,
-    pub retired: Vec<Arc<Mutex<PiHostManager>>>,
-}
-
 /// Owns one isolated Node Host per canonical workspace. Switching the active
 /// route changes only renderer IPC routing; inactive Hosts keep running.
+/// In shared-host mode it owns ONE Host serving every workspace instead.
 pub struct PiHostPool {
     app: AppHandle,
-    entries: HashMap<String, HostPoolEntry>,
-    route_to_key: HashMap<String, String>,
-    active_key: String,
+    book: PoolBook,
+    hosts: HashMap<String, PoolHost>,
 }
 
 impl PiHostPool {
@@ -597,39 +766,25 @@ impl PiHostPool {
         let manager = PiHostManager::new_routed(app.clone(), settings, route_id.clone(), initial);
         let activity = Arc::clone(&manager.activity);
         let manager = Arc::new(Mutex::new(manager));
-        let mut entries = HashMap::new();
-        entries.insert(
-            key.clone(),
-            HostPoolEntry {
-                route_id: route_id.clone(),
-                canonical_cwd,
-                manager,
-                activity,
-            },
-        );
-        let mut route_to_key = HashMap::new();
-        route_to_key.insert(route_id, key.clone());
-        Self {
-            app,
-            entries,
-            route_to_key,
-            active_key: key,
-        }
+        let book = PoolBook::new(key.clone(), route_id, canonical_cwd);
+        let hosts = HashMap::from([(key, PoolHost { manager, activity })]);
+        Self { app, book, hosts }
     }
 
     pub fn active_manager(&self) -> Arc<Mutex<PiHostManager>> {
         Arc::clone(
             &self
-                .entries
-                .get(&self.active_key)
+                .hosts
+                .get(&self.book.active_key)
                 .expect("active HostPool entry must exist")
                 .manager,
         )
     }
 
     pub fn active_route_id(&self) -> String {
-        self.entries
-            .get(&self.active_key)
+        self.book
+            .entries
+            .get(&self.book.active_key)
             .expect("active HostPool entry must exist")
             .route_id
             .clone()
@@ -640,32 +795,12 @@ impl PiHostPool {
     /// Hosts do not — this snapshot is the only view the UI has into whether
     /// another workspace still has sessions running.
     pub fn activity_snapshot(&self) -> Vec<HostActivitySnapshot> {
-        self.entries
-            .values()
-            .filter_map(|entry| {
-                if entry.canonical_cwd.as_os_str().is_empty() {
-                    return None;
-                }
-                let activity = entry
-                    .activity
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                Some(HostActivitySnapshot {
-                    cwd: entry.canonical_cwd.to_string_lossy().to_string(),
-                    busy: !activity.busy_sessions.is_empty(),
-                    has_been_busy: activity.has_been_busy,
-                    error_count: activity
-                        .terminal_sessions
-                        .values()
-                        .filter(|terminal| terminal.state == "error")
-                        .count(),
-                    done_count: activity
-                        .terminal_sessions
-                        .values()
-                        .filter(|terminal| terminal.state == "done")
-                        .count(),
-                    terminal_sessions: activity.terminal_sessions.clone(),
-                })
+        self.book
+            .entries
+            .iter()
+            .filter_map(|(key, entry)| {
+                let host = self.hosts.get(key)?;
+                host_activity_snapshot(&entry.canonical_cwd, &entry.workspaces, &host.activity)
             })
             .collect()
     }
@@ -674,31 +809,30 @@ impl PiHostPool {
     /// its unacknowledged terminal marker so the workspace dot downgrades.
     pub fn acknowledge_session_terminal(&self, cwd: &Path, session_id: &str) -> bool {
         let key = workspace_pool_key(cwd);
-        let Some(entry) = self.entries.get(&key) else {
+        let Some(book_key) = self.book.key_for_workspace(&key) else {
             return false;
         };
-        let mut activity = entry
-            .activity
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if activity.terminal_sessions.remove(session_id).is_none() {
+        let Some(host) = self.hosts.get(book_key) else {
+            return false;
+        };
+        if !acknowledge_session_terminal_in_activity(&host.activity, session_id) {
             return false;
         }
-        let _ = self.app.emit("pi-host-activity", entry.route_id.clone());
+        let route_id = self.book.entries[book_key].route_id.clone();
+        let _ = self.app.emit("pi-host-activity", route_id);
         true
     }
 
     pub fn manager_for_route(&self, route_id: &str) -> Option<Arc<Mutex<PiHostManager>>> {
-        let key = self.route_to_key.get(route_id)?;
-        self.entries
-            .get(key)
-            .map(|entry| Arc::clone(&entry.manager))
+        let key = self.book.route_to_key.get(route_id)?;
+        self.hosts.get(key).map(|host| Arc::clone(&host.manager))
     }
 
     pub fn activate_workspace(
         &mut self,
         cwd: &Path,
         settings: &DesktopSettingsStore,
+        force_dedicated: bool,
     ) -> Result<(String, Arc<Mutex<PiHostManager>>, bool), String> {
         let canonical = strip_verbatim_prefix(
             cwd.canonicalize()
@@ -708,27 +842,43 @@ impl PiHostPool {
             return Err("workspace path is not a directory".into());
         }
         let key = workspace_pool_key(&canonical);
-        if let Some(entry) = self.entries.get(&key) {
-            let manager = Arc::clone(&entry.manager);
-            return Ok((entry.route_id.clone(), manager, false));
+        match self.book.activation_target(
+            &key,
+            // Telegram bootstrap forces a dedicated Host: `/telegram-connect`
+            // must run in its own preloaded workspace, never in whatever
+            // workspace the shared foreground Host currently serves.
+            settings.settings.shared_host_mode && !force_dedicated,
+        ) {
+            ActivationTarget::Reuse(book_key) => {
+                // Shared-host mode: the pool must never grow a second Host —
+                // the active entry serves the requested workspace too; the
+                // renderer switches in place via `workspace.setCurrent` and
+                // registers the workspace through `rebind_active_workspace`.
+                let entry = &self.book.entries[&book_key];
+                let route_id = entry.route_id.clone();
+                let host = self
+                    .hosts
+                    .get(&book_key)
+                    .expect("hosts map mirrors the book");
+                return Ok((route_id, Arc::clone(&host.manager), false));
+            }
+            ActivationTarget::Spawn => {}
         }
 
         let route_id = uuid::Uuid::new_v4().to_string();
-        let canonical_cwd = canonical.clone();
         let manager = PiHostManager::new_routed(
             self.app.clone(),
             settings,
             route_id.clone(),
-            Some(canonical),
+            Some(canonical.clone()),
         );
         let activity = Arc::clone(&manager.activity);
         let manager = Arc::new(Mutex::new(manager));
-        self.route_to_key.insert(route_id.clone(), key.clone());
-        self.entries.insert(
-            key.clone(),
-            HostPoolEntry {
-                route_id: route_id.clone(),
-                canonical_cwd,
+        self.book
+            .register_spawn(key.clone(), route_id.clone(), canonical);
+        self.hosts.insert(
+            key,
+            PoolHost {
                 manager: Arc::clone(&manager),
                 activity,
             },
@@ -744,14 +894,51 @@ impl PiHostPool {
     ) -> Result<Option<WorkspaceHostActivation>, String> {
         let canonical = canonical_workspace(cwd)?;
         let target_key = workspace_pool_key(&canonical);
-        if target_key == self.active_key {
+        if settings.settings.shared_host_mode {
+            // Shared-host mode: never prepare a dedicated Host — the active
+            // entry serves every workspace, and the renderer switches in place
+            // via `workspace.setCurrent` + `rebind_active_workspace`. Kept safe
+            // for any caller that still asks: reuse the active route, never
+            // spawn. Only the cold bootstrap (no active entry at all) may
+            // still spawn below.
+            match self.book.activation_target(&target_key, true) {
+                ActivationTarget::Reuse(book_key) => {
+                    let entry = &self.book.entries[&book_key];
+                    let route_id = entry.route_id.clone();
+                    let host = self
+                        .hosts
+                        .get(&book_key)
+                        .expect("hosts map mirrors the book");
+                    return Ok(Some(WorkspaceHostActivation {
+                        route_id,
+                        manager: Arc::clone(&host.manager),
+                        created: false,
+                    }));
+                }
+                ActivationTarget::Spawn => {
+                    let (route_id, manager, created) =
+                        self.activate_workspace(&canonical, settings, false)?;
+                    return Ok(Some(WorkspaceHostActivation {
+                        route_id,
+                        manager,
+                        created,
+                    }));
+                }
+            }
+        }
+        if target_key == self.book.active_key {
             return Ok(None);
         }
 
-        if let Some(entry) = self.entries.get(&target_key) {
+        if let Some(entry) = self.book.entries.get(&target_key) {
+            let route_id = entry.route_id.clone();
+            let host = self
+                .hosts
+                .get(&target_key)
+                .expect("hosts map mirrors the book");
             return Ok(Some(WorkspaceHostActivation {
-                route_id: entry.route_id.clone(),
-                manager: Arc::clone(&entry.manager),
+                route_id,
+                manager: Arc::clone(&host.manager),
                 created: false,
             }));
         }
@@ -759,8 +946,8 @@ impl PiHostPool {
         let active_busy = renderer_reports_busy
             || host_activity_busy(
                 &self
-                    .entries
-                    .get(&self.active_key)
+                    .hosts
+                    .get(&self.book.active_key)
                     .expect("active HostPool entry must exist")
                     .activity,
             );
@@ -768,7 +955,7 @@ impl PiHostPool {
             return Ok(None);
         }
 
-        let (route_id, manager, created) = self.activate_workspace(&canonical, settings)?;
+        let (route_id, manager, created) = self.activate_workspace(&canonical, settings, false)?;
         Ok(Some(WorkspaceHostActivation {
             route_id,
             manager,
@@ -776,33 +963,50 @@ impl PiHostPool {
         }))
     }
 
-    pub fn rebind_active_workspace(&mut self, cwd: &Path) -> Result<WorkspaceHostRebind, String> {
+    /// Re-point the pool at a workspace the ACTIVE Host will serve in place.
+    ///
+    /// Dedicated mode re-keys the active entry (1:1 entry ↔ workspace).
+    /// Shared-host mode instead REGISTERS the workspace on the entry: the
+    /// route, entry key and `route_to_key` mapping stay untouched, the target
+    /// key joins the entry's bound workspaces, and the canonical path is
+    /// returned so the command layer can keep it as the manager's initial
+    /// workspace for the next app start.
+    pub fn rebind_active_workspace(
+        &mut self,
+        cwd: &Path,
+        shared_host_mode: bool,
+    ) -> Result<WorkspaceHostRebind, String> {
         let canonical = canonical_workspace(cwd)?;
         let target_key = workspace_pool_key(&canonical);
-        if target_key == self.active_key {
+        if target_key == self.book.active_key {
             return Ok(WorkspaceHostRebind {
                 manager: self.active_manager(),
                 canonical_workspace: canonical,
                 retired: Vec::new(),
             });
         }
-        if self.entries.contains_key(&target_key) {
+        if shared_host_mode {
+            self.book
+                .register_workspace_on_active(target_key, canonical.clone());
+            return Ok(WorkspaceHostRebind {
+                manager: self.active_manager(),
+                canonical_workspace: canonical,
+                retired: Vec::new(),
+            });
+        }
+        if self.book.entries.contains_key(&target_key) {
             return Err("target workspace already has a Host route".to_string());
         }
 
-        let old_active_key = self.active_key.clone();
-        let mut active_entry = self
-            .entries
+        let old_active_key = self.book.active_key.clone();
+        let host = self
+            .hosts
             .remove(&old_active_key)
             .expect("active HostPool entry must exist");
-        self.route_to_key.remove(&active_entry.route_id);
-        active_entry.canonical_cwd = canonical.clone();
-
-        let active_manager = Arc::clone(&active_entry.manager);
-        self.route_to_key
-            .insert(active_entry.route_id.clone(), target_key.clone());
-        self.entries.insert(target_key.clone(), active_entry);
-        self.active_key = target_key;
+        let active_manager = Arc::clone(&host.manager);
+        self.book
+            .rekey_active(target_key.clone(), canonical.clone());
+        self.hosts.insert(target_key, host);
         Ok(WorkspaceHostRebind {
             manager: active_manager,
             canonical_workspace: canonical,
@@ -810,38 +1014,80 @@ impl PiHostPool {
         })
     }
 
-    pub fn take_expired_idle_hosts(&mut self) -> Vec<Arc<Mutex<PiHostManager>>> {
-        let expired_keys = self
+    /// Collect Hosts to retire this GC tick:
+    /// - base rule: not the active route, no unacknowledged terminal markers,
+    ///   no busy sessions, and idle for at least `IDLE_HOST_RETENTION`;
+    /// - RSS accelerator (opt-in, `rss_retire_mb > 0`): a background Host idle
+    ///   for at least `RSS_PROBE_MIN_IDLE` whose observed child working set
+    ///   exceeds the threshold retires early instead of waiting out the full
+    ///   retention. Unacknowledged terminal markers pin a Host against both
+    ///   rules.
+    ///
+    /// The probe runs at most once per entry per tick and never blocks: a
+    /// manager mutex held by another task simply skips that entry until the
+    /// next tick (`try_lock`), so the 60 s GC cadence stays cheap.
+    pub fn take_expired_idle_hosts(
+        &mut self,
+        rss_retire_mb: u32,
+    ) -> Vec<Arc<Mutex<PiHostManager>>> {
+        let mut expired_keys = self
+            .book
             .entries
-            .iter()
-            .filter_map(|(key, entry)| {
-                (key != &self.active_key && host_activity_expired(&entry.activity))
+            .keys()
+            .filter_map(|key| {
+                let host = self.hosts.get(key)?;
+                (key != &self.book.active_key && host_activity_expired(&host.activity))
                     .then_some(key.clone())
             })
             .collect::<Vec<_>>();
+        if rss_retire_mb > 0 {
+            let threshold_bytes = u64::from(rss_retire_mb) * 1024 * 1024;
+            for key in self.book.entries.keys() {
+                if key == &self.book.active_key || expired_keys.contains(key) {
+                    continue;
+                }
+                let Some(host) = self.hosts.get(key) else {
+                    continue;
+                };
+                if !host_activity_rss_eligible(&host.activity) {
+                    continue;
+                }
+                let Ok(manager) = host.manager.try_lock() else {
+                    continue;
+                };
+                match manager.probe_child_rss_bytes() {
+                    Some(bytes) if bytes > threshold_bytes => {
+                        eprintln!(
+                            "[piabyss] retiring idle background Host {}: working set {} MiB > {} MiB limit",
+                            key,
+                            bytes / (1024 * 1024),
+                            rss_retire_mb
+                        );
+                        expired_keys.push(key.clone());
+                    }
+                    // Quiet probe hits stay silent: the GC ticks every 60 s and
+                    // a healthy background Host must not spam the log.
+                    _ => {}
+                }
+            }
+        }
         let mut retired = Vec::with_capacity(expired_keys.len());
         for key in expired_keys {
-            if let Some(entry) = self.entries.remove(&key) {
-                self.route_to_key.remove(&entry.route_id);
-                retired.push(entry.manager);
+            if let Some(host) = self.hosts.remove(&key) {
+                self.book.remove_entry(&key);
+                retired.push(host.manager);
             }
         }
         retired
     }
 
     pub fn set_active_route(&mut self, route_id: &str) -> Result<(), String> {
-        let key = self
-            .route_to_key
-            .get(route_id)
-            .cloned()
-            .ok_or_else(|| "unknown Host route".to_string())?;
-        self.active_key = key;
-        Ok(())
+        self.book.set_active_route(route_id)
     }
 
     pub async fn update_settings(&self, settings: &DesktopSettingsStore) {
-        for entry in self.entries.values() {
-            let mut manager = entry.manager.lock().await;
+        for host in self.hosts.values() {
+            let mut manager = host.manager.lock().await;
             manager.set_agent_dir(settings.resolved_agent_dir());
             manager.set_auto_restart_once(settings.settings.auto_restart_host_once);
             manager.set_plugin_env(settings.settings.plugin_env.clone());
@@ -849,14 +1095,15 @@ impl PiHostPool {
                 settings.settings.idle_session_cache_limit,
                 settings.settings.idle_session_timeout_minutes,
             );
+            manager.set_shared_host_mode(settings.settings.shared_host_mode);
         }
     }
 
     pub async fn shutdown_all(&self, app_exit: bool) {
         let managers = self
-            .entries
+            .hosts
             .values()
-            .map(|entry| Arc::clone(&entry.manager))
+            .map(|host| Arc::clone(&host.manager))
             .collect::<Vec<_>>();
         for manager in managers {
             let mut manager = manager.lock().await;
@@ -869,7 +1116,7 @@ impl PiHostPool {
     }
 }
 
-fn workspace_pool_key(path: &Path) -> String {
+pub(crate) fn workspace_pool_key(path: &Path) -> String {
     let value = path.to_string_lossy().to_string();
     if cfg!(windows) {
         value.to_lowercase()
@@ -897,14 +1144,94 @@ fn host_activity_busy(activity: &StdMutex<HostActivity>) -> bool {
         .is_empty()
 }
 
-fn host_activity_expired(activity: &StdMutex<HostActivity>) -> bool {
+/// Pure core of `PiHostPool::activity_snapshot` (unit-testable without a
+/// manager). `None` for the bootstrap entry that has no workspace yet.
+pub(crate) fn host_activity_snapshot(
+    canonical_cwd: &Path,
+    workspaces: &[String],
+    activity: &StdMutex<HostActivity>,
+) -> Option<HostActivitySnapshot> {
+    if canonical_cwd.as_os_str().is_empty() {
+        return None;
+    }
     let activity = activity
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    activity.busy_sessions.is_empty() && activity.idle_since.elapsed() >= IDLE_HOST_RETENTION
+    Some(HostActivitySnapshot {
+        cwd: canonical_cwd.to_string_lossy().to_string(),
+        cwds: workspaces.to_vec(),
+        busy: !activity.busy_sessions.is_empty(),
+        has_been_busy: activity.has_been_busy,
+        error_count: activity
+            .terminal_sessions
+            .values()
+            .filter(|terminal| terminal.state == "error")
+            .count(),
+        done_count: activity
+            .terminal_sessions
+            .values()
+            .filter(|terminal| terminal.state == "done")
+            .count(),
+        terminal_sessions: activity.terminal_sessions.clone(),
+    })
 }
 
-fn observe_host_activity(activity: &StdMutex<HostActivity>, line: &str) -> bool {
+/// Testable core of `PiHostPool::acknowledge_session_terminal`: clears the
+/// unacknowledged terminal marker for one session. Shared with unit tests so
+/// the acknowledgement path and the retirement gate stay provably symmetric —
+/// both are keyed on the same `terminal_sessions` map.
+pub(crate) fn acknowledge_session_terminal_in_activity(
+    activity: &StdMutex<HostActivity>,
+    session_id: &str,
+) -> bool {
+    let mut activity = activity
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    activity.terminal_sessions.remove(session_id).is_some()
+}
+
+/// Idle reclamation gate. Hosts with unacknowledged terminal markers (red /
+/// gray dots) are pinned: the renderer is still owed the failure/completion
+/// signal, and retiring the Host would drop the only snapshot the workspace
+/// list uses to rebuild those dots. They are retired only after the user
+/// acknowledges (`acknowledge_session_terminal`) — never on idle time alone.
+pub(crate) fn host_activity_expired(activity: &StdMutex<HostActivity>) -> bool {
+    let activity = activity
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    activity.terminal_sessions.is_empty()
+        && activity.busy_sessions.is_empty()
+        && activity.idle_since.elapsed() >= IDLE_HOST_RETENTION
+}
+
+fn host_idle_for(activity: &StdMutex<HostActivity>) -> Duration {
+    activity
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .idle_since
+        .elapsed()
+}
+
+/// Pins shared by BOTH retirement rules. `idle_since` only refreshes on the
+/// busy→idle edge, so elapsed time alone cannot prove a Host is quiet: a Host
+/// that started a long turn after its last idle window reports a large
+/// `host_idle_for` while `busy_sessions` is non-empty. Same for unacked
+/// terminal markers — the RSS accelerator must honor the same pin as the base
+/// rule, or it would kill running turns and drop unread red/gray dots.
+fn host_activity_pinned(activity: &StdMutex<HostActivity>) -> bool {
+    let activity = activity
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    !activity.busy_sessions.is_empty() || !activity.terminal_sessions.is_empty()
+}
+
+/// RSS-accelerated retirement gate: same pins as the base rule, but a shorter
+/// idle floor (`RSS_PROBE_MIN_IDLE` instead of `IDLE_HOST_RETENTION`).
+pub(crate) fn host_activity_rss_eligible(activity: &StdMutex<HostActivity>) -> bool {
+    !host_activity_pinned(activity) && host_idle_for(activity) >= RSS_PROBE_MIN_IDLE
+}
+
+pub(crate) fn observe_host_activity(activity: &StdMutex<HostActivity>, line: &str) -> bool {
     let Ok(message) = serde_json::from_str::<serde_json::Value>(line) else {
         return false;
     };
@@ -1561,6 +1888,7 @@ impl PiHostManager {
             plugin_env: settings.settings.plugin_env.clone(),
             idle_session_cache_limit: settings.settings.idle_session_cache_limit,
             idle_session_timeout_minutes: settings.settings.idle_session_timeout_minutes,
+            shared_host_mode: settings.settings.shared_host_mode,
             restart_count: Arc::new(AtomicU32::new(0)),
             auto_restart_once: settings.settings.auto_restart_host_once,
             shutting_down: Arc::new(AtomicBool::new(false)),
@@ -1614,6 +1942,10 @@ impl PiHostManager {
         self.idle_session_timeout_minutes = timeout_minutes;
     }
 
+    pub fn set_shared_host_mode(&mut self, shared: bool) {
+        self.shared_host_mode = shared;
+    }
+
     pub fn set_initial_workspace_path(&mut self, path: PathBuf) {
         self.initial_workspace = Some(path);
     }
@@ -1637,6 +1969,36 @@ impl PiHostManager {
 
     pub fn host_instance_id(&self) -> Option<&str> {
         self.host_instance_id.as_deref()
+    }
+
+    /// Working-set size of the Host child process, when observable. Returns
+    /// `None` when no child is running, the handle is gone, or the OS query
+    /// fails — callers must treat "unknown" as "keep the base retention rule".
+    /// Cheap single syscall, safe to call once per GC tick per entry.
+    #[cfg(windows)]
+    pub(crate) fn probe_child_rss_bytes(&self) -> Option<u64> {
+        use windows_sys::Win32::System::ProcessStatus::{
+            GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+        };
+        let handle = self.child.as_ref()?.raw_handle()?;
+        let mut counters = PROCESS_MEMORY_COUNTERS {
+            cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: `handle` is the live process handle owned by the child and
+        // `counters` is a valid, correctly sized buffer for this query.
+        if unsafe { GetProcessMemoryInfo(handle, &mut counters, counters.cb) } == 0 {
+            return None;
+        }
+        Some(counters.WorkingSetSize as u64)
+    }
+
+    /// Non-Windows: no cheap child-RSS probe wired up yet (would need sysinfo
+    /// or procfs); RSS-aware retirement stays a Windows accelerator until a
+    /// platform port is needed.
+    #[cfg(not(windows))]
+    pub(crate) fn probe_child_rss_bytes(&self) -> Option<u64> {
+        None
     }
 
     pub fn restart_count(&self) -> u32 {
@@ -1868,8 +2230,14 @@ impl PiHostManager {
             "PIABYSS_IDLE_SESSION_TIMEOUT_MINUTES",
             self.idle_session_timeout_minutes.to_string(),
         );
+        if self.shared_host_mode && std::env::var_os("PIABYSS_MAX_BOUND_WORKSPACES").is_none() {
+            // Shared-host mode keeps every workspace graph bound for instant
+            // in-place return (the Host clamps to 1..20). An explicit env set
+            // by the launcher wins over this default.
+            cmd.env("PIABYSS_MAX_BOUND_WORKSPACES", "10");
+        }
         // Reserved names belong to the launcher; plugin config must not shadow them.
-        const RESERVED_ENV: [&str; 10] = [
+        const RESERVED_ENV: [&str; 11] = [
             "PATH",
             "NODE_PATH",
             "NODE",
@@ -1877,6 +2245,7 @@ impl PiHostManager {
             "PIABYSS_HOST_CACHE_DIR",
             "PIABYSS_IDLE_SESSION_CACHE_LIMIT",
             "PIABYSS_IDLE_SESSION_TIMEOUT_MINUTES",
+            "PIABYSS_MAX_BOUND_WORKSPACES",
             "PIABYSS_BUNDLED_NODE",
             "PIABYSS_BUNDLED_GIT",
             "PIABYSS_BUNDLED_BASH",

@@ -429,7 +429,9 @@ export class WorkspaceLifecycle {
     this.retainedGraphs.delete(key);
     if (existing && existing !== graph) await this.disposeGraph(existing);
     this.retainedGraphs.set(key, graph);
-    while (this.retainedGraphs.size > WorkspaceLifecycle.MAX_RETAINED_GRAPHS) {
+    const maxRetained =
+      this.context.deps.maxBoundWorkspaces ?? WorkspaceLifecycle.MAX_RETAINED_GRAPHS;
+    while (this.retainedGraphs.size > maxRetained) {
       const oldestKey = this.retainedGraphs.keys().next().value;
       if (oldestKey === undefined) break;
       const evicted = this.retainedGraphs.get(oldestKey);

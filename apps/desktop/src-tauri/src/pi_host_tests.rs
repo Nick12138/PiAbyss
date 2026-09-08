@@ -5,18 +5,20 @@ mod tests {
     #[cfg(windows)]
     use crate::pi_host::WindowsHostJob;
     use crate::pi_host::{
-        build_host_path, build_shutdown_line, drain_complete_lines, extract_host_instance_id,
-        finish_monitor_task, is_current_child_generation, node_executable_name,
-        node_runtime_candidates, push_stderr_tail, read_bounded_lossy_line, read_bounded_utf8_line,
-        should_auto_restart, strip_verbatim_prefix, write_host_stdin, AutoRestartEpoch,
-        HostChildSession, APP_EXIT_HOST_SHUTDOWN_GRACE, HOST_SHUTDOWN_GRACE,
-        MAX_HOST_STDOUT_LINE_BYTES,
+        acknowledge_session_terminal_in_activity, build_host_path, build_shutdown_line,
+        drain_complete_lines, extract_host_instance_id, finish_monitor_task, host_activity_expired,
+        host_activity_rss_eligible, host_activity_snapshot, is_current_child_generation,
+        node_executable_name, node_runtime_candidates, observe_host_activity, push_stderr_tail,
+        read_bounded_lossy_line, read_bounded_utf8_line, should_auto_restart,
+        strip_verbatim_prefix, write_host_stdin, ActivationTarget, AutoRestartEpoch, HostActivity,
+        HostActivitySnapshot, HostChildSession, PoolBook, APP_EXIT_HOST_SHUTDOWN_GRACE,
+        HOST_SHUTDOWN_GRACE, IDLE_HOST_RETENTION, MAX_HOST_STDOUT_LINE_BYTES, RSS_PROBE_MIN_IDLE,
     };
     #[cfg(unix)]
     use crate::pi_host::{is_executable_file, unix_child_exited_without_reaping};
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     #[cfg(unix)]
@@ -743,5 +745,256 @@ rl.on('line', (line) => {
         let mut buf = String::new();
         let lines = drain_complete_lines(&mut buf, "not json\n");
         assert_eq!(lines.len(), 1);
+    }
+
+    fn runtime_line(session_id: &str, state: &str) -> String {
+        serde_json::json!({
+            "event": "session.runtimeChanged",
+            "payload": { "sessionId": session_id, "state": state }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn unacknowledged_terminal_markers_pin_the_host_past_idle_retention() {
+        let activity = Mutex::new(HostActivity::default());
+        // Red dot: failed session the renderer has not acknowledged yet.
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "running")
+        ));
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "error")
+        ));
+        // Gray dot: completed session, still unacknowledged.
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("b", "running")
+        ));
+        assert!(observe_host_activity(&activity, &runtime_line("b", "idle")));
+        activity
+            .lock()
+            .expect("activity lock")
+            .set_idle_since_for_test(std::time::Instant::now() - IDLE_HOST_RETENTION);
+        // Past the 30-minute idle retention, but the unread dots pin the Host.
+        assert!(!host_activity_expired(&activity));
+    }
+
+    #[test]
+    fn acknowledging_the_terminal_marker_restores_idle_retirement() {
+        let activity = Mutex::new(HostActivity::default());
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "running")
+        ));
+        assert!(observe_host_activity(&activity, &runtime_line("a", "idle")));
+        activity
+            .lock()
+            .expect("activity lock")
+            .set_idle_since_for_test(std::time::Instant::now() - IDLE_HOST_RETENTION);
+        assert!(!host_activity_expired(&activity));
+        // The renderer acks by returning to the session — the same clear path
+        // as PiHostPool::acknowledge_session_terminal.
+        assert!(acknowledge_session_terminal_in_activity(&activity, "a"));
+        assert!(host_activity_expired(&activity));
+    }
+
+    #[test]
+    fn rss_accelerator_respects_busy_and_terminal_pins() {
+        // A running session pins the Host against the RSS accelerator even
+        // though `idle_since` has aged past the probe floor (idle_since only
+        // refreshes on the busy→idle edge).
+        let activity = Mutex::new(HostActivity::default());
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "running")
+        ));
+        activity
+            .lock()
+            .expect("activity lock")
+            .set_idle_since_for_test(std::time::Instant::now() - RSS_PROBE_MIN_IDLE);
+        assert!(!host_activity_rss_eligible(&activity));
+
+        // A single unacknowledged red dot pins too.
+        let activity = Mutex::new(HostActivity::default());
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "running")
+        ));
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "error")
+        ));
+        activity
+            .lock()
+            .expect("activity lock")
+            .set_idle_since_for_test(std::time::Instant::now() - RSS_PROBE_MIN_IDLE);
+        assert!(!host_activity_rss_eligible(&activity));
+
+        // Below the probe floor: quiet but not idle long enough.
+        let activity = Mutex::new(HostActivity::default());
+        activity
+            .lock()
+            .expect("activity lock")
+            .set_idle_since_for_test(
+                std::time::Instant::now() - std::time::Duration::from_secs(60),
+            );
+        assert!(!host_activity_rss_eligible(&activity));
+
+        // Fully quiet + idle past the floor → the accelerator may act.
+        let activity = Mutex::new(HostActivity::default());
+        activity
+            .lock()
+            .expect("activity lock")
+            .set_idle_since_for_test(std::time::Instant::now() - RSS_PROBE_MIN_IDLE);
+        assert!(host_activity_rss_eligible(&activity));
+    }
+
+    #[test]
+    fn acknowledging_one_marker_keeps_the_host_pinned_while_others_remain() {
+        let activity = Mutex::new(HostActivity::default());
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "running")
+        ));
+        assert!(observe_host_activity(&activity, &runtime_line("a", "idle")));
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("b", "running")
+        ));
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("b", "error")
+        ));
+        activity
+            .lock()
+            .expect("activity lock")
+            .set_idle_since_for_test(std::time::Instant::now() - IDLE_HOST_RETENTION);
+        assert!(!host_activity_expired(&activity));
+        assert!(acknowledge_session_terminal_in_activity(&activity, "a"));
+        // b's red dot is still unacked — the Host stays.
+        assert!(!host_activity_expired(&activity));
+        assert!(acknowledge_session_terminal_in_activity(&activity, "b"));
+        assert!(host_activity_expired(&activity));
+    }
+
+    // --- Shared-host mode (B2): pool bookkeeping decisions ---
+
+    fn book_for_workspace(key: &str) -> PoolBook {
+        PoolBook::new(
+            key.to_string(),
+            "route-1".to_string(),
+            PathBuf::from("C:\\ws\\a"),
+        )
+    }
+
+    #[test]
+    fn shared_mode_activation_reuses_the_active_entry_and_never_spawns() {
+        let book = book_for_workspace("c:\\ws\\a");
+        // Unbound workspace under shared mode → reuse the ACTIVE entry, so the
+        // pool never grows a second Host.
+        match book.activation_target("c:\\ws\\b", true) {
+            ActivationTarget::Reuse(key) => assert_eq!(key, "c:\\ws\\a"),
+            ActivationTarget::Spawn => {
+                panic!("shared mode must never spawn for an unbound workspace")
+            }
+        }
+
+        // Cold bootstrap (no active entry — app start before PiHostPool::new
+        // seeds one) is the only shared-mode path that may still spawn.
+        let mut cold = book_for_workspace("c:\\ws\\a");
+        cold.entries.remove("c:\\ws\\a");
+        assert!(matches!(
+            cold.activation_target("c:\\ws\\b", true),
+            ActivationTarget::Spawn
+        ));
+
+        // Dedicated mode keeps the 1:1 key match semantics.
+        assert!(matches!(
+            book.activation_target("c:\\ws\\b", false),
+            ActivationTarget::Spawn
+        ));
+        assert!(matches!(
+            book.activation_target("c:\\ws\\a", false),
+            ActivationTarget::Reuse(key) if key == "c:\\ws\\a"
+        ));
+    }
+
+    #[test]
+    fn shared_mode_rebind_registers_workspaces_without_rekeying() {
+        let mut book = book_for_workspace("c:\\ws\\a");
+        book.register_workspace_on_active("c:\\ws\\b".to_string(), PathBuf::from("C:\\ws\\b"));
+        // Re-registering the same workspace is a no-op (deduped).
+        book.register_workspace_on_active("c:\\ws\\b".to_string(), PathBuf::from("C:\\ws\\b"));
+
+        let entry = &book.entries[&book.active_key];
+        assert_eq!(entry.workspaces, vec!["c:\\ws\\a", "c:\\ws\\b"]);
+        assert_eq!(book.active_key, "c:\\ws\\a", "entry key must not change");
+        assert_eq!(
+            book.route_to_key.get("route-1").map(String::as_str),
+            Some("c:\\ws\\a"),
+            "route_to_key must stay untouched"
+        );
+        // Ack lookup reaches a registered (non-key) workspace via the scan.
+        assert_eq!(
+            book.key_for_workspace("c:\\ws\\b").map(String::as_str),
+            Some("c:\\ws\\a")
+        );
+        // Non-empty canonical_cwd is never overwritten by a later binding.
+        assert_eq!(
+            book.entries[&book.active_key].canonical_cwd,
+            PathBuf::from("C:\\ws\\a")
+        );
+
+        // A bootstrap entry born with an empty canonical_cwd (last workspace
+        // not canonicalizable at startup) adopts the first bound workspace so
+        // the activity snapshot chain keeps a display cwd.
+        let mut bootstrap = PoolBook::new(String::new(), "route-0".to_string(), PathBuf::new());
+        bootstrap.register_workspace_on_active("c:\\ws\\z".to_string(), PathBuf::from("C:\\ws\\z"));
+        assert_eq!(
+            bootstrap.entries[&bootstrap.active_key].canonical_cwd,
+            PathBuf::from("C:\\ws\\z")
+        );
+        assert_eq!(
+            bootstrap.entries[&bootstrap.active_key].workspaces,
+            vec!["", "c:\\ws\\z"]
+        );
+
+        // Dedicated-mode rebind still re-keys 1:1: same route, new key, and
+        // the workspaces list collapses back to the single bound workspace.
+        let route = book.rekey_active("c:\\ws\\c".to_string(), PathBuf::from("C:\\ws\\c"));
+        assert_eq!(route, "route-1", "route id must not change on rebind");
+        assert_eq!(book.active_key, "c:\\ws\\c");
+        assert_eq!(book.entries["c:\\ws\\c"].workspaces, vec!["c:\\ws\\c"]);
+        assert!(!book.entries.contains_key("c:\\ws\\a"));
+        assert_eq!(
+            book.route_to_key.get("route-1").map(String::as_str),
+            Some("c:\\ws\\c")
+        );
+    }
+
+    #[test]
+    fn activity_snapshot_reports_every_bound_workspace() {
+        let activity = Mutex::new(HostActivity::default());
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "running")
+        ));
+
+        let snapshot: HostActivitySnapshot = host_activity_snapshot(
+            Path::new("C:\\ws\\a"),
+            &["c:\\ws\\a".to_string(), "c:\\ws\\b".to_string()],
+            &activity,
+        )
+        .expect("snapshot for a bound entry");
+        // cwd mirrors the first binding for old renderers; cwds lists every
+        // workspace the shared Host serves.
+        assert_eq!(snapshot.cwd, "C:\\ws\\a");
+        assert_eq!(snapshot.cwds, vec!["c:\\ws\\a", "c:\\ws\\b"]);
+        assert!(snapshot.busy);
+
+        // The bootstrap entry (no workspace yet) is filtered out.
+        assert!(host_activity_snapshot(Path::new(""), &[], &activity).is_none());
     }
 }

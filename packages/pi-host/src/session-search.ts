@@ -1,6 +1,6 @@
 import { createReadStream } from "node:fs";
-import { readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir } from "node:fs/promises";
+import { join, resolve as pathResolve } from "node:path";
 import { createInterface } from "node:readline";
 import {
   stripAttachmentReferenceBlocks,
@@ -9,6 +9,12 @@ import {
   type SessionSearchResultItem,
 } from "@piabyss/protocol";
 import { piabyssDataDir } from "./piabyss-data.js";
+import {
+  invalidateSessionListProjection,
+  listJsonlFilesWithTtl,
+  resetSessionListProjectionCachesForTests,
+  statWithTtl,
+} from "./session-list-projection.js";
 
 const DEFAULT_RESULT_LIMIT = 50;
 const MAX_MATCHES_PER_SESSION = 3;
@@ -46,35 +52,22 @@ const docCache = new Map<string, CachedSearchDoc>();
 
 /**
  * Debounced keystrokes re-search within moments of each other; a short-lived
- * stat snapshot turns those into pure in-memory scans. Worst case a result is
- * STAT_TTL_MS stale, which search UX tolerates.
+ * listing snapshot turns those into pure in-memory scans. Worst case a result
+ * is STAT_TTL_MS stale, which search UX tolerates. Per-file stats and per-dir
+ * JSONL listings are memoized by the shared session-list projection module.
  */
 const STAT_TTL_MS = 2_000;
-
-type CachedStat = { atMs: number; mtimeMs: number; size: number };
-
-const statCache = new Map<string, CachedStat>();
-
-async function statWithTtl(path: string): Promise<{ mtimeMs: number; size: number }> {
-  const now = Date.now();
-  const cached = statCache.get(path);
-  if (cached && now - cached.atMs <= STAT_TTL_MS) return cached;
-  const fileStat = await stat(path);
-  const entry = { atMs: now, mtimeMs: fileStat.mtimeMs, size: fileStat.size };
-  statCache.set(path, entry);
-  return entry;
-}
 
 type CachedListing = { atMs: number; files: string[] };
 
 /** Sequential readdirs dominated warm-search latency; cache listings per root. */
 const listingCache = new Map<string, CachedListing>();
 
-/** Test hook: drops memoized stats/docs/listings so the next scan reflects disk immediately. */
+/** Test hook: drops memoized docs/listings (and the shared stat/projection caches) so the next scan reflects disk immediately. */
 export function resetSessionSearchCaches(): void {
   docCache.clear();
-  statCache.clear();
   listingCache.clear();
+  resetSessionListProjectionCachesForTests();
 }
 
 function isUuid(value: unknown): value is string {
@@ -229,25 +222,12 @@ async function listWorkspaceDirs(root: string): Promise<string[]> {
   return entries.filter((entry) => entry.isDirectory()).map((entry) => join(root, entry.name));
 }
 
-async function listSessionFiles(dir: string): Promise<string[]> {
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".jsonl"))
-    .map((entry) => join(dir, entry.name));
-}
-
 async function listSessionFilesUnder(root: string): Promise<string[]> {
   const now = Date.now();
   const cached = listingCache.get(root);
   if (cached && now - cached.atMs <= STAT_TTL_MS) return cached.files;
   const dirs = await listWorkspaceDirs(root);
-  const perDir = await Promise.all(dirs.map((dir) => listSessionFiles(dir)));
+  const perDir = await Promise.all(dirs.map((dir) => listJsonlFilesWithTtl(dir)));
   const files = perDir.flat();
   listingCache.set(root, { atMs: now, files });
   return files;
@@ -263,10 +243,11 @@ async function loadDoc(
     fileStat = await statWithTtl(sessionPath);
   } catch (error) {
     // A file listed by the (briefly cached) directory snapshot may have been
-    // deleted or archived since; treat it as absent instead of failing.
+    // deleted or archived since; treat it as absent instead of failing, and
+    // forget it in the shared caches so later scans do not retry it.
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       docCache.delete(sessionPath);
-      statCache.delete(sessionPath);
+      invalidateSessionListProjection(sessionPath);
       return { doc: null, mtimeMs: 0 };
     }
     throw error;
@@ -290,8 +271,10 @@ export async function searchSessions(args: {
   const limit = args.limit ?? DEFAULT_RESULT_LIMIT;
   const includeArchived = args.includeArchived !== false;
 
-  const sessionsRoot = join(args.agentDir, "sessions");
-  const archiveRoot = join(piabyssDataDir(args.agentDir), "session-archive");
+  // Paths returned by the shared listing are resolved, so keep the scan roots
+  // in the same form (the docCache cleanup below prefixes against them).
+  const sessionsRoot = pathResolve(join(args.agentDir, "sessions"));
+  const archiveRoot = pathResolve(join(piabyssDataDir(args.agentDir), "session-archive"));
   const [activePaths, archivedPaths] = await Promise.all([
     listSessionFilesUnder(sessionsRoot),
     includeArchived ? listSessionFilesUnder(archiveRoot) : Promise.resolve([]),
@@ -332,8 +315,10 @@ export async function searchSessions(args: {
     const scannedRoots = [sessionsRoot, ...(includeArchived ? [archiveRoot] : [])];
     for (const path of docCache.keys()) {
       if (!seen.has(path) && scannedRoots.some((root) => path.startsWith(root))) {
+        // The doc is gone from every scanned workspace dir; forget its shared
+        // stat snapshot as well.
+        invalidateSessionListProjection(path);
         docCache.delete(path);
-        statCache.delete(path);
       }
     }
   }

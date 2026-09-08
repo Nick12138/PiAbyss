@@ -280,7 +280,7 @@ pub async fn pi_host_activate(state: State<'_, AppState>, cwd: String) -> Result
     let settings = state.settings.lock().await;
     let (route_id, manager, created) = {
         let mut hosts = state.hosts.lock().await;
-        hosts.activate_workspace(Path::new(&cwd), &settings)?
+        hosts.activate_workspace(Path::new(&cwd), &settings, false)?
     };
     drop(settings);
     let running = if created {
@@ -329,11 +329,16 @@ pub async fn pi_host_prepare_switch(
 
 #[tauri::command]
 pub async fn pi_host_rebind_active(state: State<'_, AppState>, cwd: String) -> Result<(), String> {
-    let rebind = state
-        .hosts
-        .lock()
-        .await
-        .rebind_active_workspace(Path::new(&cwd))?;
+    // Lock order matches the other commands: settings first, then hosts.
+    let rebind = {
+        let settings = state.settings.lock().await;
+        let shared_host_mode = settings.settings.shared_host_mode;
+        state
+            .hosts
+            .lock()
+            .await
+            .rebind_active_workspace(Path::new(&cwd), shared_host_mode)?
+    };
     rebind
         .manager
         .lock()
@@ -410,7 +415,10 @@ pub async fn pi_host_bootstrap_telegram(
     let settings = state.settings.lock().await;
     let (_route_id, manager, created) = {
         let mut hosts = state.hosts.lock().await;
-        hosts.activate_workspace(Path::new(&cwd), &settings)?
+        // force_dedicated: in shared-host mode the bootstrap must still spawn
+        // its own telegram workspace Host — `/telegram-connect` runs via
+        // agent.prompt and must never land in the user's foreground session.
+        hosts.activate_workspace(Path::new(&cwd), &settings, true)?
     };
     drop(settings);
     if created || !manager.lock().await.is_running() {

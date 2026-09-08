@@ -152,7 +152,14 @@ pub fn run() {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                     let state = handle_gc.state::<AppState>();
-                    let retired = state.hosts.lock().await.take_expired_idle_hosts();
+                    // Read live so a settings change takes effect on the next tick.
+                    let rss_retire_mb =
+                        state.settings.lock().await.settings.host_idle_rss_retire_mb;
+                    let retired = state
+                        .hosts
+                        .lock()
+                        .await
+                        .take_expired_idle_hosts(rss_retire_mb);
                     for manager in retired {
                         manager.lock().await.shutdown().await;
                     }

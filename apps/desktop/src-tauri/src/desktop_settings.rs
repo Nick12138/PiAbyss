@@ -126,6 +126,13 @@ pub struct DesktopSettings {
     pub code_font_size: u32,
     pub idle_session_cache_limit: u32,
     pub idle_session_timeout_minutes: u32,
+    /// Opt-in RSS-aware idle retirement for background Hosts (MiB working
+    /// set). `0` disables the probe and keeps the time-based rule only.
+    pub host_idle_rss_retire_mb: u32,
+    /// Shared-host mode (opt-in): one Host process serves every workspace;
+    /// switching rebinds the active Host in place instead of spawning a
+    /// dedicated one. Saves memory at the cost of extension isolation.
+    pub shared_host_mode: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub known_workspaces: Vec<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -160,6 +167,8 @@ impl Default for DesktopSettings {
             code_font_size: DEFAULT_CODE_FONT_SIZE,
             idle_session_cache_limit: 5,
             idle_session_timeout_minutes: 30,
+            host_idle_rss_retire_mb: 0,
+            shared_host_mode: false,
             known_workspaces: Vec::new(),
             shortcut_overrides: BTreeMap::new(),
             plugin_env: BTreeMap::new(),
@@ -374,6 +383,9 @@ impl DesktopSettingsStore {
         if !(1..=24 * 60).contains(&settings.idle_session_timeout_minutes) {
             return Err("idleSessionTimeoutMinutes must be between 1 and 1440".to_string());
         }
+        if settings.host_idle_rss_retire_mb > 8192 {
+            return Err("hostIdleRssRetireMb must be between 0 and 8192".to_string());
+        }
         for (plugin_id, vars) in &settings.plugin_env {
             if plugin_id.is_empty() || plugin_id.chars().count() > 64 {
                 return Err("pluginEnv plugin ids must be 1-64 characters".to_string());
@@ -524,6 +536,8 @@ impl DesktopSettingsStore {
                     | "codeFontSize"
                     | "idleSessionCacheLimit"
                     | "idleSessionTimeoutMinutes"
+                    | "hostIdleRssRetireMb"
+                    | "sharedHostMode"
                     | "knownWorkspaces"
                     | "shortcutOverrides"
                     | "pluginEnv"
@@ -845,6 +859,55 @@ mod tests {
             }))
             .is_err());
         assert_eq!(invalid.settings.shortcut_overrides, before);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn defaults_validates_and_persists_host_idle_rss_retire_mb() {
+        let dir = test_dir("host-idle-rss-retire");
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        // Disabled by default: the probe must never retire hosts unexpectedly.
+        assert_eq!(store.settings.host_idle_rss_retire_mb, 0);
+
+        store
+            .patch(serde_json::json!({ "hostIdleRssRetireMb": 512 }))
+            .unwrap();
+        assert_eq!(store.settings.host_idle_rss_retire_mb, 512);
+
+        let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(reloaded.settings.host_idle_rss_retire_mb, 512);
+
+        let mut invalid = reloaded;
+        assert!(invalid
+            .patch(serde_json::json!({ "hostIdleRssRetireMb": 8193 }))
+            .is_err());
+        assert!(invalid
+            .patch(serde_json::json!({ "hostIdleRssRetireMb": -1 }))
+            .is_err());
+        assert_eq!(invalid.settings.host_idle_rss_retire_mb, 512);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn defaults_and_persists_shared_host_mode() {
+        let dir = test_dir("shared-host-mode");
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        // Disabled by default: the dedicated-Host pool behavior is unchanged.
+        assert!(!store.settings.shared_host_mode);
+
+        store
+            .patch(serde_json::json!({ "sharedHostMode": true }))
+            .unwrap();
+        assert!(store.settings.shared_host_mode);
+
+        let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert!(reloaded.settings.shared_host_mode);
+
+        let mut invalid = reloaded;
+        assert!(invalid
+            .patch(serde_json::json!({ "sharedHostMode": "yes" }))
+            .is_err());
+        assert!(invalid.settings.shared_host_mode);
         fs::remove_dir_all(dir).unwrap();
     }
 

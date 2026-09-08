@@ -6,6 +6,8 @@ import { ActivityNotificationObserver, activityPathKey } from "./activity-notifi
 vi.mock("./bridge/tauri-transport", () => ({
   fetchHostActivity: vi.fn(async () => [] as HostActivitySummary[]),
   subscribeHostActivity: vi.fn(() => () => {}),
+  hostActivityCwds: (entry: HostActivitySummary) =>
+    entry.cwds && entry.cwds.length > 0 ? entry.cwds : [entry.cwd],
 }));
 
 function summary(
@@ -148,6 +150,40 @@ describe("ActivityNotificationObserver", () => {
     } finally {
       Object.defineProperty(navigator, "platform", { value: originalPlatform, configurable: true });
     }
+  });
+
+  it("expands shared-host cwds without duplicating one session per workspace", () => {
+    const observer = makeObserver();
+    // Shared Host bound to /a and /b: one entry mirrors the same session
+    // terminal marker across both cwds.
+    const shared = (generation: number) => ({
+      ...summary("/a", { s1: { state: "done", generation } }),
+      cwds: ["/a", "/b"],
+    });
+    observer.observeSnapshot([shared(1)]); // prime
+    observer.observeSnapshot([shared(2)]);
+    // The generation advanced once per session — never once per cwd.
+    expect(notified).toHaveLength(1);
+    expect(notified[0]).toMatchObject({
+      kind: "response-ready",
+      target: { workspacePath: "/a", sessionId: "s1" },
+    });
+    observer.dispose();
+  });
+
+  it("skips a shared Host whose bound workspaces include the active workspace", () => {
+    const observer = makeObserver();
+    const shared = (generation: number) => ({
+      ...summary("/a", { s1: { state: "error", generation } }),
+      cwds: ["/a", "/b"],
+    });
+    observer.observeSnapshot([shared(1)]); // prime
+    // Active workspace /b is one of the shared Host's bound workspaces: the
+    // event stream already delivered the completion, so no pool alert.
+    isActiveWorkspace = (cwd) => cwd === "/b";
+    observer.observeSnapshot([shared(2)]);
+    expect(notified).toHaveLength(0);
+    observer.dispose();
   });
 
   it("refresh pulls a snapshot through the pool command", async () => {

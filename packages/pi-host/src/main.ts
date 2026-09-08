@@ -19,7 +19,7 @@ import {
   fauxText,
   fauxToolCall,
 } from "@earendil-works/pi-ai";
-import { createHostError, type HostCapabilities } from "@piabyss/protocol";
+import { createHostError, type HostCapabilities, type ModelConfigHealth } from "@piabyss/protocol";
 import { buildDegradedModelConfigHealth, buildModelConfigHealth } from "./model-health.js";
 import { recoverProviderJournals } from "./provider-journal.js";
 import { logger } from "./logger.js";
@@ -63,6 +63,19 @@ function resolveInitialCwd(): string | null {
   const arg = process.argv.find((a) => a.startsWith("--initial-cwd="));
   const value = arg?.slice("--initial-cwd=".length).trim();
   return value ? value : null;
+}
+
+/**
+ * C1: how many workspace graphs the host may keep bound for instant return.
+ * Parse int, clamp to 1..20, ignore anything non-numeric — absent or invalid
+ * env keeps the lifecycle's built-in default.
+ */
+function resolveMaxBoundWorkspaces(): number | undefined {
+  const raw = process.env.PIABYSS_MAX_BOUND_WORKSPACES;
+  if (!raw?.trim()) return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  return Math.min(20, Math.max(1, parsed));
 }
 
 /**
@@ -140,6 +153,7 @@ function installTestFauxProvider(modelRegistry: ModelRegistry): void {
 
 async function main(): Promise<void> {
   const agentDir = resolveAgentDir();
+  const maxBoundWorkspaces = resolveMaxBoundWorkspaces();
   mkdirSync(agentDir, { recursive: true });
 
   // Synchronous, before any network activity: proxy/idle-timeout from global
@@ -190,13 +204,6 @@ async function main(): Promise<void> {
   const providerOwnership = new ExtensionProviderOwnership(modelRuntime);
 
   installTestFauxProvider(modelRegistry);
-  // Awaited: the previous fire-and-forget refresh could still be running when
-  // the first workspace graph read the registry.
-  await refreshModelsLocal(modelRuntime);
-  await migrationBackup?.recordMilestone("localRefresh");
-  await providerOwnership.runNeutral(() =>
-    applyKnownThinkingProfiles(modelRegistry, modelRuntime, join(agentDir, "models.json")),
-  );
   // Degraded outranks a parse check and is sticky: the Host cannot re-derive
   // whether the configuration became coherent, so it stops claiming health
   // until a restart finds no journal.
@@ -205,6 +212,67 @@ async function main(): Promise<void> {
       ? buildDegradedModelConfigHealth(unresolvedRecovery)
       : buildModelConfigHealth(modelRuntime.getError());
   let modelConfigHealth = resolveModelConfigHealth();
+
+  // B1: the deferred startup refresh broadcasts through the same channel as
+  // the controllers. A no-op until `graphFactory.onModelHealthChanged` is
+  // bound below (after bindServer): before that there is no transport to
+  // notify — the desktop reads full status on connect, so skipping is safe.
+  let broadcastModelHealth: () => void = () => {};
+
+  // Shared local reconcile pass (B1): exactly what the controllers'
+  // refreshModelHealth dep runs, extracted so the deferred startup refresh
+  // produces identical state. Reconciliation only — a network catalog fetch is
+  // a separate, explicitly authorised call and must never happen here.
+  const runRefreshModelHealth = async (signal?: AbortSignal): Promise<ModelConfigHealth> => {
+    await refreshModelsLocal(modelRuntime, { signal });
+    // Neutral: the profile pass re-registers existing providers and must
+    // not become a co-owner that pins another workspace's provider alive.
+    await providerOwnership.runNeutral(() =>
+      applyKnownThinkingProfiles(modelRegistry, modelRuntime, join(agentDir, "models.json")),
+    );
+    modelConfigHealth = resolveModelConfigHealth();
+    return modelConfigHealth;
+  };
+
+  // Serialized: refresh and the thinking-profile pass both re-register
+  // providers on the same runtime, so concurrent invocations (startup IIFE vs
+  // a controller-triggered health refresh) would expose a mid-state. Calls
+  // queue behind each other instead of interleaving; each keeps its own
+  // abort signal and rejection.
+  let refreshChain: Promise<unknown> = Promise.resolve();
+  const refreshModelHealthNow = (signal?: AbortSignal): Promise<ModelConfigHealth> => {
+    const run = refreshChain.then(() => runRefreshModelHealth(signal));
+    refreshChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  };
+
+  // Inline neutral profile pass FIRST: it must land before the first graph
+  // reads the registry, and it must complete before the deferred refresh
+  // below starts — both re-register providers on the same runtime, so
+  // running them concurrently would expose a mid-state to the first graph.
+  await providerOwnership.runNeutral(() =>
+    applyKnownThinkingProfiles(modelRegistry, modelRuntime, join(agentDir, "models.json")),
+  );
+
+  // B1: the local model refresh is off the critical path. Startup no longer
+  // waits for it. The IIFE serializes refresh → profiles → health so its own
+  // steps can never interleave. The localRefresh milestone may now land after
+  // server start — allowed, because a late or lost milestone only retains the
+  // migration backup longer.
+  void (async () => {
+    await refreshModelHealthNow();
+    await migrationBackup?.recordMilestone("localRefresh");
+    broadcastModelHealth();
+  })().catch((err: unknown) => {
+    // Never trip the unhandledRejection fatal path: a failed local reconcile
+    // only leaves the startup health snapshot stale until the next refresh.
+    logger.warn("Deferred startup model refresh failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
 
   // Capability detection — check prototype without constructing full PackageManager
   const packageUpdateCheck =
@@ -226,18 +294,8 @@ async function main(): Promise<void> {
     modelRegistry,
     providerOwnership,
     getModelConfigHealth: () => modelConfigHealth,
-    refreshModelHealth: async (signal) => {
-      // Reconciliation only. A network catalog fetch is a separate, explicitly
-      // authorised call; it must never be triggered by a health refresh.
-      await refreshModelsLocal(modelRuntime, { signal });
-      // Neutral: the profile pass re-registers existing providers and must
-      // not become a co-owner that pins another workspace's provider alive.
-      await providerOwnership.runNeutral(() =>
-        applyKnownThinkingProfiles(modelRegistry, modelRuntime, join(agentDir, "models.json")),
-      );
-      modelConfigHealth = resolveModelConfigHealth();
-      return modelConfigHealth;
-    },
+    refreshModelHealth: (signal) => refreshModelHealthNow(signal),
+    ...(maxBoundWorkspaces !== undefined ? { maxBoundWorkspaces } : {}),
     ...(migrationBackup
       ? {
           recordMigrationMilestone: (milestone) => migrationBackup.recordMilestone(milestone),
@@ -306,6 +364,8 @@ async function main(): Promise<void> {
   graphFactory.onModelHealthChanged = () => {
     server.emit("host.statusChanged", server.buildStatus());
   };
+  // Now the deferred startup refresh (B1) can broadcast like a controller.
+  broadcastModelHealth = () => graphFactory.onModelHealthChanged?.();
 
   // Unknown detached-task failures invalidate Host authority. Publish fatal,
   // perform bounded cleanup, and let the desktop apply its restart policy.
@@ -340,7 +400,17 @@ async function main(): Promise<void> {
   // simply wait in the stdin buffer — no identity races. Failures are
   // non-fatal: the frontend falls back to its own workspace.setCurrent.
   const initialCwd = resolveInitialCwd();
-  if (initialCwd) {
+  // B1 opt-in switch (PIABYSS_DEFER_PRELOAD=1): skip the blocking preload so
+  // host.ready lands before any graph is built and the frontend drives
+  // workspace.setCurrent itself. Unset — the default — keeps today's
+  // overlap-preload behaviour exactly.
+  const deferPreload = process.env.PIABYSS_DEFER_PRELOAD === "1";
+  if (initialCwd && deferPreload) {
+    logger.info("initial workspace preload deferred", {
+      cwd: initialCwd,
+      phase: "waitingForWorkspace",
+    });
+  } else if (initialCwd) {
     const preloadStarted = Date.now();
     try {
       const preload = await graphFactory.setCurrent(initialCwd, randomUUID());
@@ -363,7 +433,17 @@ async function main(): Promise<void> {
     }
   }
 
+  const serverStartStarted = Date.now();
   await server.start();
+  logger.info("host server started", {
+    ms: Date.now() - serverStartStarted,
+    initialWorkspace: initialCwd
+      ? deferPreload
+        ? "deferred"
+        : "preloaded"
+      : "none",
+  });
+  await migrationBackup?.recordMilestone("serverStart");
 }
 
 main().catch((err) => {

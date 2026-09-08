@@ -86,6 +86,28 @@ function writeSession(dir: string, sessionId: string, cwd: string): string {
 }
 
 describe("Session file lifecycle", () => {
+  it("projection cache invalidation makes mutations visible to session.list immediately", async () => {
+    // Functional guard for the A1 wiring: if withSessionFileMutation ever
+    // stops calling invalidateSessionListProjection(), the 2s dir-listing TTL
+    // would keep serving the stale active projection here and this test
+    // would fail (the archived session would still appear as active).
+    const fixture = createFixture();
+    const sessionPath = writeSession(fixture.activeDir, SESSION_ID, fixture.cwd);
+
+    const before = await fixture.factory.listSessions();
+    expect(before.map((session) => session.id)).toEqual([SESSION_ID]);
+
+    const archived = await fixture.factory.archiveSession(
+      "archive-projection-cache",
+      SESSION_ID,
+      sessionPath,
+    );
+    expect("error" in archived).toBe(false);
+
+    const after = await fixture.factory.listSessions();
+    expect(after).toEqual([expect.objectContaining({ id: SESSION_ID, archived: true })]);
+  });
+
   it("invalidates the Workspace cache before persistent Session mutations", async () => {
     const fixture = createFixture();
     const sessionPath = writeSession(fixture.activeDir, SESSION_ID, fixture.cwd);

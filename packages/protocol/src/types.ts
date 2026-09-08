@@ -1356,6 +1356,10 @@ export type DesktopSettings = {
   conversationFontSize?: number;
   /** Font size for inline and fenced conversation code, in CSS pixels. */
   codeFontSize?: number;
+  /** All workspaces share one Host process (opt-in). Switching rebinds the
+   *  single active Host in place instead of spawning a dedicated one, which
+   *  saves memory but weakens isolation from unstable extensions. */
+  sharedHostMode?: boolean;
   /** Maximum number of recently active or idle Session runtimes to retain. */
   idleSessionCacheLimit?: number;
   /** Minutes an idle cached Session may remain untouched before disposal. */

@@ -37,6 +37,11 @@ import {
 import { logger } from "./logger.js";
 import { attachmentHostError } from "./attachment-controller.js";
 import { READ_ATTACHMENT_TOOL_NAME } from "./attachment-tool.js";
+import {
+  buildPromptCacheFingerprint,
+  diffPromptCacheFingerprints,
+  type PromptCacheFingerprint,
+} from "./prompt-cache-contract.js";
 
 /** Protocol images ({mediaType,data}) → SDK ImageContent ({type,mimeType,data}). */
 function toSdkImages(images: SerializableImage[] | undefined): ImageContent[] | undefined {
@@ -50,6 +55,78 @@ function toSdkImages(images: SerializableImage[] | undefined): ImageContent[] | 
 
 /** Upper bound for waiting on session.abort() while holding the graph lock. */
 const ABORT_SETTLE_TIMEOUT_MS = 15_000;
+
+/** Last prompt-cache fingerprint attempt per session (A2 reconciliation). */
+interface SessionPromptCacheState {
+  hash: string;
+  // Kept alongside `hash` so drift logs can name the changed components.
+  parts: Record<string, string>;
+  runId: string;
+}
+
+/**
+ * Per-session memory of the last attempted prompt-cache fingerprint.
+ * Overwritten at the start of every prompt, so a failed/aborted run leaves
+ * no dirty state: the next run simply diffs against the last attempt.
+ */
+const promptCacheStates = new WeakMap<AgentSession, SessionPromptCacheState>();
+
+/**
+ * Fingerprint the request-prefix inputs that provider KV caches key on.
+ * SDK surface verified against @earendil-works/pi-coding-agent 0.84.2:
+ * `session.model` (Model<any> | undefined; provider + id), `session.systemPrompt`
+ * (string getter), `session.getActiveToolNames()` (ordered string[]),
+ * `session.thinkingLevel` (ThinkingLevel getter).
+ */
+function collectPromptCacheFingerprint(session: AgentSession): PromptCacheFingerprint {
+  const model = session.model;
+  return buildPromptCacheFingerprint({
+    modelId: model?.id,
+    provider: model?.provider,
+    systemPrompt: session.systemPrompt,
+    toolNames: session.getActiveToolNames(),
+    thinkingLevel: session.thinkingLevel,
+  });
+}
+
+/**
+ * A2 prompt-cache contract: diff this run's cache-prefix fingerprint
+ * against the session's previous attempt and log the drift. Pure
+ * observability — never mutates the request. Coverage note: only the
+ * agent.prompt path flows through startDetachedPrompt; steer/followUp/
+ * compact call the session API directly with no host hook, so drift on
+ * those paths stays invisible until the SDK gains a hook (patches/ SDK
+ * patch mechanism — out of scope here).
+ */
+function reconcilePromptCache(
+  session: AgentSession,
+  sessionId: string | null,
+  runId: string,
+): void {
+  const fingerprint = collectPromptCacheFingerprint(session);
+  const previous = promptCacheStates.get(session);
+  promptCacheStates.set(session, { hash: fingerprint.hash, parts: fingerprint.parts, runId });
+  if (!previous) {
+    logger.debug("Prompt cache fingerprint baseline", {
+      sessionId,
+      runId,
+      hash: fingerprint.hash,
+    });
+  } else if (previous.hash !== fingerprint.hash) {
+    logger.warn(
+      "Prompt cache prefix drift: provider prompt cache will be invalidated for this run",
+      {
+        sessionId,
+        runId,
+        changed: diffPromptCacheFingerprints(previous.parts, fingerprint.parts),
+        prevHash: previous.hash,
+        nextHash: fingerprint.hash,
+      },
+    );
+  } else {
+    logger.debug("Prompt cache fingerprint unchanged", { sessionId, runId, hash: fingerprint.hash });
+  }
+}
 
 export function summarizeModel(model: Model<any>, providerName?: string): ModelSummary {
   return {
@@ -93,6 +170,11 @@ function startDetachedPrompt(args: {
 
   try {
     const runId = randomUUID();
+    // C1: attribute every provider registration inside this turn to the graph
+    // that started it, not to whichever graph happens to be active when a late
+    // pi.registerProvider fires. Captured synchronously: the detached task
+    // below may run after the active graph changed.
+    const initiatingOwner = args.factory.getGraph()?.providerOwner ?? null;
     const runIdentity = args.server.getIdentity();
     const visibleText = stripAttachmentReferenceBlocks(args.text);
     const provisionalTitle =
@@ -101,6 +183,8 @@ function startDetachedPrompt(args: {
         : createProvisionalSessionTitle(visibleText);
     const titleSessionId = args.server.identity.sessionId;
     const extensionCommandInvocation = resolveExtensionCommandInvocation(args.session, args.text);
+
+    reconcilePromptCache(args.session, titleSessionId, runId);
 
     runStatePublished = true;
     args.factory.currentRunId = runId;
@@ -116,15 +200,23 @@ function startDetachedPrompt(args: {
             streamingBehavior: args.streamingBehavior,
             ...(args.images ? { images: args.images } : {}),
           });
-        if (extensionCommandInvocation) {
-          await withExtensionCommandOrigin(
-            args.session,
-            runId,
-            extensionCommandInvocation,
-            runPrompt,
-          );
+        // Outermost wrap (C1): withExtensionCommandOrigin stays inside the
+        // ownership scope so the whole turn — extension-command invocations
+        // included — registers against the initiating graph's owner.
+        const runTurn = () =>
+          extensionCommandInvocation
+            ? withExtensionCommandOrigin(
+                args.session,
+                runId,
+                extensionCommandInvocation,
+                runPrompt,
+              )
+            : runPrompt();
+        if (initiatingOwner) {
+          await args.factory.deps.providerOwnership.runAsOwner(initiatingOwner, runTurn);
         } else {
-          await runPrompt();
+          // No owner (e.g. failed graph): keep the ambient fallback behaviour.
+          await runTurn();
         }
         completed = true;
       } catch (err) {
@@ -976,7 +1068,14 @@ export function createAgentHandlers(
         if (staleAfterLock) return { error: staleAfterLock, identity: requestIdentity };
 
         const params = (ctx.params ?? {}) as { instructions?: string };
-        const result = await session.compact(params.instructions);
+        // C1: compaction runs the session_before_compact extension window, so
+        // a late registration must land on this graph's owner, same as a turn.
+        const owner = g.providerOwner ?? null;
+        const result = owner
+          ? await factory.deps.providerOwnership.runAsOwner(owner, () =>
+              session.compact(params.instructions),
+            )
+          : await session.compact(params.instructions);
         const stillCurrentGraph = factory.getGraph() === g;
         const active = stillCurrentGraph && g.agentSession === session;
         const background =

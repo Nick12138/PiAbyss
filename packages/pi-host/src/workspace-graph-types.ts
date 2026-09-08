@@ -107,6 +107,12 @@ export type GraphFactoryDeps = {
   /** Local reconcile only — never reaches the network. */
   refreshModelHealth: (signal?: AbortSignal) => Promise<ModelConfigHealth> | ModelConfigHealth;
   /**
+   * C1: how many idle workspace graphs the lifecycle may retain for instant
+   * return (LRU-evicted beyond this). Omit for the built-in default
+   * (MAX_RETAINED_GRAPHS = 5).
+   */
+  maxBoundWorkspaces?: number;
+  /**
    * Report that a migration-dependent path succeeded. Absent once the
    * migration is complete. Never throws — a lost milestone only retains the
    * backup longer.

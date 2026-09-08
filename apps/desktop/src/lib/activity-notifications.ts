@@ -1,5 +1,6 @@
 import {
   fetchHostActivity,
+  hostActivityCwds,
   subscribeHostActivity,
   type HostActivitySummary,
 } from "./bridge/tauri-transport";
@@ -84,16 +85,29 @@ export class ActivityNotificationObserver {
 
   observeSnapshot(entries: HostActivitySummary[]): void {
     for (const entry of entries) {
+      // One entry covers every workspace its Host serves. In shared-host mode
+      // that is all registered workspaces of the single active Host, whose
+      // stdout IS routed to the renderer — so if any of them is the active
+      // workspace, the event-stream tracker already delivered those
+      // completions and the whole entry is skipped to avoid double alerts.
+      const cwds = hostActivityCwds(entry);
+      const coversActiveWorkspace = cwds.some((cwd) => this.options.isActiveWorkspace(cwd));
       for (const [sessionId, terminal] of Object.entries(entry.terminalSessions ?? {})) {
-        const key = `${activityPathKey(entry.cwd)}\u0000${sessionId}`;
-        const previous = this.baselines.get(key);
-        this.baselines.set(key, terminal.generation);
-        // Equal or lower generation is either already seen or a Host restart
-        // (generations reset when the Host is recreated); neither notifies.
-        if (previous !== undefined && terminal.generation <= previous) continue;
-        if (!this.primed) continue;
+        // Every cwd of the entry mirrors the same generation for a session, so
+        // "advanced" flips exactly once per session — never once per cwd.
+        let advanced = false;
+        for (const cwd of cwds) {
+          const key = `${activityPathKey(cwd)}\u0000${sessionId}`;
+          const previous = this.baselines.get(key);
+          this.baselines.set(key, terminal.generation);
+          // Equal or lower generation is either already seen or a Host restart
+          // (generations reset when the Host is recreated); neither notifies.
+          if (previous !== undefined && terminal.generation <= previous) continue;
+          advanced = true;
+        }
+        if (!this.primed || !advanced) continue;
         if (
-          this.options.isActiveWorkspace(entry.cwd) ||
+          coversActiveWorkspace ||
           this.options.attention() !== "background" ||
           !this.options.enabled()
         ) {
@@ -104,6 +118,8 @@ export class ActivityNotificationObserver {
           target: {
             workspaceId: null,
             workspaceRevision: undefined,
+            // entry.cwd stays the Host-canonical display path; cwds are pool
+            // keys used for matching (lowercased on Windows) only.
             workspacePath: entry.cwd,
             sessionId,
           },

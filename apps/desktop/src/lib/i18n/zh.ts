@@ -223,6 +223,9 @@ export const zh: Record<MessageKey, string> = {
   generalIdleSessionTimeout: "空闲会话销毁时间",
   generalIdleSessionTimeoutDesc:
     "空闲会话未被切回时，经过该分钟数自动销毁。下次启动 Pi Host 时生效。",
+  generalSharedHostMode: "共享 Host 进程",
+  generalSharedHostModeDesc:
+    "所有工作区共用一个 Host 进程，切换更省内存；对不稳定扩展的隔离会变弱。改动后重启应用生效。",
   generalBusySendGroup: "智能体运行中",
   generalBusySend: "运行中发送",
   generalBusySendDesc: "当前轮次还在进行时，再发送一条消息会怎么处理。",
