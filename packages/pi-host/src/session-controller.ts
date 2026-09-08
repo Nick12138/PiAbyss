@@ -10,6 +10,7 @@ import type { HandlerContext, MethodHandler } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { buildSessionUsageReport } from "./session-usage-report.js";
 import { searchSessions } from "./session-search.js";
+import { invalidateSessionListProjection } from "./session-list-projection.js";
 import { isObject, readModelsConfig } from "./provider-models-config.js";
 import {
   postSubagentApi,
@@ -498,6 +499,9 @@ export function createSessionHandlers(
       if (opened && typeof opened === "object" && "error" in opened) {
         return { error: opened.error };
       }
+      // The fork writes a brand-new JSONL outside withSessionFileMutation;
+      // drop the projection cache so session.list sees it immediately.
+      invalidateSessionListProjection();
       return {
         result: {
           session: opened,

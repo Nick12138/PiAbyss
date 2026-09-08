@@ -33,8 +33,10 @@ type CachedProjection = {
 };
 
 /**
- * Keyed by resolved absolute path so Windows separator/casing variants of the
- * same file share one entry.
+ * Keyed by resolved absolute path: `path.resolve` normalizes separators and
+ * `..` segments (but NOT letter casing on Windows), and every producer in
+ * this codebase feeds paths from the same readdir listing, so entries stay
+ * consistent.
  */
 const projectionCache = new Map<string, CachedProjection>();
 

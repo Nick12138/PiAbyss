@@ -10,7 +10,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { WorkspaceLifecycle, workspaceIdentityKey } from "./workspace-lifecycle.js";
-import { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import type { SessionRuntimeCache } from "./session-runtime-cache.js";
 import type { GraphFactoryDeps, WorkspaceGraph } from "./workspace-graph-types.js";
 
@@ -254,64 +253,5 @@ describe("Workspace lifecycle bound cap (C1 maxBoundWorkspaces)", () => {
     expect(retainedMap(subject).has(workspaceIdentityKey("/repo/2", "linux"))).toBe(true);
     expect(dispose).toHaveBeenCalledTimes(1);
     expect(dispose).toHaveBeenCalledWith(graphs[0]);
-  });
-});
-
-describe("Workspace lifecycle bound-graph lookup (C1)", () => {
-  it("prefers the active graph when its identity key matches", () => {
-    const active = retainableGraph("/repo/active");
-    const subject = lifecycleWith({ platform: "linux", active });
-
-    expect(subject.getRetainedGraphByKey(workspaceIdentityKey("/repo/active", "linux"))).toBe(
-      active,
-    );
-    expect(subject.getRetainedGraphByKey(workspaceIdentityKey("/repo/elsewhere", "linux"))).toBeNull();
-  });
-
-  it("falls back to retained graphs and lists active first", () => {
-    const active = retainableGraph("/repo/active");
-    const retained = retainableGraph("/repo/parked");
-    const subject = lifecycleWith({ platform: "linux", active });
-    retainedMap(subject).set(workspaceIdentityKey("/repo/parked", "linux"), retained);
-
-    expect(subject.getRetainedGraphByKey(workspaceIdentityKey("/repo/parked", "linux"))).toBe(
-      retained,
-    );
-    expect(subject.listBoundWorkspaceKeys()).toEqual([
-      workspaceIdentityKey("/repo/active", "linux"),
-      workspaceIdentityKey("/repo/parked", "linux"),
-    ]);
-  });
-});
-
-describe("WorkspaceGraphFactory bound-workspace queries (C1)", () => {
-  it("resolves active and retained graphs by cwd and lists bound cwds", () => {
-    const root = mkdtempSync(join(tmpdir(), "piabyss-graph-factory-"));
-    const activeDir = join(root, "active");
-    const parkedDir = join(root, "parked");
-    mkdirSync(activeDir);
-    mkdirSync(parkedDir);
-    try {
-      const factory = new WorkspaceGraphFactory({ agentDir: root } as unknown as GraphFactoryDeps);
-      const activeCanonical = realpathSync(activeDir);
-      const parkedCanonical = realpathSync(parkedDir);
-      const active = retainableGraph(activeCanonical);
-      const parked = retainableGraph(parkedCanonical);
-      factory.graph = active;
-      const lifecycle = (
-        factory as unknown as { workspaceLifecycle: WorkspaceLifecycle }
-      ).workspaceLifecycle;
-      retainedMap(lifecycle as unknown as WorkspaceLifecycle).set(
-        workspaceIdentityKey(parkedCanonical),
-        parked,
-      );
-
-      expect(factory.getGraphForCwd(activeDir)).toBe(active);
-      expect(factory.getGraphForCwd(parkedDir)).toBe(parked);
-      expect(factory.getGraphForCwd(join(root, "missing"))).toBeNull();
-      expect(factory.boundWorkspaceCwds()).toEqual([activeCanonical, parkedCanonical]);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
   });
 });

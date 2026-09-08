@@ -13,7 +13,7 @@ import { activateOnce } from "./extension-ui-lifecycle.js";
 import { createExtensionCommandContextActions } from "./extension-command-actions.js";
 import { SessionRuntimeCache, type ActiveSessionState } from "./session-runtime-cache.js";
 import type { AgentOperationLock } from "./locks.js";
-import { WorkspaceLifecycle, workspaceIdentityKey } from "./workspace-lifecycle.js";
+import { WorkspaceLifecycle } from "./workspace-lifecycle.js";
 export * from "./workspace-graph-types.js";
 import {
   type BackgroundSessionRuntime,
@@ -244,35 +244,6 @@ export class WorkspaceGraphFactory {
     | { error: HostError }
   > {
     return this.workspaceLifecycle.setCurrent(cwd, requestId);
-  }
-
-  /**
-   * C1: resolve the graph currently bound for a cwd — the active graph or a
-   * retained one. Identity matches the switch path (canonicalized cwd, case/
-   * separator-insensitive on Windows). Canonicalization failure (missing or
-   * non-directory path) resolves to null instead of throwing.
-   */
-  getGraphForCwd(cwd: string): WorkspaceGraph | null {
-    let canonical: string;
-    try {
-      canonical = this.workspaceLifecycle.canonicalizeCwd(cwd);
-    } catch {
-      return null;
-    }
-    return this.workspaceLifecycle.getRetainedGraphByKey(workspaceIdentityKey(canonical));
-  }
-
-  /**
-   * C1: canonical cwds of every workspace bound in this host — the active
-   * workspace first, then retained ones in LRU order. Never throws.
-   */
-  boundWorkspaceCwds(): string[] {
-    const cwds: string[] = [];
-    for (const key of this.workspaceLifecycle.listBoundWorkspaceKeys()) {
-      const graph = this.workspaceLifecycle.getRetainedGraphByKey(key);
-      if (graph) cwds.push(graph.canonicalCwd);
-    }
-    return cwds;
   }
 
   /** @internal — session-lifecycle module */

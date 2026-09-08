@@ -62,7 +62,6 @@ interface SessionPromptCacheState {
   // Kept alongside `hash` so drift logs can name the changed components.
   parts: Record<string, string>;
   runId: string;
-  at: number;
 }
 
 /**
@@ -106,7 +105,7 @@ function reconcilePromptCache(
 ): void {
   const fingerprint = collectPromptCacheFingerprint(session);
   const previous = promptCacheStates.get(session);
-  promptCacheStates.set(session, { hash: fingerprint.hash, parts: fingerprint.parts, runId, at: Date.now() });
+  promptCacheStates.set(session, { hash: fingerprint.hash, parts: fingerprint.parts, runId });
   if (!previous) {
     logger.debug("Prompt cache fingerprint baseline", {
       sessionId,

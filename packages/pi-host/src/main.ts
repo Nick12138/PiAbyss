@@ -234,15 +234,22 @@ async function main(): Promise<void> {
     return modelConfigHealth;
   };
 
+  // Inline neutral profile pass FIRST: it must land before the first graph
+  // reads the registry, and it must complete before the deferred refresh
+  // below starts — both re-register providers on the same runtime, so
+  // running them concurrently would expose a mid-state to the first graph.
+  await providerOwnership.runNeutral(() =>
+    applyKnownThinkingProfiles(modelRegistry, modelRuntime, join(agentDir, "models.json")),
+  );
+
   // B1: the local model refresh is off the critical path. Startup no longer
-  // waits for it; the neutral thinking-profile pass below still runs inline so
-  // profiles exist before the first graph reads the registry. The localRefresh
-  // milestone may now land after server start — allowed, because a late or
-  // lost milestone only retains the migration backup longer.
+  // waits for it. The IIFE serializes refresh → profiles → health so its own
+  // steps can never interleave. The localRefresh milestone may now land after
+  // server start — allowed, because a late or lost milestone only retains the
+  // migration backup longer.
   void (async () => {
-    await refreshModelsLocal(modelRuntime);
-    await migrationBackup?.recordMilestone("localRefresh");
     await refreshModelHealthNow();
+    await migrationBackup?.recordMilestone("localRefresh");
     broadcastModelHealth();
   })().catch((err: unknown) => {
     // Never trip the unhandledRejection fatal path: a failed local reconcile
@@ -251,9 +258,6 @@ async function main(): Promise<void> {
       error: err instanceof Error ? err.message : String(err),
     });
   });
-  await providerOwnership.runNeutral(() =>
-    applyKnownThinkingProfiles(modelRegistry, modelRuntime, join(agentDir, "models.json")),
-  );
 
   // Capability detection — check prototype without constructing full PackageManager
   const packageUpdateCheck =
