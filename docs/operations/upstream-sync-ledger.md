@@ -45,7 +45,7 @@
 |---|---|
 | 活动会话驻留整线 `83e93c4` + `77c1b18` | fork HostPool 架构已覆盖全部可感知收益；剩余仅 H1-H3 潜在 bug 防护，验证到问题才做（评估记录已删，结论：多进程 vs 单 Host 两条路线各自自洽） |
 | 扩展浮窗全链路（`757b133`/`6c56a50`/`fa613f7`/`8fe3791`/`a80cfa6`/`bde9a77`/`30f759e`/`ea227f9`/`d5ba29b`） | **用户明确放弃浮窗** |
-| PiDeck→PiCove 品牌改名（`c5f16f7` 主体：README/tauri productName/托盘/i18n/更新源） | 2026-09-07 fork 自主改名为 **PiAbyss**（品牌层全量改名；identifier `com.nick12138.pideck` 与 WebView 数据目录保留不变，防丢渲染层/托盘状态；`<agentDir>/pideck` 数据目录自动迁移至 `piabyss`） |
+| PiDeck→PiCove 品牌改名（`c5f16f7` 主体：README/tauri productName/托盘/i18n/更新源） | 2026-09-07 fork 自主改名为 **PiAbyss**（品牌层全量改名；identifier `com.nick12138.pideck` 与 WebView 数据目录保留不变，防丢渲染层/托盘状态；`<agentDir>/pideck` 数据目录自动迁移至 `piabyss`）。2026-09-08 外部标识同步更名：仓库文件夹→**PiAbyss**、GitHub 仓库→`Nick12138/PiAbyss`（origin 已同步，README/更新源端点 URL 随之生效）、构建缓存→`D:\piabyss-build-cache` |
 | 结构化 widget 协议（`36a6264`/`506b2ef`/`2bdf542`/`2c3afa3`） | 与浮窗半耦合 + fork 无结构化扩展 UI 计划（插件分级需求是另一条线） |
 | `browser_surface.rs` 物理 DPI 坐标 | 混合 DPI 独立改进，未立项（P5 可选） |
 | `model-thinking-profiles.ts` 模型目录刷新 | 与功能无关的目录数据 |

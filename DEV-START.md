@@ -14,6 +14,7 @@
 | 项目依赖 | ✅ | 716 个包，`pnpm install` 完成 |
 | JS 包 build | ✅ | protocol / pi-host / desktop 均已 build |
 | Tauri 二进制 | ✅ | `apps/desktop/src-tauri/target/debug/piabyss.exe` 已编译（45s） |
+| 构建缓存 | ✅ | `D:\piabyss-build-cache`（31G 历史 cargo 产物；C 盘空间紧张时可用 `CARGO_TARGET_DIR` 把 target 指到它的 `debug`/`dev-fast` 子目录） |
 
 ## 🔑 重要：每次新开终端要先做的事
 
