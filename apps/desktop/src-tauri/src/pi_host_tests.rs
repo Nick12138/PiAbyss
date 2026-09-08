@@ -924,9 +924,9 @@ rl.on('line', (line) => {
     #[test]
     fn shared_mode_rebind_registers_workspaces_without_rekeying() {
         let mut book = book_for_workspace("c:\\ws\\a");
-        book.register_workspace_on_active("c:\\ws\\b".to_string());
+        book.register_workspace_on_active("c:\\ws\\b".to_string(), PathBuf::from("C:\\ws\\b"));
         // Re-registering the same workspace is a no-op (deduped).
-        book.register_workspace_on_active("c:\\ws\\b".to_string());
+        book.register_workspace_on_active("c:\\ws\\b".to_string(), PathBuf::from("C:\\ws\\b"));
 
         let entry = &book.entries[&book.active_key];
         assert_eq!(entry.workspaces, vec!["c:\\ws\\a", "c:\\ws\\b"]);
@@ -940,6 +940,25 @@ rl.on('line', (line) => {
         assert_eq!(
             book.key_for_workspace("c:\\ws\\b").map(String::as_str),
             Some("c:\\ws\\a")
+        );
+        // Non-empty canonical_cwd is never overwritten by a later binding.
+        assert_eq!(
+            book.entries[&book.active_key].canonical_cwd,
+            PathBuf::from("C:\\ws\\a")
+        );
+
+        // A bootstrap entry born with an empty canonical_cwd (last workspace
+        // not canonicalizable at startup) adopts the first bound workspace so
+        // the activity snapshot chain keeps a display cwd.
+        let mut bootstrap = PoolBook::new(String::new(), "route-0".to_string(), PathBuf::new());
+        bootstrap.register_workspace_on_active("c:\\ws\\z".to_string(), PathBuf::from("C:\\ws\\z"));
+        assert_eq!(
+            bootstrap.entries[&bootstrap.active_key].canonical_cwd,
+            PathBuf::from("C:\\ws\\z")
+        );
+        assert_eq!(
+            bootstrap.entries[&bootstrap.active_key].workspaces,
+            vec!["", "c:\\ws\\z"]
         );
 
         // Dedicated-mode rebind still re-keys 1:1: same route, new key, and

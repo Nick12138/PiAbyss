@@ -120,7 +120,13 @@ export async function openSessionAcrossWorkspaces(
         }
       } else {
         const result = switched.result;
-        await rebindActiveWorkspaceHost(result.workspace.canonicalCwd);
+        try {
+          await rebindActiveWorkspaceHost(result.workspace.canonicalCwd);
+        } catch (rebindError) {
+          // Registration failure must not break an already-successful switch:
+          // rebind only feeds Rust bookkeeping (activity cwds / restart restore).
+          console.warn("[piabyss] workspace host rebind failed", rebindError);
+        }
         // workspace.changed / session.snapshot events usually land before this
         // response resolves; apply only what the event stream has not.
         const appliedWorkspace = useAppStore.getState().workspace;

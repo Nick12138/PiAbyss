@@ -625,12 +625,22 @@ impl PoolBook {
 
     /// Shared-host rebind: register `target_key` as another workspace served
     /// by the active entry. The entry key, route and `route_to_key` mapping
-    /// stay untouched — this is registration, not re-keying.
-    pub(crate) fn register_workspace_on_active(&mut self, target_key: String) {
+    /// stay untouched — this is registration, not re-keying. The bootstrap
+    /// entry is born with an empty `canonical_cwd` when the last workspace
+    /// could not be canonicalized at startup; the first successful shared-mode
+    /// binding fills it so the activity snapshot chain has a display cwd.
+    pub(crate) fn register_workspace_on_active(
+        &mut self,
+        target_key: String,
+        canonical_cwd: PathBuf,
+    ) {
         let entry = self
             .entries
             .get_mut(&self.active_key)
             .expect("active HostPool entry must exist");
+        if entry.canonical_cwd.as_os_str().is_empty() {
+            entry.canonical_cwd = canonical_cwd;
+        }
         if !entry.workspaces.iter().any(|bound| bound == &target_key) {
             entry.workspaces.push(target_key);
         }
@@ -822,6 +832,7 @@ impl PiHostPool {
         &mut self,
         cwd: &Path,
         settings: &DesktopSettingsStore,
+        force_dedicated: bool,
     ) -> Result<(String, Arc<Mutex<PiHostManager>>, bool), String> {
         let canonical = strip_verbatim_prefix(
             cwd.canonicalize()
@@ -831,10 +842,13 @@ impl PiHostPool {
             return Err("workspace path is not a directory".into());
         }
         let key = workspace_pool_key(&canonical);
-        match self
-            .book
-            .activation_target(&key, settings.settings.shared_host_mode)
-        {
+        match self.book.activation_target(
+            &key,
+            // Telegram bootstrap forces a dedicated Host: `/telegram-connect`
+            // must run in its own preloaded workspace, never in whatever
+            // workspace the shared foreground Host currently serves.
+            settings.settings.shared_host_mode && !force_dedicated,
+        ) {
             ActivationTarget::Reuse(book_key) => {
                 // Shared-host mode: the pool must never grow a second Host —
                 // the active entry serves the requested workspace too; the
@@ -903,7 +917,7 @@ impl PiHostPool {
                 }
                 ActivationTarget::Spawn => {
                     let (route_id, manager, created) =
-                        self.activate_workspace(&canonical, settings)?;
+                        self.activate_workspace(&canonical, settings, false)?;
                     return Ok(Some(WorkspaceHostActivation {
                         route_id,
                         manager,
@@ -941,7 +955,7 @@ impl PiHostPool {
             return Ok(None);
         }
 
-        let (route_id, manager, created) = self.activate_workspace(&canonical, settings)?;
+        let (route_id, manager, created) = self.activate_workspace(&canonical, settings, false)?;
         Ok(Some(WorkspaceHostActivation {
             route_id,
             manager,
@@ -972,7 +986,8 @@ impl PiHostPool {
             });
         }
         if shared_host_mode {
-            self.book.register_workspace_on_active(target_key);
+            self.book
+                .register_workspace_on_active(target_key, canonical.clone());
             return Ok(WorkspaceHostRebind {
                 manager: self.active_manager(),
                 canonical_workspace: canonical,

@@ -297,7 +297,13 @@ export function WorkspacePicker() {
       }
 
       const result = res.result;
-      await rebindActiveWorkspaceHost(result.workspace.canonicalCwd);
+      try {
+        await rebindActiveWorkspaceHost(result.workspace.canonicalCwd);
+      } catch (rebindError) {
+        // Registration failure must not break an already-successful switch:
+        // rebind only feeds Rust bookkeeping (activity cwds / restart restore).
+        console.warn("[piabyss] workspace host rebind failed", rebindError);
+      }
       // workspace.changed / session.snapshot events land before this response
       // resolves; re-applying identical snapshots re-renders the chat and
       // sidebar a second time. Apply only what the event stream has not.

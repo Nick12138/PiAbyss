@@ -223,7 +223,7 @@ async function main(): Promise<void> {
   // refreshModelHealth dep runs, extracted so the deferred startup refresh
   // produces identical state. Reconciliation only — a network catalog fetch is
   // a separate, explicitly authorised call and must never happen here.
-  const refreshModelHealthNow = async (signal?: AbortSignal): Promise<ModelConfigHealth> => {
+  const runRefreshModelHealth = async (signal?: AbortSignal): Promise<ModelConfigHealth> => {
     await refreshModelsLocal(modelRuntime, { signal });
     // Neutral: the profile pass re-registers existing providers and must
     // not become a co-owner that pins another workspace's provider alive.
@@ -232,6 +232,21 @@ async function main(): Promise<void> {
     );
     modelConfigHealth = resolveModelConfigHealth();
     return modelConfigHealth;
+  };
+
+  // Serialized: refresh and the thinking-profile pass both re-register
+  // providers on the same runtime, so concurrent invocations (startup IIFE vs
+  // a controller-triggered health refresh) would expose a mid-state. Calls
+  // queue behind each other instead of interleaving; each keeps its own
+  // abort signal and rejection.
+  let refreshChain: Promise<unknown> = Promise.resolve();
+  const refreshModelHealthNow = (signal?: AbortSignal): Promise<ModelConfigHealth> => {
+    const run = refreshChain.then(() => runRefreshModelHealth(signal));
+    refreshChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   };
 
   // Inline neutral profile pass FIRST: it must land before the first graph
