@@ -28,8 +28,9 @@ artifacts/
 /notes.md
 /task_plan.md
 
-# Tauri generates this platform copy; desktop-schema.json is the tracked canonical schema
+# Tauri generates these platform copies; desktop-schema.json is the tracked canonical schema
 /apps/desktop/src-tauri/gen/schemas/macOS-schema.json
+/apps/desktop/src-tauri/gen/schemas/windows-schema.json
 
 # CI build logs (temporary)
 /ghlogs2/
