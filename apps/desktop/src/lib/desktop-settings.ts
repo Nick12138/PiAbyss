@@ -60,6 +60,7 @@ const DESKTOP_SETTINGS_KEYS = new Set([
   "codeFontSize",
   "idleSessionCacheLimit",
   "idleSessionTimeoutMinutes",
+  "sharedHostMode",
   "knownWorkspaces",
   "shortcutOverrides",
   "pluginEnv",
@@ -171,6 +172,7 @@ function assertDesktopSettingsUpdate(patch: DesktopSettingsUpdate): void {
     "autoStartOnBoot",
     "systemNotificationsEnabled",
     "autoRestartHostOnce",
+    "sharedHostMode",
   ] as const) {
     if (values[key] !== undefined && typeof values[key] !== "boolean") {
       throw new Error(`${key} must be a boolean`);

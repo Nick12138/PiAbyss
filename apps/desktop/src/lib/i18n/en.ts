@@ -238,6 +238,9 @@ export const en = {
   generalIdleSessionTimeout: "Idle session timeout",
   generalIdleSessionTimeoutDesc:
     "Disposes an untouched idle session after this many minutes. Applies when Pi Host next starts.",
+  generalSharedHostMode: "Shared Host process",
+  generalSharedHostModeDesc:
+    "All workspaces share one Host process, so switching uses less memory — but isolation from unstable extensions is weaker. Takes effect after restarting the app.",
   generalBusySendGroup: "While the agent is running",
   generalBusySend: "Send while running",
   generalBusySendDesc: "What happens when you send another message during a turn.",

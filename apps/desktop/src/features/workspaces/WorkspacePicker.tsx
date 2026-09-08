@@ -18,6 +18,7 @@ import { hostClient } from "../../lib/bridge/host-client";
 import {
   activateWorkspaceHost,
   fetchHostActivity,
+  hostActivityCwds,
   prepareWorkspaceHost,
   rebindActiveWorkspaceHost,
   replayActiveHostReady,
@@ -204,18 +205,21 @@ export function WorkspacePicker() {
       const request = ++latestRefresh;
       const list = await fetchHostActivity();
       if (!alive || request !== latestRefresh) return;
-      const activities = Object.fromEntries(
-        list.map((entry) => [
-          normalizedActivityKey(entry.cwd),
-          {
-            busy: entry.busy,
-            hasBeenBusy: entry.hasBeenBusy,
-            errorCount: entry.errorCount,
-            doneCount: entry.doneCount,
-            terminalSessions: entry.terminalSessions ?? {},
-          },
-        ]),
-      );
+      // One snapshot entry covers every workspace its Host serves (a single
+      // cwd in dedicated mode; all registered workspaces in shared-host mode).
+      const activities: typeof workspaceActivities = {};
+      for (const entry of list) {
+        const summary = {
+          busy: entry.busy,
+          hasBeenBusy: entry.hasBeenBusy,
+          errorCount: entry.errorCount,
+          doneCount: entry.doneCount,
+          terminalSessions: entry.terminalSessions ?? {},
+        };
+        for (const cwd of hostActivityCwds(entry)) {
+          activities[normalizedActivityKey(cwd)] = summary;
+        }
+      }
       const current = useAppStore.getState();
       const currentWorkspace = current.workspace;
       if (currentWorkspace) {
@@ -248,6 +252,14 @@ export function WorkspacePicker() {
     const currentPage = useAppStore.getState().page;
     if (currentPage !== "chat") useAppStore.getState().setPage("chat");
     try {
+      // Shared-host mode: one Host serves every workspace, so there is no
+      // dedicated Host to prepare — always take the in-place
+      // `workspace.setCurrent` path (the same connection; no
+      // prepareForHostSwitch/replay needed) and register the workspace via
+      // rebindActiveWorkspaceHost below. Defaults to false while settings
+      // are still loading, keeping the dedicated-Host flow.
+      const sharedHostMode =
+        useAppStore.getState().desktopSettings?.sharedHostMode === true;
       const connectDedicatedHost = async (force: boolean): Promise<boolean> => {
         const activated = force
           ? await activateWorkspaceHost(cwd)
@@ -259,7 +271,7 @@ export function WorkspacePicker() {
         await waitForWorkspaceActivation(host.hostInstanceId);
         return true;
       };
-      if (await connectDedicatedHost(false)) {
+      if (!sharedHostMode && (await connectDedicatedHost(false))) {
         return;
       }
 
@@ -272,7 +284,14 @@ export function WorkspacePicker() {
 
       if (request !== requestRef.current) return;
       if (!res.ok) {
-        if (isWorkspaceSwitchBusyError(res.error) && (await connectDedicatedHost(true))) return;
+        // In shared mode a busy rejection cannot be resolved by a dedicated
+        // Host (there is none) — surface it instead of retrying.
+        if (
+          !sharedHostMode &&
+          isWorkspaceSwitchBusyError(res.error) &&
+          (await connectDedicatedHost(true))
+        )
+          return;
         pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
         return;
       }

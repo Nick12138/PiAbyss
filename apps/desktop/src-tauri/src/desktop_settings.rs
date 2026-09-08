@@ -129,6 +129,10 @@ pub struct DesktopSettings {
     /// Opt-in RSS-aware idle retirement for background Hosts (MiB working
     /// set). `0` disables the probe and keeps the time-based rule only.
     pub host_idle_rss_retire_mb: u32,
+    /// Shared-host mode (opt-in): one Host process serves every workspace;
+    /// switching rebinds the active Host in place instead of spawning a
+    /// dedicated one. Saves memory at the cost of extension isolation.
+    pub shared_host_mode: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub known_workspaces: Vec<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -164,6 +168,7 @@ impl Default for DesktopSettings {
             idle_session_cache_limit: 5,
             idle_session_timeout_minutes: 30,
             host_idle_rss_retire_mb: 0,
+            shared_host_mode: false,
             known_workspaces: Vec::new(),
             shortcut_overrides: BTreeMap::new(),
             plugin_env: BTreeMap::new(),
@@ -532,6 +537,7 @@ impl DesktopSettingsStore {
                     | "idleSessionCacheLimit"
                     | "idleSessionTimeoutMinutes"
                     | "hostIdleRssRetireMb"
+                    | "sharedHostMode"
                     | "knownWorkspaces"
                     | "shortcutOverrides"
                     | "pluginEnv"
@@ -879,6 +885,29 @@ mod tests {
             .patch(serde_json::json!({ "hostIdleRssRetireMb": -1 }))
             .is_err());
         assert_eq!(invalid.settings.host_idle_rss_retire_mb, 512);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn defaults_and_persists_shared_host_mode() {
+        let dir = test_dir("shared-host-mode");
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        // Disabled by default: the dedicated-Host pool behavior is unchanged.
+        assert!(!store.settings.shared_host_mode);
+
+        store
+            .patch(serde_json::json!({ "sharedHostMode": true }))
+            .unwrap();
+        assert!(store.settings.shared_host_mode);
+
+        let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert!(reloaded.settings.shared_host_mode);
+
+        let mut invalid = reloaded;
+        assert!(invalid
+            .patch(serde_json::json!({ "sharedHostMode": "yes" }))
+            .is_err());
+        assert!(invalid.settings.shared_host_mode);
         fs::remove_dir_all(dir).unwrap();
     }
 

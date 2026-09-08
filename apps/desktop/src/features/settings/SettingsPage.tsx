@@ -262,6 +262,19 @@ function GeneralSettings() {
                   className="h-8 w-20 rounded-md border border-border bg-surface px-2 text-sm"
                 />
               </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="min-w-0">
+                  <span className="block text-sm">{t("generalSharedHostMode")}</span>
+                  <span className="block text-xs text-muted">
+                    {t("generalSharedHostModeDesc")}
+                  </span>
+                </span>
+                <Switch
+                  checked={desktopSettings?.sharedHostMode ?? false}
+                  label={t("generalSharedHostMode")}
+                  onChange={(next) => void patchDesktop({ sharedHostMode: next })}
+                />
+              </div>
             </div>
           </section>
 

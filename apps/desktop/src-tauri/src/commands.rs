@@ -329,11 +329,16 @@ pub async fn pi_host_prepare_switch(
 
 #[tauri::command]
 pub async fn pi_host_rebind_active(state: State<'_, AppState>, cwd: String) -> Result<(), String> {
-    let rebind = state
-        .hosts
-        .lock()
-        .await
-        .rebind_active_workspace(Path::new(&cwd))?;
+    // Lock order matches the other commands: settings first, then hosts.
+    let rebind = {
+        let settings = state.settings.lock().await;
+        let shared_host_mode = settings.settings.shared_host_mode;
+        state
+            .hosts
+            .lock()
+            .await
+            .rebind_active_workspace(Path::new(&cwd), shared_host_mode)?
+    };
     rebind
         .manager
         .lock()

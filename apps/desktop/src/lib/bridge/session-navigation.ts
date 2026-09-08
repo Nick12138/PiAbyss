@@ -70,6 +70,12 @@ export async function openSessionAcrossWorkspaces(
   }
 
   if (state.workspace?.canonicalCwd !== target.cwd) {
+    // Shared-host mode: one Host serves every workspace — skip the dedicated
+    // Host activation entirely and take the in-place `workspace.setCurrent`
+    // path below (same connection, so no prepareForHostSwitch/replay). False
+    // while settings are still loading, keeping the dedicated-Host flow.
+    const sharedHostMode =
+      useAppStore.getState().desktopSettings?.sharedHostMode === true;
     const connectDedicatedHost = async (force: boolean): Promise<boolean> => {
       const activated = force
         ? await activateWorkspaceHost(target.cwd)
@@ -81,7 +87,7 @@ export async function openSessionAcrossWorkspaces(
       await waitForWorkspaceActivation(host.hostInstanceId);
       return true;
     };
-    if (!(await connectDedicatedHost(false))) {
+    if (!(sharedHostMode || (await connectDedicatedHost(false)))) {
       useAppStore.getState().setWorkspaceSwitchTarget(target.cwd);
       let switched;
       try {
@@ -95,7 +101,13 @@ export async function openSessionAcrossWorkspaces(
         useAppStore.getState().setWorkspaceSwitchTarget(null);
       }
       if (!switched.ok) {
-        if (isWorkspaceSwitchBusyError(switched.error) && (await connectDedicatedHost(true))) {
+        // In shared mode a busy rejection cannot be resolved by a dedicated
+        // Host (there is none) — surface it instead of retrying.
+        if (
+          isWorkspaceSwitchBusyError(switched.error) &&
+          !sharedHostMode &&
+          (await connectDedicatedHost(true))
+        ) {
           // The Host became busy after the initial decision; isolation completed.
         } else {
           useAppStore
