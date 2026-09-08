@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { HostResponseEnvelope, SessionSnapshot, WorkspaceSnapshot } from "@piabyss/protocol";
+import type {
+  DesktopSettings,
+  HostResponseEnvelope,
+  SessionSnapshot,
+  WorkspaceSnapshot,
+} from "@piabyss/protocol";
 import { activateWorkspaceHost, prepareWorkspaceHost } from "./tauri-transport";
 import { waitForWorkspaceActivation } from "../../features/workspaces/workspace-switch-policy";
 import { hostClient } from "./host-client";
@@ -150,7 +155,14 @@ describe("openSessionAcrossWorkspaces", () => {
     useAppStore.getState().setHostFatal(null);
     useAppStore.getState().setRehydrating(false);
     useAppStore.getState().setConnecting(false);
+    useAppStore.getState().setDesktopSettings(null);
   });
+
+  function dedicatedHostMode(): void {
+    // These tests pin the dedicated-Host flow: shared-host mode is the
+    // default, so opt out explicitly.
+    useAppStore.getState().setDesktopSettings({ sharedHostMode: false } as DesktopSettings);
+  }
 
   it("blocks when no Host is attached", async () => {
     const outcome = await openSessionAcrossWorkspaces({
@@ -321,6 +333,7 @@ describe("openSessionAcrossWorkspaces", () => {
   });
 
   it("falls back to workspace.setCurrent when dedicated activation is unavailable", async () => {
+    dedicatedHostMode();
     useAppStore.getState().setHost(host());
     useAppStore.getState().setWorkspace(workspace());
     useAppStore.getState().applySessionSnapshot(session());
@@ -358,6 +371,93 @@ describe("openSessionAcrossWorkspaces", () => {
     expect(useAppStore.getState().session?.sessionId).toBe(TARGET_SESSION_ID);
   });
 
+  it("switches workspace in place in shared-host mode without preparing a dedicated host", async () => {
+    // Settings unset → shared-host mode is the default. The in-place setCurrent
+    // path must run without any dedicated-Host activation.
+    useAppStore.getState().setHost(host());
+    useAppStore.getState().setWorkspace(workspace());
+    useAppStore.getState().applySessionSnapshot(session());
+
+    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+      if (method === "workspace.setCurrent") {
+        return {
+          ...envelope("workspace.setCurrent", {
+            workspace: otherWorkspaceSnapshot(),
+            session: openedSession({ cwd: "/proj/other" }),
+          }),
+          workspaceId: OTHER_WORKSPACE_ID,
+          workspaceRevision: 4,
+          sessionId: TARGET_SESSION_ID,
+          sessionRevision: 1,
+          packageRevision: 1,
+        } as never;
+      }
+      return envelope("session.open", openedSession({ cwd: "/proj/other" })) as never;
+    });
+
+    const outcome = await openSessionAcrossWorkspaces({
+      cwd: "/proj/other",
+      sessionPath: "/sessions/other/target.jsonl",
+    });
+
+    expect(outcome.status).toBe("opened");
+    expect(prepareWorkspaceHost).not.toHaveBeenCalled();
+    expect(activateWorkspaceHost).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledWith(
+      "workspace.setCurrent",
+      expect.objectContaining({ hostInstanceId: HOST_ID }),
+      { cwd: "/proj/other" },
+      60_000,
+    );
+    expect(useAppStore.getState().workspace?.id).toBe(OTHER_WORKSPACE_ID);
+    expect(useAppStore.getState().session?.sessionId).toBe(TARGET_SESSION_ID);
+  });
+
+  it("retries a transient SERVICE_GRAPH_BUSY switch and succeeds", async () => {
+    useAppStore.getState().setHost(host());
+    useAppStore.getState().setWorkspace(workspace());
+    useAppStore.getState().applySessionSnapshot(session());
+
+    let setCurrentCalls = 0;
+    vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+      if (method === "workspace.setCurrent") {
+        setCurrentCalls += 1;
+        if (setCurrentCalls === 1) {
+          return {
+            ...envelope("workspace.setCurrent", null),
+            ok: false,
+            error: {
+              code: "SERVICE_GRAPH_BUSY",
+              message: "Service graph is busy",
+              retryable: true,
+            },
+          } as never;
+        }
+        return {
+          ...envelope("workspace.setCurrent", {
+            workspace: otherWorkspaceSnapshot(),
+            session: openedSession({ cwd: "/proj/other" }),
+          }),
+          workspaceId: OTHER_WORKSPACE_ID,
+          workspaceRevision: 4,
+          sessionId: TARGET_SESSION_ID,
+          sessionRevision: 1,
+          packageRevision: 1,
+        } as never;
+      }
+      return envelope("session.open", openedSession({ cwd: "/proj/other" })) as never;
+    });
+
+    const outcome = await openSessionAcrossWorkspaces({
+      cwd: "/proj/other",
+      sessionPath: "/sessions/other/target.jsonl",
+    });
+
+    expect(outcome.status).toBe("opened");
+    expect(setCurrentCalls).toBe(2);
+    expect(useAppStore.getState().workspace?.id).toBe(OTHER_WORKSPACE_ID);
+  });
+
   it("reports failed when the workspace switch fails with a non-busy error", async () => {
     useAppStore.getState().setHost(host());
     useAppStore.getState().setWorkspace(workspace());
@@ -376,6 +476,7 @@ describe("openSessionAcrossWorkspaces", () => {
   });
 
   it("force-activates a dedicated Host after a busy switch error", async () => {
+    dedicatedHostMode();
     useAppStore.getState().setHost(host());
     useAppStore.getState().setWorkspace(workspace());
     useAppStore.getState().applySessionSnapshot(session());

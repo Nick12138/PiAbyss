@@ -8,6 +8,7 @@ import {
 import { mergeHostIdentity, workspaceContext } from "./host-context";
 import { requestSessionOpenWithRetry, SESSION_OPEN_TIMEOUT_MS } from "./session-open-request";
 import { hostErrorLevel, localizeHostError } from "./localize-host-error";
+import { requestWithRetry } from "./request-retry";
 import { tCurrent } from "../i18n/use-t";
 import { useAppStore } from "../stores/app-store";
 import {
@@ -72,9 +73,9 @@ export async function openSessionAcrossWorkspaces(
   if (state.workspace?.canonicalCwd !== target.cwd) {
     // Shared-host mode: one Host serves every workspace — skip the dedicated
     // Host activation entirely and take the in-place `workspace.setCurrent`
-    // path below (same connection, so no prepareForHostSwitch/replay). False
-    // while settings are still loading, keeping the dedicated-Host flow.
-    const sharedHostMode = useAppStore.getState().desktopSettings?.sharedHostMode === true;
+    // path below (same connection, so no prepareForHostSwitch/replay).
+    // Enabled by default, including while settings are still loading.
+    const sharedHostMode = useAppStore.getState().desktopSettings?.sharedHostMode !== false;
     const connectDedicatedHost = async (force: boolean): Promise<boolean> => {
       const activated = force
         ? await activateWorkspaceHost(target.cwd)
@@ -86,16 +87,29 @@ export async function openSessionAcrossWorkspaces(
       await waitForWorkspaceActivation(host.hostInstanceId);
       return true;
     };
-    if (!(sharedHostMode || (await connectDedicatedHost(false)))) {
+    if (sharedHostMode || !(await connectDedicatedHost(false))) {
+      // Shared mode: always take the in-place setCurrent path (there is no
+      // dedicated Host to prepare). Dedicated mode: fall back to it only when
+      // the prepare pass could not activate the target Host.
       useAppStore.getState().setWorkspaceSwitchTarget(target.cwd);
       let switched;
       try {
-        switched = await hostClient.request(
-          "workspace.setCurrent",
-          workspaceContext(host, state.workspace),
-          { cwd: target.cwd },
-          60_000,
+        // Transient SERVICE_GRAPH_BUSY collisions (an in-flight read holding
+        // the serviceGraphLock) are retryable by design; give the switch a
+        // short retry window instead of surfacing a one-off busy toast.
+        const attempted = await requestWithRetry(
+          () =>
+            hostClient.request(
+              "workspace.setCurrent",
+              workspaceContext(host, state.workspace),
+              { cwd: target.cwd },
+              60_000,
+            ),
+          undefined,
+          () => useAppStore.getState().workspaceSwitchTarget === target.cwd,
         );
+        if (!attempted) return { status: "blocked" };
+        switched = attempted;
       } finally {
         useAppStore.getState().setWorkspaceSwitchTarget(null);
       }

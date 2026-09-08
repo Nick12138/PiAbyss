@@ -28,6 +28,7 @@ import {
 import type { WorkspaceActivity } from "../../lib/stores/app-store";
 import type { SessionTerminalSnapshot } from "../../lib/session-terminal-states";
 import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
+import { requestWithRetry } from "../../lib/bridge/request-retry";
 import {
   notifyDesktopSettingsSaveFailure,
   persistDesktopSettings,
@@ -303,9 +304,9 @@ export function WorkspacePicker() {
       // dedicated Host to prepare — always take the in-place
       // `workspace.setCurrent` path (the same connection; no
       // prepareForHostSwitch/replay needed) and register the workspace via
-      // rebindActiveWorkspaceHost below. Defaults to false while settings
-      // are still loading, keeping the dedicated-Host flow.
-      const sharedHostMode = useAppStore.getState().desktopSettings?.sharedHostMode === true;
+      // rebindActiveWorkspaceHost below. Enabled by default, including
+      // while settings are still loading.
+      const sharedHostMode = useAppStore.getState().desktopSettings?.sharedHostMode !== false;
       const connectDedicatedHost = async (force: boolean): Promise<boolean> => {
         const activated = force
           ? await activateWorkspaceHost(cwd)
@@ -321,12 +322,22 @@ export function WorkspacePicker() {
         return;
       }
 
-      const res = await hostClient.request(
-        "workspace.setCurrent",
-        workspaceContext(host, workspace),
-        { cwd },
-        60_000,
+      // Transient SERVICE_GRAPH_BUSY collisions (an in-flight read holding the
+      // serviceGraphLock) are retryable by design; give the switch a short
+      // retry window instead of surfacing a one-off busy toast.
+      const attempted = await requestWithRetry(
+        () =>
+          hostClient.request(
+            "workspace.setCurrent",
+            workspaceContext(host, workspace),
+            { cwd },
+            60_000,
+          ),
+        undefined,
+        () => request === requestRef.current,
       );
+      if (!attempted) return;
+      const res = attempted;
 
       if (request !== requestRef.current) return;
       if (!res.ok) {

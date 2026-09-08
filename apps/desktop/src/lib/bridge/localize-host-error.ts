@@ -9,6 +9,11 @@ type HostErrorLike = { code?: string; message?: string };
 export const TRANSIENT_HOST_ERROR_CODES: ReadonlySet<string> = new Set([
   "AGENT_BUSY",
   "PACKAGE_MUTATION_BUSY",
+  // SERVICE_GRAPH_BUSY is the shared serviceGraphLock refusing a request while
+  // another graph operation holds it. Host mutations now queue briefly and the
+  // UI retries retryable busy responses, so anything that still reaches the
+  // user is a momentary collision — not a persistent failure worth history.
+  "SERVICE_GRAPH_BUSY",
 ]);
 
 /** Choose the notification level for a host error. Transient "busy" conditions

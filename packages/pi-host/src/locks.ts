@@ -95,6 +95,46 @@ export class TryMutex {
   }
 }
 
+/**
+ * Bounded, abortable wait on top of TryMutex for mutations that may queue
+ * briefly behind in-flight reads instead of failing fast.
+ *
+ * Resolves `true` once the lock is held, `false` when the timeout expired
+ * without acquiring, and `"aborted"` when the signal fired first. If the
+ * acquisition lands after the caller already gave up (abort won the race),
+ * the lock is released immediately so it never leaks — `release` is a no-op
+ * unless the mutex owner still matches our requestId.
+ */
+export async function acquireWithAbort(
+  mutex: TryMutex,
+  owner: Omit<LockOwner, "startedAt">,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<true | false | "aborted"> {
+  if (mutex.tryAcquire(owner)) return true;
+  if (signal?.aborted) return "aborted";
+  if (timeoutMs <= 0) return false;
+
+  let settled = false;
+  return new Promise((resolve) => {
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      resolve("aborted");
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    void mutex.acquire(owner, timeoutMs).then((acquired) => {
+      if (settled) {
+        if (acquired) mutex.release(owner.requestId);
+        return;
+      }
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      resolve(acquired);
+    });
+  });
+}
+
 export class AgentOperationLock {
   private active = false;
   private requestId: string | null = null;

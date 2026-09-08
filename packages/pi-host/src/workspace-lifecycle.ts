@@ -20,8 +20,9 @@ import {
 import { activateOnce, bindForCandidate, clearSlots } from "./extension-ui-lifecycle.js";
 import type { ProviderOwnerToken } from "./extension-provider-ownership.js";
 import { captureFilesystemFingerprint } from "./filesystem-fingerprint.js";
+import { acquireWithAbort } from "./locks.js";
 import { logger } from "./logger.js";
-import { buildPackageSnapshot } from "./package-snapshot.js";
+import { buildPackageSnapshot, type ResourceIdMap } from "./package-snapshot.js";
 import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
 import { createReadAttachmentTool } from "./attachment-tool.js";
@@ -49,6 +50,16 @@ export function workspaceIdentityKey(
 ): string {
   return platform === "win32" ? win32.normalize(canonicalCwd).toLowerCase() : canonicalCwd;
 }
+
+/**
+ * How long `workspace.setCurrent` queues behind an in-flight lock owner before
+ * failing with SERVICE_GRAPH_BUSY. In shared-host mode the same lock also
+ * serves every `sdk.read` (250ms/2s bounded waits), so a switch landing
+ * mid-read used to fail instantly; reads finish fast, so wait them out.
+ * Lock holders that are themselves long mutations (another setCurrent,
+ * package.mutation, …) still exceed the window and fail fast as before.
+ */
+const WORKSPACE_SWITCH_LOCK_WAIT_MS = 2_000;
 
 function workspaceCanonicalPathsEqual(
   left: string,
@@ -217,20 +228,26 @@ export class WorkspaceLifecycle {
         }),
       };
     }
-    if (!server.serviceGraphLock.tryAcquire({ operationKind: "workspace.setCurrent", requestId })) {
-      operation.finish();
-      return {
-        error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
-          retryable: true,
-          details: {
-            operationKind: server.serviceGraphLock.getOwner()?.operationKind ?? null,
-          },
-        }),
-      };
-    }
 
     let previousGraph: WorkspaceGraph | null = null;
     try {
+      const lockState = await acquireWithAbort(
+        server.serviceGraphLock,
+        { operationKind: "workspace.setCurrent", requestId },
+        WORKSPACE_SWITCH_LOCK_WAIT_MS,
+        operation.signal,
+      );
+      if (lockState !== true) {
+        return {
+          error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
+            retryable: true,
+            details: {
+              operationKind: server.serviceGraphLock.getOwner()?.operationKind ?? null,
+              ...(lockState === false ? { waitedMs: WORKSPACE_SWITCH_LOCK_WAIT_MS } : {}),
+            },
+          }),
+        };
+      }
       operation.signal.throwIfAborted();
 
       let canonical: string;
@@ -495,8 +512,13 @@ export class WorkspaceLifecycle {
       // incoming graph. Preserve that pre-merge snapshot when retention finishes.
       this.suspendGraphProviders(graph);
     }
+    const fingerprintStartedAt = Date.now();
     try {
       graph.retainedFingerprint = await this.retainedGraphFingerprint(graph, signal);
+      logger.info("workspace graph retention fingerprint captured", {
+        cwd: graph.canonicalCwd,
+        fingerprintMs: Date.now() - fingerprintStartedAt,
+      });
     } catch (error) {
       graph.retainedFingerprint = undefined;
       if (this.context.getGraph() !== graph) await this.disposeGraph(graph);
@@ -630,6 +652,15 @@ export class WorkspaceLifecycle {
   ): Promise<{ workspace: WorkspaceSnapshot; session?: SessionSnapshot } | null> {
     const server = this.context.getServer()!;
 
+    const startedAt = Date.now();
+    const stepTimings: Record<string, number> = {};
+    let lastStepAt = startedAt;
+    const markStep = (name: string) => {
+      const now = Date.now();
+      stepTimings[name] = now - lastStepAt;
+      lastStepAt = now;
+    };
+
     const retainedFingerprint = graph.retainedFingerprint;
     graph.retainedFingerprint = undefined;
     if (!retainedFingerprint) {
@@ -672,6 +703,7 @@ export class WorkspaceLifecycle {
         return null;
       }
     }
+    markStep("fingerprint");
     if (!graph.servicesReady || !graph.agentSession || !graph.sessionManager) {
       await this.disposeGraph(graph);
       return null;
@@ -743,19 +775,33 @@ export class WorkspaceLifecycle {
           sessionRevision: runtime.sessionRevision,
         });
       }
-      graph.packageSnapshot = await buildPackageSnapshot({
-        revision: args.packageRevision,
-        workspaceId: graph.workspaceId,
-        scope: "all",
-        packageManager: graph.packageManager!,
-        settingsManager: graph.settingsManager!,
-        resourceLoader: graph.resourceLoader,
-        cwd: graph.canonicalCwd,
-        agentDir: this.context.deps.agentDir,
-        packageUpdateCheck: this.context.deps.packageUpdateCheck,
-        resourceIdMap: graph.resourceIdMap,
-        resourceReloadRequired: graph.resourceReloadRequired,
-      });
+      markStep("bind");
+      // Disk state was verified unchanged (fingerprint match): the previous
+      // package snapshot is still accurate apart from its revision, so reuse
+      // it instead of re-deriving it from the package manager on every switch.
+      const packageSnapshotUnchanged =
+        retainedFingerprint !== undefined && retainedFingerprint === currentFingerprint;
+      graph.packageSnapshot =
+        packageSnapshotUnchanged && graph.packageSnapshot
+          ? { ...graph.packageSnapshot, revision: args.packageRevision }
+          : await buildPackageSnapshot({
+              revision: args.packageRevision,
+              workspaceId: graph.workspaceId,
+              scope: "all",
+              packageManager: graph.packageManager!,
+              settingsManager: graph.settingsManager!,
+              resourceLoader: graph.resourceLoader,
+              cwd: graph.canonicalCwd,
+              agentDir: this.context.deps.agentDir,
+              packageUpdateCheck: this.context.deps.packageUpdateCheck,
+              resourceIdMap: graph.resourceIdMap,
+              resourceReloadRequired: graph.resourceReloadRequired,
+            });
+      markStep("packageSnapshot");
+      // Reactivating a parked graph whose session kept streaming in the
+      // background: project the in-flight assistant message just like
+      // promoteBackgroundRuntime does, or everything streamed while parked
+      // would vanish from the conversation when the workspace returns.
       graph.sessionSnapshot = buildSessionSnapshot({
         session,
         sessionManager,
@@ -764,6 +810,7 @@ export class WorkspaceLifecycle {
         revision: args.sessionRevision,
         workspaceId: graph.workspaceId,
         toolRevision: graph.toolRevision,
+        includeStreamingMessage: true,
       });
       // A parked graph still carries its agent subscription from before the
       // park; drop it before re-subscribing so events are never delivered
@@ -785,6 +832,7 @@ export class WorkspaceLifecycle {
       args.signal?.throwIfAborted();
       return null;
     }
+    markStep("subscribe");
 
     if (args.signal?.aborted) {
       await this.disposeGraph(graph);
@@ -818,8 +866,10 @@ export class WorkspaceLifecycle {
       await this.disposeGraph(graph);
       return null;
     }
+    markStep("activate");
 
     if (args.previousGraph) await this.retainGraph(args.previousGraph, args.signal);
+    markStep("retainPrevious");
     if (previousIdentity.sessionId && previousIdentity.sessionId !== server.identity.sessionId) {
       await this.context.deps.attachmentStore?.discardSessionDrafts(previousIdentity.sessionId);
     }
@@ -831,6 +881,11 @@ export class WorkspaceLifecycle {
     graph.subagentStatusBridge?.markReady();
     publishExtensionUi();
     this.context.onBoundWorkspacesChanged?.();
+    logger.info("workspace graph reactivated", {
+      cwd: graph.canonicalCwd,
+      totalMs: Date.now() - startedAt,
+      stepsMs: stepTimings,
+    });
     return {
       workspace,
       ...(graph.sessionSnapshot ? { session: graph.sessionSnapshot } : {}),
@@ -958,11 +1013,15 @@ export class WorkspaceLifecycle {
         ...(statusBridge ? { extensionFactories: [statusBridge.extension] } : {}),
       });
       // Workspace selection (including the startup preload) must not reach the
-      // network; see withoutImplicitPackageInstall.
-      await withoutImplicitPackageInstall(() => resourceLoader.reload());
+      // network; see withoutImplicitPackageInstall. Resource discovery and the
+      // chain-serialized model-health refresh are independent — overlap them
+      // on the fresh-build critical path.
+      await Promise.all([
+        withoutImplicitPackageInstall(() => resourceLoader.reload()),
+        Promise.resolve(this.context.deps.refreshModelHealth()),
+      ]);
       markStep("resourceLoader.reload");
       const sessionManager = SessionManager.create(args.canonicalCwd);
-      await Promise.resolve(this.context.deps.refreshModelHealth());
       this.context.onModelHealthChanged();
       markStep("refreshModelHealth");
 
@@ -974,6 +1033,31 @@ export class WorkspaceLifecycle {
         `workspace:${args.canonicalCwd}`,
       );
       candidateProviderOwner = providerOwner;
+      // Package snapshotting only reads the loader/package manager settled
+      // above and is independent of session construction — run it concurrently
+      // with the session flow and join before the graph is committed. A
+      // failure on either side fails the whole build (the catch below disposes
+      // the candidate session); the flow itself never rejects, so a late
+      // failure after an earlier session-flow error cannot become an unhandled
+      // rejection.
+      const resourceIdMap: ResourceIdMap = new Map();
+      let packageSnapshotError: unknown = null;
+      const packageSnapshotFlow = buildPackageSnapshot({
+        revision: args.packageRevision,
+        workspaceId: args.workspaceId,
+        scope: "all",
+        packageManager,
+        settingsManager,
+        resourceLoader,
+        cwd: args.canonicalCwd,
+        agentDir: this.context.deps.agentDir,
+        packageUpdateCheck: this.context.deps.packageUpdateCheck,
+        resourceIdMap,
+        resourceReloadRequired: false,
+      }).catch((err: unknown) => {
+        packageSnapshotError = err;
+        return null;
+      });
       const { session, extensionsResult } = await this.context.deps.providerOwnership.runAsOwner(
         providerOwner,
         () =>
@@ -1007,7 +1091,7 @@ export class WorkspaceLifecycle {
         packageSnapshot: null,
         sessionSnapshot: null,
         toolRevision: 1,
-        resourceIdMap: new Map(),
+        resourceIdMap,
         unsubscribeAgent: null,
         extensionUiActivate: null,
         extensionUiCleanup: null,
@@ -1051,19 +1135,10 @@ export class WorkspaceLifecycle {
       candidateUnsubscribeAgent = graph.unsubscribeAgent;
       markStep("bindExtensionUi");
 
-      graph.packageSnapshot = await buildPackageSnapshot({
-        revision: args.packageRevision,
-        workspaceId: args.workspaceId,
-        scope: "all",
-        packageManager,
-        settingsManager,
-        resourceLoader,
-        cwd: args.canonicalCwd,
-        agentDir: this.context.deps.agentDir,
-        packageUpdateCheck: this.context.deps.packageUpdateCheck,
-        resourceIdMap: graph.resourceIdMap,
-        resourceReloadRequired: graph.resourceReloadRequired,
-      });
+      // Join the concurrently-built package snapshot; a failure surfaces as a
+      // regular buildServices failure so the catch disposes the candidate.
+      if (packageSnapshotError !== null) throw packageSnapshotError;
+      graph.packageSnapshot = await packageSnapshotFlow;
       markStep("buildPackageSnapshot");
       graph.sessionSnapshot = buildSessionSnapshot({
         session,
