@@ -114,12 +114,12 @@ describe("GeneralSettings advanced block", () => {
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("pi_host_restart"));
   });
 
-  it("renders the shared Host process switch, off by default", () => {
+  it("renders the shared Host process switch, on by default", () => {
     render(<SettingsPage initialSection="general" />);
 
     expect(screen.getByRole("switch", { name: "Shared Host process" })).toHaveAttribute(
       "aria-checked",
-      "false",
+      "true",
     );
   });
 
@@ -128,7 +128,7 @@ describe("GeneralSettings advanced block", () => {
     (invokeMock as unknown as MockInstance).mockImplementation(async (cmd: string) => {
       if (cmd === "desktop_settings_patch") {
         const current = useAppStore.getState().desktopSettings ?? ({} as DesktopSettings);
-        const next = { ...current, sharedHostMode: true } as DesktopSettings;
+        const next = { ...current, sharedHostMode: false } as DesktopSettings;
         useAppStore.getState().setDesktopSettings(next);
         return next;
       }
@@ -140,13 +140,13 @@ describe("GeneralSettings advanced block", () => {
 
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("desktop_settings_patch", {
-        patch: { sharedHostMode: true },
+        patch: { sharedHostMode: false },
       }),
     );
     await waitFor(() =>
       expect(screen.getByRole("switch", { name: "Shared Host process" })).toHaveAttribute(
         "aria-checked",
-        "true",
+        "false",
       ),
     );
   });
@@ -167,7 +167,7 @@ describe("GeneralSettings advanced block", () => {
     );
     expect(screen.getByRole("switch", { name: "Shared Host process" })).toHaveAttribute(
       "aria-checked",
-      "false",
+      "true",
     );
   });
 });

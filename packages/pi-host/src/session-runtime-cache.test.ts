@@ -1,3 +1,4 @@
+import type { SessionSnapshot } from "@piabyss/protocol";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -9,7 +10,8 @@ import {
   SessionRuntimeCache,
   type ActiveSessionState,
 } from "./session-runtime-cache.js";
-import type { WorkspaceGraph } from "./workspace-graph-types.js";
+import type { PiHostServer } from "./server.js";
+import type { BackgroundSessionRuntime, WorkspaceGraph } from "./workspace-graph-types.js";
 
 function activeSlots(seed: string): ActiveSessionState {
   return {
@@ -229,5 +231,124 @@ describe("active Session state", () => {
     });
     expect(graph.backgroundSessions.has("background")).toBe(true);
     expect(identity).toMatchObject({ workspaceRevision: 11, packageRevision: 13 });
+  });
+});
+
+describe("background runtime promotion", () => {
+  const HOST_IDENTITY = {
+    hostInstanceId: "host-1",
+    workspaceId: "ws-1",
+    workspaceRevision: 1,
+    sessionId: "foreground-session",
+    sessionRevision: 5,
+    packageRevision: 1,
+  };
+
+  const STREAMING_MESSAGE = {
+    role: "assistant",
+    content: [{ type: "text", text: "123" }],
+  };
+
+  function promotionServer() {
+    const identity = { ...HOST_IDENTITY };
+    return {
+      identity,
+      getIdentity: () => identity,
+      emit: vi.fn(),
+    };
+  }
+
+  function streamingSessionFixture(): AgentSession {
+    return {
+      sessionId: "bg-session",
+      sessionFile: "C:/workspace/bg-session.jsonl",
+      sessionName: undefined,
+      isIdle: false,
+      isCompacting: false,
+      isRetrying: false,
+      model: undefined,
+      messages: [{ role: "user", content: "Hi" }],
+      thinkingLevel: "off",
+      autoCompactionEnabled: true,
+      autoRetryEnabled: true,
+      steeringMode: "all",
+      followUpMode: "all",
+      getSteeringMessages: () => [],
+      getFollowUpMessages: () => [],
+      getAllTools: () => [],
+      getActiveToolNames: () => [],
+      agent: { state: { streamingMessage: STREAMING_MESSAGE } },
+    } as unknown as AgentSession;
+  }
+
+  function busyRuntimeFixture() {
+    const runtime = {
+      sessionId: "bg-session",
+      sessionRevision: 2,
+      sessionManager: {} as BackgroundSessionRuntime["sessionManager"],
+      agentSession: streamingSessionFixture(),
+      resourceLoader: {} as BackgroundSessionRuntime["resourceLoader"],
+      extensionsResult: {},
+      toolRevision: 3,
+      sessionSnapshot: { sessionId: "bg-session", revision: 2 } as SessionSnapshot,
+      unsubscribeAgent: vi.fn(),
+      extensionUiActivate: vi.fn(),
+      extensionUiCleanup: vi.fn(),
+      extensionUiUpdateIdentity: vi.fn(),
+      extensionUiReplayState: vi.fn(),
+    };
+    return runtime as BackgroundSessionRuntime;
+  }
+
+  function promotionGraph(runtime: BackgroundSessionRuntime): WorkspaceGraph {
+    return {
+      canonicalCwd: "C:/workspace",
+      workspaceId: HOST_IDENTITY.workspaceId,
+      toolRevision: 1,
+      backgroundSessions: new Map([[runtime.sessionId, runtime]]),
+    } as unknown as WorkspaceGraph;
+  }
+
+  function promotionCache(graph: WorkspaceGraph, server: ReturnType<typeof promotionServer>) {
+    return new SessionRuntimeCache({
+      getGraph: () => graph,
+      getServer: () => server as unknown as PiHostServer,
+      getCurrentRunId: () => null,
+      sessionPathsEqual: (left, right) => left === right,
+    });
+  }
+
+  it("projects the in-flight assistant message into the promoted snapshot", async () => {
+    const runtime = busyRuntimeFixture();
+    const graph = promotionGraph(runtime);
+    const server = promotionServer();
+    const cache = promotionCache(graph, server);
+
+    const promoted = await cache.promoteBackgroundRuntime(graph, runtime);
+
+    expect("error" in promoted).toBe(false);
+    const snapshot = promoted as SessionSnapshot;
+    // Persisted messages plus the in-flight streaming tail: the desktop must
+    // be able to render everything streamed while the session was backgrounded.
+    expect(snapshot.messages).toHaveLength(2);
+    expect(snapshot.messages[0]).toMatchObject({ role: "user", content: "Hi" });
+    expect(snapshot.messages[1]).toEqual(STREAMING_MESSAGE);
+    expect(snapshot.isStreaming).toBe(true);
+    expect(runtime.sessionSnapshot).toBe(snapshot);
+    expect(server.emit).toHaveBeenCalledWith("session.snapshot", snapshot);
+  });
+
+  it("omits the streaming tail once the promoted Session is idle", async () => {
+    const runtime = busyRuntimeFixture();
+    Reflect.set(runtime.agentSession, "isIdle", true);
+    Reflect.set(runtime.agentSession, "agent", { state: { streamingMessage: undefined } });
+    const graph = promotionGraph(runtime);
+    const server = promotionServer();
+    const cache = promotionCache(graph, server);
+
+    const promoted = await cache.promoteBackgroundRuntime(graph, runtime);
+
+    expect("error" in promoted).toBe(false);
+    expect((promoted as SessionSnapshot).messages).toHaveLength(1);
   });
 });

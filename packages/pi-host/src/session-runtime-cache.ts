@@ -549,6 +549,11 @@ export class SessionRuntimeCache {
     };
     runtime.sessionRevision = sessionRevision;
     runtime.extensionUiUpdateIdentity?.(promotedIdentity);
+    // A runtime promoted while still streaming must project the in-flight
+    // assistant message: background deltas are neither persisted nor emitted
+    // as agent events, so a snapshot without it loses everything streamed
+    // while the session was backgrounded (the resumed stream would append
+    // into a fresh row instead of continuing the visible one).
     const snapshot = buildSessionSnapshot({
       session: runtime.agentSession,
       sessionManager: runtime.sessionManager,
@@ -557,6 +562,7 @@ export class SessionRuntimeCache {
       revision: sessionRevision,
       workspaceId: graph.workspaceId,
       toolRevision: runtime.toolRevision,
+      includeStreamingMessage: true,
     });
     runtime.sessionSnapshot = snapshot;
 

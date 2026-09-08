@@ -129,9 +129,10 @@ pub struct DesktopSettings {
     /// Opt-in RSS-aware idle retirement for background Hosts (MiB working
     /// set). `0` disables the probe and keeps the time-based rule only.
     pub host_idle_rss_retire_mb: u32,
-    /// Shared-host mode (opt-in): one Host process serves every workspace;
-    /// switching rebinds the active Host in place instead of spawning a
-    /// dedicated one. Saves memory at the cost of extension isolation.
+    /// Shared-host mode (default on): one Host process serves every
+    /// workspace; switching rebinds the active Host in place instead of
+    /// spawning a dedicated one. Saves memory at the cost of extension
+    /// isolation. Users can opt out for per-workspace Host isolation.
     pub shared_host_mode: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub known_workspaces: Vec<String>,
@@ -168,7 +169,7 @@ impl Default for DesktopSettings {
             idle_session_cache_limit: 5,
             idle_session_timeout_minutes: 30,
             host_idle_rss_retire_mb: 0,
-            shared_host_mode: false,
+            shared_host_mode: true,
             known_workspaces: Vec::new(),
             shortcut_overrides: BTreeMap::new(),
             plugin_env: BTreeMap::new(),
@@ -892,8 +893,8 @@ mod tests {
     fn defaults_and_persists_shared_host_mode() {
         let dir = test_dir("shared-host-mode");
         let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
-        // Disabled by default: the dedicated-Host pool behavior is unchanged.
-        assert!(!store.settings.shared_host_mode);
+        // Enabled by default: new installs share one Host across workspaces.
+        assert!(store.settings.shared_host_mode);
 
         store
             .patch(serde_json::json!({ "sharedHostMode": true }))

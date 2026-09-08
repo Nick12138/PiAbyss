@@ -186,7 +186,7 @@ export function buildSessionSnapshot(args: {
     : undefined;
 
   const streamingMessage = args.includeStreamingMessage
-    ? session.agent.state.streamingMessage
+    ? session.agent?.state?.streamingMessage
     : undefined;
   const messages = [
     ...session.messages,

@@ -268,7 +268,7 @@ function GeneralSettings() {
                   <span className="block text-xs text-muted">{t("generalSharedHostModeDesc")}</span>
                 </span>
                 <Switch
-                  checked={desktopSettings?.sharedHostMode ?? false}
+                  checked={desktopSettings?.sharedHostMode ?? true}
                   label={t("generalSharedHostMode")}
                   onChange={(next) => void patchDesktop({ sharedHostMode: next })}
                 />
