@@ -26,17 +26,13 @@ function normalizeRoots(roots: Iterable<string>): string[] {
   return unique
     .filter(
       (candidate) =>
-        !unique.some(
-          (ancestor) => ancestor !== candidate && traversalReaches(ancestor, candidate),
-        ),
+        !unique.some((ancestor) => ancestor !== candidate && traversalReaches(ancestor, candidate)),
     )
     .sort((a, b) => a.localeCompare(b));
 }
 
 type StatOutcome =
-  | { kind: "stat"; stat: Stats }
-  | { kind: "missing" }
-  | { kind: "error"; message: string };
+  { kind: "stat"; stat: Stats } | { kind: "missing" } | { kind: "error"; message: string };
 
 async function statEntry(path: string, signal?: AbortSignal): Promise<StatOutcome> {
   try {

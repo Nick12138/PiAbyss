@@ -56,10 +56,12 @@ function disposalCache(): SessionRuntimeCache {
   });
 }
 
-function disposalSession(options: {
-  emit?: () => Promise<void>;
-  abort?: () => Promise<void>;
-} = {}) {
+function disposalSession(
+  options: {
+    emit?: () => Promise<void>;
+    abort?: () => Promise<void>;
+  } = {},
+) {
   const emit = vi.fn(options.emit ?? (async () => undefined));
   const abort = vi.fn(options.abort ?? (async () => undefined));
   const dispose = vi.fn();
@@ -157,8 +159,8 @@ describe("idle Session cache", () => {
     cache.touchIdleSession(graph, "F");
 
     expect(MAX_IDLE_SESSION_CACHE).toBe(5);
-    expect([...graph.idleSessionRecency?.keys() ?? []]).toEqual(["B", "C", "D", "E", "F"]);
-    expect([...graph.idleSessionCache?.keys() ?? []]).toEqual(["B", "C", "D", "E"]);
+    expect([...(graph.idleSessionRecency?.keys() ?? [])]).toEqual(["B", "C", "D", "E", "F"]);
+    expect([...(graph.idleSessionCache?.keys() ?? [])]).toEqual(["B", "C", "D", "E"]);
     expect(graph.idleSessionCache?.has("A")).toBe(false);
     expect(states[0]!.agentSession).not.toBeNull();
   });

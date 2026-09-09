@@ -41,10 +41,16 @@ export function localizePackageMessage(
   t: Translate,
 ): string | undefined {
   if (!message) return undefined;
-  if (/\bEBUSY\b|resource busy|being used by another process|file is in use|locked/iu.test(message)) {
+  if (
+    /\bEBUSY\b|resource busy|being used by another process|file is in use|locked/iu.test(message)
+  ) {
     return t("hostErrPackageFileBusy");
   }
-  if (/\bEPERM\b|\bEACCES\b|operation not permitted|permission denied|access is denied/iu.test(message)) {
+  if (
+    /\bEPERM\b|\bEACCES\b|operation not permitted|permission denied|access is denied/iu.test(
+      message,
+    )
+  ) {
     return t("hostErrPackagePermission");
   }
   if (/\bE404\b|404 Not Found|No matching version|not in this registry/iu.test(message)) {

@@ -403,7 +403,9 @@ describe("agent.prompt startup", () => {
     } as never);
     (fixture.session as unknown as { isIdle: boolean }).isIdle = true;
     gate.resolve();
-    await vi.waitFor(() => expect(fixture.factory.publishCurrentRuntimeStateForSession).toHaveBeenCalled());
+    await vi.waitFor(() =>
+      expect(fixture.factory.publishCurrentRuntimeStateForSession).toHaveBeenCalled(),
+    );
 
     expect(fixture.sessionOperationLock.isHeld()).toBe(false);
     expect(fixture.server.getPhase()).toBe("agentBusy");
