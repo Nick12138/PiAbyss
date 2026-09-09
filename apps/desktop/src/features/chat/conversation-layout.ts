@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 
 export const DEFAULT_CONVERSATION_MIN_WIDTH = 350;
-export const DEFAULT_CONVERSATION_MAX_WIDTH = 860;
+export const DEFAULT_CONVERSATION_MAX_WIDTH = 600;
 export const HARD_MIN_CONVERSATION_WIDTH = 350;
 export const HARD_MAX_CONVERSATION_WIDTH = 2400;
 

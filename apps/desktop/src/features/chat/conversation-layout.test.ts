@@ -18,8 +18,8 @@ describe("conversation content width", () => {
 
   it("keeps the max at least the min when resolving the shared style", () => {
     expect(conversationContentWidthStyle(900, 700)).toEqual({
-      "--conversation-min-width": "860px",
-      "--conversation-max-width": "860px",
+      "--conversation-min-width": "600px",
+      "--conversation-max-width": "700px",
     });
     expect(conversationContentWidthStyle(560, 1100)).toEqual({
       "--conversation-min-width": "560px",

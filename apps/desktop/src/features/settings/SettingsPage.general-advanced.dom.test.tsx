@@ -2,8 +2,8 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
-import type { DesktopSettings, HostStatusSnapshot } from "@piabyss/protocol";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { HostStatusSnapshot } from "@piabyss/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { SettingsPage } from "./SettingsPage";
 
@@ -112,62 +112,5 @@ describe("GeneralSettings advanced block", () => {
     await user.click(within(dialog).getByRole("button", { name: "Restart Host" }));
 
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("pi_host_restart"));
-  });
-
-  it("renders the shared Host process switch, on by default", () => {
-    render(<SettingsPage initialSection="general" />);
-
-    expect(screen.getByRole("switch", { name: "Shared Host process" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
-  });
-
-  it("persists the shared Host process toggle via desktop_settings_patch", async () => {
-    const user = userEvent.setup();
-    (invokeMock as unknown as MockInstance).mockImplementation(async (cmd: string) => {
-      if (cmd === "desktop_settings_patch") {
-        const current = useAppStore.getState().desktopSettings ?? ({} as DesktopSettings);
-        const next = { ...current, sharedHostMode: false } as DesktopSettings;
-        useAppStore.getState().setDesktopSettings(next);
-        return next;
-      }
-      return undefined;
-    });
-    render(<SettingsPage initialSection="general" />);
-
-    await user.click(screen.getByRole("switch", { name: "Shared Host process" }));
-
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith("desktop_settings_patch", {
-        patch: { sharedHostMode: false },
-      }),
-    );
-    await waitFor(() =>
-      expect(screen.getByRole("switch", { name: "Shared Host process" })).toHaveAttribute(
-        "aria-checked",
-        "false",
-      ),
-    );
-  });
-
-  it("surfaces a failed shared Host patch as a notification", async () => {
-    const user = userEvent.setup();
-    invokeMock.mockRejectedValue(new Error("unknown desktop settings field"));
-    render(<SettingsPage initialSection="general" />);
-
-    await user.click(screen.getByRole("switch", { name: "Shared Host process" }));
-
-    await waitFor(() =>
-      expect(
-        useAppStore
-          .getState()
-          .notifications.some((item) => item.message.includes("unknown desktop settings field")),
-      ).toBe(true),
-    );
-    expect(screen.getByRole("switch", { name: "Shared Host process" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
   });
 });

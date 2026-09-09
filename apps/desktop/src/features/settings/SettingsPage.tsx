@@ -196,17 +196,6 @@ function GeneralSettings() {
               </div>
               <div className="flex items-center justify-between gap-4">
                 <span className="min-w-0">
-                  <span className="block text-sm">{t("generalAutoRestart")}</span>
-                  <span className="block text-xs text-muted">{t("generalAutoRestartDesc")}</span>
-                </span>
-                <Switch
-                  checked={desktopSettings?.autoRestartHostOnce ?? true}
-                  label={t("generalAutoRestart")}
-                  onChange={(next) => void patchDesktop({ autoRestartHostOnce: next })}
-                />
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="min-w-0">
                   <span className="block text-sm">{t("generalSystemNotifications")}</span>
                   <span className="block text-xs text-muted">
                     {t("generalSystemNotificationsDesc")}
@@ -216,61 +205,6 @@ function GeneralSettings() {
                   checked={desktopSettings?.systemNotificationsEnabled ?? true}
                   label={t("generalSystemNotifications")}
                   onChange={(next) => void patchDesktop({ systemNotificationsEnabled: next })}
-                />
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <label htmlFor="idle-session-cache-limit" className="min-w-0">
-                  <span className="block text-sm">{t("generalIdleSessionCacheLimit")}</span>
-                  <span className="block text-xs text-muted">
-                    {t("generalIdleSessionCacheLimitDesc")}
-                  </span>
-                </label>
-                <input
-                  id="idle-session-cache-limit"
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={desktopSettings?.idleSessionCacheLimit ?? 5}
-                  onChange={(event) => {
-                    const value = Number(event.target.value);
-                    if (Number.isInteger(value) && value >= 1 && value <= 20) {
-                      void patchDesktop({ idleSessionCacheLimit: value });
-                    }
-                  }}
-                  className="h-8 w-20 rounded-md border border-border bg-surface px-2 text-sm"
-                />
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <label htmlFor="idle-session-timeout" className="min-w-0">
-                  <span className="block text-sm">{t("generalIdleSessionTimeout")}</span>
-                  <span className="block text-xs text-muted">
-                    {t("generalIdleSessionTimeoutDesc")}
-                  </span>
-                </label>
-                <input
-                  id="idle-session-timeout"
-                  type="number"
-                  min={1}
-                  max={1440}
-                  value={desktopSettings?.idleSessionTimeoutMinutes ?? 30}
-                  onChange={(event) => {
-                    const value = Number(event.target.value);
-                    if (Number.isInteger(value) && value >= 1 && value <= 1440) {
-                      void patchDesktop({ idleSessionTimeoutMinutes: value });
-                    }
-                  }}
-                  className="h-8 w-20 rounded-md border border-border bg-surface px-2 text-sm"
-                />
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="min-w-0">
-                  <span className="block text-sm">{t("generalSharedHostMode")}</span>
-                  <span className="block text-xs text-muted">{t("generalSharedHostModeDesc")}</span>
-                </span>
-                <Switch
-                  checked={desktopSettings?.sharedHostMode ?? true}
-                  label={t("generalSharedHostMode")}
-                  onChange={(next) => void patchDesktop({ sharedHostMode: next })}
                 />
               </div>
             </div>

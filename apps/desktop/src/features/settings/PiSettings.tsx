@@ -7,6 +7,11 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
 import { notifyOperationFailure } from "../../lib/notify-operation-error";
+import {
+  notifyDesktopSettingsSaveFailure,
+  persistDesktopSettings,
+  type DesktopSettingsUpdate,
+} from "../../lib/desktop-settings";
 
 const THINKING_LEVELS: ThinkingLevel[] = [
   "off",
@@ -40,9 +45,20 @@ const DEFAULT_SETTINGS: PiSettingsSnapshot = {
 export function PiSettings() {
   const t = useT();
   const host = useAppStore((state) => state.host);
+  const desktopSettings = useAppStore((state) => state.desktopSettings);
   const [settings, setSettings] = useState<PiSettingsSnapshot>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
+
+  async function patchDesktop(patch: DesktopSettingsUpdate) {
+    try {
+      await persistDesktopSettings(patch);
+      return true;
+    } catch (error) {
+      notifyDesktopSettingsSaveFailure(error);
+      return false;
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -252,6 +268,50 @@ export function PiSettings() {
               { value: "one-at-a-time", label: t("generalFollowUpOneAtATime") },
               { value: "all", label: t("generalFollowUpAll") },
             ]}
+          />
+        </SettingRow>
+
+        <SettingRow
+          label={t("generalIdleSessionCacheLimit")}
+          description={t("generalIdleSessionCacheLimitDesc")}
+          saving={false}
+        >
+          <input
+            id="idle-session-cache-limit"
+            className="h-8 w-20 rounded-md border border-border bg-surface px-2 text-right text-xs text-foreground outline-none focus:border-focus"
+            type="number"
+            min={1}
+            max={20}
+            aria-label={t("generalIdleSessionCacheLimit")}
+            value={desktopSettings?.idleSessionCacheLimit ?? 5}
+            onChange={(event) => {
+              const value = Number(event.target.value);
+              if (Number.isInteger(value) && value >= 1 && value <= 20) {
+                void patchDesktop({ idleSessionCacheLimit: value });
+              }
+            }}
+          />
+        </SettingRow>
+
+        <SettingRow
+          label={t("generalIdleSessionTimeout")}
+          description={t("generalIdleSessionTimeoutDesc")}
+          saving={false}
+        >
+          <input
+            id="idle-session-timeout"
+            className="h-8 w-20 rounded-md border border-border bg-surface px-2 text-right text-xs text-foreground outline-none focus:border-focus"
+            type="number"
+            min={1}
+            max={1440}
+            aria-label={t("generalIdleSessionTimeout")}
+            value={desktopSettings?.idleSessionTimeoutMinutes ?? 30}
+            onChange={(event) => {
+              const value = Number(event.target.value);
+              if (Number.isInteger(value) && value >= 1 && value <= 1440) {
+                void patchDesktop({ idleSessionTimeoutMinutes: value });
+              }
+            }}
           />
         </SettingRow>
       </div>

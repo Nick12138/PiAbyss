@@ -213,8 +213,6 @@ export const zh: Record<MessageKey, string> = {
   generalRestoreSessionDesc: "启动 PiAbyss 时重新打开上次的工作区和对话。",
   generalAutoStartOnBoot: "开机自启",
   generalAutoStartOnBootDesc: "登录 Windows 后自动启动 PiAbyss，并最小化到系统托盘。",
-  generalAutoRestart: "自动重启 Pi Host",
-  generalAutoRestartDesc: "主机进程崩溃时先自动重启一次，仍失败才提示错误。",
   generalSystemNotifications: "系统通知",
   generalSystemNotificationsDesc:
     "窗口不在前台时，通过系统通知提醒后台会话完成、失败、需要输入或主机崩溃，点击可直达会话。",
@@ -223,9 +221,6 @@ export const zh: Record<MessageKey, string> = {
   generalIdleSessionTimeout: "空闲会话销毁时间",
   generalIdleSessionTimeoutDesc:
     "空闲会话未被切回时，经过该分钟数自动销毁。下次启动 Pi Host 时生效。",
-  generalSharedHostMode: "共享 Host 进程",
-  generalSharedHostModeDesc:
-    "所有工作区共用一个 Host 进程，切换更省内存；对不稳定扩展的隔离会变弱。改动后重启应用生效。",
   generalBusySendGroup: "智能体运行中",
   generalBusySend: "运行中发送",
   generalBusySendDesc: "当前轮次还在进行时，再发送一条消息会怎么处理。",
@@ -258,6 +253,12 @@ export const zh: Record<MessageKey, string> = {
 
   // Host section
   hostSubtitle: "Pi Host 运行时、能力与应用信息",
+  hostProcessGroup: "进程",
+  hostAutoRestart: "自动重启 Pi Host",
+  hostAutoRestartDesc: "主机进程崩溃时先自动重启一次，仍失败才提示错误。",
+  hostSharedHostMode: "共享 Host 进程",
+  hostSharedHostModeDesc:
+    "所有工作区共用一个 Host 进程，切换更省内存；对不稳定扩展的隔离会变弱。改动后重启应用生效。",
   hostRuntimeGroup: "运行时",
   hostPhase: "阶段",
   hostAgentDir: "Agent 目录",

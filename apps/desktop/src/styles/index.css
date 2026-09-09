@@ -283,7 +283,7 @@ body,
 
 .conversation-content-width {
   width: 100%;
-  max-width: var(--conversation-max-width, 860px);
+  max-width: var(--conversation-max-width, 600px);
 }
 
 .interface-density-control {

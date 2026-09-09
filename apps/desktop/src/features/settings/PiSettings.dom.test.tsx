@@ -1,12 +1,19 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PiSettings } from "./PiSettings";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
-import type { HostStatusSnapshot } from "@piabyss/protocol";
+import type { DesktopSettings, HostStatusSnapshot } from "@piabyss/protocol";
+
+const invokeMock = vi.fn(async () => undefined);
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (...args: unknown[]) => invokeMock(...(args as [])),
+  isTauri: () => true,
+}));
 
 const host: HostStatusSnapshot = {
   hostInstanceId: "11111111-1111-4111-8111-111111111111",
@@ -52,11 +59,23 @@ const settings = {
 describe("PiSettings", () => {
   afterEach(() => {
     cleanup();
+    useAppStore.getState().setDesktopSettings(null);
     vi.restoreAllMocks();
   });
 
   beforeEach(() => {
+    invokeMock.mockClear();
     useAppStore.getState().setHost(host);
+    useAppStore.getState().setDesktopSettings({
+      theme: "system",
+      language: "en",
+      restoreLastSession: true,
+      autoRestartHostOnce: true,
+      idleSessionCacheLimit: 5,
+      idleSessionTimeoutMinutes: 30,
+      extensionDecisionPresentation: "auto",
+      terminalProfile: "auto",
+    });
     vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
       if (method === "piSettings.get") return { ok: true, result: settings } as never;
       return { ok: true, result: settings } as never;
@@ -113,5 +132,59 @@ describe("PiSettings", () => {
       { expectedHostInstanceId: host.hostInstanceId },
       { steeringMode: "all" },
     );
+  });
+
+  it("persists the idle session cache limit via desktop settings", async () => {
+    (
+      invokeMock as unknown as { mockImplementation: (fn: (cmd: string) => unknown) => void }
+    ).mockImplementation(async (cmd: string) => {
+      if (cmd === "desktop_settings_patch") {
+        const current = useAppStore.getState().desktopSettings ?? ({} as DesktopSettings);
+        const next = { ...current, idleSessionCacheLimit: 8 } as DesktopSettings;
+        useAppStore.getState().setDesktopSettings(next);
+        return next;
+      }
+      return undefined;
+    });
+    render(<PiSettings />);
+    await screen.findByRole("button", { name: "Default model" });
+
+    const cacheLimit = screen.getByRole("spinbutton", {
+      name: /Idle session queue capacity/,
+    });
+    fireEvent.change(cacheLimit, { target: { value: "8" } });
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("desktop_settings_patch", {
+        patch: { idleSessionCacheLimit: 8 },
+      }),
+    );
+    expect(screen.getByRole("spinbutton", { name: /Idle session queue capacity/ })).toHaveValue(8);
+  });
+
+  it("persists the idle session timeout via desktop settings", async () => {
+    (
+      invokeMock as unknown as { mockImplementation: (fn: (cmd: string) => unknown) => void }
+    ).mockImplementation(async (cmd: string) => {
+      if (cmd === "desktop_settings_patch") {
+        const current = useAppStore.getState().desktopSettings ?? ({} as DesktopSettings);
+        const next = { ...current, idleSessionTimeoutMinutes: 45 } as DesktopSettings;
+        useAppStore.getState().setDesktopSettings(next);
+        return next;
+      }
+      return undefined;
+    });
+    render(<PiSettings />);
+    await screen.findByRole("button", { name: "Default model" });
+
+    const timeout = screen.getByRole("spinbutton", { name: /Idle session timeout/ });
+    fireEvent.change(timeout, { target: { value: "45" } });
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("desktop_settings_patch", {
+        patch: { idleSessionTimeoutMinutes: 45 },
+      }),
+    );
+    expect(screen.getByRole("spinbutton", { name: /Idle session timeout/ })).toHaveValue(45);
   });
 });

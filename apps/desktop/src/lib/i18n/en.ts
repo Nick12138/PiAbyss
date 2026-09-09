@@ -226,9 +226,6 @@ export const en = {
   generalAutoStartOnBoot: "Launch at startup",
   generalAutoStartOnBootDesc:
     "Launch PiAbyss when you sign in to Windows and keep it minimized to the system tray.",
-  generalAutoRestart: "Auto-restart Pi Host",
-  generalAutoRestartDesc:
-    "If the host process crashes, restart it once automatically before showing an error.",
   generalSystemNotifications: "System notifications",
   generalSystemNotificationsDesc:
     "Show OS notifications for background completions, failures, input requests and host crashes, with click-to-session.",
@@ -238,9 +235,6 @@ export const en = {
   generalIdleSessionTimeout: "Idle session timeout",
   generalIdleSessionTimeoutDesc:
     "Disposes an untouched idle session after this many minutes. Applies when Pi Host next starts.",
-  generalSharedHostMode: "Shared Host process",
-  generalSharedHostModeDesc:
-    "All workspaces share one Host process, so switching uses less memory — but isolation from unstable extensions is weaker. Takes effect after restarting the app.",
   generalBusySendGroup: "While the agent is running",
   generalBusySend: "Send while running",
   generalBusySendDesc: "What happens when you send another message during a turn.",
@@ -275,6 +269,13 @@ export const en = {
 
   // Host section
   hostSubtitle: "Pi Host runtime, capabilities, and app info",
+  hostProcessGroup: "Process",
+  hostAutoRestart: "Auto-restart Pi Host",
+  hostAutoRestartDesc:
+    "If the host process crashes, restart it once automatically before showing an error.",
+  hostSharedHostMode: "Shared Host process",
+  hostSharedHostModeDesc:
+    "All workspaces share one Host process, so switching uses less memory — but isolation from unstable extensions is weaker. Takes effect after restarting the app.",
   hostRuntimeGroup: "Runtime",
   hostPhase: "Phase",
   hostAgentDir: "Agent dir",

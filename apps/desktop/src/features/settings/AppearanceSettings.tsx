@@ -210,7 +210,7 @@ export function AppearanceSettings() {
                 </div>
               </div>
 
-              <label className="flex items-center justify-between gap-4">
+              <div className="flex items-center justify-between gap-4">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("appearanceColorMode")}</span>
                   <span className="block text-xs text-muted">{t("appearanceColorModeDesc")}</span>
@@ -228,9 +228,9 @@ export function AppearanceSettings() {
                     { value: "dark", label: t("generalThemeDark") },
                   ]}
                 />
-              </label>
+              </div>
 
-              <label className="flex items-center justify-between gap-4">
+              <div className="flex items-center justify-between gap-4">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("generalLanguage")}</span>
                   <span className="block text-xs text-muted">{t("generalLanguageDesc")}</span>
@@ -248,7 +248,7 @@ export function AppearanceSettings() {
                     { value: "zh", label: "中文" },
                   ]}
                 />
-              </label>
+              </div>
 
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <span className="min-w-0">

@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { secondaryButton } from "../../components/Dialog";
+import { Switch } from "../../components/Switch";
 import { getAppVersion } from "../../lib/app-version";
 import { checkForAppUpdate, type AppUpdate } from "../../lib/updater";
-import { persistDesktopSettings } from "../../lib/desktop-settings";
+import {
+  notifyDesktopSettingsSaveFailure,
+  persistDesktopSettings,
+  type DesktopSettingsUpdate,
+} from "../../lib/desktop-settings";
 import { useT } from "../../lib/i18n/use-t";
 import type { MessageKey } from "../../lib/i18n";
 import { RestartHostButton } from "./restart-host";
@@ -17,10 +22,21 @@ const CAPABILITY_LABELS: Record<string, MessageKey> = {
 export function HostSettings() {
   const t = useT();
   const host = useAppStore((s) => s.host);
+  const desktopSettings = useAppStore((s) => s.desktopSettings);
   const pushNotification = useAppStore((s) => s.pushNotification);
   const updatePhase = useAppStore((s) => s.appUpdatePhase);
   const setUpdatePhase = useAppStore((s) => s.setAppUpdatePhase);
   const [appVersion, setAppVersion] = useState<string | null>(null);
+
+  async function patchDesktop(patch: DesktopSettingsUpdate) {
+    try {
+      await persistDesktopSettings(patch);
+      return true;
+    } catch (error) {
+      notifyDesktopSettingsSaveFailure(error);
+      return false;
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -189,6 +205,34 @@ export function HostSettings() {
                   className={`${secondaryButton} border-danger/40 text-danger hover:bg-danger/10`}
                 />
                 <p className="mt-1.5 text-xs text-muted">{t("hostRestartCaption")}</p>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h2 className="mb-2 text-sm font-medium text-muted">{t("hostProcessGroup")}</h2>
+            <div className="flex flex-col gap-4 rounded-lg border border-border p-4">
+              <div className="flex items-center justify-between gap-4">
+                <span className="min-w-0">
+                  <span className="block text-sm">{t("hostAutoRestart")}</span>
+                  <span className="block text-xs text-muted">{t("hostAutoRestartDesc")}</span>
+                </span>
+                <Switch
+                  checked={desktopSettings?.autoRestartHostOnce ?? true}
+                  label={t("hostAutoRestart")}
+                  onChange={(next) => void patchDesktop({ autoRestartHostOnce: next })}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="min-w-0">
+                  <span className="block text-sm">{t("hostSharedHostMode")}</span>
+                  <span className="block text-xs text-muted">{t("hostSharedHostModeDesc")}</span>
+                </span>
+                <Switch
+                  checked={desktopSettings?.sharedHostMode ?? true}
+                  label={t("hostSharedHostMode")}
+                  onChange={(next) => void patchDesktop({ sharedHostMode: next })}
+                />
               </div>
             </div>
           </section>

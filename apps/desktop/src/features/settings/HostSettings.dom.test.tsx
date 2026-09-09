@@ -2,8 +2,8 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { HostStatusSnapshot } from "@piabyss/protocol";
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
+import type { DesktopSettings, HostStatusSnapshot } from "@piabyss/protocol";
 import type { AppUpdateInstallProgress } from "../../lib/updater";
 import { useAppStore } from "../../lib/stores/app-store";
 import { HostSettings } from "./HostSettings";
@@ -56,12 +56,21 @@ beforeEach(() => {
   useAppStore.getState().clearNotifications();
   useAppStore.getState().setHostFatal(null);
   useAppStore.getState().setAppUpdatePhase({ state: "idle" });
+  useAppStore.getState().setDesktopSettings({
+    theme: "system",
+    language: "en",
+    restoreLastSession: true,
+    autoRestartHostOnce: true,
+    extensionDecisionPresentation: "legacy-modal",
+    terminalProfile: "auto",
+  });
 });
 
 afterEach(() => {
   cleanup();
   useAppStore.getState().setHost(null);
   useAppStore.getState().setAppUpdatePhase({ state: "idle" });
+  useAppStore.getState().setDesktopSettings(null);
   vi.restoreAllMocks();
 });
 
@@ -197,13 +206,6 @@ describe("HostSettings", () => {
 
   it("changes the agent directory through the folder picker", async () => {
     const user = userEvent.setup();
-    useAppStore.getState().setDesktopSettings({
-      theme: "dark",
-      restoreLastSession: true,
-      autoRestartHostOnce: true,
-      extensionDecisionPresentation: "legacy-modal",
-      terminalProfile: "auto",
-    });
     openMock.mockResolvedValue("/new/agent-dir");
     invokeMock.mockResolvedValueOnce({
       theme: "dark",
@@ -226,5 +228,94 @@ describe("HostSettings", () => {
         .getState()
         .notifications.some((item) => item.message.includes("restart Pi Host to apply")),
     ).toBe(true);
+  });
+
+  it("renders the process switches, both on by default", () => {
+    render(<HostSettings />);
+
+    expect(screen.getByRole("switch", { name: "Auto-restart Pi Host" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getByRole("switch", { name: "Shared Host process" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+  });
+
+  it("persists the shared Host process toggle via desktop_settings_patch", async () => {
+    const user = userEvent.setup();
+    (invokeMock as unknown as MockInstance).mockImplementation(async (cmd: string) => {
+      if (cmd === "desktop_settings_patch") {
+        const current = useAppStore.getState().desktopSettings ?? ({} as DesktopSettings);
+        const next = { ...current, sharedHostMode: false } as DesktopSettings;
+        useAppStore.getState().setDesktopSettings(next);
+        return next;
+      }
+      return undefined;
+    });
+    render(<HostSettings />);
+
+    await user.click(screen.getByRole("switch", { name: "Shared Host process" }));
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("desktop_settings_patch", {
+        patch: { sharedHostMode: false },
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("switch", { name: "Shared Host process" })).toHaveAttribute(
+        "aria-checked",
+        "false",
+      ),
+    );
+  });
+
+  it("persists the auto-restart toggle via desktop_settings_patch", async () => {
+    const user = userEvent.setup();
+    (invokeMock as unknown as MockInstance).mockImplementation(async (cmd: string) => {
+      if (cmd === "desktop_settings_patch") {
+        const current = useAppStore.getState().desktopSettings ?? ({} as DesktopSettings);
+        const next = { ...current, autoRestartHostOnce: false } as DesktopSettings;
+        useAppStore.getState().setDesktopSettings(next);
+        return next;
+      }
+      return undefined;
+    });
+    render(<HostSettings />);
+
+    await user.click(screen.getByRole("switch", { name: "Auto-restart Pi Host" }));
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("desktop_settings_patch", {
+        patch: { autoRestartHostOnce: false },
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("switch", { name: "Auto-restart Pi Host" })).toHaveAttribute(
+        "aria-checked",
+        "false",
+      ),
+    );
+  });
+
+  it("surfaces a failed process settings patch as a notification", async () => {
+    const user = userEvent.setup();
+    invokeMock.mockRejectedValue(new Error("unknown desktop settings field"));
+    render(<HostSettings />);
+
+    await user.click(screen.getByRole("switch", { name: "Shared Host process" }));
+
+    await waitFor(() =>
+      expect(
+        useAppStore
+          .getState()
+          .notifications.some((item) => item.message.includes("unknown desktop settings field")),
+      ).toBe(true),
+    );
+    expect(screen.getByRole("switch", { name: "Shared Host process" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
   });
 });

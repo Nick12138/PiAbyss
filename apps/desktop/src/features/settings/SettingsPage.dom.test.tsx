@@ -152,7 +152,8 @@ describe("SettingsPage navigation guard", () => {
     expect(screen.getByText("Startup")).toBeInTheDocument();
     expect(screen.getByText("Restore last session")).toBeInTheDocument();
     expect(screen.getByText("Launch at startup")).toBeInTheDocument();
-    expect(screen.getByText("Auto-restart Pi Host")).toBeInTheDocument();
+    expect(screen.queryByText("Auto-restart Pi Host")).not.toBeInTheDocument();
+    expect(screen.queryByText("Shared Host process")).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Theme/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Language/)).not.toBeInTheDocument();
     expect(
@@ -220,7 +221,7 @@ describe("SettingsPage navigation guard", () => {
 
     const maxWidth = screen.getByRole("spinbutton", { name: "Conversation max width" });
     const minWidth = screen.getByRole("spinbutton", { name: "Conversation min width" });
-    expect(maxWidth).toHaveValue(860);
+    expect(maxWidth).toHaveValue(600);
     expect(minWidth).toHaveValue(350);
 
     await user.clear(maxWidth);
@@ -287,17 +288,20 @@ describe("SettingsPage navigation guard", () => {
     ).toBeInTheDocument();
   });
 
-  it("offers the Host section with runtime info split out of General", async () => {
+  it("offers the Host section with process controls and runtime info", async () => {
     const user = userEvent.setup();
     render(<SettingsPage initialSection="general" />);
 
-    expect(screen.getByText("Auto-restart Pi Host")).toBeInTheDocument();
+    expect(screen.getByText("System notifications")).toBeInTheDocument();
+    expect(screen.queryByText("Auto-restart Pi Host")).not.toBeInTheDocument();
     expect(screen.queryByText("Capabilities")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Host" }));
     expect(
       screen.getByRole("heading", { name: "Pi Host runtime, capabilities, and app info" }),
     ).toBeInTheDocument();
+    expect(screen.getByText("Auto-restart Pi Host")).toBeInTheDocument();
+    expect(screen.getByText("Shared Host process")).toBeInTheDocument();
     expect(screen.getByText("Capabilities")).toBeInTheDocument();
     expect(screen.getByText("Host not connected.")).toBeInTheDocument();
   });
