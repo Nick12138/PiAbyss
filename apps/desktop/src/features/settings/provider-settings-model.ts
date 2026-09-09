@@ -68,7 +68,7 @@ export function emptyProviderDraft(): ProviderDraftState {
     baseUrl: "",
     modelsUrl: "",
     api: "openai-completions",
-    headers: { "User-Agent": "PiAbyss/0.1" },
+    headers: { "User-Agent": "PiAbyss/0.3.0" },
     compat: {
       supportsDeveloperRole: null,
       supportsReasoningEffort: null,
