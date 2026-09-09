@@ -115,7 +115,7 @@ describe("providerDraftForSave", () => {
     baseUrl: "https://relay.example/v1",
     modelsUrl: "",
     api: "openai-completions" as const,
-    headers: { "User-Agent": "PiAbyss/0.3.0" },
+    headers: { "User-Agent": "PiAbyss/0.3.1" },
     compat: {
       supportsDeveloperRole: null,
       supportsReasoningEffort: null,
@@ -130,7 +130,7 @@ describe("providerDraftForSave", () => {
       baseUrl: "https://relay.example/v1",
       api: "openai-completions",
       authHeader: true,
-      headers: { "User-Agent": "PiAbyss/0.3.0" },
+      headers: { "User-Agent": "PiAbyss/0.3.1" },
       models: [],
     });
   });

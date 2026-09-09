@@ -825,7 +825,7 @@ function classifyConnectionFailure(
     category = "blocked";
     suggestion =
       provider.api === "anthropic-messages" && !hasHeader(provider.headers, "user-agent")
-        ? "This relay may block the Anthropic SDK fingerprint. Set User-Agent to PiAbyss/0.3.0 and retry."
+        ? "This relay may block the Anthropic SDK fingerprint. Set User-Agent to PiAbyss/0.3.1 and retry."
         : "The relay or its WAF rejected the request. Check IP policy, headers, and User-Agent rules.";
   } else if (/\b429\b|rate.?limit|too many requests|quota/.test(lower)) {
     category = "rate_limit";

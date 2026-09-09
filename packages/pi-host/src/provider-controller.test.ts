@@ -1281,7 +1281,7 @@ describe("Provider controller", () => {
         url: request.url ?? "",
         ...(userAgent ? { userAgent } : {}),
       });
-      if (userAgent === "PiAbyss/0.3.0") {
+      if (userAgent === "PiAbyss/0.3.1") {
         response.writeHead(200, { "Content-Type": "text/event-stream" });
         response.end(
           [
@@ -1365,7 +1365,7 @@ describe("Provider controller", () => {
           baseUrl: `http://127.0.0.1:${address.port}`,
           api: "anthropic-messages",
           authHeader: false,
-          headers: { "User-Agent": "PiAbyss/0.3.0" },
+          headers: { "User-Agent": "PiAbyss/0.3.1" },
           models: [{ id: "relay-model" }],
         },
       },
@@ -1377,7 +1377,7 @@ describe("Provider controller", () => {
     } as never);
 
     expect("error" in compatibleOutcome ? compatibleOutcome.error.message : null).toBeNull();
-    expect(requests[1]).toEqual({ url: "/v1/messages", userAgent: "PiAbyss/0.3.0" });
+    expect(requests[1]).toEqual({ url: "/v1/messages", userAgent: "PiAbyss/0.3.1" });
     if (!("error" in compatibleOutcome)) {
       expect(compatibleOutcome.result).toEqual(
         expect.objectContaining({
@@ -1420,7 +1420,7 @@ describe("Provider controller", () => {
           baseUrl: `http://127.0.0.1:${address.port}`,
           api: "anthropic-messages",
           authHeader: false,
-          headers: { "User-Agent": "PiAbyss/0.3.0" },
+          headers: { "User-Agent": "PiAbyss/0.3.1" },
           models: [{ id: "relay-model" }],
         },
       },
@@ -1484,7 +1484,7 @@ describe("Provider controller", () => {
           baseUrl: `http://127.0.0.1:${address.port}`,
           api: "anthropic-messages",
           authHeader: false,
-          headers: { "User-Agent": "PiAbyss/0.3.0" },
+          headers: { "User-Agent": "PiAbyss/0.3.1" },
           models: [{ id: "relay-model" }],
         },
       },
@@ -1563,7 +1563,7 @@ describe("Provider controller", () => {
       baseUrl: `http://127.0.0.1:${address.port}/v1`,
       api: "openai-completions",
       authHeader: true,
-      headers: { "User-Agent": "PiAbyss/0.3.0" },
+      headers: { "User-Agent": "PiAbyss/0.3.1" },
       models: [{ id: "relay-model", reasoning: true }],
     };
     const automatic = await setup({ providers: { custom: providerConfig } });
