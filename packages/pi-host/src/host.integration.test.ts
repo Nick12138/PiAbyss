@@ -176,8 +176,9 @@ describe("Pi Host integration", () => {
     agentDir = t.agentDir;
     projectDir = t.projectDir;
     host = new HostProcess(agentDir);
-    await host.waitForEvent("host.ready");
-  }, 30_000);
+    // tsx 冷编译 + 全仓并行测试时 host 启动可能远超 15s，给足预算
+    await host.waitForEvent("host.ready", 45_000);
+  }, 60_000);
 
   afterAll(async () => {
     await host.kill();
@@ -322,7 +323,7 @@ describe("Pi Host integration", () => {
     });
 
     try {
-      await uiHost.waitForEvent("host.ready", 30_000);
+      await uiHost.waitForEvent("host.ready", 45_000);
       const hello = await uiHost.request(
         "system.hello",
         {},
@@ -460,7 +461,7 @@ describe("Pi Host transport lifecycle", () => {
     const t = createTempAgent();
     const eofHost = new HostProcess(t.agentDir);
     try {
-      await eofHost.waitForEvent("host.ready");
+      await eofHost.waitForEvent("host.ready", 45_000);
 
       const exited = new Promise<number | null>((resolve) => {
         eofHost.proc.once("exit", (code) => resolve(code));
@@ -478,5 +479,5 @@ describe("Pi Host transport lifecycle", () => {
       await eofHost.kill();
       rmSync(t.root, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 75_000);
 });

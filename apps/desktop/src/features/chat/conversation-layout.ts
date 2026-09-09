@@ -17,7 +17,7 @@ export function resolveConversationMinWidth(value: number | undefined): number {
     value,
     DEFAULT_CONVERSATION_MIN_WIDTH,
     HARD_MIN_CONVERSATION_WIDTH,
-    DEFAULT_CONVERSATION_MAX_WIDTH,
+    HARD_MAX_CONVERSATION_WIDTH,
   );
 }
 

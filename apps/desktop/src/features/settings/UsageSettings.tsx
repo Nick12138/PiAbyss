@@ -538,7 +538,10 @@ export function UsageSettings() {
             >
               {t(
                 `usageRange${option === "today" ? "Today" : option === "7d" ? "SevenDays" : option === "30d" ? "ThirtyDays" : "All"}` as
-                  "usageRangeToday" | "usageRangeSevenDays" | "usageRangeThirtyDays" | "usageRangeAll",
+                  | "usageRangeToday"
+                  | "usageRangeSevenDays"
+                  | "usageRangeThirtyDays"
+                  | "usageRangeAll",
               )}
             </button>
           ))}
