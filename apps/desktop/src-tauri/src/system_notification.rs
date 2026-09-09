@@ -98,7 +98,8 @@ fn dev_build_exe_dir() -> Option<bool> {
 
 #[cfg(all(test, windows))]
 mod tests {
-    use super::*;
+    // NOTE: no `use super::*` — every reference below is fully qualified;
+    // a glob import here trips `clippy -D warnings` (unused_imports).
 
     /// Manual self-check: `cargo test --lib system_notify_self_check -- --ignored`.
     /// Shows a real toast under the PowerShell AUMID (dev fallback path) and
