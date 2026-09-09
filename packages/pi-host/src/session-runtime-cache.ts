@@ -26,6 +26,14 @@ import type { BackgroundSessionRuntime, WorkspaceGraph } from "./workspace-graph
 
 export const SESSION_DISPOSAL_STEP_TIMEOUT_MS = 15_000;
 
+/**
+ * Agent session events the desktop's system-notification tracker needs to
+ * classify a run's outcome. These are the ONLY agent events relayed for
+ * background sessions of the foreground graph (see handleAgentEvent);
+ * everything else stays active-session-only.
+ */
+const TERMINAL_AGENT_EVENT_TYPES = new Set(["agent_end", "error"]);
+
 function integerFromEnv(name: string, fallback: number, min: number, max: number): number {
   const value = Number.parseInt(process.env[name] ?? "", 10);
   return Number.isInteger(value) && value >= min && value <= max ? value : fallback;
@@ -726,6 +734,15 @@ export class SessionRuntimeCache {
     this.observeRuntimeOutcome(sourceSession, eventType, serialized);
     if (isGraphActive && active) {
       server.emitForIdentity(eventIdentity, "agent.event", { runId, event: serialized });
+    } else if (isGraphActive && background && TERMINAL_AGENT_EVENT_TYPES.has(eventType)) {
+      // Foreground graph's background sessions: stream only terminal signals
+      // (agent_end / error). The desktop's notification tracker classifies
+      // completions from agent events, and the cross-workspace activity seam
+      // suppresses everything owned by the ACTIVE workspace on the assumption
+      // that the event stream delivered it — true only for the active session
+      // unless terminal events are also emitted here. Per-token events
+      // (message_update, …) stay active-session-only to protect bandwidth.
+      server.emitForBoundIdentity(eventIdentity, "agent.event", { runId, event: serialized });
     }
     this.publishRuntimeState(sourceSession, eventIdentity, eventType, serialized);
 

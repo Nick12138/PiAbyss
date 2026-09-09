@@ -367,6 +367,81 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
     });
   });
 
+  it("relays terminal agent events for a background session of the foreground graph", () => {
+    // The desktop's notification tracker classifies completions from
+    // agent.event; the cross-workspace activity seam suppresses everything
+    // owned by the ACTIVE workspace. Without this relay a background
+    // session's completion would notify nowhere.
+    const events: Array<{ event: HostEventName; identity: HostIdentity; payload: unknown }> = [];
+    const identity: HostIdentity = {
+      hostInstanceId: HOST_ID,
+      workspaceId: WORKSPACE_ID,
+      workspaceRevision: 1,
+      sessionId: ACTIVE_SESSION_ID,
+      sessionRevision: 5,
+      packageRevision: 1,
+    };
+    const server = {
+      getIdentity: () => identity,
+      emitForIdentity: vi.fn(),
+      emitForBoundIdentity: vi.fn(
+        (eventIdentity: HostIdentity, event: HostEventName, payload: unknown) => {
+          events.push({ identity: eventIdentity, event, payload });
+        },
+      ),
+      getPhase: vi.fn(() => "ready"),
+      setPhase: vi.fn(),
+    } as unknown as PiHostServer;
+    const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
+    factory.bindServer(server);
+
+    const activeSession = fakeSession(true);
+    const backgroundSession = fakeSession(false);
+    const background = {
+      sessionId: BACKGROUND_SESSION_ID,
+      sessionRevision: 3,
+      agentSession: backgroundSession,
+      sessionManager: {},
+      sessionSnapshot: fakeSessionSnapshot(BACKGROUND_SESSION_ID, 3, false),
+      toolRevision: 1,
+    } as unknown as BackgroundSessionRuntime;
+    const graph = {
+      workspaceId: WORKSPACE_ID,
+      canonicalCwd: "C:/workspace",
+      agentSession: activeSession,
+      backgroundSessions: new Map([[BACKGROUND_SESSION_ID, background]]),
+    } as unknown as WorkspaceGraph;
+    Reflect.set(factory, "graph", graph);
+
+    const internal = factory as unknown as {
+      handleAgentEvent: (graph: WorkspaceGraph, session: AgentSession, event: unknown) => void;
+    };
+    internal.handleAgentEvent(graph, backgroundSession, {
+      type: "agent_end",
+      messages: [],
+    });
+
+    const relayed = events.find((entry) => entry.event === "agent.event");
+    expect(relayed).toMatchObject({
+      event: "agent.event",
+      identity: {
+        workspaceId: WORKSPACE_ID,
+        workspaceRevision: 1,
+        sessionId: BACKGROUND_SESSION_ID,
+        sessionRevision: 3,
+      },
+      payload: { event: { type: "agent_end" } },
+    });
+
+    // Per-token events stay background-silent (bandwidth protection).
+    events.length = 0;
+    internal.handleAgentEvent(graph, backgroundSession, {
+      type: "message_update",
+      assistantMessageEvent: { type: "start" },
+    });
+    expect(events.find((entry) => entry.event === "agent.event")).toBeUndefined();
+  });
+
   it("keeps active snapshots running at agent_end and idle at agent_settled", () => {
     const events: Array<{ event: HostEventName; payload: unknown }> = [];
     const identity: HostIdentity = {

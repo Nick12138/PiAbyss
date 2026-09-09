@@ -13,7 +13,9 @@ const notifyMocks = vi.hoisted(() => {
     permission: "granted" as "granted" | "denied",
     permissionGate: null as Promise<void> | null,
     onActionShouldReject: false,
+    listenShouldReject: false,
     actionHandler: null as ((notification: { extra?: unknown }) => void) | null,
+    clickHandler: null as ((event: { payload: unknown }) => void) | null,
     invoke: vi.fn(async () => undefined),
   };
   return state;
@@ -29,6 +31,15 @@ vi.mock("@tauri-apps/plugin-notification", () => ({
     if (notifyMocks.onActionShouldReject) throw new Error("no action listener");
     notifyMocks.actionHandler = handler;
     return { unregister: async () => {} };
+  }),
+}));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async (_name: string, handler: (event: { payload: unknown }) => void) => {
+    if (notifyMocks.listenShouldReject) throw new Error("no event listener");
+    notifyMocks.clickHandler = handler;
+    return async () => {
+      notifyMocks.clickHandler = null;
+    };
   }),
 }));
 vi.mock("@tauri-apps/api/core", () => ({
@@ -239,7 +250,9 @@ describe("SystemNotificationController", () => {
     notifyMocks.permission = "granted";
     notifyMocks.permissionGate = null;
     notifyMocks.onActionShouldReject = false;
+    notifyMocks.listenShouldReject = false;
     notifyMocks.actionHandler = null;
+    notifyMocks.clickHandler = null;
     attentionState = "background";
     controller = makeController();
   });
@@ -251,15 +264,11 @@ describe("SystemNotificationController", () => {
   it("delivers a background completion through the OS command", async () => {
     controller.observe(agentEndEvent("run-1"));
     await vi.waitFor(() => expect(notifyMocks.invoke).toHaveBeenCalled());
-    expect(notifyMocks.invoke).toHaveBeenCalledWith(
-      "plugin:notification|notify",
-      expect.objectContaining({
-        options: expect.objectContaining({
-          title: "PiAbyss",
-          extra: { kind: "response-ready", target },
-        }),
-      }),
-    );
+    expect(notifyMocks.invoke).toHaveBeenCalledWith("system_notify", {
+      title: "PiAbyss",
+      body: "A response is ready",
+      extra: { kind: "response-ready", target },
+    });
   });
 
   it("suppresses candidates while the window is in the foreground", async () => {
@@ -299,6 +308,23 @@ describe("SystemNotificationController", () => {
     expect(requestPermission).toHaveBeenCalledTimes(1);
   });
 
+  it("resumes delivery once the OS-level permission is granted again", async () => {
+    notifyMocks.permission = "denied";
+    controller.observe(agentEndEvent("run-denied-once"));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(notifyMocks.invoke).not.toHaveBeenCalled();
+
+    // The user re-enables notifications system-wide; no restart required.
+    notifyMocks.permission = "granted";
+    controller.observe(agentEndEvent("run-after-grant"));
+    await vi.waitFor(() =>
+      expect(notifyMocks.invoke).toHaveBeenCalledWith(
+        "system_notify",
+        expect.objectContaining({ extra: { kind: "response-ready", target } }),
+      ),
+    );
+  });
+
   it("drops a queued alert when focus returns before permission settles", async () => {
     const gate: { release?: () => void } = {};
     notifyMocks.permissionGate = new Promise<void>((resolve) => {
@@ -327,24 +353,31 @@ describe("SystemNotificationController", () => {
     await vi.waitFor(() => expect(openTarget).toHaveBeenCalledWith(target));
   });
 
+  it("routes the Windows click event payload to openTarget", async () => {
+    await controller.start();
+    expect(notifyMocks.clickHandler).toBeTypeOf("function");
+    notifyMocks.clickHandler!({ payload: { kind: "session-failed", target } });
+    await vi.waitFor(() => expect(openTarget).toHaveBeenCalledWith(target));
+  });
+
   it("ignores click payloads that fail validation", async () => {
     await controller.start();
     notifyMocks.actionHandler!({ extra: { kind: "bogus" } });
     notifyMocks.actionHandler!({ extra: { kind: "response-ready", target: { workspaceId: 7 } } });
+    notifyMocks.clickHandler!({ payload: { kind: "response-ready", target: { archived: "yes" } } });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(openTarget).not.toHaveBeenCalled();
   });
 
-  it("still delivers when the action listener cannot register", async () => {
+  it("still delivers when the click listeners cannot register", async () => {
+    notifyMocks.listenShouldReject = true;
     notifyMocks.onActionShouldReject = true;
     await controller.start();
     controller.observe(agentEndEvent("run-no-listener"));
     await vi.waitFor(() => expect(notifyMocks.invoke).toHaveBeenCalled());
     expect(notifyMocks.invoke).toHaveBeenCalledWith(
-      "plugin:notification|notify",
-      expect.objectContaining({
-        options: expect.objectContaining({ extra: { kind: "response-ready", target } }),
-      }),
+      "system_notify",
+      expect.objectContaining({ extra: { kind: "response-ready", target } }),
     );
   });
 });

@@ -9,6 +9,7 @@ mod pi_host;
 mod pi_host_tests;
 mod shell_terminal;
 mod system_autostart;
+mod system_notification;
 mod system_tray;
 
 use desktop_settings::DesktopSettingsStore;
@@ -189,6 +190,7 @@ pub fn run() {
             commands::pi_host_activity,
             commands::pi_host_acknowledge_terminal,
             commands::pi_host_bootstrap_telegram,
+            system_notification::system_notify,
             commands::shell_terminal_create,
             commands::shell_terminal_profiles,
             commands::shell_terminal_write,

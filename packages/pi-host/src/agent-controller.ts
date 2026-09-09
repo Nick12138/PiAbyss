@@ -234,20 +234,47 @@ function startDetachedPrompt(args: {
         // identity instead; fall back to the captured one when no bound graph
         // owns the session (disposed mid-run).
         const identity = args.factory.currentSessionIdentity(args.session) ?? runIdentity;
-        args.server.emitForBoundIdentity(identity, "agent.event", {
-          runId,
-          event: {
-            type: "error",
-            message,
-          },
-        });
-        args.server.emitForBoundIdentity(identity, "session.runtimeChanged", {
-          sessionId: identity.sessionId!,
-          sessionRevision: identity.sessionRevision,
-          state: "error",
-          updatedAt: Date.now(),
-          error: message,
-        });
+        // agent.event is validated by the desktop against the FOREGROUND
+        // workspace identity: an error emitted under a parked graph's bound
+        // identity is dropped as an identity mismatch and tears the whole
+        // renderer epoch down (recovery churn). Parked failures therefore
+        // signal through session.runtimeChanged alone — the desktop's
+        // parked-event bypass accepts it and the cross-workspace activity
+        // snapshot turns it into a terminal marker + system notification.
+        const currentIdentity = args.server.getIdentity();
+        const isForegroundIdentity =
+          identity.workspaceId !== null &&
+          identity.workspaceId === currentIdentity.workspaceId &&
+          identity.workspaceRevision === currentIdentity.workspaceRevision;
+        if (isForegroundIdentity) {
+          try {
+            args.server.emitForBoundIdentity(identity, "agent.event", {
+              runId,
+              event: {
+                type: "error",
+                message,
+              },
+            });
+          } catch {
+            // Identity lapsed between the check and the emit (mid-run unbind).
+            // The runtime event below still carries the failure.
+          }
+        }
+        try {
+          args.server.emitForBoundIdentity(identity, "session.runtimeChanged", {
+            sessionId: identity.sessionId!,
+            sessionRevision: identity.sessionRevision,
+            state: "error",
+            updatedAt: Date.now(),
+            error: message,
+          });
+        } catch {
+          // No bound graph owns the session any more (disposed mid-run): the
+          // pool's busy bookkeeping is cleared by cleanup() below; nothing
+          // further can attribute this failure. Never let the throw escape
+          // the catch block — it would skip cleanup() bookkeeping and reject
+          // the detached task with an unhandled rejection.
+        }
       } finally {
         cleanup(completed);
       }

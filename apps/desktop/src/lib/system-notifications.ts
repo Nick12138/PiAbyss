@@ -192,9 +192,13 @@ function isNotificationPayload(value: unknown): value is NotificationPayload {
     (extraTarget.workspaceId === null || typeof extraTarget.workspaceId === "string") &&
     (extraTarget.workspaceRevision === undefined ||
       typeof extraTarget.workspaceRevision === "number") &&
+    (extraTarget.workspacePath === undefined || typeof extraTarget.workspacePath === "string") &&
     (extraTarget.sessionId === undefined || typeof extraTarget.sessionId === "string") &&
     (extraTarget.sessionPath === undefined || typeof extraTarget.sessionPath === "string") &&
-    (extraTarget.sessionName === undefined || typeof extraTarget.sessionName === "string")
+    (extraTarget.sessionRevision === undefined ||
+      typeof extraTarget.sessionRevision === "number") &&
+    (extraTarget.sessionName === undefined || typeof extraTarget.sessionName === "string") &&
+    (extraTarget.archived === undefined || typeof extraTarget.archived === "boolean")
   );
 }
 
@@ -204,6 +208,9 @@ export type SystemNotificationControllerOptions = {
   targetForSession: (sessionId: string, envelope: HostEventEnvelope) => SystemNotificationTarget;
   openTarget: (target: SystemNotificationTarget) => Promise<void>;
 };
+
+/** Emitted by the Rust `system_notify` command when a Windows toast is clicked. */
+const SYSTEM_NOTIFICATION_CLICK_EVENT = "system-notification-click";
 
 export class SystemNotificationController {
   private readonly tracker = new SystemNotificationTracker();
@@ -219,25 +226,56 @@ export class SystemNotificationController {
 
   async start(): Promise<void> {
     if (!isTauri() || this.disposed) return;
+    const disposers: Array<() => void> = [];
+    // Primary click path (Windows): the custom system_notify toast wires the
+    // WinRT Activated callback to this event, carrying the notification's
+    // extra payload. The stock desktop plugin backend never emits action
+    // events (actionPerformed is mobile-only), so without this listener a
+    // toast click would just dismiss the toast.
+    try {
+      const { listen } = await import("@tauri-apps/api/event");
+      const unlisten = await listen<unknown>(SYSTEM_NOTIFICATION_CLICK_EVENT, (event) => {
+        this.routeClick(event.payload);
+      });
+      if (this.disposed) {
+        unlisten();
+      } else {
+        disposers.push(unlisten);
+      }
+    } catch {
+      // A missing event listener degrades to click-to-dismiss only; delivery
+      // is unaffected.
+    }
+    // Fallback click path: the plugin's onAction is dormant on current
+    // desktop backends but lights up if a future release surfaces action
+    // events. Missing click support must never disable notification delivery.
     try {
       const api = await import("@tauri-apps/plugin-notification");
       const listener = await api.onAction((notification) => {
-        const extra = notification.extra;
-        if (!isNotificationPayload(extra)) return;
-        if (this.disposed) return;
-        void this.options
-          .openTarget(extra.target ?? { workspaceId: null, workspaceRevision: undefined })
-          .catch(() => undefined);
+        this.routeClick(notification.extra);
       });
       if (this.disposed) {
         void listener.unregister().catch(() => undefined);
-        return;
+      } else {
+        disposers.push(() => void listener.unregister().catch(() => undefined));
       }
-      this.actionDisposer = () => void listener.unregister().catch(() => undefined);
     } catch {
-      // The desktop plugin can send notifications without implementing action
-      // listeners. Missing click support must never disable notification delivery.
+      // See above: click support is best-effort.
     }
+    if (disposers.length > 0) {
+      this.actionDisposer = () => {
+        for (const dispose of disposers) dispose();
+      };
+    }
+  }
+
+  /** Validates and routes one click payload (extra: { kind, target }). */
+  private routeClick(payload: unknown): void {
+    if (!isNotificationPayload(payload)) return;
+    if (this.disposed) return;
+    void this.options
+      .openTarget(payload.target ?? { workspaceId: null, workspaceRevision: undefined })
+      .catch(() => undefined);
   }
 
   dispose(): void {
@@ -268,25 +306,27 @@ export class SystemNotificationController {
    */
   deliver(candidate: SystemNotificationCandidate): void {
     if (this.disposed || !isTauri()) return;
-    if (!this.options.enabled() || this.permissionDenied) return;
+    if (!this.options.enabled()) return;
     this.sendQueue = this.sendQueue.then(() => this.send(candidate));
   }
 
   private async send(candidate: SystemNotificationCandidate): Promise<void> {
-    if (
-      this.disposed ||
-      this.permissionDenied ||
-      this.options.attention() !== "background" ||
-      !this.options.enabled()
-    )
+    if (this.disposed || this.options.attention() !== "background" || !this.options.enabled())
       return;
     try {
       const api = await import("@tauri-apps/plugin-notification");
       let granted = await api.isPermissionGranted();
       if (!granted) {
+        // A hard denial must not turn every later alert into another
+        // permission prompt, but the sticky flag must also not outlive the OS
+        // setting: when the user re-enables notifications system-wide,
+        // isPermissionGranted flips to granted and clears the flag here.
+        if (this.permissionDenied) return;
         const permission = await api.requestPermission();
         granted = permission === "granted";
         this.permissionDenied = permission === "denied";
+      } else {
+        this.permissionDenied = false;
       }
       // Permission checks may finish after focus changes or the controller is
       // disposed. Do not deliver a queued background alert in that case.
@@ -294,18 +334,19 @@ export class SystemNotificationController {
         return;
       if (!granted) return;
       const copy = systemNotificationCopy(candidate.kind, candidate.target?.sessionName);
-      // The JS sendNotification facade returns void. Await the desktop command
-      // so command failures settle this queue instead of escaping it. The OS
-      // may still suppress a notification after the command has accepted it.
-      await invoke("plugin:notification|notify", {
-        options: {
-          title: copy.title,
-          body: copy.body,
-          autoCancel: true,
-          extra: {
-            kind: candidate.kind,
-            ...(candidate.target ? { target: candidate.target } : {}),
-          },
+      // The desktop plugin's notify command drops the extra payload (and with
+      // it any chance of click routing), so delivery goes through the app's
+      // own command: on Windows it shows a WinRT toast whose Activated
+      // callback emits system-notification-click with `extra`; other desktop
+      // platforms fall back to the plugin's builder internally. The command
+      // may still be accepted by the OS while the toast is later suppressed
+      // by Focus Assist / Do Not Disturb — that part is not observable.
+      await invoke("system_notify", {
+        title: copy.title,
+        body: copy.body,
+        extra: {
+          kind: candidate.kind,
+          ...(candidate.target ? { target: candidate.target } : {}),
         },
       });
     } catch {

@@ -413,6 +413,81 @@ describe("agent.prompt startup", () => {
   });
 });
 
+describe("detached prompt failure attribution", () => {
+  function failingPromptFixture(currentIdentity: unknown) {
+    const gate = deferred();
+    gate.resolve();
+    const fixture = stableHandlerFixture(gate.promise);
+    vi.mocked(fixture.session.prompt).mockRejectedValue(new Error("run exploded"));
+    const emitForBoundIdentity = vi.fn();
+    (fixture.server as unknown as { emitForBoundIdentity: unknown }).emitForBoundIdentity =
+      emitForBoundIdentity;
+    (fixture.factory as unknown as { currentSessionIdentity: unknown }).currentSessionIdentity =
+      () => currentIdentity;
+    return { fixture, emitForBoundIdentity };
+  }
+
+  it("emits agent.event when the owning graph is the foreground one", async () => {
+    const { fixture, emitForBoundIdentity } = failingPromptFixture(null);
+    (fixture.factory as unknown as { currentSessionIdentity: unknown }).currentSessionIdentity =
+      () => fixture.server.getIdentity();
+    const handler = createAgentHandlers(fixture.factory)["agent.prompt"]!;
+
+    await handler({
+      id: "prompt-foreground-failure",
+      context: {},
+      params: { text: "fail in the foreground" },
+    } as never);
+
+    await vi.waitFor(() =>
+      expect(emitForBoundIdentity).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceId: "22222222-2222-4222-8222-222222222222" }),
+        "agent.event",
+        expect.objectContaining({ event: { type: "error", message: "run exploded" } }),
+      ),
+    );
+    expect(emitForBoundIdentity).toHaveBeenCalledWith(
+      expect.anything(),
+      "session.runtimeChanged",
+      expect.objectContaining({ state: "error" }),
+    );
+  });
+
+  it("skips agent.event for a parked identity but still signals the runtime error", async () => {
+    const { fixture, emitForBoundIdentity } = failingPromptFixture({
+      hostInstanceId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "44444444-4444-4444-8444-444444444444",
+      workspaceRevision: 7,
+      sessionId: "33333333-3333-4333-8333-333333333333",
+      sessionRevision: 1,
+      packageRevision: 1,
+    });
+    const handler = createAgentHandlers(fixture.factory)["agent.prompt"]!;
+
+    await handler({
+      id: "prompt-parked-failure",
+      context: {},
+      params: { text: "fail while parked" },
+    } as never);
+
+    // A parked identity never matches the desktop's active-workspace
+    // expectation for agent.event: emitting it would be dropped as an
+    // identity mismatch and tear the renderer epoch down.
+    await vi.waitFor(() =>
+      expect(emitForBoundIdentity).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceId: "44444444-4444-4444-8444-444444444444" }),
+        "session.runtimeChanged",
+        expect.objectContaining({ state: "error" }),
+      ),
+    );
+    expect(emitForBoundIdentity).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "agent.event",
+      expect.anything(),
+    );
+  });
+});
+
 describe("agent.prompt auth preflight", () => {
   function authFixture(checkAuth: ReturnType<typeof vi.fn>) {
     const fixture = stableHandlerFixture(Promise.resolve());
