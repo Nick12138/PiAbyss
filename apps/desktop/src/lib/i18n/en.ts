@@ -376,6 +376,7 @@ export const en = {
   usageRangeLabel: "Usage time range",
   usageRangeToday: "Today",
   usageRangeSevenDays: "7 days",
+  usageRangeThirtyDays: "30 days",
   usageRangeAll: "All time",
   usageTopModels: "Top models",
   usageTopModelsSubtitle: "Highest token volume by model",

@@ -86,6 +86,7 @@ function rangeStart(range: UsageRange, now = Date.now()): number | null {
   const date = new Date(now);
   date.setHours(0, 0, 0, 0);
   if (range === "7d") date.setDate(date.getDate() - 6);
+  if (range === "30d") date.setDate(date.getDate() - 29);
   return date.getTime();
 }
 

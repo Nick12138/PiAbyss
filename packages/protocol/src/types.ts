@@ -1180,7 +1180,7 @@ export type SessionStatsSnapshot = {
   sessionFile?: string;
 };
 
-export type UsageRange = "today" | "7d" | "all";
+export type UsageRange = "today" | "7d" | "30d" | "all";
 
 export type SessionUsageModelItem = {
   provider: string;

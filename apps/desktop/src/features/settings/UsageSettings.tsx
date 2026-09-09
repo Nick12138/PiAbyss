@@ -164,6 +164,7 @@ function rangeStart(range: UsageRange): number | null {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   if (range === "7d") start.setDate(start.getDate() - 6);
+  if (range === "30d") start.setDate(start.getDate() - 29);
   return start.getTime();
 }
 
@@ -523,7 +524,7 @@ export function UsageSettings() {
           role="group"
           aria-label={t("usageRangeLabel")}
         >
-          {(["today", "7d", "all"] as const).map((option) => (
+          {(["today", "7d", "30d", "all"] as const).map((option) => (
             <button
               key={option}
               type="button"
@@ -536,8 +537,8 @@ export function UsageSettings() {
               }`}
             >
               {t(
-                `usageRange${option === "today" ? "Today" : option === "7d" ? "SevenDays" : "All"}` as
-                  "usageRangeToday" | "usageRangeSevenDays" | "usageRangeAll",
+                `usageRange${option === "today" ? "Today" : option === "7d" ? "SevenDays" : option === "30d" ? "ThirtyDays" : "All"}` as
+                  "usageRangeToday" | "usageRangeSevenDays" | "usageRangeThirtyDays" | "usageRangeAll",
               )}
             </button>
           ))}

@@ -355,6 +355,7 @@ export const zh: Record<MessageKey, string> = {
   usageRangeLabel: "用量时间范围",
   usageRangeToday: "今日",
   usageRangeSevenDays: "7日",
+  usageRangeThirtyDays: "30日",
   usageRangeAll: "全部",
   usageTopModels: "高用量模型",
   usageTopModelsSubtitle: "按 Token 用量排序的模型",
