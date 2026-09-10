@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { friendlyErrorHint, withFriendlyErrorHint } from "./error-hints";
+import { dedupeRequestIds, friendlyErrorHint, withFriendlyErrorHint } from "./error-hints";
 
 describe("friendlyErrorHint", () => {
   it("flags 402 as channel out of balance", () => {
@@ -84,5 +84,11 @@ describe("withFriendlyErrorHint", () => {
   it("keeps distinct request ids", () => {
     const raw = "boom (request id: aaa) (request id: bbb)";
     expect(withFriendlyErrorHint(raw)).toBe("boom (request id: aaa) (request id: bbb)");
+  });
+
+  it("dedupeRequestIds collapses runs of identical ids", () => {
+    expect(dedupeRequestIds("x (request id: a) (request id: a) (request id: a)")).toBe(
+      "x (request id: a)",
+    );
   });
 });
