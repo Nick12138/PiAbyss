@@ -1744,6 +1744,15 @@ pub fn push_stderr_tail(logs: &mut Vec<String>, line: String, max: usize) {
     }
 }
 
+/// Joins the newest `max` stderr lines (oldest-first) for error reporting.
+/// The exit cause lives at the END of the ring; joining the whole buffer and
+/// then truncating from the head surfaces stale startup noise instead.
+pub fn stderr_tail_joined(logs: &[String], max: usize) -> String {
+    let mut tail: Vec<String> = logs.iter().rev().take(max).cloned().collect();
+    tail.reverse();
+    tail.join(" | ")
+}
+
 /// Testable Host child session — process protocol used by PiHostManager.
 /// Unit tests drive this type directly (no Tauri AppHandle required).
 #[cfg(test)]
@@ -2731,7 +2740,7 @@ impl PiHostManager {
             StartWaitOutcome::TimedOut => {
                 let tail = {
                     let logs = self.last_stderr.lock().await;
-                    logs.join(" | ")
+                    stderr_tail_joined(&logs, 8)
                 };
                 self.cleanup_dead_child().await;
                 Err(format!(
@@ -2788,7 +2797,7 @@ impl PiHostManager {
                     if logs.is_empty() {
                         "(empty — run pnpm build and check packages/pi-host/dist)".to_string()
                     } else {
-                        logs.join(" | ")
+                        stderr_tail_joined(&logs, 8)
                     }
                 };
                 return Err(format!("Pi Host exited ({status}). stderr: {detail}"));
@@ -2809,7 +2818,7 @@ impl PiHostManager {
                         if logs.is_empty() {
                             "(empty — run pnpm build and check packages/pi-host/dist)".to_string()
                         } else {
-                            logs.join(" | ")
+                            stderr_tail_joined(&logs, 8)
                         }
                     };
                     return Err(format!("Pi Host exited ({status}). stderr: {detail}"));
