@@ -640,6 +640,7 @@ export function App() {
     let unsub = () => {};
     let unsubTransportError = () => {};
     let cancelPendingAgentEvents = () => {};
+    let removeAgentEventVisibilityFlush = () => {};
     let cancelled = false;
     let unsubscribeMainFocus = () => {};
     let mainFocusKnown = false;
@@ -778,13 +779,28 @@ export function App() {
         }
 
         let agentEventFrame: number | null = null;
+        let agentEventTimer: number | null = null;
         let pendingAgentEvents: TimedAgentEventEnvelope[] = [];
 
-        const flushAgentEvents = () => {
+        // Streaming deltas must not depend on rAF alone: a throttled/occluded
+        // WebView stops firing animation frames while DOM paints keep working,
+        // which previously parked the whole live transcript until any
+        // non-delta event (stop / settle) forced a flush.
+        const AGENT_EVENT_FLUSH_FALLBACK_MS = 50;
+
+        const clearScheduledAgentFlush = () => {
           if (agentEventFrame !== null) {
             window.cancelAnimationFrame(agentEventFrame);
             agentEventFrame = null;
           }
+          if (agentEventTimer !== null) {
+            window.clearTimeout(agentEventTimer);
+            agentEventTimer = null;
+          }
+        };
+
+        const flushAgentEvents = () => {
+          clearScheduledAgentFlush();
           if (pendingAgentEvents.length === 0) return;
           const current = useAppStore.getState();
           const currentIdentity = current.host
@@ -802,17 +818,42 @@ export function App() {
                 matchesTimedAgentEventIdentity(event, currentIdentity),
               )
             : [];
+          const dropped = pendingAgentEvents.filter(
+            (event) => !currentIdentity || !matchesTimedAgentEventIdentity(event, currentIdentity),
+          );
           pendingAgentEvents = [];
+          if (dropped.length > 0) {
+            const activeSessionId = current.session?.sessionId ?? null;
+            const affectsActiveSession =
+              activeSessionId !== null &&
+              dropped.some((event) => event.sessionId === activeSessionId);
+            console.warn(
+              `[piabyss] dropped ${dropped.length} buffered agent event(s) on identity drift`,
+              dropped.map((event) => ({
+                sequence: event.sequence,
+                runId: event.payload.runId,
+                sessionId: event.sessionId,
+                sessionRevision: event.sessionRevision,
+                packageRevision: event.packageRevision,
+              })),
+            );
+            // Events carrying the ACTIVE session's id but a drifted identity
+            // mean the renderer's snapshot lags the Host stream (e.g. a
+            // package reload bumped packageRevision without a visible
+            // snapshot). Dropping them silently freezes the live transcript
+            // until the next full snapshot; recover instead.
+            if (affectsActiveSession) {
+              requestRecovery("agent event identity drift");
+              return;
+            }
+          }
           const currentSession = current.session;
           const nextSession = applyAgentEventBatch(currentSession, batch);
           if (nextSession) useAppStore.getState().applySessionSnapshot(nextSession);
         };
 
         const cancelAgentEvents = () => {
-          if (agentEventFrame !== null) {
-            window.cancelAnimationFrame(agentEventFrame);
-            agentEventFrame = null;
-          }
+          clearScheduledAgentFlush();
           pendingAgentEvents = [];
         };
         cancelPendingAgentEvents = cancelAgentEvents;
@@ -830,14 +871,25 @@ export function App() {
               payload: event.payload,
               receivedAt: Date.now(),
             });
-            if (agentEventFrame !== null) return;
+            if (agentEventFrame !== null || agentEventTimer !== null) return;
+            // Whichever fires first flushes and cancels the other.
             agentEventFrame = window.requestAnimationFrame(() => {
               agentEventFrame = null;
               flushAgentEvents();
             });
+            agentEventTimer = window.setTimeout(() => {
+              agentEventTimer = null;
+              flushAgentEvents();
+            }, AGENT_EVENT_FLUSH_FALLBACK_MS);
           },
           flush: flushAgentEvents,
         };
+        const flushAgentEventsOnVisible = () => {
+          if (!cancelled && document.visibilityState === "visible") flushAgentEvents();
+        };
+        document.addEventListener("visibilitychange", flushAgentEventsOnVisible);
+        removeAgentEventVisibilityFlush = () =>
+          document.removeEventListener("visibilitychange", flushAgentEventsOnVisible);
         const recoveryEvents = new RecoveryEventBuffer();
 
         let pendingRecoveryHostId: string | "bootstrap" | null = null;
@@ -1118,6 +1170,7 @@ export function App() {
     return () => {
       cancelled = true;
       cancelPendingAgentEvents();
+      removeAgentEventVisibilityFlush();
       unsub();
       unsubTransportError();
       document.removeEventListener("visibilitychange", onVisibilityChange);
