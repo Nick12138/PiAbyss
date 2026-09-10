@@ -1,10 +1,12 @@
 /**
  * Shared-host multi-workspace: events emitted by parked (bound but not
  * active) workspaces must reach the store without triggering recovery, and
- * their terminal markers must be keyed by the owning workspace.
+ * their terminal markers must be keyed by the owning workspace. Extension
+ * UI events (toasts / surface state) from parked workspaces and from
+ * background sessions of the active workspace follow the same rule.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { HostEventEnvelope, HostStatusSnapshot } from "@piabyss/protocol";
+import type { HostEventEnvelope, HostStatusSnapshot, SessionSnapshot } from "@piabyss/protocol";
 import { useAppStore } from "../lib/stores/app-store";
 import { handleHostEvent } from "./App";
 
@@ -80,6 +82,66 @@ function eventBuffer() {
   return { enqueue: vi.fn(), flush: vi.fn() };
 }
 
+/** Extension/package events a parked workspace's session can legitimately
+ *  emit through its retained Extension UI binding. */
+function uiEnvelope(
+  event:
+    | "extensionUi.notification"
+    | "package.diagnostic"
+    | "extensionUi.statusChanged"
+    | "extensionUi.widgetChanged"
+    | "extensionUi.widgetAttentionRequested"
+    | "extensionUi.messageRendered",
+  payload: Record<string, unknown>,
+  overrides: {
+    workspaceId?: string | null;
+    workspaceRevision?: number;
+    sessionId?: string | null;
+    sequence?: number;
+  } = {},
+): HostEventEnvelope {
+  return {
+    protocolVersion: 1,
+    event,
+    hostInstanceId: HOST_ID,
+    workspaceId: overrides.workspaceId ?? PARKED_WS_ID,
+    workspaceRevision: overrides.workspaceRevision ?? 3,
+    sessionId: overrides.sessionId ?? "s-bg",
+    sessionRevision: 1,
+    packageRevision: 0,
+    sequence: overrides.sequence ?? 1,
+    timestamp: Date.now(),
+    payload,
+  } as HostEventEnvelope;
+}
+
+function activeSessionSnapshot(sessionId: string): SessionSnapshot {
+  return {
+    sessionId,
+    cwd: "/p/active",
+    revision: 2,
+    isStreaming: false,
+    isIdle: true,
+    isCompacting: false,
+    isRetrying: false,
+    thinkingLevel: "off",
+    autoCompactionEnabled: false,
+    autoRetryEnabled: false,
+    steeringMode: "all",
+    followUpMode: "all",
+    pending: { revision: 0, steering: [], followUp: [] },
+    messages: [],
+    tools: {
+      revision: 1,
+      workspaceId: ACTIVE_WS_ID,
+      sessionId,
+      sessionRevision: 2,
+      tools: [],
+      active: [],
+    },
+  };
+}
+
 describe("App cross-workspace event handling", () => {
   let requestRecovery: ReturnType<typeof vi.fn>;
 
@@ -95,6 +157,7 @@ describe("App cross-workspace event handling", () => {
       sessionTerminalStates: {},
       boundWorkspaces: {},
       notifications: [],
+      transientNotifications: [],
       desynchronized: false,
       desyncReason: undefined,
       rehydrating: false,
@@ -291,5 +354,149 @@ describe("App cross-workspace event handling", () => {
       state: "done",
       acknowledged: false,
     });
+  });
+
+  it("accepts a parked workspace extensionUi.notification and surfaces the toast", () => {
+    const agentEvents = eventBuffer();
+    expect(
+      handleHostEvent(
+        uiEnvelope("extensionUi.notification", { message: "bg session done", level: "info" }),
+        requestRecovery,
+        agentEvents,
+      ),
+    ).toBe(true);
+    expect(requestRecovery).not.toHaveBeenCalled();
+    expect(useAppStore.getState().desynchronized).toBe(false);
+    expect(useAppStore.getState().transientNotifications.at(-1)).toMatchObject({
+      message: "bg session done",
+      level: "info",
+    });
+  });
+
+  it("accepts a parked workspace package.diagnostic and surfaces the toast", () => {
+    const agentEvents = eventBuffer();
+    expect(
+      handleHostEvent(
+        uiEnvelope("package.diagnostic", { severity: "warning", message: "ext degraded" }),
+        requestRecovery,
+        agentEvents,
+      ),
+    ).toBe(true);
+    expect(requestRecovery).not.toHaveBeenCalled();
+    expect(useAppStore.getState().desynchronized).toBe(false);
+    expect(useAppStore.getState().notifications.at(-1)).toMatchObject({
+      message: "ext degraded",
+      level: "warning",
+    });
+  });
+
+  it("accepts parked workspace extension UI surface events without applying them", () => {
+    useAppStore.getState().applySessionSnapshot(activeSessionSnapshot("s-active"));
+    const agentEvents = eventBuffer();
+    expect(
+      handleHostEvent(
+        uiEnvelope(
+          "extensionUi.statusChanged",
+          { key: "k", text: "parked status" },
+          {
+            sequence: 1,
+          },
+        ),
+        requestRecovery,
+        agentEvents,
+      ),
+    ).toBe(true);
+    expect(
+      handleHostEvent(
+        uiEnvelope(
+          "extensionUi.widgetChanged",
+          { key: "k", widget: { lines: ["x"] } },
+          {
+            sequence: 2,
+          },
+        ),
+        requestRecovery,
+        agentEvents,
+      ),
+    ).toBe(true);
+    expect(
+      handleHostEvent(
+        uiEnvelope(
+          "extensionUi.widgetAttentionRequested",
+          { key: "k", runId: "run-1", invocation: "brainstorm" },
+          { sequence: 3 },
+        ),
+        requestRecovery,
+        agentEvents,
+      ),
+    ).toBe(true);
+    expect(
+      handleHostEvent(
+        uiEnvelope(
+          "extensionUi.messageRendered",
+          { entryId: "custom-message-1", render: null },
+          { sequence: 4 },
+        ),
+        requestRecovery,
+        agentEvents,
+      ),
+    ).toBe(true);
+
+    expect(requestRecovery).not.toHaveBeenCalled();
+    const state = useAppStore.getState();
+    expect(state.desynchronized).toBe(false);
+    // Surface state belongs to the active session only; parked events no-op.
+    expect(state.extensionStatuses).toEqual({});
+    expect(state.extensionWidgets).toEqual({});
+    expect(state.session?.extensionMessageRenders).toBeUndefined();
+  });
+
+  it("still rejects extensionUi.notification from a workspace that is not bound", () => {
+    const agentEvents = eventBuffer();
+    expect(
+      handleHostEvent(
+        uiEnvelope(
+          "extensionUi.notification",
+          { message: "stray", level: "info" },
+          {
+            workspaceId: UNBOUND_WS_ID,
+          },
+        ),
+        requestRecovery,
+        agentEvents,
+      ),
+    ).toBe(false);
+    expect(requestRecovery).toHaveBeenCalledWith(
+      expect.stringContaining("identity mismatch for extensionUi.notification"),
+    );
+    expect(useAppStore.getState().desynchronized).toBe(true);
+  });
+
+  it("accepts a background session's messageRendered from the active workspace", () => {
+    useAppStore.getState().applySessionSnapshot(activeSessionSnapshot("s-active"));
+    const agentEvents = eventBuffer();
+    expect(
+      handleHostEvent(
+        uiEnvelope(
+          "extensionUi.messageRendered",
+          {
+            entryId: "custom-message-9",
+            render: {
+              version: 1,
+              collapsed: ["working"],
+              expanded: ["working", "details"],
+              messageIndex: 3,
+            },
+          },
+          { workspaceId: ACTIVE_WS_ID, workspaceRevision: 1, sessionId: "s-background" },
+        ),
+        requestRecovery,
+        agentEvents,
+      ),
+    ).toBe(true);
+    expect(requestRecovery).not.toHaveBeenCalled();
+    expect(useAppStore.getState().desynchronized).toBe(false);
+    // The render belongs to a different session — never applied to the active one.
+    expect(useAppStore.getState().session?.extensionMessageRenders).toBeUndefined();
   });
 });

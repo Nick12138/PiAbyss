@@ -40,6 +40,21 @@ export function beginHostEpoch(_prev: EpochState, status: HostStatusSnapshot): E
   };
 }
 
+/**
+ * Recovery-era epoch anchoring: adopt the freshly handshaken Host identity
+ * and reset the sequence watermark WITHOUT clearing the visible workspace/
+ * session/packages/tools snapshots. The renderer keeps painting the old —
+ * possibly briefly stale — state until completeRehydrate atomically replaces
+ * it, so a recovery pass never flashes an empty shell at the user.
+ */
+export function anchorHostEpoch(state: EpochState, host: HostStatusSnapshot): EpochState {
+  return {
+    ...state,
+    host,
+    lastSequence: 0,
+  };
+}
+
 export function clearWorkspaceEpoch(state: EpochState): EpochState {
   return {
     ...state,

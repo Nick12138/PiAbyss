@@ -18,6 +18,7 @@ import type {
 } from "@piabyss/protocol";
 import { stripAttachmentReferenceBlocks } from "@piabyss/protocol";
 import {
+  anchorHostEpoch as epochAnchorHost,
   applyPackageSnapshot as epochApplyPackages,
   applySessionSnapshot as epochApplySession,
   applyWorkspaceSnapshot as epochApplyWorkspace,
@@ -446,6 +447,13 @@ export type AppState = EpochState & {
   setProvidersDirty: (dirty: boolean) => void;
   /** New host epoch: clears workspace/session/packages/tools/extension UI. */
   beginHostEpoch: (host: HostStatusSnapshot) => void;
+  /**
+   * Recovery-era epoch anchor: adopts the handshaken Host identity and resets
+   * the sequence watermark while KEEPING the visible workspace/session/
+   * packages/tools snapshots. completeRehydrate replaces them atomically, so
+   * the UI never flashes an empty shell mid-recovery.
+   */
+  anchorHostEpochForRecovery: (host: HostStatusSnapshot) => void;
   setHost: (host: HostStatusSnapshot | null) => void;
   applyWorkspaceSnapshot: (ws: WorkspaceSnapshot) => void;
   clearWorkspaceEpoch: () => void;
@@ -717,6 +725,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSettingsNavCache: (settingsNavCache) => set({ settingsNavCache }),
   setAuthBlocked: (authBlocked) => set({ authBlocked }),
   setProvidersDirty: (dirty) => set({ providersDirty: dirty }),
+
+  anchorHostEpochForRecovery: (host) => {
+    set(epochAnchorHost(epochSlice(get()), host));
+  },
 
   beginHostEpoch: (host) => {
     const next = epochBeginHost(epochSlice(get()), host);

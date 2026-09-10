@@ -1249,6 +1249,41 @@ describe("app-store epoch wiring", () => {
     expect(useAppStore.getState().transientNotifications).toEqual([]);
   });
 
+  it("anchorHostEpochForRecovery keeps the visible epoch until rehydrate completes", () => {
+    const store = useAppStore.getState();
+    store.beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().applySessionSnapshot(session("s1"));
+    useAppStore.getState().markDesynchronized("sequence gap 3 -> 5");
+    expect(useAppStore.getState().lastSequence).toBe(0);
+
+    // The recovery loop anchors the fresh hello handshake: identity moves to
+    // the new Host and the sequence watermark resets, but nothing the user is
+    // looking at is torn down — an empty-shell repaint here is exactly the
+    // "global refresh" regression this action exists to prevent.
+    useAppStore.getState().anchorHostEpochForRecovery(host("h2"));
+
+    let next = useAppStore.getState();
+    expect(next.host?.hostInstanceId).toBe("h2");
+    expect(next.lastSequence).toBe(0);
+    expect(next.workspace?.id).toBe("w1");
+    expect(next.session?.sessionId).toBe("s1");
+    // The desync marker must hold until completeRehydrate — otherwise stray
+    // events landing mid-recovery would apply against the stale snapshot.
+    expect(next.desynchronized).toBe(true);
+
+    useAppStore.getState().completeRehydrate({
+      host: host("h2"),
+      workspace: workspace("w1", 1),
+      session: session("s2"),
+      lastSequence: 12,
+    });
+    next = useAppStore.getState();
+    expect(next.session?.sessionId).toBe("s2");
+    expect(next.lastSequence).toBe(12);
+    expect(next.desynchronized).toBe(false);
+  });
+
   it("keeps transient info/success notifications out of the history (toast only)", () => {
     useAppStore.getState().pushNotification("Agent 正忙，请等待当前运行结束后再试。");
     useAppStore.getState().pushNotification("Session exported", "success");

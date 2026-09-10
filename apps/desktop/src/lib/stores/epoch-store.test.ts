@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  anchorHostEpoch,
   applySessionSnapshot,
   applyWorkspaceSnapshot,
   beginHostEpoch,
   emptyEpoch,
   noteSequence,
+  type EpochState,
 } from "./epoch-store.js";
 import type { HostStatusSnapshot, SessionSnapshot, WorkspaceSnapshot } from "@piabyss/protocol";
 
@@ -85,6 +87,32 @@ describe("epoch-store", () => {
     });
     expect(s.session).toBeNull();
     expect(s.tools).toBeNull();
+  });
+
+  it("anchorHostEpoch keeps the visible epoch and only resets host/sequence", () => {
+    let s = beginHostEpoch(emptyEpoch(), host("h1"));
+    s = {
+      ...s,
+      workspace: { id: "w1" } as WorkspaceSnapshot,
+      session: { sessionId: "s1" } as SessionSnapshot,
+      packages: { workspaceId: "w1", revision: 4 } as unknown as EpochState["packages"],
+      tools: { revision: 2 } as unknown as EpochState["tools"],
+      desynchronized: true,
+      desyncReason: "sequence gap 7 -> 9",
+      lastSequence: 9,
+    };
+    s = anchorHostEpoch(s, host("h2"));
+    // Identity and sequence anchor move to the new Host...
+    expect(s.host?.hostInstanceId).toBe("h2");
+    expect(s.lastSequence).toBe(0);
+    // ...but the visible snapshots and the desync marker survive so the UI
+    // keeps painting the old state until completeRehydrate swaps it in.
+    expect(s.workspace?.id).toBe("w1");
+    expect(s.session?.sessionId).toBe("s1");
+    expect(s.packages).not.toBeNull();
+    expect(s.tools).not.toBeNull();
+    expect(s.desynchronized).toBe(true);
+    expect(s.desyncReason).toBe("sequence gap 7 -> 9");
   });
 
   it("sequence gap marks desynchronized and advances lastSequence", () => {

@@ -247,19 +247,47 @@ export function handleHostEvent(
   }
 
   const hostId = store.host?.hostInstanceId ?? hostClient.getHostInstanceId();
-  // Shared-host multi-workspace: parked (bound but not active) workspaces emit
-  // session-scoped events whose workspace identity never matches the active
-  // one. Such events are legitimate — route them into the store's per-
-  // workspace bookkeeping instead of tearing the epoch down for recovery.
-  const parkedWorkspaceEvent =
-    (event.event === "session.runtimeChanged" || event.event === "session.infoChanged") &&
+  const activeWorkspaceId = store.workspace?.id ?? null;
+  // Shared-host multi-workspace: parked (bound but not active) workspaces
+  // legitimately emit events whose workspace identity never matches the
+  // active one. A parked workspace's session bookkeeping events route into
+  // the store's per-workspace records, its user-facing toasts still surface,
+  // and its Extension UI surface events no-op against the active session —
+  // none of them may tear the renderer epoch down, which the recovery below
+  // repaints as the whole UI visibly refreshing.
+  const fromBoundParkedWorkspace =
     hostId !== null &&
     event.hostInstanceId === hostId &&
     event.workspaceId !== null &&
-    store.boundWorkspaces[event.workspaceId] !== undefined &&
-    event.workspaceId !== (store.workspace?.id ?? null);
+    event.workspaceId !== activeWorkspaceId &&
+    store.boundWorkspaces[event.workspaceId] !== undefined;
+  const parkedWorkspaceEvent =
+    (event.event === "session.runtimeChanged" || event.event === "session.infoChanged") &&
+    fromBoundParkedWorkspace;
+  const parkedToastEvent =
+    fromBoundParkedWorkspace &&
+    (event.event === "extensionUi.notification" || event.event === "package.diagnostic");
+  // Session-scoped Extension UI surface state is only ever applied to the
+  // active session (see the guards in the switch below), so surface events
+  // arriving for any other session — a parked workspace's session, or a
+  // background session of the active workspace, whose messageRendered
+  // carries the full session identity — are legitimate no-ops, never an
+  // identity mismatch worth desynchronizing over.
+  const foreignSessionSurfaceEvent =
+    hostId !== null &&
+    event.hostInstanceId === hostId &&
+    (event.event === "extensionUi.statusChanged" ||
+      event.event === "extensionUi.widgetChanged" ||
+      event.event === "extensionUi.widgetAttentionRequested" ||
+      event.event === "extensionUi.messageRendered") &&
+    (fromBoundParkedWorkspace ||
+      (event.workspaceId === activeWorkspaceId &&
+        event.sessionId !== null &&
+        event.sessionId !== (store.session?.sessionId ?? null)));
   if (
     !parkedWorkspaceEvent &&
+    !parkedToastEvent &&
+    !foreignSessionSurfaceEvent &&
     !lifecycleEvent &&
     !hostClient.shouldAcceptEvent(
       event,
@@ -283,7 +311,10 @@ export function handleHostEvent(
 
   switch (event.event) {
     case "host.ready": {
-      store.beginHostEpoch(event.payload);
+      // Anchor-only: wiping the visible epoch here would flash the empty
+      // shell whenever this event survives the interception path (e.g. a
+      // replayed/late ready after the recovery loop already grabbed it).
+      store.anchorHostEpochForRecovery(event.payload);
       store.setHostFatal(null);
       store.setConnecting(false);
       break;
@@ -927,7 +958,11 @@ export function App() {
                     throw new Error("Host generation changed during hello");
                   }
                   if (!status.workspaceId) sessionRestoreEligible = true;
-                  useAppStore.getState().beginHostEpoch(status);
+                  // Anchor the epoch WITHOUT clearing the visible workspace/
+                  // session snapshots — completeRehydrate swaps them in
+                  // atomically once the fresh snapshot lands, so a recovery
+                  // pass is invisible instead of flashing the empty shell.
+                  useAppStore.getState().anchorHostEpochForRecovery(status);
                   const configuredSettings = useAppStore.getState().desktopSettings;
                   const configuredWorkspace = fileWorkspaceForRecovery(
                     configuredSettings?.defaultWorkspace ?? configuredSettings?.lastWorkspace,
@@ -949,7 +984,7 @@ export function App() {
                     if (!selected.ok) {
                       throw new Error(selected.error.message);
                     }
-                    useAppStore.getState().setHost({
+                    useAppStore.getState().anchorHostEpochForRecovery({
                       ...status,
                       workspaceId: selected.workspaceId,
                       workspaceRevision: selected.workspaceRevision,
