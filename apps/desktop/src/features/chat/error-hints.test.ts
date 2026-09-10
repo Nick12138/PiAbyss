@@ -34,6 +34,13 @@ describe("friendlyErrorHint", () => {
     expect(friendlyErrorHint("Stream ended without finish_reason")).toContain("未正常结束");
   });
 
+  it("flags provider 'temporarily unavailable' messages", () => {
+    const raw =
+      "Service temporarily unavailable. Please try again later. (request id: 202609101319158213858053pa9MdSo) (request id: 202609101319158213858053pa9MdSo)";
+    const hint = friendlyErrorHint(raw);
+    expect(hint).toContain("服务商暂时不可用");
+  });
+
   it("leaves user-initiated aborts alone", () => {
     expect(friendlyErrorHint("Request was aborted")).toBeUndefined();
   });
@@ -64,5 +71,18 @@ describe("withFriendlyErrorHint", () => {
 
   it("returns unrecognized errors unchanged", () => {
     expect(withFriendlyErrorHint("unknown")).toBe("unknown");
+  });
+
+  it("collapses duplicated identical request ids", () => {
+    const raw =
+      "Service temporarily unavailable. Please try again later. (request id: abc123) (request id: abc123)";
+    expect(withFriendlyErrorHint(raw)).toBe(
+      "Service temporarily unavailable. Please try again later. (request id: abc123)\n\n💡 服务商暂时不可用（服务端过载/维护），稍后重试或切换渠道。",
+    );
+  });
+
+  it("keeps distinct request ids", () => {
+    const raw = "boom (request id: aaa) (request id: bbb)";
+    expect(withFriendlyErrorHint(raw)).toBe("boom (request id: aaa) (request id: bbb)");
   });
 });

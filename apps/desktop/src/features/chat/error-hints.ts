@@ -53,6 +53,10 @@ const MESSAGE_HINTS: ReadonlyArray<{ match: RegExp; hint: string }> = [
     match: /stream ended without finish_reason/i,
     hint: "💡 流式响应未正常结束（上游提前断开）。请重试；反复出现说明该渠道不稳定，建议切换渠道。",
   },
+  {
+    match: /service temporarily unavailable|temporarily unavailable/i,
+    hint: "💡 服务商暂时不可用（服务端过载/维护），稍后重试或切换渠道。",
+  },
 ];
 
 /**
@@ -85,10 +89,25 @@ export function friendlyErrorHint(errorMessage: string | null | undefined): stri
 }
 
 /**
- * Returns the original error text with the friendly hint appended on a new
- * paragraph, or the text unchanged when no hint applies.
+ * Collapse runs of identical "(request id: xxx)" suffixes to a single one.
+ * Some gateways append the same request id twice when wrapping the upstream
+ * error; genuinely different ids (distinct nodes on the chain) are kept.
+ */
+export function dedupeRequestIds(errorMessage: string): string {
+  return errorMessage.replace(/((?:\(\s*request id\s*:\s*[^)]*\)\s*)+)$/i, (block) => {
+    const ids = [...block.matchAll(/\(\s*request id\s*:\s*([^)]*)\)/gi)].map((m) => m[1].trim());
+    const unique = [...new Set(ids)];
+    return unique.map((id) => `(request id: ${id})`).join(" ");
+  });
+}
+
+/**
+ * Returns the original error text (with duplicated request-id suffixes
+ * collapsed) and the friendly hint appended on a new paragraph, or the text
+ * unchanged when no hint applies.
  */
 export function withFriendlyErrorHint(errorMessage: string): string {
-  const hint = friendlyErrorHint(errorMessage);
-  return hint ? `${errorMessage}\n\n${hint}` : errorMessage;
+  const deduped = dedupeRequestIds(errorMessage);
+  const hint = friendlyErrorHint(deduped);
+  return hint ? `${deduped}\n\n${hint}` : deduped;
 }
