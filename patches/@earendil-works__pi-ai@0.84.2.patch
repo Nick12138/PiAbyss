@@ -1,0 +1,16 @@
+diff --git a/dist/utils/retry.js b/dist/utils/retry.js
+index 65c7c9efd7667445b711fcd43549062ee3eb5ecf..e9d247803ed1c2f2c02c8d292201fe0eee0964be 100644
+--- a/dist/utils/retry.js
++++ b/dist/utils/retry.js
+@@ -29,6 +29,11 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+     "504",
+     "524",
+     "service.?unavailable",
++    // Gateway wording like "Service temporarily unavailable. Please try again
++    // later." — "service.?unavailable" only spans a single char, so it misses
++    // the "temporarily" in between and the error is misclassified as terminal.
++    "service.?temporarily.?unavailable",
++    "temporarily.?unavailable",
+     "server.?error",
+     "internal.?error",
+     // Wrapper/provider text for transient upstream failures, including OpenRouter
