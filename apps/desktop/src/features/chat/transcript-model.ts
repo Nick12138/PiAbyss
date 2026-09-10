@@ -13,6 +13,7 @@ import {
   stripAttachmentReferenceBlocks,
 } from "@piabyss/protocol";
 import { isAbortedToolResult } from "../../lib/chat/tool-result-status";
+import { withFriendlyErrorHint } from "./error-hints";
 
 export type ToolTraceStatus = "waiting" | "running" | "done" | "error" | "aborted";
 
@@ -528,7 +529,9 @@ function assistantOutcome(message: SerializableAgentMessage): AssistantOutcome |
     return {
       status: "error",
       ...(stopReason ? { stopReason } : {}),
-      ...(errorMessage ? { errorMessage } : {}),
+      // Real provider failures get a friendly explanation appended; the raw
+      // text is preserved so logs/copy still carry the original detail.
+      ...(errorMessage ? { errorMessage: withFriendlyErrorHint(errorMessage) } : {}),
     };
   }
   return {
@@ -680,7 +683,7 @@ function rowForNonAssistantMessage(
     if (blocks.length === 0 && role !== "error") return null;
     const errorText =
       role === "error" && blocks.length === 0
-        ? (stringField(message, "errorMessage") ?? "Agent error")
+        ? withFriendlyErrorHint(stringField(message, "errorMessage") ?? "Agent error")
         : undefined;
     const finalBlocks = errorText
       ? [{ kind: "text", text: errorText } satisfies TranscriptBlock]
