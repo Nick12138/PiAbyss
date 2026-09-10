@@ -149,10 +149,20 @@ function entryTimeMs(entry: { timestamp?: unknown }): number | undefined {
   return undefined;
 }
 
+function WorkingIndicator({ t }: { t: ReturnType<typeof useT> }) {
+  return (
+    <div className="flex items-center gap-3 text-xs text-muted">
+      <LoaderCircle size={14} className="animate-spin text-muted" aria-hidden="true" />
+      <span>{t("transcriptPiWorking")}</span>
+    </div>
+  );
+}
+
 function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
   const t = useT();
   const [expandedUserRows, setExpandedUserRows] = useState<ReadonlySet<string>>(new Set());
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  const isRunning = snapshot.state === "running";
   const entries = snapshot.entries;
   const rows = useMemo(
     () =>
@@ -232,14 +242,21 @@ function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
     });
   }, [firstUserRowKey]);
 
+  // While the run is active, the tail assistant row renders in the main
+  // session's streaming style: live caret, working header and an active
+  // execution-trace spinner. Finished runs stay fully static.
+  const tailRow = rows[rows.length - 1];
+  const workingRowKey = isRunning && tailRow?.role === "assistant" ? tailRow.key : undefined;
+
   const renderRow = (row: TranscriptRow, isFirstUser = row.key === firstUserRowKey) => {
+    const working = row.key === workingRowKey;
     return (
       <div className="transcript-row" data-row-key={row.key} key={row.key}>
         <TranscriptRowView
           row={row}
-          mode="static"
-          showCaret={false}
-          working={false}
+          mode={working ? "streaming" : "static"}
+          showCaret={working}
+          working={working}
           retryableTurn={undefined}
           retryVisible={false}
           goOnVisible={false}
@@ -270,7 +287,7 @@ function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
       <div className="conversation-content-width mx-auto flex flex-col gap-5 px-3 py-4 sm:gap-6">
         {rows.length === 0 ? (
           <div className="flex min-h-20 items-center justify-center text-center text-xs text-muted">
-            {t("subagentsNoConversation")}
+            {isRunning ? <WorkingIndicator t={t} /> : t("subagentsNoConversation")}
           </div>
         ) : collapsedMode && firstUserRow && resultRow ? (
           <>
@@ -288,7 +305,14 @@ function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
             {renderRow(resultRow, false)}
           </>
         ) : (
-          rows.map((row) => renderRow(row))
+          <>
+            {rows.map((row) => renderRow(row))}
+            {isRunning && !workingRowKey && (
+              <div className="transcript-row">
+                <WorkingIndicator t={t} />
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

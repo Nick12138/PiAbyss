@@ -325,4 +325,218 @@ describe("SubagentsPanel", () => {
 
     request.mockRestore();
   });
+
+  it("renders the running tail row in streaming style with a working header", async () => {
+    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      if (method === "subagents.getSession") {
+        return {
+          protocolVersion: 1,
+          id: crypto.randomUUID(),
+          method,
+          hostInstanceId: host.hostInstanceId,
+          workspaceId: workspace.id,
+          workspaceRevision: workspace.revision,
+          sessionId: null,
+          sessionRevision: 0,
+          packageRevision: 0,
+          ok: true,
+          result: {
+            nodeId: "run-stream",
+            sessionId: "s2",
+            state: "running",
+            truncated: false,
+            updatedAt: 1787545104000,
+            entries: [
+              {
+                type: "message",
+                id: "u1",
+                timestamp: "2026-01-01T00:00:00.000Z",
+                message: {
+                  role: "user",
+                  content: [{ type: "text", text: "Stream the task" }],
+                },
+              },
+              {
+                type: "message",
+                id: "a1",
+                timestamp: "2026-01-01T00:00:10.000Z",
+                message: {
+                  role: "assistant",
+                  content: [
+                    { type: "thinking", thinking: "partial thinking" },
+                    { type: "toolCall", id: "c1", name: "read", arguments: { path: "a.ts" } },
+                    { type: "text", text: "Streaming answer" },
+                  ],
+                },
+              },
+            ],
+          },
+        } as never;
+      }
+      throw new Error(`Unexpected method ${method}`);
+    });
+    useAppStore.setState({
+      host,
+      workspace,
+      desktopSettings: { language: "en" } as never,
+      subagentsStatus: {
+        ...baseStatus,
+        runs: [{ id: "run-stream", kind: "subagent", label: "Stream task", state: "running" }],
+      },
+    });
+
+    render(<SubagentsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Stream task" }));
+
+    expect(await screen.findByText("Stream the task")).toBeVisible();
+    expect(screen.getByText("Streaming answer")).toBeVisible();
+
+    // The tail assistant row carries the working header, a streaming caret
+    // and the active execution-trace spinner.
+    const tailRow = screen.getByText("Streaming answer").closest("[data-row-key]");
+    expect(tailRow).not.toBeNull();
+    expect(tailRow?.querySelector(".execution-trace-spinner")).toBeInTheDocument();
+    expect(tailRow?.textContent).toContain("Pi is working...");
+
+    request.mockRestore();
+  });
+
+  it("keeps finished runs fully static without a working header", async () => {
+    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      if (method === "subagents.getSession") {
+        return {
+          protocolVersion: 1,
+          id: crypto.randomUUID(),
+          method,
+          hostInstanceId: host.hostInstanceId,
+          workspaceId: workspace.id,
+          workspaceRevision: workspace.revision,
+          sessionId: null,
+          sessionRevision: 0,
+          packageRevision: 0,
+          ok: true,
+          result: {
+            nodeId: "run-static",
+            sessionId: "s3",
+            state: "complete",
+            truncated: false,
+            updatedAt: 1787545104000,
+            entries: [
+              {
+                type: "message",
+                id: "u1",
+                timestamp: "2026-01-01T00:00:00.000Z",
+                message: {
+                  role: "user",
+                  content: [{ type: "text", text: "Static task" }],
+                },
+              },
+              {
+                type: "message",
+                id: "a1",
+                timestamp: "2026-01-01T00:01:00.000Z",
+                message: {
+                  role: "assistant",
+                  content: [{ type: "text", text: "Final static answer" }],
+                },
+              },
+            ],
+          },
+        } as never;
+      }
+      throw new Error(`Unexpected method ${method}`);
+    });
+    useAppStore.setState({
+      host,
+      workspace,
+      desktopSettings: { language: "en" } as never,
+      subagentsStatus: {
+        ...baseStatus,
+        runs: [{ id: "run-static", kind: "subagent", label: "Static task", state: "complete" }],
+      },
+    });
+
+    render(<SubagentsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Static task" }));
+
+    expect(await screen.findByText("Final static answer")).toBeVisible();
+    const resultRow = screen.getByText("Final static answer").closest("[data-row-key]");
+    expect(resultRow).not.toBeNull();
+    expect(resultRow?.querySelector("svg.animate-spin")).not.toBeInTheDocument();
+    expect(resultRow?.textContent).not.toContain("Pi is working...");
+
+    request.mockRestore();
+  });
+
+  it("shows a working indicator while a running run has no assistant tail yet", async () => {
+    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      if (method === "subagents.getSession") {
+        return {
+          protocolVersion: 1,
+          id: crypto.randomUUID(),
+          method,
+          hostInstanceId: host.hostInstanceId,
+          workspaceId: workspace.id,
+          workspaceRevision: workspace.revision,
+          sessionId: null,
+          sessionRevision: 0,
+          packageRevision: 0,
+          ok: true,
+          result: {
+            nodeId: "run-tool-tail",
+            sessionId: "s4",
+            state: "running",
+            truncated: false,
+            updatedAt: 1787545104000,
+            entries: [
+              {
+                type: "message",
+                id: "u1",
+                timestamp: "2026-01-01T00:00:00.000Z",
+                message: {
+                  role: "user",
+                  content: [{ type: "text", text: "Tool tail task" }],
+                },
+              },
+              {
+                type: "message",
+                id: "t1",
+                timestamp: "2026-01-01T00:00:10.000Z",
+                message: {
+                  role: "toolResult",
+                  toolCallId: "c1",
+                  toolName: "bash",
+                  content: [{ type: "text", text: "partial output" }],
+                  isError: false,
+                },
+              },
+            ],
+          },
+        } as never;
+      }
+      throw new Error(`Unexpected method ${method}`);
+    });
+    useAppStore.setState({
+      host,
+      workspace,
+      desktopSettings: { language: "en" } as never,
+      subagentsStatus: {
+        ...baseStatus,
+        runs: [
+          { id: "run-tool-tail", kind: "subagent", label: "Tool tail task", state: "running" },
+        ],
+      },
+    });
+
+    render(<SubagentsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Tool tail task" }));
+
+    expect(await screen.findByText("Tool tail task")).toBeVisible();
+    // The tail entry is a tool result, not an assistant message: the generic
+    // working indicator still shows while the run is active.
+    const panel = document.querySelector("[data-subagents-panel]");
+    expect(panel?.textContent).toContain("Pi is working...");
+
+    request.mockRestore();
+  });
 });
