@@ -51,9 +51,9 @@ describe("localizeHostError", () => {
   });
 
   it("localizes STALE_REVISION identity races as a generic stale-state text", () => {
-    expect(
-      localizeHostError({ code: "STALE_REVISION", message: "Workspace id mismatch" }, t),
-    ).toBe("界面状态已过期，该操作未生效，请重试。");
+    expect(localizeHostError({ code: "STALE_REVISION", message: "Workspace id mismatch" }, t)).toBe(
+      "界面状态已过期，该操作未生效，请重试。",
+    );
     expect(
       localizeHostError({ code: "STALE_REVISION", message: "Host instance mismatch" }, t),
     ).toBe("界面状态已过期，该操作未生效，请重试。");
@@ -90,17 +90,26 @@ describe("localizeHostError", () => {
     expect(localizeHostError({ code: "PACKAGE_REMOVE_FAILED", message: stderr }, t)).toBe(
       "[hostErrPackageFileBusy]",
     );
-    expect(
-      localizeHostError({ code: "PACKAGE_PARTIAL_FAILURE", message: stderr }, t),
-    ).toBe("[hostErrPackageFileBusy]");
+    expect(localizeHostError({ code: "PACKAGE_PARTIAL_FAILURE", message: stderr }, t)).toBe(
+      "[hostErrPackageFileBusy]",
+    );
   });
 
   it("maps permission, missing-package and network failures to friendly messages", () => {
     expect(
-      localizeHostError({ code: "PACKAGE_INSTALL_FAILED", message: "npm error code EPERM\nnpm error syscall mkdir" }, t),
+      localizeHostError(
+        {
+          code: "PACKAGE_INSTALL_FAILED",
+          message: "npm error code EPERM\nnpm error syscall mkdir",
+        },
+        t,
+      ),
     ).toBe("[hostErrPackagePermission]");
     expect(
-      localizeHostError({ code: "PACKAGE_INSTALL_FAILED", message: "npm error code E404\nnpm error 404 Not Found" }, t),
+      localizeHostError(
+        { code: "PACKAGE_INSTALL_FAILED", message: "npm error code E404\nnpm error 404 Not Found" },
+        t,
+      ),
     ).toBe("[hostErrPackageNotInRegistry]");
     expect(
       localizeHostError({ code: "PACKAGE_UPDATE_FAILED", message: "npm error code ETIMEDOUT" }, t),
@@ -141,9 +150,9 @@ describe("hostErrorLevel", () => {
   });
 
   it("treats STALE_REVISION as a transient (info) notification", () => {
-    expect(
-      hostErrorLevel({ code: "STALE_REVISION", message: "Workspace id mismatch" }),
-    ).toBe("info");
+    expect(hostErrorLevel({ code: "STALE_REVISION", message: "Workspace id mismatch" })).toBe(
+      "info",
+    );
     expect(TRANSIENT_HOST_ERROR_CODES.has("STALE_REVISION")).toBe(true);
   });
 

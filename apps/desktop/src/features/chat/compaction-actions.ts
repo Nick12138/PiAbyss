@@ -102,9 +102,7 @@ export async function setAutoCompaction(enabled: boolean): Promise<void> {
   }
   if (!res.ok) {
     pushNotification(
-      res.error
-        ? localizeHostError(res.error, tCurrent)
-        : tCurrent("notifAutoCompactionFailed"),
+      res.error ? localizeHostError(res.error, tCurrent) : tCurrent("notifAutoCompactionFailed"),
       hostErrorLevel(res.error),
     );
     return;
