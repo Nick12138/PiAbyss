@@ -1284,6 +1284,65 @@ describe("app-store epoch wiring", () => {
     expect(next.desynchronized).toBe(false);
   });
 
+  it("completeRehydrate rebuilds catalog/runtime records after a Host epoch change", () => {
+    const store = useAppStore.getState();
+    store.beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    // Catalog entry + flat runtime state accumulated under h1.
+    useAppStore
+      .getState()
+      .replaceSessionCatalog("w1", [
+        { sessionId: "s1", sessionPath: "/sessions/s1.jsonl", cwd: "/p/w1", updatedAt: 1 },
+      ]);
+    useAppStore.getState().setSessionRuntimeState("s1", "running", undefined, 10, "w1");
+    useAppStore.getState().applySessionSnapshot(session("s1"));
+
+    // The Host restarts: recovery anchors h2 while keeping the h1 view.
+    useAppStore.getState().anchorHostEpochForRecovery(host("h2"));
+    expect(useAppStore.getState().sessionCatalog.entries.s1).toBeDefined();
+
+    useAppStore.getState().completeRehydrate({
+      host: host("h2"),
+      workspace: workspace("w1", 1),
+      session: session("s2"),
+      lastSequence: 12,
+    });
+    const next = useAppStore.getState();
+    // Merging would retain s1 (a live session missing from the fresh catalog
+    // is kept optimistically); the new Host epoch must instead rebuild the
+    // catalog from the fresh snapshot so h1-only sessions cannot linger.
+    expect(next.sessionCatalog.entries.s1).toBeUndefined();
+    expect(next.sessionCatalog.entries.s2).toBeDefined();
+    // Flat runtime bookkeeping from the dead epoch must not outlive it.
+    expect(next.sessionRuntimeStates).toEqual({});
+  });
+
+  it("completeRehydrate keeps in-epoch runtime records across a same-host recovery", () => {
+    const store = useAppStore.getState();
+    store.beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore
+      .getState()
+      .replaceSessionCatalog("w1", [
+        { sessionId: "s1", sessionPath: "/sessions/s1.jsonl", cwd: "/p/w1", updatedAt: 1 },
+      ]);
+    useAppStore.getState().setSessionRuntimeState("s1", "running", undefined, 10, "w1");
+    useAppStore.getState().applySessionSnapshot(session("s1"));
+
+    // Same Host, no epoch change (e.g. a transport-level resync): nothing is
+    // stale, so the catalog/runtime records must survive the rehydrate.
+    useAppStore.getState().anchorHostEpochForRecovery(host("h1"));
+    useAppStore.getState().completeRehydrate({
+      host: host("h1"),
+      workspace: workspace("w1", 1),
+      session: session("s1", 2),
+      lastSequence: 12,
+    });
+    const next = useAppStore.getState();
+    expect(next.sessionCatalog.entries.s1).toBeDefined();
+    expect(next.sessionRuntimeStates.s1).toBe("running");
+  });
+
   it("keeps transient info/success notifications out of the history (toast only)", () => {
     useAppStore.getState().pushNotification("Agent 正忙，请等待当前运行结束后再试。");
     useAppStore.getState().pushNotification("Session exported", "success");

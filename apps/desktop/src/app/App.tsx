@@ -255,17 +255,21 @@ export function handleHostEvent(
   // and its Extension UI surface events no-op against the active session —
   // none of them may tear the renderer epoch down, which the recovery below
   // repaints as the whole UI visibly refreshing.
-  const fromBoundParkedWorkspace =
+  // A parked workspace counts as bound only at the exact revision the Host
+  // last reported for it (mirroring the Host-side isBoundWorkspaceIdentity
+  // check): events stamped with a stale revision predate a rebind/revision
+  // bump and must still be rejected as drift, not excused.
+  const boundParkedWorkspace =
     hostId !== null &&
     event.hostInstanceId === hostId &&
     event.workspaceId !== null &&
     event.workspaceId !== activeWorkspaceId &&
-    store.boundWorkspaces[event.workspaceId] !== undefined;
+    store.boundWorkspaces[event.workspaceId]?.revision === event.workspaceRevision;
   const parkedWorkspaceEvent =
     (event.event === "session.runtimeChanged" || event.event === "session.infoChanged") &&
-    fromBoundParkedWorkspace;
+    boundParkedWorkspace;
   const parkedToastEvent =
-    fromBoundParkedWorkspace &&
+    boundParkedWorkspace &&
     (event.event === "extensionUi.notification" || event.event === "package.diagnostic");
   // Session-scoped Extension UI surface state is only ever applied to the
   // active session (see the guards in the switch below), so surface events
@@ -280,7 +284,7 @@ export function handleHostEvent(
       event.event === "extensionUi.widgetChanged" ||
       event.event === "extensionUi.widgetAttentionRequested" ||
       event.event === "extensionUi.messageRendered") &&
-    (fromBoundParkedWorkspace ||
+    (boundParkedWorkspace ||
       (event.workspaceId === activeWorkspaceId &&
         event.sessionId !== null &&
         event.sessionId !== (store.session?.sessionId ?? null)));

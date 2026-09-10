@@ -454,6 +454,12 @@ export type AppState = EpochState & {
    * the UI never flashes an empty shell mid-recovery.
    */
   anchorHostEpochForRecovery: (host: HostStatusSnapshot) => void;
+  /** True when a recovery anchored a DIFFERENT Host instance than the one the
+   *  visible session catalog / runtime bookkeeping was built under. Those
+   *  records belong to the previous epoch and must be rebuilt (not merged)
+   *  when completeRehydrate lands, or sessions that no longer exist on the
+   *  new Host linger in the sidebar with phantom running/queued states. */
+  epochBookkeepingStale: boolean;
   setHost: (host: HostStatusSnapshot | null) => void;
   applyWorkspaceSnapshot: (ws: WorkspaceSnapshot) => void;
   clearWorkspaceEpoch: () => void;
@@ -605,6 +611,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   providerNames: EMPTY_PROVIDER_NAMES,
   sessionCatalog: emptySessionCatalog(),
   sessionRuntimeStates: {},
+  epochBookkeepingStale: false,
   boundWorkspaces: {},
   sessionTerminalStates: readTerminalStates(),
   workspaceActivities: {},
@@ -727,7 +734,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   setProvidersDirty: (dirty) => set({ providersDirty: dirty }),
 
   anchorHostEpochForRecovery: (host) => {
-    set(epochAnchorHost(epochSlice(get()), host));
+    const previous = get().host;
+    const hostChanged = previous !== null && previous.hostInstanceId !== host.hostInstanceId;
+    set({
+      ...epochAnchorHost(epochSlice(get()), host),
+      // The visible catalog/runtime records were built under the previous
+      // Host epoch. Keep rendering them until completeRehydrate swaps in the
+      // fresh snapshot atomically — clearing here would flash the sidebar —
+      // but remember to rebuild instead of merge when it does.
+      ...(hostChanged ? { epochBookkeepingStale: true } : {}),
+    });
   },
 
   beginHostEpoch: (host) => {
@@ -751,6 +767,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       providerNames: EMPTY_PROVIDER_NAMES,
       sessionCatalog: emptySessionCatalog(),
       sessionRuntimeStates: {},
+      epochBookkeepingStale: false,
       boundWorkspaces: boundWorkspacesFromStatus(host),
       hostFatal: null,
       desynchronized: false,
@@ -1521,6 +1538,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       snap.session !== undefined
         ? mergeOptimisticMessages(current.session, snap.session ?? null)
         : current.session;
+    // A recovery that anchored a new Host epoch invalidates the previous
+    // epoch's catalog/runtime records: merging would resurrect sessions that
+    // no longer exist on the new Host (replaceSessionCatalog optimistically
+    // retains "running" rows). Rebuild from the fresh snapshot instead.
+    const bookkeepingStale = current.epochBookkeepingStale;
+    const catalogBase = bookkeepingStale ? emptySessionCatalog() : current.sessionCatalog;
+    const sessionCatalog =
+      workspace && session
+        ? upsertCatalogSnapshot(catalogBase, workspace.id, session)
+        : catalogBase;
     set({
       host: snap.host !== undefined ? snap.host : current.host,
       workspace,
@@ -1535,10 +1562,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       // The rehydrate Host snapshot is authoritative for bindings too; an
       // undefined boundWorkspaces (older Host) keeps the current map.
       ...(snap.host !== undefined ? { boundWorkspaces: boundWorkspacesFromStatus(snap.host) } : {}),
-      sessionCatalog:
-        workspace && session
-          ? upsertCatalogSnapshot(current.sessionCatalog, workspace.id, session)
-          : current.sessionCatalog,
+      sessionCatalog,
+      ...(bookkeepingStale
+        ? { sessionRuntimeStates: {}, epochBookkeepingStale: false }
+        : { sessionRuntimeStates: current.sessionRuntimeStates }),
       // Reset desync and advance sequence watermark so post-rehydrate events apply.
       lastSequence:
         snap.lastSequence !== undefined ? snap.lastSequence : Math.max(current.lastSequence, 0),
@@ -1564,6 +1591,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearHostEpoch: (reason) => {
     set({
       ...emptyEpoch(),
+      epochBookkeepingStale: false,
       extensionUiRequest: null,
       extensionUiQueue: [],
       extensionDecisionGroups: {},

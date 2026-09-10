@@ -335,6 +335,7 @@ describe("App cross-workspace event handling", () => {
       handleHostEvent(
         envelope("session.runtimeChanged", {
           workspaceId: UNBOUND_WS_ID,
+          workspaceRevision: 5,
           sequence: 2,
           payload: { state: "running" },
         }),
@@ -344,7 +345,11 @@ describe("App cross-workspace event handling", () => {
     ).toBe(true);
     expect(
       handleHostEvent(
-        envelope("session.runtimeChanged", { workspaceId: UNBOUND_WS_ID, sequence: 3 }),
+        envelope("session.runtimeChanged", {
+          workspaceId: UNBOUND_WS_ID,
+          workspaceRevision: 5,
+          sequence: 3,
+        }),
         requestRecovery,
         agentEvents,
       ),
@@ -470,6 +475,36 @@ describe("App cross-workspace event handling", () => {
       expect.stringContaining("identity mismatch for extensionUi.notification"),
     );
     expect(useAppStore.getState().desynchronized).toBe(true);
+  });
+
+  it("still rejects parked workspace events carrying a stale workspace revision", () => {
+    const agentEvents = eventBuffer();
+    // The Host reports PARKED_WS_ID at revision 3; an event stamped with the
+    // pre-rebind revision 2 predates the current binding and is drift.
+    for (const [event, request] of [
+      [
+        "session.runtimeChanged",
+        envelope("session.runtimeChanged", { workspaceRevision: 2, sequence: 1 }),
+      ],
+      [
+        "extensionUi.notification",
+        uiEnvelope(
+          "extensionUi.notification",
+          { message: "stale", level: "info" },
+          {
+            workspaceRevision: 2,
+            sequence: 2,
+          },
+        ),
+      ],
+    ] as const) {
+      expect(handleHostEvent(request, requestRecovery, agentEvents)).toBe(false);
+      expect(requestRecovery).toHaveBeenLastCalledWith(
+        expect.stringContaining(`identity mismatch for ${event}`),
+      );
+      expect(useAppStore.getState().desynchronized).toBe(true);
+      useAppStore.setState({ desynchronized: false, desyncReason: undefined });
+    }
   });
 
   it("accepts a background session's messageRendered from the active workspace", () => {
