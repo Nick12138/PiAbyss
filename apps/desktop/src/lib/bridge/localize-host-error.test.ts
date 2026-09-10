@@ -15,9 +15,13 @@ describe("localizeHostError", () => {
         ? "Agent 正忙，请等待当前运行结束后再试。"
         : key === "hostErrSessionNotFound"
           ? "会话不存在。"
-          : key === "hostErrUnknown"
-            ? "操作失败。"
-            : `[${key}]`;
+          : key === "hostErrStaleState"
+            ? "界面状态已过期，该操作未生效，请重试。"
+            : key === "hostErrStaleGit"
+              ? "Git 状态已变化，该操作未生效，请刷新后重试。"
+              : key === "hostErrUnknown"
+                ? "操作失败。"
+                : `[${key}]`;
 
   it("maps the not-in-workspace host message to a localized string", () => {
     expect(
@@ -44,6 +48,36 @@ describe("localizeHostError", () => {
     expect(localizeHostError({ code: "INTERNAL_ERROR", message: "Some detail" }, t)).toBe(
       "Some detail",
     );
+  });
+
+  it("localizes STALE_REVISION identity races as a generic stale-state text", () => {
+    expect(
+      localizeHostError({ code: "STALE_REVISION", message: "Workspace id mismatch" }, t),
+    ).toBe("界面状态已过期，该操作未生效，请重试。");
+    expect(
+      localizeHostError({ code: "STALE_REVISION", message: "Host instance mismatch" }, t),
+    ).toBe("界面状态已过期，该操作未生效，请重试。");
+    expect(
+      localizeHostError(
+        { code: "STALE_REVISION", message: "Queue changed before the operation committed" },
+        t,
+      ),
+    ).toBe("界面状态已过期，该操作未生效，请重试。");
+  });
+
+  it("localizes STALE_REVISION git races as a git-specific stale text", () => {
+    expect(
+      localizeHostError(
+        { code: "STALE_REVISION", message: "The selected diff hunk no longer exists" },
+        t,
+      ),
+    ).toBe("Git 状态已变化，该操作未生效，请刷新后重试。");
+    expect(
+      localizeHostError(
+        { code: "STALE_REVISION", message: "Git status changed before the operation" },
+        t,
+      ),
+    ).toBe("Git 状态已变化，该操作未生效，请刷新后重试。");
   });
 
   it("falls back when the error is missing", () => {
@@ -104,6 +138,13 @@ describe("hostErrorLevel", () => {
       "error",
     );
     expect(hostErrorLevel({ code: "INTERNAL_ERROR", message: "Some detail" })).toBe("error");
+  });
+
+  it("treats STALE_REVISION as a transient (info) notification", () => {
+    expect(
+      hostErrorLevel({ code: "STALE_REVISION", message: "Workspace id mismatch" }),
+    ).toBe("info");
+    expect(TRANSIENT_HOST_ERROR_CODES.has("STALE_REVISION")).toBe(true);
   });
 
   it("falls back to error for missing errors", () => {

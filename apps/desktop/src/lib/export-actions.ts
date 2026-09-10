@@ -7,6 +7,7 @@ import {
 } from "./bridge/host-context";
 import { requestWithRetry } from "./bridge/request-retry";
 import { tCurrent } from "./i18n/use-t";
+import { hostErrorLevel, localizeHostError } from "./bridge/localize-host-error";
 
 export type ExportFormat = "html" | "jsonl";
 
@@ -70,7 +71,10 @@ export async function requestExport(format: ExportFormat): Promise<boolean> {
       return false;
     }
     if (!res.ok) {
-      pushNotification(res.error?.message ?? tCurrent("notifExportFailed"), "error");
+      pushNotification(
+        res.error ? localizeHostError(res.error, tCurrent) : tCurrent("notifExportFailed"),
+        hostErrorLevel(res.error),
+      );
       return false;
     }
     pushNotification(tCurrent("notifExported", { path: res.result.path }), "info");

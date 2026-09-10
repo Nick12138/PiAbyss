@@ -185,7 +185,15 @@ describe("compaction actions", () => {
 
     await expect(requestCompact()).resolves.toBe(false);
 
-    expect(notifications()).toEqual([{ message: "Agent busy", level: "error" }]);
+    // AGENT_BUSY is a transient host error: localized via the error-code map
+    // and pushed at info level, so it toasts but never enters the history.
+    expect(toasts()).toEqual([
+      {
+        message: "Agent is busy. Wait for the current run to finish, then try again.",
+        level: "info",
+      },
+    ]);
+    expect(notifications()).toEqual([]);
   });
 
   it("drops the result after a session switch", async () => {

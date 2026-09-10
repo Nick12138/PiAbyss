@@ -10,6 +10,7 @@ import { SESSION_OPEN_TIMEOUT_MS } from "./bridge/session-open-request";
 import { requestWithRetry } from "./bridge/request-retry";
 import { tCurrent } from "./i18n/use-t";
 import { notifyOperationFailure } from "./notify-operation-error";
+import { hostErrorLevel, localizeHostError } from "./bridge/localize-host-error";
 import { editDraft } from "./draft-persistence";
 import { draftTargetFor } from "./draft-target";
 
@@ -51,7 +52,10 @@ export async function requestFork(
       return false;
     }
     if (!res.ok) {
-      pushNotification(res.error?.message ?? tCurrent("notifForkFailed"), "error");
+      pushNotification(
+        res.error ? localizeHostError(res.error, tCurrent) : tCurrent("notifForkFailed"),
+        hostErrorLevel(res.error),
+      );
       return false;
     }
     applySessionSnapshot(res.result.session);

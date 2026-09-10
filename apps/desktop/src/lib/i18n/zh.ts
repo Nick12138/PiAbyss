@@ -330,6 +330,8 @@ export const zh: Record<MessageKey, string> = {
   hostErrAuthRequired: "需要凭据，请在 设置 → 提供商 中登录。",
   hostErrSessionNotFound: "会话不存在。",
   hostErrSessionNotInWorkspace: "会话不在当前工作区，请先切换工作区",
+  hostErrStaleState: "界面状态已过期，该操作未生效，请重试。",
+  hostErrStaleGit: "Git 状态已变化，该操作未生效，请刷新后重试。",
   hostErrUnknown: "操作失败。",
 
   // Usage

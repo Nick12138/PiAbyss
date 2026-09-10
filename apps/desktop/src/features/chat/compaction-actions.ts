@@ -8,6 +8,7 @@ import {
 import { formatTokenCount } from "../../lib/format-token-count";
 import { tCurrent } from "../../lib/i18n/use-t";
 import { notifyOperationFailure } from "../../lib/notify-operation-error";
+import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 
 /** Manually compact the active session's context. Surfaces the outcome
  * through notifications; returns true when compaction succeeded. */
@@ -37,7 +38,10 @@ export async function requestCompact(instructions?: string): Promise<boolean> {
       return false;
     }
     if (!res.ok) {
-      pushNotification(res.error?.message ?? tCurrent("notifCompactFailed"), "error");
+      pushNotification(
+        res.error ? localizeHostError(res.error, tCurrent) : tCurrent("notifCompactFailed"),
+        hostErrorLevel(res.error),
+      );
       return false;
     }
     applySessionSnapshot(res.result.session);
@@ -71,7 +75,10 @@ export async function abortCompaction(): Promise<void> {
     null,
   );
   if (!res.ok) {
-    pushNotification(res.error?.message ?? tCurrent("notifCompactStopFailed"), "error");
+    pushNotification(
+      res.error ? localizeHostError(res.error, tCurrent) : tCurrent("notifCompactStopFailed"),
+      hostErrorLevel(res.error),
+    );
   }
 }
 
@@ -94,7 +101,12 @@ export async function setAutoCompaction(enabled: boolean): Promise<void> {
     return;
   }
   if (!res.ok) {
-    pushNotification(res.error?.message ?? tCurrent("notifAutoCompactionFailed"), "error");
+    pushNotification(
+      res.error
+        ? localizeHostError(res.error, tCurrent)
+        : tCurrent("notifAutoCompactionFailed"),
+      hostErrorLevel(res.error),
+    );
     return;
   }
   applySessionSnapshot(res.result);

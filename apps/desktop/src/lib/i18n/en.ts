@@ -351,6 +351,8 @@ export const en = {
   hostErrAuthRequired: "Credentials are required. Sign in from Settings → Providers.",
   hostErrSessionNotFound: "Session not found.",
   hostErrSessionNotInWorkspace: "Session is not in the current workspace; switch workspace first",
+  hostErrStaleState: "Your view was out of date, so the action was not applied. Please retry.",
+  hostErrStaleGit: "Git state changed before the action could be applied. Refresh and try again.",
   hostErrUnknown: "Operation failed.",
 
   // Usage

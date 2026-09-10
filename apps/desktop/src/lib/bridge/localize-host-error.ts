@@ -14,6 +14,11 @@ export const TRANSIENT_HOST_ERROR_CODES: ReadonlySet<string> = new Set([
   // UI retries retryable busy responses, so anything that still reaches the
   // user is a momentary collision — not a persistent failure worth history.
   "SERVICE_GRAPH_BUSY",
+  // STALE_REVISION means the request raced a newer committed state (workspace/
+  // session identity, agent queue, or git status changed underneath it). The
+  // UI rehydrates on its own and the caller can simply retry, so it is a
+  // momentary collision — toast only, never retained in the history.
+  "STALE_REVISION",
 ]);
 
 /** Choose the notification level for a host error. Transient "busy" conditions
@@ -127,6 +132,19 @@ export function localizeHostError(error: HostErrorLike | null | undefined, t: Tr
   if (code === "AGENT_NOT_READY" && error.message) {
     if (/no active session/iu.test(error.message)) return t("hostErrNoActiveSession");
     if (/workspace services/iu.test(error.message)) return t("hostErrWorkspaceServicesNotReady");
+  }
+  if (code === "STALE_REVISION") {
+    // Git races describe what went stale (hunk/change vanished, status moved);
+    // identity and queue races are pure staleness the UI recovers from, so
+    // collapse them into one generic stale-state text.
+    if (
+      /(diff hunk|Git change) no longer exists|Git status changed|Staged changes changed/iu.test(
+        error.message ?? "",
+      )
+    ) {
+      return t("hostErrStaleGit");
+    }
+    return t("hostErrStaleState");
   }
   if (PACKAGE_FAILURE_CODES.has(code)) {
     return localizePackageMessage(error.message, t) ?? t("hostErrPackageFailed");
