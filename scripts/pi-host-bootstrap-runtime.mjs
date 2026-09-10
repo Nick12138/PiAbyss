@@ -1,9 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  closeSync,
   createReadStream,
   existsSync,
+  fstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
+  readSync,
+  readdirSync,
   renameSync,
   rmSync,
   statSync,
@@ -182,31 +187,169 @@ function windowsBsdTar() {
   return systemTar && existsSync(systemTar) ? systemTar : "tar.exe";
 }
 
+/**
+ * Minimal ZIP central-directory reader (file names only). The bootstrap runs
+ * under the staged Node before node_modules exists, so this must stay
+ * dependency-free. Standard (non-zip64) archives only — the staged runtime
+ * zip is far below the 4 GiB / 65535-entry thresholds.
+ */
+export function readZipFileEntries(zipPath) {
+  const fd = openSync(zipPath, "r");
+  try {
+    const size = fstatSync(fd).size;
+    const scanLength = Math.min(size, 66_573);
+    const tail = Buffer.alloc(scanLength);
+    readSync(fd, tail, 0, scanLength, size - scanLength);
+    let eocd = -1;
+    for (let index = tail.length - 22; index >= 0; index -= 1) {
+      if (
+        tail[index] === 0x50 &&
+        tail[index + 1] === 0x4b &&
+        tail[index + 2] === 0x05 &&
+        tail[index + 3] === 0x06
+      ) {
+        eocd = index;
+        break;
+      }
+    }
+    if (eocd < 0) throw new Error("zip end-of-central-directory not found");
+    const entryCount = tail.readUInt16LE(eocd + 10);
+    const centralOffset = tail.readUInt32LE(eocd + 16);
+    if (entryCount === 0xffff || centralOffset === 0xffffffff) {
+      throw new Error("zip64 archives are not supported by the bootstrap verifier");
+    }
+    const central = Buffer.alloc(size - centralOffset);
+    readSync(fd, central, 0, central.length, centralOffset);
+    const names = [];
+    let position = 0;
+    let walked = 0;
+    while (position + 46 <= central.length && walked < entryCount) {
+      if (central.readUInt32LE(position) !== 0x02014b50) {
+        throw new Error("zip central directory is corrupt");
+      }
+      const nameLength = central.readUInt16LE(position + 28);
+      const extraLength = central.readUInt16LE(position + 30);
+      const commentLength = central.readUInt16LE(position + 32);
+      const name = central.toString("utf8", position + 46, position + 46 + nameLength);
+      if (!name.endsWith("/")) names.push(name);
+      walked += 1;
+      position += 46 + nameLength + extraLength + commentLength;
+    }
+    if (walked !== entryCount) {
+      throw new Error(`zip central directory is truncated: ${walked}/${entryCount}`);
+    }
+    return names;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function listExtractedFiles(destination) {
+  const files = new Set();
+  const stack = [destination];
+  while (stack.length > 0) {
+    const directory = stack.pop();
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const full = join(directory, entry.name);
+      if (entry.isDirectory()) stack.push(full);
+      else if (entry.isFile()) {
+        files.add(full.slice(destination.length + 1).replaceAll("\\", "/"));
+      }
+    }
+  }
+  return files;
+}
+
+/** Returns the archive entries missing from the extracted tree (empty = complete). */
+export function verifyZipExtraction(zipPath, destination) {
+  const extracted = listExtractedFiles(destination);
+  const missing = [];
+  for (const name of readZipFileEntries(zipPath)) {
+    if (!extracted.has(name) && !existsSync(join(destination, ...name.split("/")))) {
+      missing.push(name);
+    }
+  }
+  return missing;
+}
+
+function findFallbackUnzip(zipPath) {
+  const candidates = [
+    process.env.PIABYSS_STAGED_UNZIP,
+    // The staged portable Git (resources/git) always ships Info-ZIP's unzip.
+    join(dirname(zipPath), "..", "git", "usr", "bin", "unzip.exe"),
+    "unzip",
+  ].filter((candidate) => typeof candidate === "string" && candidate.length > 0);
+  const present = candidates.filter((candidate) => candidate === "unzip" || existsSync(candidate));
+  return present.length > 0 ? present : null;
+}
+
+const MAX_REPORTED_MISSING_ENTRIES = 8;
+
+function describeMissing(missing) {
+  return `${missing.length} entr${missing.length === 1 ? "y" : "ies"} missing; first: ${missing
+    .slice(0, MAX_REPORTED_MISSING_ENTRIES)
+    .join(", ")}`;
+}
+
 function extractPiHostArchive(zipPath, destination) {
   mkdirSync(destination, { recursive: true });
-  let result;
+  let attemptedTools = [];
+  let lastMissing = null;
   if (process.platform === "win32") {
-    result = spawnSync(windowsBsdTar(), ["-x", "-f", zipPath, "-C", destination], {
+    attemptedTools.push(windowsBsdTar());
+    // BSD tar on System32 historically extracted the staged runtime fine, but
+    // a runner-side libarchive quirk silently dropped individual entries
+    // (release CI: dist/utils/git.js missing after a clean exit). Always
+    // verify the extracted tree entry-by-entry and fall back to Info-ZIP
+    // unzip from the bundled portable Git when anything is missing.
+    const result = spawnSync(windowsBsdTar(), ["-x", "-f", zipPath, "-C", destination], {
       encoding: "utf8",
       shell: false,
     });
+    const missing = result.status === 0 ? verifyZipExtraction(zipPath, destination) : null;
+    if (missing !== null && missing.length === 0) return;
+    if (missing !== null) {
+      lastMissing = missing;
+      console.error(`[pi-host-bootstrap] tar extraction incomplete: ${describeMissing(missing)}`);
+    }
   } else {
-    result = spawnSync("unzip", ["-q", "-o", zipPath, "-d", destination], {
+    attemptedTools.push("unzip", "tar");
+    const unzip = spawnSync("unzip", ["-q", "-o", zipPath, "-d", destination], {
       encoding: "utf8",
       shell: false,
     });
-    if (result.status !== 0) {
-      result = spawnSync("tar", ["-x", "-f", zipPath, "-C", destination], {
+    if (unzip.status === 0 && verifyZipExtraction(zipPath, destination).length === 0) return;
+    const tar = spawnSync("tar", ["-x", "-f", zipPath, "-C", destination], {
+      encoding: "utf8",
+      shell: false,
+    });
+    if (tar.status === 0 && verifyZipExtraction(zipPath, destination).length === 0) return;
+    lastMissing = verifyZipExtraction(zipPath, destination);
+  }
+
+  const fallbackUnzips = findFallbackUnzip(zipPath);
+  if (fallbackUnzips) {
+    for (const unzip of fallbackUnzips) {
+      const result = spawnSync(unzip, ["-q", "-o", zipPath, "-d", destination], {
         encoding: "utf8",
         shell: false,
       });
+      if (result.status !== 0) continue;
+      const missing = verifyZipExtraction(zipPath, destination);
+      if (missing.length === 0) {
+        console.error(
+          `[pi-host-bootstrap] archive recovered via ${unzip} after ${attemptedTools.join("/")} ` +
+            `left ${lastMissing ? lastMissing.length : "?"} entries missing`,
+        );
+        return;
+      }
+      lastMissing = missing;
     }
   }
-  if (result.status !== 0) {
-    throw new Error(
-      `Pi Host archive extraction failed: ${result.stderr || result.stdout || result.error?.message || `exit ${String(result.status)}`}`,
-    );
-  }
+  throw new Error(
+    `Pi Host archive extraction is incomplete after trying ${attemptedTools.join(", ")}: ` +
+      (lastMissing ? describeMissing(lastMissing) : "extractor exited non-zero"),
+  );
 }
 
 export async function ensurePiHostRuntime(options) {

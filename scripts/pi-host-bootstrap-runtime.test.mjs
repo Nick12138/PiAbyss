@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
-import { ensurePiHostRuntime } from "./pi-host-bootstrap-runtime.mjs";
+import { ensurePiHostRuntime, verifyZipExtraction } from "./pi-host-bootstrap-runtime.mjs";
 import { detachNodeModulesLinks, snapshotNodeModulesGraph } from "./portable-node-modules.mjs";
 
 const CACHE_HASH_PATTERN = /^[a-f0-9]{64}$/u;
@@ -200,4 +200,55 @@ test("failed extraction leaves neither a final cache nor a stale lock", async (t
     cacheEntries.some((name) => name.startsWith(".tmp-")),
     false,
   );
+});
+
+test("zip verifier detects entries missing from the extracted tree", async (t) => {
+  const { spawnSync } = await import("node:child_process");
+  const root = mkdtempSync(join(tmpdir(), "piabyss-zip-verify-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+
+  const payloadRoot = join(root, "payload");
+  const files = [
+    "node_modules/.pnpm/@demo+pkg@1.0.0/node_modules/@demo/pkg/dist/index.js",
+    "node_modules/.pnpm/@demo+pkg@1.0.0/node_modules/@demo/pkg/dist/utils/git.js",
+    "node_modules/.pnpm/@demo+pkg@1.0.0/node_modules/@demo/pkg/dist/core/run.js",
+  ];
+  for (const name of files) {
+    const path = join(payloadRoot, ...name.split("/"));
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, `payload of ${name}\n`);
+  }
+
+  const zipPath = join(root, "node_modules.zip");
+  // Mirror windowsBsdTar(): plain `tar` may resolve to GNU tar (no zip support,
+  // and it rejects C:\ paths as remote hosts).
+  const systemTar = process.env.SystemRoot
+    ? join(process.env.SystemRoot, "System32", "tar.exe")
+    : null;
+  const tarExecutable =
+    process.platform === "win32" && systemTar && existsSync(systemTar) ? systemTar : "tar";
+  const create = spawnSync(
+    tarExecutable,
+    ["-a", "-c", "-f", zipPath, "-C", payloadRoot, "node_modules"],
+    { encoding: "utf8", shell: false },
+  );
+  if (create.status !== 0) {
+    // No zip-capable tar on this machine — the verifier itself is still testable.
+    t.skip(`no zip-capable tar available: ${create.stderr?.trim()}`);
+    return;
+  }
+
+  const destination = join(root, "extracted");
+  mkdirSync(destination, { recursive: true });
+  const extract = spawnSync(tarExecutable, ["-x", "-f", zipPath, "-C", destination], {
+    encoding: "utf8",
+    shell: false,
+  });
+  assert.equal(extract.status, 0, extract.stderr ?? "tar extraction failed");
+
+  assert.deepEqual(verifyZipExtraction(zipPath, destination), []);
+
+  const missingEntry = files[1];
+  rmSync(join(destination, ...missingEntry.split("/")));
+  assert.deepEqual(verifyZipExtraction(zipPath, destination), [missingEntry]);
 });
