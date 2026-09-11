@@ -746,6 +746,88 @@ describe("Provider controller", () => {
     ]);
   });
 
+  it("enables a newly added Provider that already has models", async () => {
+    const { layout, handlers } = await setup({
+      piabyssEnabledProviders: ["other"],
+      providers: {
+        other: {
+          name: "Other",
+          baseUrl: "https://other.example/v1",
+          api: "openai-completions",
+          models: [{ id: "other-model" }],
+        },
+      },
+    });
+
+    const saved = await handlers["provider.save"]!({
+      id: "save-new-provider",
+      params: { provider: draft([configuredModel("primary")]) },
+    } as never);
+
+    expect("error" in saved ? saved.error.message : null).toBeNull();
+    if ("error" in saved) return;
+    expect((saved.result as { provider: { enabled: boolean } }).provider.enabled).toBe(true);
+    const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
+    expect(persisted.piabyssEnabledProviders).toEqual(["other", "custom"]);
+  });
+
+  it("enables a Provider once the add flow saves the models it fetched", async () => {
+    const { layout, handlers } = await setup({ providers: {} });
+
+    const empty = await handlers["provider.save"]!({
+      id: "save-shell",
+      params: { provider: draft([]) },
+    } as never);
+    expect("error" in empty ? empty.error.message : null).toBeNull();
+    if ("error" in empty) return;
+    expect((empty.result as { provider: { enabled: boolean } }).provider.enabled).toBe(false);
+
+    const filled = await handlers["provider.save"]!({
+      id: "save-fetched-models",
+      params: {
+        originalId: "custom",
+        provider: draft([configuredModel("remote-model")]),
+      },
+    } as never);
+    expect("error" in filled ? filled.error.message : null).toBeNull();
+    if ("error" in filled) return;
+    expect((filled.result as { provider: { enabled: boolean } }).provider.enabled).toBe(true);
+    const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
+    expect(persisted.piabyssEnabledProviders).toEqual(["custom"]);
+  });
+
+  it("keeps a disabled Provider disabled when its configuration is edited", async () => {
+    const { handlers } = await setup({
+      piabyssEnabledProviders: ["other"],
+      providers: {
+        other: {
+          name: "Other",
+          baseUrl: "https://other.example/v1",
+          api: "openai-completions",
+          models: [{ id: "other-model" }],
+        },
+        custom: {
+          name: "Custom",
+          baseUrl: "https://custom.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+      },
+    });
+
+    const saved = await handlers["provider.save"]!({
+      id: "edit-disabled-provider",
+      params: {
+        originalId: "custom",
+        provider: draft([configuredModel("primary"), configuredModel("secondary")]),
+      },
+    } as never);
+
+    expect("error" in saved ? saved.error.message : null).toBeNull();
+    if ("error" in saved) return;
+    expect((saved.result as { provider: { enabled: boolean } }).provider.enabled).toBe(false);
+  });
+
   it("rejects explicitly enabling a custom Provider with no models", async () => {
     const { layout, handlers } = await setup({
       piabyssEnabledProviders: [],

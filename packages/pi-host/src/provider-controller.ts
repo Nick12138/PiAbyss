@@ -1470,7 +1470,6 @@ export function createProviderHandlers(
               currentProvider,
               runtimeProviderIds(factory),
             );
-            const wasFirstProvider = Object.keys(config.providers).length === 0;
             if (draft.id !== originalId && config.providers[draft.id] !== undefined) {
               return {
                 error: createHostError("INVALID_REQUEST", `Provider already exists: ${draft.id}`),
@@ -1479,6 +1478,12 @@ export function createProviderHandlers(
             const existing = isObject(config.providers[originalId])
               ? config.providers[originalId]
               : {};
+            // "Adding" covers a brand new Provider and the empty shell the add
+            // flow persists before fetching a model catalog: the model list
+            // arrives in a follow-up save, so both count as creating one.
+            const isAddedProvider =
+              !isObject(config.providers[originalId]) ||
+              (Array.isArray(existing.models) && existing.models.length === 0);
             await invalidateRetainedRuntimes(factory);
             signal.throwIfAborted();
             const merged = mergeProvider(existing, draft);
@@ -1486,7 +1491,7 @@ export function createProviderHandlers(
             if (draft.id !== originalId) delete config.providers[originalId];
             config.providers[draft.id] = merged;
             const enabledAfter = enabledBefore.map((id) => (id === originalId ? draft.id : id));
-            if (wasFirstProvider && draft.models.length > 0 && !enabledAfter.includes(draft.id)) {
+            if (isAddedProvider && draft.models.length > 0 && !enabledAfter.includes(draft.id)) {
               enabledAfter.push(draft.id);
             }
             if (enabledAfter.includes(draft.id) && draft.models.length === 0) {
