@@ -269,6 +269,73 @@ describe("ModelControls thinking-depth footer", () => {
   });
 });
 
+describe("ModelControls model switch while running", () => {
+  beforeEach(() => {
+    setupModelMenuStore();
+    useAppStore.getState().setConnecting(false);
+  });
+
+  afterEach(() => {
+    teardownModelMenuStore();
+  });
+
+  it("sends model.setCurrent mid-run and accepts a deferred switch", async () => {
+    const nextModel: ModelSummary = {
+      provider: "muapi",
+      providerName: "Muapi",
+      modelId: "grok-4.5-fast",
+      name: "Grok 4.5 Fast",
+      thinkingLevels: ["off"],
+    };
+    const requestSpy = vi
+      .spyOn(hostClient, "request")
+      .mockImplementation(async (method: string) => {
+        if (method === "model.list") {
+          return envelope(method, {
+            models: [MODEL, nextModel],
+            current: MODEL,
+            thinkingLevels: ["off", "high"],
+            enabledProviders: ["muapi"],
+          }) as never;
+        }
+        if (method === "model.setCurrent") {
+          // The Host reports a busy-run switch: no full snapshot, deferred turn.
+          return envelope(method, {
+            model: nextModel,
+            thinkingLevels: ["off"],
+            deferred: true,
+          }) as never;
+        }
+        throw new Error(`Unexpected method ${method}`);
+      });
+    // A run is in flight: the session snapshot reports busy.
+    useAppStore.getState().applySessionSnapshot({ ...session(), isIdle: false, isStreaming: true });
+
+    const user = userEvent.setup();
+    render(<ModelControls />);
+
+    await user.click(await screen.findByRole("button", { name: "Grok 4.5" }));
+    await user.click(await screen.findByRole("menuitemradio", { name: "Grok 4.5 Fast" }));
+
+    await waitFor(() =>
+      expect(requestSpy).toHaveBeenCalledWith("model.setCurrent", expect.anything(), {
+        provider: "muapi",
+        modelId: "grok-4.5-fast",
+      }),
+    );
+    // The deferred switch surfaces an informational toast instead of an error.
+    await waitFor(() =>
+      expect(
+        useAppStore
+          .getState()
+          .transientNotifications.some((notification) =>
+            notification.message.includes("next step"),
+          ),
+      ).toBe(true),
+    );
+  });
+});
+
 const initialInnerWidth = window.innerWidth;
 
 function setupModelMenuStore() {

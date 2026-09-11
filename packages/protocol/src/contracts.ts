@@ -528,7 +528,18 @@ export type HostResultMap = {
   "model.setCurrent": {
     model: ModelSummary;
     thinkingLevels: string[];
-    session: SessionSnapshot;
+    /**
+     * Full session snapshot. Omitted when the switch was accepted while a run
+     * is in flight: a mid-stream snapshot would race the desktop's streamed
+     * transcript draft, so only `model.changed` carries the update there.
+     */
+    session?: SessionSnapshot;
+    /**
+     * True when the Agent was running and the switch takes effect from the
+     * next turn boundary instead of immediately (the in-flight LLM call keeps
+     * the previous model). Mirrors the queued steer/follow-up behaviour.
+     */
+    deferred?: boolean;
   };
   "model.setThinkingLevel": SessionSnapshot;
   "skill.list": SkillSnapshot;

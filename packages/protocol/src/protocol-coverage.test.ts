@@ -1000,6 +1000,53 @@ describe("protocol coverage — response discrimination", () => {
       }).ok,
     ).toBe(false);
   });
+  it("validates a deferred model.setCurrent result without a session snapshot", () => {
+    expect(
+      validateSuccessResult("model.setCurrent", {
+        model: { provider: "openai", modelId: "gpt", name: "GPT" },
+        thinkingLevels: ["off", "high"],
+        deferred: true,
+      }).ok,
+    ).toBe(true);
+    // The session snapshot stays valid for the idle path.
+    expect(
+      validateSuccessResult("model.setCurrent", {
+        model: { provider: "openai", modelId: "gpt", name: "GPT" },
+        thinkingLevels: ["off"],
+        session: {
+          sessionId: SESSION_ID,
+          cwd: "C:\\workspace",
+          revision: 1,
+          isStreaming: false,
+          isIdle: true,
+          isCompacting: false,
+          isRetrying: false,
+          thinkingLevel: "off",
+          autoCompactionEnabled: false,
+          autoRetryEnabled: false,
+          steeringMode: "all",
+          followUpMode: "all",
+          pending: { revision: 0, steering: [], followUp: [] },
+          messages: [],
+          tools: {
+            revision: 1,
+            workspaceId: WORKSPACE_ID,
+            sessionId: SESSION_ID,
+            sessionRevision: 1,
+            tools: [],
+            active: [],
+          },
+        },
+      }).ok,
+    ).toBe(true);
+    expect(
+      validateSuccessResult("model.setCurrent", {
+        model: { provider: "openai", modelId: "gpt", name: "GPT" },
+        thinkingLevels: ["off"],
+        deferred: "yes",
+      }).ok,
+    ).toBe(false);
+  });
   it("session.usageReport validates the complete report shape", () => {
     const usage = {
       input: 10,

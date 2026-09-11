@@ -1209,6 +1209,7 @@ export const zh: Record<MessageKey, string> = {
   contextCompactNow: "立即压缩",
   modelNoneEnabled: "没有已启用的模型",
   modelSwitchFailed: "无法切换模型",
+  modelSwitchDeferred: "模型将在下一步生效",
   modelThinkingSetFailed: "无法设置思考级别",
   modelSelect: "选择模型",
   modelNone: "未选择模型",

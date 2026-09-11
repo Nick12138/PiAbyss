@@ -1267,6 +1267,7 @@ export const en = {
   contextCompactNow: "Compact now",
   modelNoneEnabled: "No enabled models",
   modelSwitchFailed: "Could not switch model",
+  modelSwitchDeferred: "Model will apply from the next step",
   modelThinkingSetFailed: "Could not set thinking level",
   modelSelect: "Select model",
   modelNone: "No model",

@@ -649,8 +649,14 @@ export function ModelControls() {
       return false;
     }
     if (res.ok) {
-      setSession(res.result.session);
+      // A switch requested while a run is in flight returns no full snapshot
+      // (it would race the streamed transcript draft); `model.changed` already
+      // carries the update, so only the thinking levels need reconciling here.
+      if (res.result.session) setSession(res.result.session);
       setThinkingLevels(res.result.thinkingLevels);
+      if (res.result.deferred) {
+        pushNotification(t("modelSwitchDeferred"), "info");
+      }
       return true;
     }
     pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));

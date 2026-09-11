@@ -344,14 +344,8 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
     const packageOut = await createPackageHandlers(factory)["package.reloadResources"]!(
       reloadCtx as never,
     );
-    const modelOut = await createAgentHandlers(factory)["model.setCurrent"]!({
-      ...promptCtx,
-      id: "req-model-busy",
-      params: { provider: "test", modelId: "model" },
-    } as never);
 
     expect("error" in packageOut && packageOut.error.code).toBe("AGENT_BUSY");
-    expect("error" in modelOut && modelOut.error.code).toBe("AGENT_BUSY");
   });
 
   it("agent.setActiveTools rechecks the agent operation lock after acquiring the graph lock", async () => {

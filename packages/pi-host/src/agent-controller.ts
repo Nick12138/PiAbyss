@@ -1465,9 +1465,15 @@ export function createAgentHandlers(
           if (!g?.agentSession || !g.sessionManager) {
             return { error: createHostError("AGENT_NOT_READY", "No active session") };
           }
-          if (factory.getSessionOperationLock(g.agentSession).isHeld() || !g.agentSession.isIdle) {
-            return { error: createHostError("AGENT_BUSY", "Agent is busy", { retryable: true }) };
-          }
+          // A model switch is safe while a run is in flight: the SDK re-reads
+          // the session model at every turn boundary
+          // (prepareNextTurnWithContext), so the current LLM call finishes on
+          // the previous model and the following turns continue on the newly
+          // selected one. Accept the request instead of rejecting with
+          // AGENT_BUSY — the same "send while running" behaviour as
+          // steer/follow-up.
+          const deferredToNextTurn =
+            factory.getSessionOperationLock(g.agentSession).isHeld() || !g.agentSession.isIdle;
 
           const params = ctx.params as { provider: string; modelId: string };
           const registry = factory.deps.modelRegistry;
@@ -1531,6 +1537,20 @@ export function createAgentHandlers(
             thinkingLevel: snap.thinkingLevel,
             availableThinkingLevels: thinkingLevels,
           });
+          if (deferredToNextTurn) {
+            // Mid-stream the desktop owns a streamed transcript draft; a full
+            // session snapshot here would race it. `model.changed` above
+            // already updates the selected model, and the terminal
+            // session.snapshot at run end reconciles everything else.
+            return {
+              result: {
+                model: snap.model!,
+                thinkingLevels,
+                deferred: true,
+              },
+              identity,
+            };
+          }
           return {
             result: {
               model: snap.model!,

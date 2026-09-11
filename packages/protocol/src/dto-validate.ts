@@ -2635,10 +2635,11 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         : "invalid model.list result";
     case "model.setCurrent":
       return isPlainObject(result) &&
-        hasExactKeys(result, ["model", "thinkingLevels", "session"]) &&
+        hasExactKeys(result, ["model", "thinkingLevels"], ["session", "deferred"]) &&
         isModelSummary(result.model) &&
         isStringArray(result.thinkingLevels) &&
-        isSessionSnapshot(result.session)
+        (result.session === undefined || isSessionSnapshot(result.session)) &&
+        (result.deferred === undefined || typeof result.deferred === "boolean")
         ? null
         : "invalid model.setCurrent result";
     case "skill.list":

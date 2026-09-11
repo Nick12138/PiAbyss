@@ -330,6 +330,73 @@ describe("session-bound agent handlers", () => {
   });
 });
 
+describe("model.setCurrent while the agent is running", () => {
+  function modelSwitchFixture() {
+    const fixture = stableHandlerFixture(Promise.resolve());
+    const session = fixture.session as unknown as {
+      model?: { provider: string; id: string };
+      setModel: (model: { provider: string; id: string }) => Promise<void>;
+    };
+    session.model = { provider: "old-provider", id: "old-model" };
+    session.setModel = vi.fn(async (next: { provider: string; id: string }) => {
+      session.model = next;
+    });
+    const target = { provider: "new-provider", id: "new-model", name: "New Model" };
+    (fixture.factory as unknown as { deps: unknown }).deps = {
+      agentDir: "C:\\nonexistent\\pi-agent",
+      modelRuntime: { getProviders: () => [{ id: "new-provider", name: "New Provider" }] },
+      modelRegistry: { getAvailable: () => [target] },
+    };
+    return { fixture, target };
+  }
+
+  it("accepts the switch mid-run and defers it to the next turn", async () => {
+    const { fixture, target } = modelSwitchFixture();
+    // The session runtime reports a run in flight: this is exactly the case
+    // that used to answer AGENT_BUSY.
+    expect(fixture.session.isIdle).toBe(false);
+
+    const outcome = await createAgentHandlers(fixture.factory)["model.setCurrent"]!({
+      id: "model-switch-while-running",
+      context: {},
+      params: { provider: "new-provider", modelId: "new-model" },
+    } as never);
+
+    expect("error" in outcome).toBe(false);
+    if ("error" in outcome) return;
+    expect(outcome.result).toMatchObject({
+      deferred: true,
+      model: { provider: "new-provider", modelId: "new-model", name: "New Model" },
+    });
+    // No full snapshot mid-stream: it would race the desktop draft.
+    expect((outcome.result as { session?: unknown }).session).toBeUndefined();
+    expect(fixture.session.setModel).toHaveBeenCalledWith(target);
+    expect(fixture.server.emit).toHaveBeenCalledWith(
+      "model.changed",
+      expect.objectContaining({
+        model: expect.objectContaining({ provider: "new-provider", modelId: "new-model" }),
+      }),
+    );
+  });
+
+  it("still returns a full snapshot when the agent is idle", async () => {
+    const { fixture, target } = modelSwitchFixture();
+    (fixture.session as unknown as { isIdle: boolean }).isIdle = true;
+
+    const outcome = await createAgentHandlers(fixture.factory)["model.setCurrent"]!({
+      id: "model-switch-idle",
+      context: {},
+      params: { provider: "new-provider", modelId: "new-model" },
+    } as never);
+
+    expect("error" in outcome).toBe(false);
+    if ("error" in outcome) return;
+    expect((outcome.result as { session?: unknown }).session).toBeDefined();
+    expect((outcome.result as { deferred?: boolean }).deferred).toBeUndefined();
+    expect(fixture.session.setModel).toHaveBeenCalledWith(target);
+  });
+});
+
 describe("agent.prompt startup", () => {
   it("publishes the settled runtime only after releasing the prompt lock", async () => {
     const gate = deferred();
