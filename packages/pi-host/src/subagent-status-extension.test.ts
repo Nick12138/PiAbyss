@@ -115,24 +115,29 @@ describe("normalizeSubagentRuns", () => {
     expect(snapshot.totalActive).toBe(1);
   });
 
-  it("keeps runs with a stale recorded sessionId when the transcript spawned them", () => {
-    // The plugin snapshots the orchestrator session id from a process-global
-    // env var set at the last session_start; a session switch that skips
-    // session_start leaves runs recorded under the previous session's id. The
-    // transcript evidence must still surface them.
+  it("does not let transcript evidence override an explicit other-session owner", () => {
     const owned = new Set(["stale-owned"]);
     const snapshot = normalizeSubagentRuns(
-      [
-        run({ id: "stale-owned", sessionId: "session-2", status: "running" }),
-        // Another session's run not in this transcript must stay hidden.
-        run({ id: "alien", sessionId: "session-2", status: "running" }),
-      ],
+      [run({ id: "stale-owned", sessionId: "session-2", status: "running" })],
       undefined,
       "session-1",
       owned,
     );
-    expect(snapshot.runs.map((node) => node.id)).toEqual(["stale-owned"]);
-    expect(snapshot.totalActive).toBe(1);
+    expect(snapshot.runs).toEqual([]);
+    expect(snapshot.totalActive).toBe(0);
+  });
+
+  it("uses transcript evidence only for legacy runs without sessionId", () => {
+    const snapshot = normalizeSubagentRuns(
+      [
+        run({ id: "legacy-owned", sessionId: null, status: "running" }),
+        run({ id: "legacy-alien", sessionId: undefined, status: "running" }),
+      ],
+      undefined,
+      "session-1",
+      new Set(["legacy-owned"]),
+    );
+    expect(snapshot.runs.map((node) => node.id)).toEqual(["legacy-owned"]);
   });
 
   it("caps the scoped runs array at 32 and reports the remainder as omitted", () => {

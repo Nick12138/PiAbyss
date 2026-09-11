@@ -63,13 +63,12 @@ export function mapSubagentHttpRun(run: SubagentHttpRunSummary): SubagentStatusN
 
 /** Normalize a `GET /api/runs` payload into a bounded status snapshot.
  * Runs are scoped to the active orchestrator session: a run is shown when its
- * recorded sessionId matches the active session, OR when its run id appears
- * in the active session's own transcript — i.e. this session really spawned
- * it. The transcript fallback covers both legacy runs without a recorded
- * sessionId and runs whose recorded sessionId is stale (the plugin snapshots
- * the orchestrator session id from a process-global env var set at the last
- * session_start; session switches that skip session_start leave it pointing
- * at the previous session). Historical runs from other sessions never leak
+ * recorded sessionId matches the active session, OR (for legacy runs without
+ * a recorded sessionId) when its run id appears in the active session's own
+ * transcript — i.e. this session really spawned it. Once a run has an explicit
+ * sessionId, that value is authoritative; transcript evidence must not
+ * override it, otherwise a stale/ambiguous transcript could reintroduce a
+ * run from another session. Historical runs from other sessions never leak
  * into the panel. */
 export function normalizeSubagentRuns(
   runs: SubagentHttpRunSummary[],
@@ -78,8 +77,10 @@ export function normalizeSubagentRuns(
   ownedRunIds: Set<string> | null = null,
 ): SubagentsStatusSnapshot {
   const scoped = runs.filter((run) => {
-    if (typeof run.sessionId === "string" && run.sessionId && run.sessionId === sessionId) {
-      return true;
+    // Explicit ownership is authoritative. The transcript fallback is only
+    // for pre-sessionId runs produced by older plugin versions.
+    if (typeof run.sessionId === "string" && run.sessionId.trim()) {
+      return run.sessionId === sessionId;
     }
     return ownedRunIds?.has(run.id) ?? false;
   });
@@ -259,9 +260,9 @@ export function createSubagentStatusBridge(
       try {
         const data = await getSubagentApi<SubagentHttpRunsResponse>("/api/runs");
         if (disposed || sessionDisposed || generation !== activeGeneration) return;
-        // Legacy runs (no sessionId recorded) are attributed via the active
-        // session's own transcript: if the session invoked `subagent` and got
-        // that run id, it belongs to this session.
+        // Only legacy runs without an explicit sessionId are attributed via
+        // the active session's transcript. Explicit plugin ownership is
+        // authoritative and is checked inside normalizeSubagentRuns.
         const ownedRunIds = options.sessionsDir
           ? collectSessionRunIds(options.sessionsDir, identity?.sessionId)
           : null;
