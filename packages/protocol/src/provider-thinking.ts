@@ -1,8 +1,8 @@
 import type { ThinkingLevel, ThinkingLevelMap } from "./types.js";
 import { findModelThinkingProfile } from "./model-thinking-profiles.js";
 
-export const DEFAULT_MODEL_CONTEXT_WINDOW = 272_000;
-export const DEFAULT_MODEL_MAX_TOKENS = 65_536;
+export const DEFAULT_MODEL_CONTEXT_WINDOW = 1_000_000;
+export const DEFAULT_MODEL_MAX_TOKENS = 128_000;
 
 export const THINKING_LEVELS: readonly ThinkingLevel[] = [
   "off",

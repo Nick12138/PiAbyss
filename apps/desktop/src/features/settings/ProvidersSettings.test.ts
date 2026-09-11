@@ -9,11 +9,11 @@ import {
 } from "./provider-settings-model";
 
 describe("newProviderModel", () => {
-  it("creates a conservative manual model draft for an unknown model", () => {
+  it("creates an automatic model draft for an unknown model", () => {
     expect(newProviderModel("vendor-new-model")).toEqual({
       id: "vendor-new-model",
       name: "vendor-new-model",
-      reasoning: false,
+      reasoning: true,
       input: ["text"],
       contextWindow: DEFAULT_MODEL_CONTEXT_WINDOW,
       maxTokens: DEFAULT_MODEL_MAX_TOKENS,

@@ -7,7 +7,6 @@ export const MAX_AGENT_IMAGE_BYTES = 5 * 1024 * 1024;
 /** Files at or below this size may enter the managed PDF/DOCX text parser. */
 export const MAX_AGENT_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
-
 /** UTF-8 bytes in one clipboard text paste before Composer creates a TXT attachment. */
 export const PASTED_TEXT_ATTACHMENT_THRESHOLD_BYTES = 4 * 1024;
 

@@ -892,8 +892,8 @@ describe("Provider controller", () => {
         expect.objectContaining({
           id: "grok-4.5",
           enabled: false,
-          contextWindow: 272_000,
-          maxTokens: 65_536,
+          contextWindow: 1_000_000,
+          maxTokens: 128_000,
           thinkingSource: "profile",
           thinkingLevelMap: expect.objectContaining({
             off: null,
@@ -906,8 +906,8 @@ describe("Provider controller", () => {
         expect.objectContaining({
           id: "remote-only",
           enabled: false,
-          contextWindow: 272_000,
-          maxTokens: 65_536,
+          contextWindow: 1_000_000,
+          maxTokens: 128_000,
         }),
       ]);
     }

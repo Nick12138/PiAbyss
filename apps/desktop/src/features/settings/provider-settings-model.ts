@@ -222,7 +222,9 @@ export function newProviderModel(id: string): DiscoveredProviderModel {
   return {
     id,
     name: id,
-    reasoning: detected.reasoning,
+    // New models use automatic thinking support by default; detection only
+    // supplies the provider-specific level mapping when it knows one.
+    reasoning: true,
     ...(detected.thinkingLevelMap ? { thinkingLevelMap: detected.thinkingLevelMap } : {}),
     input: ["text"],
     contextWindow: DEFAULT_MODEL_CONTEXT_WINDOW,

@@ -139,7 +139,8 @@ function normalizeModel(value: unknown): ProviderModelConfig | null {
   return {
     id,
     name: typeof value.name === "string" && value.name.trim() ? value.name.trim() : id,
-    reasoning: value.reasoning === true,
+    // Models without an explicit setting default to automatic thinking support.
+    reasoning: value.reasoning !== false,
     ...(thinkingLevelMap ? { thinkingLevelMap } : {}),
     input: input.length > 0 ? [...new Set(input)] : ["text"],
     contextWindow:
@@ -742,7 +743,7 @@ async function discoverModels(
     const thinkingLevelMap =
       existing?.thinkingLevelMap ??
       (existing === undefined || useDetectedMap ? detected.thinkingLevelMap : undefined);
-    const reasoning = existing?.reasoning ?? detected.reasoning;
+    const reasoning = existing?.reasoning ?? true;
     const thinkingSource = existing?.thinkingLevelMap
       ? "configured"
       : useDetectedMap || existing === undefined
