@@ -1,7 +1,6 @@
 import type { HostContextMap, HostRequestParams } from "./contracts.js";
 import {
   MAX_AGENT_IMAGE_BYTES,
-  MAX_AGENT_REQUEST_ATTACHMENTS,
   MAX_AGENT_REQUEST_IMAGES,
   MAX_PASTED_TEXT_ATTACHMENT_BYTES,
   MAX_GIT_COMMIT_MESSAGE_BYTES,
@@ -157,10 +156,7 @@ function validateImages(value: unknown): boolean {
 function validateAttachmentIds(value: unknown): boolean {
   return (
     value === undefined ||
-    (Array.isArray(value) &&
-      value.length <= MAX_AGENT_REQUEST_ATTACHMENTS &&
-      new Set(value).size === value.length &&
-      value.every(isUuid))
+    (Array.isArray(value) && new Set(value).size === value.length && value.every(isUuid))
   );
 }
 
@@ -290,7 +286,11 @@ function isTelegramAssistantConfig(value: unknown): boolean {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const obj = value as Record<string, unknown>;
   return (
-    exactObject(obj, [], ["draftPreviews", "rendering", "proactivePush", "activity", "timeInjection"]) &&
+    exactObject(
+      obj,
+      [],
+      ["draftPreviews", "rendering", "proactivePush", "activity", "timeInjection"],
+    ) &&
     (obj.draftPreviews === undefined || isBoolean(obj.draftPreviews)) &&
     (obj.rendering === undefined || obj.rendering === "rich" || obj.rendering === "html") &&
     (obj.proactivePush === undefined || isBoolean(obj.proactivePush)) &&
@@ -388,7 +388,9 @@ export function validateRequestParams<M extends HostMethod>(
       return exactObject(params, ["token"], ["botId", "botUsername", "botName"]) &&
         isNonEmptyString(params.token) &&
         (params.botId === undefined ||
-          (typeof params.botId === "number" && Number.isSafeInteger(params.botId) && params.botId >= 0)) &&
+          (typeof params.botId === "number" &&
+            Number.isSafeInteger(params.botId) &&
+            params.botId >= 0)) &&
         (params.botUsername === undefined || isNonEmptyString(params.botUsername)) &&
         (params.botName === undefined || isString(params.botName))
         ? ok(params)

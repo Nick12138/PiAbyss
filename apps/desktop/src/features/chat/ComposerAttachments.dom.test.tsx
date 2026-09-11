@@ -628,6 +628,78 @@ describe("Composer managed documents", () => {
     expect(fileRequests).toBe(2);
   });
 
+  it("keeps oversized documents as path-only attachments and skips conversion", async () => {
+    desktopMocks.pick.mockResolvedValue(["/documents/large.pdf"]);
+    desktopMocks.isDesktop.mockResolvedValue(true);
+    desktopMocks.fileInfo.mockResolvedValue({
+      name: "large.pdf",
+      sizeBytes: 50 * 1024 * 1024 + 1,
+      path: "/documents/large.pdf",
+      isDirectory: false,
+    });
+    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      if (method === "agent.prompt") return { ok: true, result: { accepted: true } } as never;
+      return { ok: true, result: null } as never;
+    });
+    const user = userEvent.setup();
+    render(<Composer />);
+
+    await user.click(screen.getByRole("button", { name: "Attach PDF, DOCX, image, or text file" }));
+    expect(await screen.findByText("large.pdf")).toBeVisible();
+    expect(request).not.toHaveBeenCalledWith(
+      "attachment.create",
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(request).toHaveBeenCalledWith(
+      "agent.prompt",
+      expect.objectContaining({ expectedSessionId: SESSION_ID }),
+      {
+        text: expect.stringContaining(
+          '<attached-path name="large.pdf" path="/documents/large.pdf"/>',
+        ),
+      },
+      null,
+    );
+  });
+
+  it("keeps more than four oversized documents visible and sends every path", async () => {
+    const paths = Array.from({ length: 5 }, (_, index) => `/documents/large-${index + 1}.pdf`);
+    desktopMocks.pick.mockResolvedValue(paths);
+    desktopMocks.isDesktop.mockResolvedValue(true);
+    desktopMocks.fileInfo.mockImplementation(async (path: string) => ({
+      name: path.split("/").at(-1),
+      sizeBytes: 50 * 1024 * 1024 + 1,
+      path,
+      isDirectory: false,
+    }));
+    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      if (method === "agent.prompt") return { ok: true, result: { accepted: true } } as never;
+      return { ok: true, result: null } as never;
+    });
+    const user = userEvent.setup();
+    render(<Composer />);
+
+    await user.click(screen.getByRole("button", { name: "Attach PDF, DOCX, image, or text file" }));
+    for (const path of paths) {
+      expect(await screen.findByText(path.split("/").at(-1)!)).toBeVisible();
+    }
+    expect(request).not.toHaveBeenCalledWith(
+      "attachment.create",
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    const prompt = request.mock.calls.find(([method]) => method === "agent.prompt");
+    const text = String(prompt?.[2] && (prompt[2] as { text?: string }).text);
+    for (const path of paths) expect(text).toContain(`path="${path}"`);
+  });
+
   it("keeps unreadable files as path-only attachments and injects their absolute path", async () => {
     desktopMocks.pick.mockResolvedValue(["/documents/data.bin"]);
     desktopMocks.isDesktop.mockResolvedValue(true);

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { HOST_METHODS, METHOD_CONTEXT_SCOPE } from "./methods.js";
 import {
   MAX_AGENT_IMAGE_BYTES,
-  MAX_AGENT_REQUEST_ATTACHMENTS,
   MAX_AGENT_REQUEST_IMAGES,
   MAX_GIT_COMMIT_MESSAGE_BYTES,
   MAX_GIT_BRANCH_NAME_BYTES,
@@ -449,7 +448,7 @@ describe("parseHostRequest", () => {
   );
 
   it.each(["agent.prompt", "agent.steer", "agent.followUp"] as const)(
-    "accepts managed attachment IDs and rejects overflow, duplicates, or unknown fields for %s",
+    "accepts managed attachment IDs and rejects duplicates or unknown fields for %s",
     (method) => {
       const base = {
         protocolVersion: 1 as const,
@@ -467,7 +466,7 @@ describe("parseHostRequest", () => {
         {
           text: "docs",
           attachmentIds: Array.from(
-            { length: MAX_AGENT_REQUEST_ATTACHMENTS + 1 },
+            { length: 12 },
             (_, index) => `00000000-0000-4000-8000-${String(index + 10).padStart(12, "0")}`,
           ),
         },
@@ -475,10 +474,15 @@ describe("parseHostRequest", () => {
         { text: "docs", attachmentIds: ["not-a-uuid"] },
         { text: "docs", attachmentIds: [RUN_ID], fileData: "forbidden" },
       ]) {
-        expect(parseHostRequest({ ...base, params })).toMatchObject({
-          ok: false,
-          error: { code: "INVALID_REQUEST" },
-        });
+        const result = parseHostRequest({ ...base, params });
+        if (params.attachmentIds?.length === 12) {
+          expect(result.ok).toBe(true);
+        } else {
+          expect(result).toMatchObject({
+            ok: false,
+            error: { code: "INVALID_REQUEST" },
+          });
+        }
       }
     },
   );

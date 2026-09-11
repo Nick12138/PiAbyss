@@ -271,6 +271,41 @@ describe("AttachmentStore", () => {
     ).rejects.toMatchObject({ kind: "too_large" });
   });
 
+  it("serializes background document parsing per Host", async () => {
+    const layout = await tempLayout();
+    const first = join(layout.root, "first.pdf");
+    const second = join(layout.root, "second.pdf");
+    await writeFile(first, buildPdf("First"));
+    await writeFile(second, buildPdf("Second"));
+    let active = 0;
+    let maxActive = 0;
+    const store = new AttachmentStore({
+      agentDir: layout.agentDir,
+      parser: async ({ outputDir, onProgress }) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        await writeFile(join(outputDir, "000001.txt"), "parsed");
+        onProgress?.({ processedUnits: 1, unitCount: 1 });
+        active -= 1;
+        return { status: "ready", unit: "page", unitCount: 1 };
+      },
+    });
+    await store.initialize();
+
+    const firstCreated = await store.create({ sourcePath: first, sessionId: SESSION_ID });
+    const secondCreated = await store.create({ sourcePath: second, sessionId: SESSION_ID });
+    await store.waitForIdle();
+
+    expect(maxActive).toBe(1);
+    await expect(store.get(firstCreated.id, SESSION_ID)).resolves.toMatchObject({
+      status: "ready",
+    });
+    await expect(store.get(secondCreated.id, SESSION_ID)).resolves.toMatchObject({
+      status: "ready",
+    });
+  });
+
   it("copies, parses, authorizes, and reads PDF pages", async () => {
     const layout = await tempLayout();
     const source = join(layout.root, "report.bin");
@@ -382,6 +417,24 @@ describe("AttachmentStore", () => {
     expect(result.content).toContain("| 指标 | 数值 |");
     expect(result.content).toContain("| --- | --- |");
     expect(result.content).toContain("| 收入 | 42 |");
+  });
+
+  it("allows prompt preparation for more than four attachments", async () => {
+    const layout = await tempLayout();
+    const source = join(layout.root, "many.pdf");
+    await writeFile(source, buildPdf("Many attachments"));
+    const store = new AttachmentStore({ agentDir: layout.agentDir, parser: parseAttachment });
+    await store.initialize();
+    const attachments = await Promise.all(
+      Array.from({ length: 5 }, () => createAndWait(store, source)),
+    );
+
+    await expect(
+      store.prepareForPrompt(
+        attachments.map((attachment) => attachment.id),
+        SESSION_ID,
+      ),
+    ).resolves.toHaveLength(5);
   });
 
   it("reports damaged PDF and ZIP inputs without exposing parser internals", async () => {

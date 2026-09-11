@@ -18,8 +18,6 @@ import { basename, isAbsolute, join } from "node:path";
 import { openPromise as openZip } from "yauzl";
 import {
   MAX_AGENT_ATTACHMENT_BYTES,
-  MAX_AGENT_REQUEST_ATTACHMENT_BYTES,
-  MAX_AGENT_REQUEST_ATTACHMENTS,
   MAX_PASTED_TEXT_ATTACHMENT_BYTES,
   parseAttachmentReferences,
   type AttachmentMediaType,
@@ -234,6 +232,13 @@ export class AttachmentStore {
   private readonly parser: AttachmentParser;
   private readonly removedIds = new Set<string>();
   private readonly pendingParseTasks = new Set<Promise<void>>();
+  /**
+   * PDF.js and Mammoth can each use a substantial amount of memory even
+   * though parsing happens in worker threads. Keep parsing serialized per Host
+   * so a burst of dropped documents cannot create several 256 MiB workers at
+   * once and take down the whole Node process.
+   */
+  private parseQueue: Promise<void> = Promise.resolve();
 
   constructor(options: AttachmentStoreOptions) {
     this.root = attachmentRoot(options.agentDir);
@@ -293,6 +298,9 @@ export class AttachmentStore {
     if (sourceStat.size <= 0) {
       throw new AttachmentStoreError("invalid", "Empty documents are not supported");
     }
+    // Managed attachments are deliberately bounded because this endpoint
+    // copies and parses the file. The desktop routes larger documents to a
+    // path-only attachment instead of calling this conversion pipeline.
     if (sourceStat.size > MAX_AGENT_ATTACHMENT_BYTES) {
       throw new AttachmentStoreError("too_large", "Document exceeds the 50 MiB file limit");
     }
@@ -420,21 +428,13 @@ export class AttachmentStore {
     sessionId: string,
   ): Promise<AttachmentSnapshot[]> {
     if (!attachmentIds?.length) return [];
-    if (attachmentIds.length > MAX_AGENT_REQUEST_ATTACHMENTS) {
-      throw new AttachmentStoreError("invalid", "Too many document attachments");
-    }
     const snapshots: AttachmentSnapshot[] = [];
-    let totalBytes = 0;
     for (const id of new Set(attachmentIds)) {
       const metadata = await this.authorizedMetadata(id, sessionId);
       if (metadata.status !== "ready" && metadata.status !== "needs_ocr") {
         throw new AttachmentStoreError("not_ready", `${metadata.name} is not ready`);
       }
-      totalBytes += metadata.sizeBytes;
       snapshots.push(metadataSnapshot(metadata));
-    }
-    if (totalBytes > MAX_AGENT_REQUEST_ATTACHMENT_BYTES) {
-      throw new AttachmentStoreError("too_large", "Documents exceed the 100 MiB message limit");
     }
     return snapshots;
   }
@@ -634,19 +634,25 @@ export class AttachmentStore {
     metadata: AttachmentMetadata,
     onChange?: (snapshot: AttachmentSnapshot) => void,
   ): void {
-    const task = this.parse(metadata, onChange).then(
-      () => undefined,
-      (error: unknown) => {
-        try {
-          logger.error("Attachment background parse task failed", {
-            attachmentId: metadata.id,
-            error: normalizeParserError(error),
-          });
-        } catch {
-          // The task must remain terminal even when stderr is no longer writable.
-        }
-      },
-    );
+    // Queue the parse rather than starting another memory-heavy worker
+    // immediately. The rejection handler on the chain keeps one failed parse
+    // from poisoning all subsequent attachments.
+    const task = this.parseQueue
+      .then(() => this.parse(metadata, onChange))
+      .then(
+        () => undefined,
+        (error: unknown) => {
+          try {
+            logger.error("Attachment background parse task failed", {
+              attachmentId: metadata.id,
+              error: normalizeParserError(error),
+            });
+          } catch {
+            // The task must remain terminal even when stderr is no longer writable.
+          }
+        },
+      );
+    this.parseQueue = task;
     this.pendingParseTasks.add(task);
     void task.then(() => {
       this.pendingParseTasks.delete(task);
@@ -658,6 +664,7 @@ export class AttachmentStore {
     onChange?: (snapshot: AttachmentSnapshot) => void,
   ): Promise<void> {
     try {
+      if (this.removedIds.has(metadata.id)) return;
       const outputDir = join(this.attachmentDir(metadata.id), "units");
       await rm(outputDir, { recursive: true, force: true });
       await mkdir(outputDir, { recursive: true, mode: DIR_MODE });

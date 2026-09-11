@@ -33,8 +33,6 @@ import { notifyOperationFailure } from "../../lib/notify-operation-error";
 import {
   MAX_AGENT_ATTACHMENT_BYTES,
   MAX_AGENT_IMAGE_BYTES,
-  MAX_AGENT_REQUEST_ATTACHMENT_BYTES,
-  MAX_AGENT_REQUEST_ATTACHMENTS,
   MAX_AGENT_REQUEST_IMAGES,
   MAX_PASTED_TEXT_ATTACHMENT_BYTES,
   PASTED_TEXT_ATTACHMENT_THRESHOLD_BYTES,
@@ -128,6 +126,8 @@ type PendingFile = {
   text?: string;
   sourcePath?: string;
   isDirectory?: boolean;
+  /** Large document paths are not subject to the regular file-chip cap. */
+  unlimited?: boolean;
 };
 type PasteRecovery = {
   sessionId: string;
@@ -213,22 +213,12 @@ function pickWelcomeKey(): MessageKey {
 
 function localizedDocumentError(message: string | undefined, t: Translate): string {
   if (!message) return t("composerDocumentParseFailed");
-  if (/100 mib|message limit/iu.test(message)) {
-    return t("composerDocumentTotalTooLarge", {
-      max: Math.round(MAX_AGENT_REQUEST_ATTACHMENT_BYTES / 1024 / 1024),
-    });
-  }
   if (/password|encrypted/iu.test(message)) return t("composerDocumentEncrypted");
   if (/genuine|valid docx|only.*pdf|unsupported.*type/iu.test(message)) {
     return t("composerDocumentTypeMismatch");
   }
   if (/damaged|invalid pdf|bad xref|formaterror|structure/iu.test(message)) {
     return t("composerDocumentDamaged");
-  }
-  if (/exceed|too large|50 mib|100 mib/iu.test(message)) {
-    return t("composerDocumentTooLarge", {
-      max: Math.round(MAX_AGENT_ATTACHMENT_BYTES / 1024 / 1024),
-    });
   }
   return t("composerDocumentParseFailedDetail", { error: message });
 }
@@ -776,13 +766,26 @@ export function Composer({
     }
   }
 
-  async function addDocumentPath(path: string) {
+  async function addDocumentPath(path: string, info?: DesktopFileInfo) {
     if (!host || !workspace || !session) return;
-    if (documentsRef.current.length >= MAX_AGENT_REQUEST_ATTACHMENTS) {
+    let fileInfo: DesktopFileInfo;
+    try {
+      fileInfo = info ?? (await getDesktopFileInfo(path));
+    } catch (error) {
       pushNotification(
-        t("composerDocumentLimit", { max: MAX_AGENT_REQUEST_ATTACHMENTS }),
+        t("composerReadFileFailedDetail", {
+          name: localPathName(path),
+          error: error instanceof Error ? error.message : String(error),
+        }),
         "warning",
       );
+      return;
+    }
+    if (fileInfo.sizeBytes > MAX_AGENT_ATTACHMENT_BYTES) {
+      // Do not copy or parse documents above the parser's per-file safety
+      // threshold. Keep them as path attachments so they remain visible and
+      // the Agent can choose an appropriate external tool.
+      await addPathOnlyAttachment(path, fileInfo, true);
       return;
     }
     const context = activeSessionContext(host, workspace, session);
@@ -790,7 +793,13 @@ export function Composer({
     try {
       const response = await hostClient.request("attachment.create", context, { path }, 120_000);
       if (!response.ok) {
-        pushNotification(localizedDocumentError(response.error?.message, t), "error");
+        // The file may have grown after desktop_file_info(). Preserve the same
+        // large-document path behavior if the Host observes that race.
+        if (/50 mib|file limit/iu.test(response.error?.message ?? "")) {
+          await addPathOnlyAttachment(path, undefined, true);
+        } else {
+          pushNotification(localizedDocumentError(response.error?.message, t), "error");
+        }
         return;
       }
       if (
@@ -798,22 +807,6 @@ export function Composer({
           session: true,
         })
       ) {
-        return;
-      }
-      const totalBytes = documentsRef.current.reduce(
-        (total, document) => total + document.sizeBytes,
-        response.result.sizeBytes,
-      );
-      if (totalBytes > MAX_AGENT_REQUEST_ATTACHMENT_BYTES) {
-        await hostClient
-          .request("attachment.remove", context, { attachmentId: response.result.id })
-          .catch(() => undefined);
-        pushNotification(
-          t("composerDocumentTotalTooLarge", {
-            max: Math.round(MAX_AGENT_REQUEST_ATTACHMENT_BYTES / 1024 / 1024),
-          }),
-          "warning",
-        );
         return;
       }
       updateDocuments((current) => [
@@ -947,24 +940,6 @@ export function Composer({
         updateDocuments((current) => current.filter((item) => item.id !== localId));
         return;
       }
-      const totalBytes = documentsRef.current.reduce(
-        (total, document) => total + (document.id === localId ? 0 : document.sizeBytes),
-        response.result.sizeBytes,
-      );
-      if (totalBytes > MAX_AGENT_REQUEST_ATTACHMENT_BYTES) {
-        await hostClient
-          .request("attachment.remove", context, { attachmentId: response.result.id })
-          .catch(() => undefined);
-        updateDocuments((current) => current.filter((item) => item.id !== localId));
-        insertRecoveredText(recovery);
-        pushNotification(
-          t("composerDocumentTotalTooLarge", {
-            max: Math.round(MAX_AGENT_REQUEST_ATTACHMENT_BYTES / 1024 / 1024),
-          }),
-          "warning",
-        );
-        return;
-      }
       const created: PendingPastedText = {
         ...response.result,
         kind: "pasted-text",
@@ -1026,8 +1001,14 @@ export function Composer({
         await addPathOnlyAttachment(path, info);
         continue;
       }
+      if (info.sizeBytes > MAX_AGENT_ATTACHMENT_BYTES && /\.(?:pdf|docx|txt)$/iu.test(path)) {
+        // Files above the parser threshold stay visible as paths. This avoids
+        // copying or reading a large document merely to display it.
+        await addPathOnlyAttachment(path, info, true);
+        continue;
+      }
       if (isDocumentPath(path)) {
-        await addDocumentPath(path);
+        await addDocumentPath(path, info);
         continue;
       }
       try {
@@ -1054,11 +1035,12 @@ export function Composer({
           });
         } else {
           setFiles((current) => {
-            if (current.length >= MAX_FILES) {
+            const unlimited = path.toLowerCase().endsWith(".txt");
+            if (!unlimited && current.filter((file) => !file.unlimited).length >= MAX_FILES) {
               pushNotification(t("composerFileLimit", { max: MAX_FILES }), "warning");
               return current;
             }
-            return [
+            const next = [
               ...current,
               {
                 id: crypto.randomUUID(),
@@ -1067,20 +1049,25 @@ export function Composer({
                 kind: "text" as const,
                 text: file.text,
                 sourcePath: path,
+                ...(unlimited ? { unlimited: true as const } : {}),
               },
             ];
+            if (unlimited) return next;
+            let regularCount = 0;
+            return next.filter((item) => item.unlimited || regularCount++ < MAX_FILES);
           });
         }
       } catch {
         // Unknown/binary/oversized file: keep it as a path-only attachment
         // (no content read, no parsing) so the agent can still operate on it.
-        await addPathOnlyAttachment(path, info);
+        const isDocumentPathOnly = /\.(?:pdf|docx|txt)$/iu.test(path.trim());
+        await addPathOnlyAttachment(path, info, isDocumentPathOnly);
       }
     }
   }
   addLocalPathsCallbackRef.current = addLocalPaths;
 
-  async function addPathOnlyAttachment(path: string, info?: DesktopFileInfo) {
+  async function addPathOnlyAttachment(path: string, info?: DesktopFileInfo, unlimited = false) {
     let name: string;
     let size: number;
     let isDirectory: boolean;
@@ -1100,11 +1087,11 @@ export function Composer({
       return;
     }
     setFiles((current) => {
-      if (current.length >= MAX_FILES) {
+      if (!unlimited && current.filter((file) => !file.unlimited).length >= MAX_FILES) {
         pushNotification(t("composerFileLimit", { max: MAX_FILES }), "warning");
         return current;
       }
-      return [
+      const next = [
         ...current,
         {
           id: crypto.randomUUID(),
@@ -1113,8 +1100,12 @@ export function Composer({
           kind: "path" as const,
           sourcePath: path,
           ...(isDirectory ? { isDirectory: true as const } : {}),
+          ...(unlimited ? { unlimited: true as const } : {}),
         },
       ];
+      if (unlimited) return next;
+      let regularCount = 0;
+      return next.filter((file) => file.unlimited || regularCount++ < MAX_FILES);
     });
   }
 
@@ -1196,6 +1187,7 @@ export function Composer({
             size: file.size,
             kind: "text",
             text,
+            ...(file.name.toLowerCase().endsWith(".txt") ? { unlimited: true } : {}),
           });
         } catch {
           pushNotification(t("composerReadFileFailed", { name: file.name }), "warning");
@@ -1204,10 +1196,12 @@ export function Composer({
       if (loaded.length > 0) {
         setFiles((current) => {
           const next = [...current, ...loaded];
-          if (next.length > MAX_FILES) {
+          const regularFiles = next.filter((file) => !file.unlimited);
+          if (regularFiles.length > MAX_FILES) {
             pushNotification(t("composerFileLimit", { max: MAX_FILES }), "warning");
           }
-          return next.slice(0, MAX_FILES);
+          let regularCount = 0;
+          return next.filter((file) => file.unlimited || regularCount++ < MAX_FILES);
         });
       }
     }
@@ -1227,26 +1221,6 @@ export function Composer({
       pushNotification(
         t("composerPastedTextTooLarge", {
           max: Math.round(MAX_PASTED_TEXT_ATTACHMENT_BYTES / 1024 / 1024),
-        }),
-        "warning",
-      );
-      return false;
-    }
-    if (documentsRef.current.length >= MAX_AGENT_REQUEST_ATTACHMENTS) {
-      pushNotification(
-        t("composerDocumentLimit", { max: MAX_AGENT_REQUEST_ATTACHMENTS }),
-        "warning",
-      );
-      return false;
-    }
-    const totalBytes = documentsRef.current.reduce(
-      (total, document) => total + document.sizeBytes,
-      sizeBytes,
-    );
-    if (totalBytes > MAX_AGENT_REQUEST_ATTACHMENT_BYTES) {
-      pushNotification(
-        t("composerDocumentTotalTooLarge", {
-          max: Math.round(MAX_AGENT_REQUEST_ATTACHMENT_BYTES / 1024 / 1024),
         }),
         "warning",
       );
@@ -1889,12 +1863,7 @@ export function Composer({
               title={t("composerAttach")}
               aria-label={t("composerAttach")}
               className="composer-control flex size-7 items-center justify-center rounded-md border border-border-subtle text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
-              disabled={
-                disabled ||
-                (images.length >= MAX_AGENT_REQUEST_IMAGES &&
-                  files.length >= MAX_FILES &&
-                  documents.length >= MAX_AGENT_REQUEST_ATTACHMENTS)
-              }
+              disabled={disabled}
               onClick={() => void chooseAttachments()}
             >
               <Paperclip size={14} />

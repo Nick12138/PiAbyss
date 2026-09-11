@@ -63,8 +63,8 @@ async function parsePdf(args: AttachmentParseArgs): Promise<AttachmentParseResul
     url: args.sourcePath,
     useSystemFonts: true,
   });
-  const document = await loadingTask.promise;
   try {
+    const document = await loadingTask.promise;
     if (document.numPages > MAX_PDF_PAGES) {
       throw new Error(`PDF has too many pages (maximum ${MAX_PDF_PAGES})`);
     }
@@ -73,15 +73,21 @@ async function parsePdf(args: AttachmentParseArgs): Promise<AttachmentParseResul
     let hasVisibleText = false;
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
       const page = await document.getPage(pageNumber);
-      const content = await page.getTextContent();
-      const text = pdfPageText(content.items);
-      if (text.length > 0) hasVisibleText = true;
-      extractedBytes += await writeUnit(args.outputDir, pageNumber, text);
-      if (extractedBytes > MAX_EXTRACTED_BYTES) {
-        throw new Error("Extracted PDF text exceeds the 100 MiB safety limit");
+      try {
+        const content = await page.getTextContent();
+        const text = pdfPageText(content.items);
+        if (text.length > 0) hasVisibleText = true;
+        extractedBytes += await writeUnit(args.outputDir, pageNumber, text);
+        if (extractedBytes > MAX_EXTRACTED_BYTES) {
+          throw new Error("Extracted PDF text exceeds the 100 MiB safety limit");
+        }
+        args.onProgress?.({ processedUnits: pageNumber, unitCount: document.numPages });
+      } finally {
+        // A malformed page can fail during getTextContent/writeUnit. Release
+        // its PDF.js resources on that path too; the worker is intentionally
+        // bounded, but cleanup still matters for large documents.
+        page.cleanup();
       }
-      args.onProgress?.({ processedUnits: pageNumber, unitCount: document.numPages });
-      page.cleanup();
     }
     return {
       status: hasVisibleText ? "ready" : "needs_ocr",
@@ -89,7 +95,10 @@ async function parsePdf(args: AttachmentParseArgs): Promise<AttachmentParseResul
       unitCount: document.numPages,
     };
   } finally {
-    await loadingTask.destroy();
+    // getDocument() may reject before a document is available. Destroy the
+    // loading task on every path, but do not mask the original parse error if
+    // PDF.js has already torn the task down.
+    await loadingTask.destroy().catch(() => undefined);
   }
 }
 
