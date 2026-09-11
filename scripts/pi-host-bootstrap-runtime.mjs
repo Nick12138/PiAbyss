@@ -14,7 +14,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { assertNodeModulesGraph, restoreNodeModulesLinks } from "./portable-node-modules.mjs";
@@ -265,9 +265,9 @@ export function verifyZipExtraction(zipPath, destination) {
   const extracted = listExtractedFiles(destination);
   const missing = [];
   for (const name of readZipFileEntries(zipPath)) {
-    if (!extracted.has(name) && !existsSync(join(destination, ...name.split("/")))) {
-      missing.push(name);
-    }
+    // An archive file must be a regular extracted file. `existsSync` alone
+    // would incorrectly accept a directory (or junction) with the same name.
+    if (!extracted.has(name)) missing.push(name);
   }
   return missing;
 }
@@ -291,61 +291,64 @@ function describeMissing(missing) {
     .join(", ")}`;
 }
 
-function extractPiHostArchive(zipPath, destination) {
+function resetExtractionDestination(destination) {
+  // Never overlay retries. A partially extracted tree can contain directories
+  // or junctions that make a later extractor appear successful while the
+  // original missing file is still absent.
+  rmSync(destination, { recursive: true, force: true });
   mkdirSync(destination, { recursive: true });
-  let attemptedTools = [];
+}
+
+function runVerifiedExtractor(zipPath, destination, command, args) {
+  resetExtractionDestination(destination);
+  const result = spawnSync(command, args, {
+    encoding: "utf8",
+    shell: false,
+  });
+  if (result.status !== 0) return { missing: null, result };
+  return { missing: verifyZipExtraction(zipPath, destination), result };
+}
+
+export function extractPiHostArchive(zipPath, destination) {
+  mkdirSync(destination, { recursive: true });
+  const attemptedTools = [];
   let lastMissing = null;
-  if (process.platform === "win32") {
-    attemptedTools.push(windowsBsdTar());
-    // BSD tar on System32 historically extracted the staged runtime fine, but
-    // a runner-side libarchive quirk silently dropped individual entries
-    // (release CI: dist/utils/git.js missing after a clean exit). Always
-    // verify the extracted tree entry-by-entry and fall back to Info-ZIP
-    // unzip from the bundled portable Git when anything is missing.
-    const result = spawnSync(windowsBsdTar(), ["-x", "-f", zipPath, "-C", destination], {
-      encoding: "utf8",
-      shell: false,
-    });
-    const missing = result.status === 0 ? verifyZipExtraction(zipPath, destination) : null;
-    if (missing !== null && missing.length === 0) return;
-    if (missing !== null) {
-      lastMissing = missing;
-      console.error(`[pi-host-bootstrap] tar extraction incomplete: ${describeMissing(missing)}`);
+
+  // On Windows, prefer Info-ZIP from the bundled Portable Git. GitHub's
+  // runner-side BSD tar has intermittently returned success while omitting
+  // individual entries from otherwise valid ZIP archives. Keep tar as a
+  // fallback for installations that do not include Portable Git yet.
+  const extractors =
+    process.platform === "win32"
+      ? [
+          ...(findFallbackUnzip(zipPath) ?? []).map((unzip) => ({
+            command: unzip,
+            args: ["-q", "-o", zipPath, "-d", destination],
+          })),
+          { command: windowsBsdTar(), args: ["-x", "-f", zipPath, "-C", destination] },
+        ]
+      : [
+          { command: "unzip", args: ["-q", "-o", zipPath, "-d", destination] },
+          { command: "tar", args: ["-x", "-f", zipPath, "-C", destination] },
+        ];
+
+  for (const extractor of extractors) {
+    attemptedTools.push(extractor.command);
+    let result;
+    try {
+      result = runVerifiedExtractor(zipPath, destination, extractor.command, extractor.args);
+    } catch (error) {
+      result = { missing: null, result: { error } };
     }
-  } else {
-    attemptedTools.push("unzip", "tar");
-    const unzip = spawnSync("unzip", ["-q", "-o", zipPath, "-d", destination], {
-      encoding: "utf8",
-      shell: false,
-    });
-    if (unzip.status === 0 && verifyZipExtraction(zipPath, destination).length === 0) return;
-    const tar = spawnSync("tar", ["-x", "-f", zipPath, "-C", destination], {
-      encoding: "utf8",
-      shell: false,
-    });
-    if (tar.status === 0 && verifyZipExtraction(zipPath, destination).length === 0) return;
-    lastMissing = verifyZipExtraction(zipPath, destination);
+    if (result.missing?.length === 0) return;
+    if (result.missing) {
+      lastMissing = result.missing;
+      console.error(
+        `[pi-host-bootstrap] ${extractor.command} extraction incomplete: ${describeMissing(result.missing)}`,
+      );
+    }
   }
 
-  const fallbackUnzips = findFallbackUnzip(zipPath);
-  if (fallbackUnzips) {
-    for (const unzip of fallbackUnzips) {
-      const result = spawnSync(unzip, ["-q", "-o", zipPath, "-d", destination], {
-        encoding: "utf8",
-        shell: false,
-      });
-      if (result.status !== 0) continue;
-      const missing = verifyZipExtraction(zipPath, destination);
-      if (missing.length === 0) {
-        console.error(
-          `[pi-host-bootstrap] archive recovered via ${unzip} after ${attemptedTools.join("/")} ` +
-            `left ${lastMissing ? lastMissing.length : "?"} entries missing`,
-        );
-        return;
-      }
-      lastMissing = missing;
-    }
-  }
   throw new Error(
     `Pi Host archive extraction is incomplete after trying ${attemptedTools.join(", ")}: ` +
       (lastMissing ? describeMissing(lastMissing) : "extractor exited non-zero"),

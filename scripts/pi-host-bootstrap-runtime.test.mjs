@@ -249,6 +249,13 @@ test("zip verifier detects entries missing from the extracted tree", async (t) =
   assert.deepEqual(verifyZipExtraction(zipPath, destination), []);
 
   const missingEntry = files[1];
-  rmSync(join(destination, ...missingEntry.split("/")));
+  const missingPath = join(destination, ...missingEntry.split("/"));
+  rmSync(missingPath);
+  assert.deepEqual(verifyZipExtraction(zipPath, destination), [missingEntry]);
+
+  // A directory/junction at a file path must not make verification pass. This
+  // is important on Windows, where retrying extraction into a partially
+  // materialized tree can leave a directory at the path of a missing file.
+  mkdirSync(missingPath, { recursive: true });
   assert.deepEqual(verifyZipExtraction(zipPath, destination), [missingEntry]);
 });
