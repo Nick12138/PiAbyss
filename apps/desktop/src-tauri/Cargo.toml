@@ -1,6 +1,6 @@
 [package]
 name = "piabyss"
-version = "0.3.3"
+version = "0.3.4"
 description = "PiAbyss"
 authors = ["PiAbyss contributors"]
 edition = "2021"
