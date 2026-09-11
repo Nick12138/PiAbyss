@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HostStatusSnapshot, TelegramSessionSummary } from "@piabyss/protocol";
@@ -105,7 +105,7 @@ describe("TelegramWorkspaceRow", () => {
     expect(startTelegramBridge).not.toHaveBeenCalled();
   });
 
-  it("starts the telegram bridge in the background after startup when the bridge is meant to run", async () => {
+  it("does not auto-start the bridge at app startup", async () => {
     useAppStore.setState({
       host,
       workspace: {
@@ -144,10 +144,10 @@ describe("TelegramWorkspaceRow", () => {
       desynchronized: false,
     });
     render(<TelegramWorkspaceRow onActivate={onActivate} />);
-    // No user interaction: the settled app + configured profile + bridge
-    // preference defaulting to on must bootstrap the bridge's dedicated Host
-    // in the background once — WITHOUT switching the foreground workspace.
-    await waitFor(() => expect(startTelegramBridgeInBackground).toHaveBeenCalledTimes(1));
+    // Startup must never bootstrap the bridge — a configured profile alone is
+    // not enough. The bridge only starts via the manual settings switch.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(startTelegramBridgeInBackground).not.toHaveBeenCalled();
     expect(onActivate).not.toHaveBeenCalled();
   });
 
@@ -166,7 +166,7 @@ describe("TelegramWorkspaceRow", () => {
   });
 
   it("shows a green status dot when the bridge is connected", () => {
-    globalThis.localStorage?.removeItem("piabyss.telegram.bridgeEnabled.v1");
+    globalThis.localStorage?.setItem("piabyss.telegram.bridgeEnabled.v1", "1");
     useTelegramViewStore.setState({
       bridgeStatus: { connected: true },
       bridgeLoading: false,
@@ -175,6 +175,7 @@ describe("TelegramWorkspaceRow", () => {
     const row = screen.getByRole("button", { name: /@liu_worker_bot/ });
     expect(row.querySelector(".bg-success.status-dot-pulse")).not.toBeNull();
     expect(row.querySelector(".bg-danger")).toBeNull();
+    globalThis.localStorage?.removeItem("piabyss.telegram.bridgeEnabled.v1");
   });
 
   it("shows no status dot when the bridge is turned off", () => {
@@ -190,7 +191,9 @@ describe("TelegramWorkspaceRow", () => {
     globalThis.localStorage?.removeItem("piabyss.telegram.bridgeEnabled.v1");
   });
 
-  it("shows a red status dot when the bridge should be on but is disconnected", () => {
+  it("shows no status dot by default when the bridge has never been started", () => {
+    // No persisted preference: the bridge is off by default, so a disconnect
+    // reading must NOT surface a false red error dot.
     globalThis.localStorage?.removeItem("piabyss.telegram.bridgeEnabled.v1");
     useTelegramViewStore.setState({
       bridgeStatus: { connected: false },
@@ -198,6 +201,19 @@ describe("TelegramWorkspaceRow", () => {
     });
     render(<TelegramWorkspaceRow onActivate={onActivate} />);
     const row = screen.getByRole("button", { name: /@liu_worker_bot/ });
+    expect(row.querySelector(".bg-success.status-dot-pulse")).toBeNull();
+    expect(row.querySelector(".bg-danger")).toBeNull();
+  });
+
+  it("shows a red status dot when the bridge has been turned on but is disconnected", () => {
+    globalThis.localStorage?.setItem("piabyss.telegram.bridgeEnabled.v1", "1");
+    useTelegramViewStore.setState({
+      bridgeStatus: { connected: false },
+      bridgeLoading: false,
+    });
+    render(<TelegramWorkspaceRow onActivate={onActivate} />);
+    const row = screen.getByRole("button", { name: /@liu_worker_bot/ });
     expect(row.querySelector(".bg-danger")).not.toBeNull();
+    globalThis.localStorage?.removeItem("piabyss.telegram.bridgeEnabled.v1");
   });
 });

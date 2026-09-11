@@ -17,14 +17,14 @@ import { isSameTelegramPath } from "../../lib/telegram-path";
 
 const TELEGRAM_WORKSPACE_DISPLAY_NAME_KEY = "piabyss.telegram.workspaceDisplayName.v1";
 
-/** Bridge on/off preference, persisted by the settings toggle. Default on. */
+/** Bridge on/off preference, persisted by the settings toggle. Default off. */
 const TELEGRAM_BRIDGE_ENABLED_KEY = "piabyss.telegram.bridgeEnabled.v1";
 
 export function loadTelegramBridgePrefEnabled(): boolean {
   try {
-    return globalThis.localStorage?.getItem(TELEGRAM_BRIDGE_ENABLED_KEY) !== "0";
+    return globalThis.localStorage?.getItem(TELEGRAM_BRIDGE_ENABLED_KEY) === "1";
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -71,48 +71,11 @@ export function saveTelegramWorkspaceDisplayName(name: string): void {
  * `useTelegramWorkspaceActive`).
  */
 
-/** Cooldown after an explicit bridge start/stop before auto-start may run
- *  again, so a user who stops the bridge is not immediately overridden. */
-const BRIDGE_AUTO_START_COOLDOWN_MS = 30_000;
-let lastBridgeActionAt = 0;
-
-function markBridgeAction(): void {
-  lastBridgeActionAt = Date.now();
-}
-
 /** True while the active host workspace is the dedicated telegram workspace. */
 export function useTelegramWorkspaceActive(): boolean {
   const workspace = useAppStore((s) => s.workspace);
   const workspacePath = useTelegramViewStore((s) => s.workspacePath);
   return isSameTelegramPath(workspace?.canonicalCwd ?? null, workspacePath);
-}
-
-/**
- * After entering the telegram workspace: starts the bridge automatically when
- * a profile is configured and no live owner is detected. Runs only on an
- * enter transition, so repeated renders cannot loop.
- */
-export async function maybeAutoStartTelegramBridge(): Promise<boolean> {
-  const store = useTelegramViewStore.getState();
-  if (!store.profile?.configured) return false;
-  const { host: hostNow } = useAppStore.getState();
-  if (!hostNow) return false;
-  // The workspace switch may have returned before workspace.changed /
-  // session.snapshot events landed; wait briefly for the active session.
-  const deadline = Date.now() + 3_000;
-  while (Date.now() < deadline) {
-    const { workspace, session } = useAppStore.getState();
-    if (workspace && session) break;
-    await new Promise((resolve) => setTimeout(resolve, 150));
-  }
-  const { workspace, session } = useAppStore.getState();
-  if (!workspace || !session || !isSameTelegramPath(workspace.canonicalCwd, store.workspacePath)) {
-    return false;
-  }
-  await store.refreshBridgeStatus();
-  if (useTelegramViewStore.getState().bridgeStatus?.connected) return false;
-  if (Date.now() - lastBridgeActionAt < BRIDGE_AUTO_START_COOLDOWN_MS) return false;
-  return store.startTelegramBridge();
 }
 
 type TelegramViewState = {
@@ -310,7 +273,6 @@ export const useTelegramViewStore = create<TelegramViewState>((set, get) => ({
     const { host, workspace, session } = useAppStore.getState();
     if (!host || !workspace || !session) return false;
     if (!isSameTelegramPath(workspace.canonicalCwd, get().workspacePath)) return false;
-    markBridgeAction();
     try {
       const res = await hostClient.request(
         "agent.prompt",
@@ -334,7 +296,6 @@ export const useTelegramViewStore = create<TelegramViewState>((set, get) => ({
     if (!get().profile?.configured) return false;
     const workspacePath = await get().ensureTelegramWorkspace();
     if (!workspacePath) return false;
-    markBridgeAction();
     try {
       const ok = await bootstrapTelegramHost(workspacePath);
       if (ok) {
@@ -352,7 +313,6 @@ export const useTelegramViewStore = create<TelegramViewState>((set, get) => ({
     const { host, workspace, session } = useAppStore.getState();
     if (!host || !workspace || !session) return false;
     if (!isSameTelegramPath(workspace.canonicalCwd, get().workspacePath)) return false;
-    markBridgeAction();
     try {
       const res = await hostClient.request(
         "agent.prompt",
