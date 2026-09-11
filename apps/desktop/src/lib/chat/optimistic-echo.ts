@@ -31,17 +31,29 @@ export function appendOptimisticUserMessage(
     })),
   ];
   const messageContent = images?.length ? content : text;
-  store.applySessionSnapshot({
-    ...session,
-    messages: [
-      ...session.messages,
-      {
-        role: "user",
-        content: messageContent,
-        timestamp: Date.now(),
-        _optimisticKey: key,
+  // Keep the optimistic row and the busy state in the same Zustand update.
+  // The Host may publish a snapshot between these two facts; writing them
+  // together prevents the composer from showing "stop" while Transcript still
+  // has the pre-send message projection.
+  useAppStore.setState((current) => {
+    const currentSession = current.session;
+    if (!currentSession || currentSession.sessionId !== session.sessionId) return {};
+    return {
+      session: {
+        ...currentSession,
+        isIdle: false,
+        isStreaming: true,
+        messages: [
+          ...currentSession.messages,
+          {
+            role: "user",
+            content: messageContent,
+            timestamp: Date.now(),
+            _optimisticKey: key,
+          },
+        ],
       },
-    ],
+    };
   });
   return key;
 }

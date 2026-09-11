@@ -126,6 +126,31 @@ describe("app-store epoch wiring", () => {
     ]);
   });
 
+  it("preserves an active optimistic send when a same-session generation snapshot races it", () => {
+    const current = session("s1", 1);
+    current.isIdle = false;
+    current.isStreaming = true;
+    current.messages = [
+      ...current.messages,
+      { role: "user", content: "pending", _optimisticKey: "opt-race" },
+    ];
+    useAppStore.getState().applySessionSnapshot(current);
+
+    useAppStore.getState().applySessionSnapshot({
+      ...session("s1", 2),
+      isIdle: false,
+      isStreaming: true,
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    const next = useAppStore.getState().session;
+    expect(next?.revision).toBe(2);
+    expect(next?.messages).toEqual([
+      { role: "user", content: "hi" },
+      { role: "user", content: "pending", _optimisticKey: "opt-race" },
+    ]);
+  });
+
   it("does not preserve an optimistic message already present in the snapshot", () => {
     const current = session("s1");
     current.messages = [

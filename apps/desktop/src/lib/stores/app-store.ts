@@ -128,12 +128,14 @@ function mergeOptimisticMessages(
   current: SessionSnapshot | null,
   incoming: SessionSnapshot | null,
 ): SessionSnapshot | null {
-  if (
-    !current ||
-    !incoming ||
-    current.sessionId !== incoming.sessionId ||
-    current.revision !== incoming.revision
-  ) {
+  const sameSession =
+    current !== null && incoming !== null && current.sessionId === incoming.sessionId;
+  const sameGeneration = sameSession && current.revision === incoming.revision;
+  const activeOptimisticSend =
+    sameSession &&
+    (current.isIdle === false || incoming.isIdle === false) &&
+    current.messages.some((message) => typeof message._optimisticKey === "string");
+  if (!sameSession || (!sameGeneration && !activeOptimisticSend)) {
     return incoming;
   }
 
