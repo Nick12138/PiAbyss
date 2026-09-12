@@ -69,7 +69,6 @@ describe("PiSettings", () => {
     useAppStore.getState().setDesktopSettings({
       theme: "system",
       language: "en",
-      restoreLastSession: true,
       autoRestartHostOnce: true,
       idleSessionCacheLimit: 5,
       idleSessionTimeoutMinutes: 30,

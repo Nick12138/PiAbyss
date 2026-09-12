@@ -15,7 +15,6 @@ describe("Chinese chat localization", () => {
     useAppStore.getState().setDesktopSettings({
       theme: "system",
       language: "zh",
-      restoreLastSession: true,
       autoRestartHostOnce: true,
       extensionDecisionPresentation: "legacy-modal",
       terminalProfile: "auto",

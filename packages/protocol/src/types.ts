@@ -1342,7 +1342,6 @@ export type DesktopSettings = {
   /** Visual theme family; absent values use the original PiAbyss palette. */
   themeFamily?: DesktopThemeFamily;
   defaultWorkspace?: string;
-  restoreLastSession: boolean;
   /** Launch PiAbyss with Windows at login and keep it hidden in the system tray. */
   autoStartOnBoot?: boolean;
   /** Deliver OS-level notifications for background completions, failures,

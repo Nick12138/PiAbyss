@@ -86,7 +86,6 @@ function setLanguage(language: "en" | "zh") {
   useAppStore.getState().setDesktopSettings({
     theme: "system",
     language,
-    restoreLastSession: true,
     autoRestartHostOnce: true,
     extensionDecisionPresentation: "legacy-modal",
     terminalProfile: "auto",

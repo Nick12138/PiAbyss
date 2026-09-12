@@ -42,7 +42,6 @@ const DESKTOP_SETTINGS_KEYS = new Set([
   "theme",
   "themeFamily",
   "defaultWorkspace",
-  "restoreLastSession",
   "autoStartOnBoot",
   "systemNotificationsEnabled",
   "lastWorkspace",
@@ -168,7 +167,6 @@ function assertDesktopSettingsUpdate(patch: DesktopSettingsUpdate): void {
     }
   }
   for (const key of [
-    "restoreLastSession",
     "autoStartOnBoot",
     "systemNotificationsEnabled",
     "autoRestartHostOnce",

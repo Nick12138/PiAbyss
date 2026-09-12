@@ -25,7 +25,6 @@ describe("appearance preferences", () => {
   it("publishes density and typography values on the document root", () => {
     applyAppearancePreferences({
       theme: "system",
-      restoreLastSession: true,
       autoRestartHostOnce: true,
       extensionDecisionPresentation: "auto",
       terminalProfile: "auto",

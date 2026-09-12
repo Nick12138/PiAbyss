@@ -154,7 +154,6 @@ describe("Transcript Session-open scrolling", () => {
       desktopSettings: {
         theme: "system",
         language: "en",
-        restoreLastSession: true,
         autoRestartHostOnce: true,
         extensionDecisionPresentation: "auto",
         terminalProfile: "auto",

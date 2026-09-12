@@ -102,7 +102,6 @@ pub struct DesktopSettings {
     pub theme_family: DesktopThemeFamily,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_workspace: Option<String>,
-    pub restore_last_session: bool,
     pub auto_start_on_boot: bool,
     pub system_notifications_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -150,7 +149,6 @@ impl Default for DesktopSettings {
             theme: DesktopTheme::System,
             theme_family: DesktopThemeFamily::PiAbyss,
             default_workspace: None,
-            restore_last_session: true,
             auto_start_on_boot: false,
             system_notifications_enabled: true,
             last_workspace: None,
@@ -519,7 +517,6 @@ impl DesktopSettingsStore {
                 "theme"
                     | "themeFamily"
                     | "defaultWorkspace"
-                    | "restoreLastSession"
                     | "autoStartOnBoot"
                     | "systemNotificationsEnabled"
                     | "lastWorkspace"
@@ -986,7 +983,6 @@ mod tests {
         let loaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
         assert_eq!(loaded.settings.theme, DesktopTheme::Light);
         assert_eq!(loaded.settings.theme_family, DesktopThemeFamily::PiAbyss);
-        assert!(!loaded.settings.restore_last_session);
         assert_eq!(
             loaded.settings.extension_decision_presentation,
             ExtensionDecisionPresentation::LegacyModal

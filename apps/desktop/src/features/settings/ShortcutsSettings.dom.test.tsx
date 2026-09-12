@@ -20,7 +20,6 @@ function settings(shortcutOverrides?: Record<string, string | null>) {
   return {
     theme: "system" as const,
     language: "en" as const,
-    restoreLastSession: true,
     autoRestartHostOnce: true,
     extensionDecisionPresentation: "legacy-modal" as const,
     terminalProfile: "auto" as const,

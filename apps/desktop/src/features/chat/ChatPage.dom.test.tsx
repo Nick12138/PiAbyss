@@ -13,7 +13,6 @@ import { ChatPage } from "./ChatPage";
 const BASE_SETTINGS = {
   theme: "system" as const,
   language: "en" as const,
-  restoreLastSession: true,
   autoRestartHostOnce: true,
   extensionDecisionPresentation: "auto" as const,
   terminalProfile: "auto" as const,

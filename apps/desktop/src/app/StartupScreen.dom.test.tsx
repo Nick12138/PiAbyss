@@ -10,7 +10,6 @@ import { StartupScreen, resolveStartupStage, useInitialStartupScreen } from "./S
 beforeEach(() => {
   useAppStore.getState().setDesktopSettings({
     theme: "dark",
-    restoreLastSession: true,
     autoRestartHostOnce: true,
     extensionDecisionPresentation: "auto",
     terminalProfile: "auto",

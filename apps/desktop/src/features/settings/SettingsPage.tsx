@@ -172,17 +172,6 @@ function GeneralSettings() {
             <div className="flex flex-col gap-4 rounded-lg border border-border p-4">
               <div className="flex items-center justify-between gap-4">
                 <span className="min-w-0">
-                  <span className="block text-sm">{t("generalRestoreSession")}</span>
-                  <span className="block text-xs text-muted">{t("generalRestoreSessionDesc")}</span>
-                </span>
-                <Switch
-                  checked={desktopSettings?.restoreLastSession ?? true}
-                  label={t("generalRestoreSession")}
-                  onChange={(next) => void patchDesktop({ restoreLastSession: next })}
-                />
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="min-w-0">
                   <span className="block text-sm">{t("generalAutoStartOnBoot")}</span>
                   <span className="block text-xs text-muted">
                     {t("generalAutoStartOnBootDesc")}

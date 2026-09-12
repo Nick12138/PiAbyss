@@ -209,8 +209,6 @@ export const zh: Record<MessageKey, string> = {
   thinkingLevelHigh: "高",
   thinkingLevelXhigh: "极高",
   thinkingLevelMax: "最高",
-  generalRestoreSession: "恢复上次会话",
-  generalRestoreSessionDesc: "启动 PiAbyss 时重新打开上次的工作区和对话。",
   generalAutoStartOnBoot: "开机自启",
   generalAutoStartOnBootDesc: "登录 Windows 后自动启动 PiAbyss，并最小化到系统托盘。",
   generalSystemNotifications: "系统通知",

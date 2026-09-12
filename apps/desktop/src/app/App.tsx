@@ -762,7 +762,6 @@ export function App() {
         const browserDefaults = {
           theme: "dark" as const,
           themeFamily: "piabyss" as const,
-          restoreLastSession: false,
           autoStartOnBoot: false,
           systemNotificationsEnabled: true,
           autoRestartHostOnce: false,
@@ -971,9 +970,7 @@ export function App() {
                   const configuredWorkspace = fileWorkspaceForRecovery(
                     configuredSettings?.defaultWorkspace ?? configuredSettings?.lastWorkspace,
                   );
-                  const sessionPathToRestore = configuredSettings?.restoreLastSession
-                    ? configuredSettings.lastSessionPath
-                    : undefined;
+                  const sessionPathToRestore = configuredSettings?.lastSessionPath;
                   if (!status.workspaceId && configuredWorkspace) {
                     const selected = await hostClient.request(
                       "workspace.setCurrent",

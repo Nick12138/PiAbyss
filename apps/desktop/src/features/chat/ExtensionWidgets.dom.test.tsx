@@ -38,7 +38,6 @@ describe("extension widget popover layout tracking", () => {
       desktopSettings: {
         theme: "system",
         language: "en",
-        restoreLastSession: true,
         autoRestartHostOnce: true,
         extensionDecisionPresentation: "auto",
         terminalProfile: "auto",

@@ -184,7 +184,6 @@ describe("systemNotificationCopy", () => {
     useAppStore.getState().setDesktopSettings({
       theme: "system",
       language,
-      restoreLastSession: true,
       autoRestartHostOnce: true,
       extensionDecisionPresentation: "auto",
       terminalProfile: "auto",
@@ -199,7 +198,6 @@ describe("systemNotificationCopy", () => {
     useAppStore.getState().setDesktopSettings({
       theme: "system",
       language,
-      restoreLastSession: true,
       autoRestartHostOnce: true,
       extensionDecisionPresentation: "auto",
       terminalProfile: "auto",
@@ -281,7 +279,6 @@ describe("SystemNotificationController", () => {
   it("suppresses candidates when the setting is disabled", async () => {
     useAppStore.getState().setDesktopSettings({
       theme: "system",
-      restoreLastSession: true,
       autoRestartHostOnce: true,
       extensionDecisionPresentation: "auto",
       terminalProfile: "auto",

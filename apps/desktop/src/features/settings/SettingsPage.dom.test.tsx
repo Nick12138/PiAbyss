@@ -52,7 +52,6 @@ beforeEach(() => {
   useAppStore.getState().setDesktopSettings({
     theme: "system",
     language: "en",
-    restoreLastSession: true,
     autoStartOnBoot: false,
     autoRestartHostOnce: true,
     extensionDecisionPresentation: "legacy-modal",
@@ -150,7 +149,6 @@ describe("SettingsPage navigation guard", () => {
     render(<SettingsPage initialSection="general" />);
 
     expect(screen.getByText("Startup")).toBeInTheDocument();
-    expect(screen.getByText("Restore last session")).toBeInTheDocument();
     expect(screen.getByText("Launch at startup")).toBeInTheDocument();
     expect(screen.queryByText("Auto-restart Pi Host")).not.toBeInTheDocument();
     expect(screen.queryByText("Shared Host process")).not.toBeInTheDocument();
@@ -185,7 +183,6 @@ describe("SettingsPage navigation guard", () => {
     expect(screen.getByRole("group", { name: "Interface density" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Conversation font size" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Code font size" })).toBeInTheDocument();
-    expect(screen.queryByText("Restore last session")).not.toBeInTheDocument();
   });
 
   it("persists density and typography controls and applies them immediately", async () => {

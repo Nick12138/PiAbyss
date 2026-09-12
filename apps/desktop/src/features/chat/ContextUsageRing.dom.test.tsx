@@ -117,7 +117,6 @@ describe("ContextUsageRing panel", () => {
     useAppStore.getState().setDesktopSettings({
       theme: "system",
       language: "en",
-      restoreLastSession: true,
       autoRestartHostOnce: true,
       extensionDecisionPresentation: "legacy-modal",
       terminalProfile: "auto",

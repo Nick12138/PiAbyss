@@ -221,8 +221,6 @@ export const en = {
   thinkingLevelHigh: "High",
   thinkingLevelXhigh: "Extra high",
   thinkingLevelMax: "Maximum",
-  generalRestoreSession: "Restore last session",
-  generalRestoreSessionDesc: "Reopen your last workspace and conversation when PiAbyss starts.",
   generalAutoStartOnBoot: "Launch at startup",
   generalAutoStartOnBootDesc:
     "Launch PiAbyss when you sign in to Windows and keep it minimized to the system tray.",

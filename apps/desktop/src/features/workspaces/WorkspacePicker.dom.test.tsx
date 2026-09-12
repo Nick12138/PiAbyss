@@ -9,7 +9,6 @@ import { useTelegramViewStore } from "../telegram/telegram-view-store";
 
 const desktopSettings: DesktopSettings = {
   theme: "light",
-  restoreLastSession: false,
   autoRestartHostOnce: false,
   extensionDecisionPresentation: "auto",
   terminalProfile: "auto",

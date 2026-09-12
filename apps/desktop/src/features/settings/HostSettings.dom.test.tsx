@@ -59,7 +59,6 @@ beforeEach(() => {
   useAppStore.getState().setDesktopSettings({
     theme: "system",
     language: "en",
-    restoreLastSession: true,
     autoRestartHostOnce: true,
     extensionDecisionPresentation: "legacy-modal",
     terminalProfile: "auto",
@@ -209,7 +208,6 @@ describe("HostSettings", () => {
     openMock.mockResolvedValue("/new/agent-dir");
     invokeMock.mockResolvedValueOnce({
       theme: "dark",
-      restoreLastSession: true,
       autoRestartHostOnce: true,
       terminalProfile: "auto",
       agentDir: "/new/agent-dir",

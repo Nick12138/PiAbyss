@@ -385,7 +385,6 @@ describe("PluginLibraryPage DOM workflows", () => {
     // Desktop settings start loaded so persistDesktopSettings does not no-op.
     useAppStore.getState().setDesktopSettings({
       theme: "system",
-      restoreLastSession: true,
       autoRestartHostOnce: true,
       extensionDecisionPresentation: "legacy-modal",
       terminalProfile: "auto",
