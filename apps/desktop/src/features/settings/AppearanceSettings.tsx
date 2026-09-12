@@ -78,10 +78,37 @@ function FontSizeStepper({
   );
 }
 
+function ColorModePreview({ mode }: { mode: "light" | "dark" | "system" }) {
+  const pane = (className: string) => (
+    <span className={`color-mode-preview__pane ${className}`}>
+      <span className="color-mode-preview__line color-mode-preview__line--wide" />
+      <span className="color-mode-preview__line" />
+      <span className="color-mode-preview__composer" />
+    </span>
+  );
+  return (
+    <span className="color-mode-preview" data-color-preview={mode} aria-hidden="true">
+      {mode === "system" ? (
+        <>
+          {pane("color-mode-preview__pane--light")}
+          {pane("color-mode-preview__pane--dark")}
+        </>
+      ) : (
+        pane(
+          mode === "dark"
+            ? "color-mode-preview__pane--dark"
+            : "color-mode-preview__pane--light",
+        )
+      )}
+    </span>
+  );
+}
+
 export function AppearanceSettings() {
   const t = useT();
   const desktopSettings = useAppStore((state) => state.desktopSettings);
   const themeFamily = desktopSettings?.themeFamily ?? "piabyss";
+  const themeMode = desktopSettings?.theme ?? "system";
   const interfaceDensity = resolveInterfaceDensity(desktopSettings?.interfaceDensity);
   const conversationMinWidth = resolveConversationMinWidth(desktopSettings?.conversationMinWidth);
   const conversationMaxWidth = resolveConversationMaxWidth(desktopSettings?.conversationMaxWidth);
@@ -141,6 +168,14 @@ export function AppearanceSettings() {
     { value: "compact", label: t("appearanceDensityCompact") },
     { value: "standard", label: t("appearanceDensityStandard") },
     { value: "comfortable", label: t("appearanceDensityComfortable") },
+  ];
+  const colorModeOptions: Array<{
+    value: "light" | "dark" | "system";
+    label: string;
+  }> = [
+    { value: "system", label: t("commonSystem") },
+    { value: "light", label: t("generalThemeLight") },
+    { value: "dark", label: t("generalThemeDark") },
   ];
   const themeFamilyOptions: Array<{
     value: DesktopThemeFamily;
@@ -210,24 +245,36 @@ export function AppearanceSettings() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-3">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("appearanceColorMode")}</span>
                   <span className="block text-xs text-muted">{t("appearanceColorModeDesc")}</span>
                 </span>
-                <Select
-                  className="w-24"
-                  ariaLabel={t("appearanceColorMode")}
-                  value={desktopSettings?.theme ?? "system"}
-                  onChange={(next) =>
-                    void patchDesktop({ theme: next as "light" | "dark" | "system" })
-                  }
-                  options={[
-                    { value: "system", label: t("commonSystem") },
-                    { value: "light", label: t("generalThemeLight") },
-                    { value: "dark", label: t("generalThemeDark") },
-                  ]}
-                />
+                <div
+                  data-ui="color-mode-selector"
+                  className="grid grid-cols-3 gap-2"
+                  role="group"
+                  aria-label={t("appearanceColorMode")}
+                >
+                  {colorModeOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={themeMode === option.value}
+                      data-ui="color-mode-option"
+                      data-state={themeMode === option.value ? "active" : "inactive"}
+                      className={`min-w-0 rounded-lg border p-1.5 text-xs transition-[border-color,background-color,box-shadow] ${
+                        themeMode === option.value
+                          ? "border-focus bg-focus/10 font-medium text-foreground shadow-sm"
+                          : "border-border bg-surface-raised text-muted hover:border-border-strong hover:bg-surface-overlay/45 hover:text-foreground"
+                      }`}
+                      onClick={() => void patchDesktop({ theme: option.value })}
+                    >
+                      <ColorModePreview mode={option.value} />
+                      <span className="mt-1.5 block truncate text-center">{option.label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="flex items-center justify-between gap-4">
