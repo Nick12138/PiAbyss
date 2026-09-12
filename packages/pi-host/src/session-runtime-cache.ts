@@ -11,6 +11,7 @@ import {
 } from "@piabyss/protocol";
 import { clearSlots } from "./extension-ui-lifecycle.js";
 import { normalizeAgentEvent } from "./event-normalize.js";
+import { AgentMessageTimingTracker, TIMING_ENTRY_CUSTOM_TYPE } from "./agent-timing.js";
 import { AgentOperationLock } from "./locks.js";
 import { logger } from "./logger.js";
 import { pruneQueuedImages } from "./queue-attachments.js";
@@ -170,6 +171,7 @@ export class SessionRuntimeCache {
   private readonly sessionOperationLocks = new WeakMap<AgentSession, AgentOperationLock>();
   private readonly runIds = new WeakMap<AgentSession, string>();
   private readonly disposedSessions = new WeakSet<AgentSession>();
+  private readonly messageTimings = new AgentMessageTimingTracker();
   private readonly idleCacheTimers = new WeakMap<
     WorkspaceGraph,
     Map<string, ReturnType<typeof setTimeout>>
@@ -732,6 +734,7 @@ export class SessionRuntimeCache {
     const runId = this.runIds.get(sourceSession) ?? this.context.getCurrentRunId() ?? randomUUID();
     const serialized = normalizeAgentEvent(event);
     this.observeRuntimeOutcome(sourceSession, eventType, serialized);
+    this.observeMessageTiming(sourceSession, eventType, event, sessionManager);
     if (isGraphActive && active) {
       server.emitForIdentity(eventIdentity, "agent.event", { runId, event: serialized });
     } else if (isGraphActive && background && TERMINAL_AGENT_EVENT_TYPES.has(eventType)) {
@@ -811,6 +814,36 @@ export class SessionRuntimeCache {
     }
     if (this.pendingRuntimeErrors.has(session)) return "error";
     return "idle";
+  }
+
+  /**
+   * Measure one raw agent event for assistant-message timing and, when a
+   * message settles with measured data, persist a custom entry into the
+   * session file. pi emits message_end BEFORE persisting the message, so the
+   * append is deferred to a microtask — it then lands after the message entry
+   * and its id is the just-settled assistant entry.
+   */
+  private observeMessageTiming(
+    session: AgentSession,
+    eventType: string,
+    event: unknown,
+    sessionManager: NonNullable<WorkspaceGraph["sessionManager"]>,
+  ): void {
+    const timing = this.messageTimings.observe(session, eventType, event);
+    if (!timing) return;
+    const entryId = sessionManager.getLeafId();
+    if (!entryId) return;
+    queueMicrotask(() => {
+      try {
+        sessionManager.appendCustomEntry(TIMING_ENTRY_CUSTOM_TYPE, {
+          version: 1,
+          messageEntryId: entryId,
+          ...timing,
+        });
+      } catch {
+        /* timing persistence is best-effort */
+      }
+    });
   }
 
   private observeRuntimeOutcome(
