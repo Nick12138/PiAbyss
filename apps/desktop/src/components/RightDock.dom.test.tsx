@@ -385,7 +385,7 @@ describe("RightDock pages", () => {
     await user.keyboard("{ArrowDown}");
     expect(screen.getByRole("menuitem", { name: "Browser" })).toHaveFocus();
     await user.keyboard("{End}");
-    expect(screen.getByRole("menuitem", { name: "Tasks" })).toHaveFocus();
+    expect(screen.getByRole("menuitem", { name: "Subagents" })).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(screen.getByRole("button", { name: "New dock page" })).toHaveFocus();
   });

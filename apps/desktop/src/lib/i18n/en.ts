@@ -1298,7 +1298,6 @@ export const en = {
 
   // Right Dock
   dockFiles: "Files",
-  dockTodo: "Tasks",
   dockSubagents: "Subagents",
   subagentsTitle: "Subagents",
   subagentsCopyId: "Copy subagent ID",
@@ -1345,15 +1344,11 @@ export const en = {
   subagentsResume: "Resume subagent",
   transcriptExpandMessage: "Expand message",
   transcriptCollapseMessage: "Collapse message",
-  todoCurrentTitle: "Current tasks",
   todoListTitle: "Todo list",
   todoActiveTitle: "Active tasks",
   todoStatusPending: "Pending",
   todoStatusInProgress: "In progress",
   todoStatusCompleted: "Completed",
-  todoNoSession: "No active session.",
-  todoEmptyTitle: "No tasks yet",
-  todoEmptyBody: "Tasks created by the agent will appear here.",
   dockTree: "Tree",
   dockSessionTree: "Session tree",
   dockBrowser: "Browser",
@@ -1486,6 +1481,12 @@ export const en = {
   statsExportJsonl: "Export JSONL",
   statsExportHtml: "Export HTML",
   statsExporting: "Exporting…",
+
+  // Turn usage panels (transcript)
+  turnUsageTitle: "Turn usage",
+  turnUsageModel: "Provider / model",
+  turnTimeTitle: "Turn time and speed",
+  turnTimeDuration: "Turn duration",
 
   // Extension UI modal shell
   extUiDefaultTitle: "Extension request",

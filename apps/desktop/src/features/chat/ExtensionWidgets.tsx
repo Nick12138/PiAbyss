@@ -9,7 +9,7 @@ import {
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight, ListChecks, PanelsTopLeft, X } from "lucide-react";
+import { ChevronRight, ListTodo, PanelsTopLeft, X } from "lucide-react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { useT } from "../../lib/i18n/use-t";
 import { extractLatestTodos } from "../dock/todo-model";
@@ -379,7 +379,7 @@ export function TodoPopoverButton() {
       }`}
       onClick={() => setOpen((value) => !value)}
     >
-      <ListChecks size={15} />
+      <ListTodo size={15} />
     </button>
   );
   const popover = open ? (
@@ -391,7 +391,7 @@ export function TodoPopoverButton() {
       aria-label="Todo"
     >
       <div className="flex min-h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-        <ListChecks size={15} className="shrink-0 text-accent" aria-hidden="true" />
+        <ListTodo size={15} className="shrink-0 text-accent" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
           {t("todoListTitle")}
         </span>

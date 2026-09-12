@@ -1,8 +1,6 @@
-import { Circle, CircleCheck, CircleDot, ListTodo } from "lucide-react";
-import { useMemo } from "react";
+import { Circle, CircleCheck, CircleDot } from "lucide-react";
 import { useT } from "../../lib/i18n/use-t";
-import { useAppStore } from "../../lib/stores/app-store";
-import { extractLatestTodos, type TodoItem } from "./todo-model";
+import type { TodoItem } from "./todo-model";
 
 export function todoNumber(item: TodoItem, todos: readonly TodoItem[]): number {
   const index = todos.findIndex((candidate) => candidate.id === item.id);
@@ -65,60 +63,5 @@ export function TodoRow({
         {text}
       </span>
     </li>
-  );
-}
-
-export function TodoPanel() {
-  const t = useT();
-  const session = useAppStore((state) => state.session);
-  const todos = useMemo(() => extractLatestTodos(session), [session]);
-
-  if (!session) {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-muted">
-        <ListTodo size={28} strokeWidth={1.5} />
-        <p className="text-sm">{t("todoNoSession")}</p>
-      </div>
-    );
-  }
-
-  if (todos.length === 0) {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-muted">
-        <ListTodo size={28} strokeWidth={1.5} />
-        <div>
-          <p className="text-sm text-foreground">{t("todoEmptyTitle")}</p>
-          <p className="mt-1 text-xs">{t("todoEmptyBody")}</p>
-        </div>
-      </div>
-    );
-  }
-
-  const activeCount = todos.filter((item) => item.status !== "completed").length;
-
-  return (
-    <section aria-label={t("dockTodo")} className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-3">
-        <div className="flex items-center gap-2">
-          <ListTodo size={16} className="text-accent" />
-          <h2 className="text-left text-sm font-medium text-foreground">{t("todoCurrentTitle")}</h2>
-        </div>
-        <span className="rounded-full bg-surface-overlay px-2 py-0.5 text-xs text-muted">
-          {activeCount}
-        </span>
-      </div>
-      <div className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto p-2">
-        <ul className="flex flex-col gap-0.5" aria-label={t("todoActiveTitle")}>
-          {todos.map((item) => (
-            <TodoRow
-              key={item.id}
-              item={item}
-              number={todoNumber(item, todos)}
-              active={item.status === "in_progress"}
-            />
-          ))}
-        </ul>
-      </div>
-    </section>
   );
 }

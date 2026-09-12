@@ -1240,7 +1240,6 @@ export const zh: Record<MessageKey, string> = {
 
   // Right Dock
   dockFiles: "文件",
-  dockTodo: "任务",
   dockSubagents: "子代理",
   subagentsTitle: "子代理",
   subagentsCopyId: "复制子代理ID",
@@ -1287,15 +1286,11 @@ export const zh: Record<MessageKey, string> = {
   subagentsResume: "恢复子代理",
   transcriptExpandMessage: "展开消息",
   transcriptCollapseMessage: "收起消息",
-  todoCurrentTitle: "当前任务",
   todoListTitle: "任务清单",
   todoActiveTitle: "进行中的任务",
   todoStatusPending: "待处理",
   todoStatusInProgress: "进行中",
   todoStatusCompleted: "已完成",
-  todoNoSession: "当前没有活动会话。",
-  todoEmptyTitle: "暂无任务",
-  todoEmptyBody: "Agent 创建的任务会显示在这里。",
   dockTree: "会话树",
   dockSessionTree: "会话树",
   dockBrowser: "浏览器",
@@ -1426,6 +1421,12 @@ export const zh: Record<MessageKey, string> = {
   statsExportJsonl: "导出 JSONL",
   statsExportHtml: "导出 HTML",
   statsExporting: "导出中…",
+
+  // Turn usage panels (transcript)
+  turnUsageTitle: "本轮用量",
+  turnUsageModel: "提供方 / 模型",
+  turnTimeTitle: "本轮用时和速度",
+  turnTimeDuration: "本轮用时",
 
   // Extension UI modal shell
   extUiDefaultTitle: "扩展请求",
