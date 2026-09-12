@@ -1,8 +1,13 @@
 /**
  * Structured logging to stderr only — never stdout (protocol channel).
+ * A secondary file sink (`PI_HOST_LOG_FILE`, set by the desktop spawner)
+ * persists the same redacted JSONL so deferred step timings (workspace graph
+ * built / reactivated, retention fingerprints) stay measurable: stderr is a
+ * bounded ring buffer in the renderer and never reaches disk.
  */
 
 import { toJsonValue, type JsonValue } from "@piabyss/protocol";
+import { appendFileSync, statSync, writeFileSync } from "node:fs";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -61,6 +66,40 @@ function redactMeta(meta: Record<string, unknown>): JsonValue {
   }
 }
 
+const LOG_FILE_ENV = "PI_HOST_LOG_FILE";
+const MAX_LOG_FILE_BYTES = 5 * 1024 * 1024;
+/** undefined = not resolved yet; null = no file sink configured. */
+let logFilePath: string | null | undefined;
+
+function resolveLogFilePath(): string | null {
+  if (logFilePath !== undefined) return logFilePath;
+  const configured = process.env[LOG_FILE_ENV];
+  logFilePath = typeof configured === "string" && configured.trim() ? configured : null;
+  return logFilePath;
+}
+
+/**
+ * Append the serialized entry to the file sink. Best-effort: file logging
+ * must never break the protocol channel or the Host process.
+ */
+function appendToLogFile(serialized: string): void {
+  const path = resolveLogFilePath();
+  if (!path) return;
+  try {
+    try {
+      if (statSync(path).size > MAX_LOG_FILE_BYTES) {
+        // Simple cap: restart the file instead of growing without bound.
+        writeFileSync(path, "", { encoding: "utf8" });
+      }
+    } catch {
+      /* missing file — appendFileSync creates it */
+    }
+    appendFileSync(path, serialized + "\n", { encoding: "utf8" });
+  } catch {
+    /* unwritable sink — drop the line silently */
+  }
+}
+
 export function log(level: LogLevel, message: string, meta?: Record<string, unknown>): void {
   const ts = new Date().toISOString();
   const safeMessage = redactText(message);
@@ -77,6 +116,7 @@ export function log(level: LogLevel, message: string, meta?: Record<string, unkn
     serialized = JSON.stringify({ ts, level, message: safeMessage, meta: UNSERIALIZABLE });
   }
   process.stderr.write(serialized + "\n");
+  appendToLogFile(serialized);
 }
 
 export const logger = {

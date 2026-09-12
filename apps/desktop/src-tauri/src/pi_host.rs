@@ -2327,6 +2327,9 @@ impl PiHostManager {
         }
         cmd.env("PI_CODING_AGENT_DIR", &agent_dir);
         cmd.env("PIABYSS_HOST_CACHE_DIR", &host_cache_dir);
+        // Persist structured pi-host logs (deferred step timings) next to the
+        // host cache: stderr is a bounded ring buffer and never reaches disk.
+        cmd.env("PI_HOST_LOG_FILE", host_cache_dir.join("pi-host.log"));
         cmd.env(
             "PIABYSS_IDLE_SESSION_CACHE_LIMIT",
             self.idle_session_cache_limit.to_string(),
@@ -2342,12 +2345,13 @@ impl PiHostManager {
             cmd.env("PIABYSS_MAX_BOUND_WORKSPACES", "10");
         }
         // Reserved names belong to the launcher; plugin config must not shadow them.
-        const RESERVED_ENV: [&str; 11] = [
+        const RESERVED_ENV: [&str; 12] = [
             "PATH",
             "NODE_PATH",
             "NODE",
             "PI_CODING_AGENT_DIR",
             "PIABYSS_HOST_CACHE_DIR",
+            "PI_HOST_LOG_FILE",
             "PIABYSS_IDLE_SESSION_CACHE_LIMIT",
             "PIABYSS_IDLE_SESSION_TIMEOUT_MINUTES",
             "PIABYSS_MAX_BOUND_WORKSPACES",
