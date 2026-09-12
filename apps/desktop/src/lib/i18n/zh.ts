@@ -787,7 +787,7 @@ export const zh: Record<MessageKey, string> = {
   typeThemes: "主题",
 
   // Sidebar
-  sidebarNewConversation: "新对话",
+  sidebarNewConversation: "新会话",
   sidebarCreating: "正在创建…",
   sidebarExpand: "展开侧栏",
   sidebarCollapse: "收起侧栏",
