@@ -10,7 +10,9 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   Activity,
   ArrowDown,
@@ -56,12 +58,18 @@ import {
   findStreamingAssistantKey,
   parseUserAttachments,
   reuseStableRows,
+  thinkingBlockIsLive,
   type RetryableTurn,
   type TranscriptContentBlock,
   type TranscriptBlock,
   type TranscriptRow,
 } from "./transcript-model";
 import { stripAttachmentReferenceBlocks } from "@piabyss/protocol";
+import { BranchNavigator } from "../tree/BranchNavigator";
+import { branchAlternatives, type TreeBranchPoint } from "../tree/tree-model";
+import { useSessionTree } from "../tree/tree-data";
+import { navigateTreeTo } from "../tree/session-tree-nav";
+import { formatCacheHitPercent } from "./stats-format";
 import { requestGoOn, requestRetry } from "../../lib/retry-actions";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
@@ -73,6 +81,7 @@ import {
   SCROLL_QUIET_MS,
 } from "./progressive-mount";
 import {
+  requestTranscriptScroll,
   subscribeTranscriptScroll,
   type TranscriptScrollRequest,
 } from "../../lib/transcript-navigation";
@@ -211,6 +220,27 @@ export function Transcript() {
     }
     return undefined;
   }, [shownRows]);
+
+  // Inline branch navigators: sibling alternatives for the rows on the
+  // current leaf path, derived from the shared session tree. User rows look
+  // up by `sourceId`; assistant rows by `sourceEndId` — both match the
+  // turn-chain last entry id the tree model keys by. The overlay button and
+  // Ctrl+T open the full tree (SessionTreeOverlay).
+  const tree = useSessionTree();
+  const branchPoints = useMemo(() => {
+    if (!tree.tree || !tree.leafId) return new Map<string, TreeBranchPoint>();
+    return branchAlternatives(tree.tree, tree.leafId);
+  }, [tree.tree, tree.leafId]);
+  const branchBusy = session ? !session.isIdle : true;
+  const [navigatingBranch, setNavigatingBranch] = useState<string | null>(null);
+  const onBranchSelect = useCallback(
+    (targetId: string) => {
+      if (requestTranscriptScroll({ sourceId: targetId })) return;
+      setNavigatingBranch(targetId);
+      void navigateTreeTo(targetId, t).finally(() => setNavigatingBranch(null));
+    },
+    [t],
+  );
 
   const handleRetry = useCallback(
     (row: TranscriptRow): Promise<void> =>
@@ -625,6 +655,22 @@ export function Transcript() {
             const retryVisible = Boolean(
               retryableTurn && !suppressedKeys.has(retryableTurn.assistantKey),
             );
+            const branchPoint =
+              row.role === "user"
+                ? row.sourceId
+                  ? branchPoints.get(row.sourceId)
+                  : undefined
+                : row.sourceEndId
+                  ? branchPoints.get(row.sourceEndId)
+                  : undefined;
+            const branchNavigator = branchPoint ? (
+              <BranchNavigator
+                point={branchPoint}
+                disabled={branchBusy || navigatingBranch !== null}
+                pending={navigatingBranch === (row.sourceId ?? row.sourceEndId)}
+                onSelect={onBranchSelect}
+              />
+            ) : undefined;
             return (
               <div
                 className="transcript-row"
@@ -708,6 +754,7 @@ export function Transcript() {
                   retryVisible={retryVisible}
                   goOnVisible={row.key === lastFailedAssistantKey}
                   onRetry={handleRetry}
+                  navigator={branchNavigator}
                 />
               </div>
             );
@@ -749,14 +796,26 @@ export function DurationLabel({
   endedAt,
   active = false,
   className = "",
+  decodeMs,
+  decodeTokens,
+  ttftMs,
+  ttftSteps,
 }: {
   startedAt?: number;
   endedAt?: number;
   active?: boolean;
   className?: string;
+  /** Live-measured per-turn decode/ttft aggregates; a dialog row when known. */
+  decodeMs?: number;
+  decodeTokens?: number;
+  ttftMs?: number;
+  ttftSteps?: number;
 }) {
+  const t = useT();
   const [now, setNow] = useState(() => Date.now());
   const live = active || endedAt === undefined;
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     if (!startedAt || !live) return;
@@ -765,9 +824,55 @@ export function DurationLabel({
   }, [startedAt, live]);
 
   if (!startedAt) return null;
+  const duration = formatDuration(startedAt, active ? now : (endedAt ?? now));
+  const tps =
+    decodeMs !== undefined && decodeMs > 0 && decodeTokens !== undefined
+      ? decodeTokens / (decodeMs / 1_000)
+      : null;
+  const ttft =
+    ttftSteps !== undefined && ttftSteps > 0 && ttftMs !== undefined ? ttftMs / ttftSteps : null;
+  const hasDialog = tps !== null || ttft !== null;
+  const label = (
+    <span className={`tabular-nums text-[10px] text-muted ${className}`}>{duration}</span>
+  );
+  if (!hasDialog) return label;
   return (
-    <span className={`tabular-nums text-[10px] text-muted ${className}`}>
-      {formatDuration(startedAt, active ? now : (endedAt ?? now))}
+    <span ref={anchorRef} className="relative">
+      <button
+        type="button"
+        className="rounded transition-colors hover:text-foreground"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={t("turnTimeTitle")}
+        onClick={() => setOpen((current) => !current)}
+      >
+        {label}
+      </button>
+      <TurnDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={anchorRef}
+        title={t("turnTimeTitle")}
+      >
+        <div className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-0.5">
+          <span className="text-muted">{t("turnTimeDuration")}</span>
+          <span className="tabular-nums">{duration}</span>
+          {tps !== null && (
+            <>
+              <span className="text-muted">{t("turnUsageSpeed")}</span>
+              <span className="tabular-nums">
+                {t("statsTokensPerSecond", { tps: Math.round(tps) })}
+              </span>
+            </>
+          )}
+          {ttft !== null && (
+            <>
+              <span className="text-muted">{t("statsDialogTtft")}</span>
+              <span className="tabular-nums">{formatDuration(ttft)}</span>
+            </>
+          )}
+        </div>
+      </TurnDialog>
     </span>
   );
 }
@@ -784,6 +889,7 @@ export const TranscriptRowView = memo(function TranscriptRowView({
   retryVisible,
   goOnVisible,
   onRetry,
+  navigator,
   readOnly = false,
   userCollapsible = false,
   userExpanded = false,
@@ -799,6 +905,8 @@ export const TranscriptRowView = memo(function TranscriptRowView({
   retryVisible: boolean;
   goOnVisible: boolean;
   onRetry: (row: TranscriptRow) => Promise<void>;
+  /** Inline branch switcher when the row has sibling alternatives. */
+  navigator?: ReactNode;
   readOnly?: boolean;
   userCollapsible?: boolean;
   userExpanded?: boolean;
@@ -837,6 +945,7 @@ export const TranscriptRowView = memo(function TranscriptRowView({
               </button>
             )}
           </div>
+          {navigator && <div className="mt-1 flex justify-end">{navigator}</div>}
         </div>
       );
     }
@@ -897,6 +1006,7 @@ export const TranscriptRowView = memo(function TranscriptRowView({
           </div>
         )}
         <div className="mt-1 flex h-7 items-center justify-end gap-2">
+          {navigator}
           {userCollapsible && userExpanded && onToggleUser && (
             <button
               type="button"
@@ -1009,7 +1119,16 @@ export const TranscriptRowView = memo(function TranscriptRowView({
         )}
       </div>
       <div className="mt-2 flex h-7 items-center gap-2">
-        <DurationLabel startedAt={row.startedAt} endedAt={row.endedAt} active={working} />
+        <DurationLabel
+          startedAt={row.startedAt}
+          endedAt={row.endedAt}
+          active={working}
+          decodeMs={row.decodeMs}
+          decodeTokens={row.decodeTokens}
+          ttftMs={row.ttftMs}
+          ttftSteps={row.ttftSteps}
+        />
+        {navigator}
         <div className="ml-auto flex items-center gap-1">
           {!readOnly && !working && row.sourceEndId && (
             <ForkFromTurnButton
@@ -1021,7 +1140,14 @@ export const TranscriptRowView = memo(function TranscriptRowView({
             text={row.copyText}
             className="opacity-0 group-hover/assistant:opacity-100"
           />
-          <UsageLabel usage={row.usage} />
+          <UsageLabel
+            usage={row.usage}
+            models={row.models}
+            startedAt={row.startedAt}
+            endedAt={row.endedAt}
+            decodeMs={row.decodeMs}
+            decodeTokens={row.decodeTokens}
+          />
         </div>
       </div>
     </div>
@@ -1131,13 +1257,22 @@ export function AssistantOrderedContent({
     } else {
       workBlocks.forEach((block, index) => {
         if (block.kind === "thinking") {
+          // A thought only counts as live while it is the block still
+          // producing tokens in the trailing group; the moment reasoning
+          // stops (its own `thinking_end`) the disclosure folds itself.
+          const live = thinkingBlockIsLive(
+            block,
+            index === workBlocks.length - 1,
+            traceActive && mode === "streaming",
+          );
           content.push(
             <ThinkingBlock
               key={`ordered-thinking:${workIndex}:${index}`}
               content={block.text}
               label={t("transcriptThoughtProcess")}
-              defaultOpen={mode === "streaming"}
-              streaming={mode === "streaming"}
+              defaultOpen={live}
+              streaming={live}
+              ended={!live}
             />,
           );
         } else {
@@ -1287,31 +1422,44 @@ export function ExecutionTrace({
       </button>
       <CollapsibleRegion open={open} id={contentId}>
         <div className="ml-2 mt-1 space-y-1 border-l border-border py-1 pl-4">
-          {blocks.map((block, index) =>
-            block.kind === "thinking" ? (
+          {blocks.map((block, index) => {
+            if (block.kind !== "thinking") {
+              return block.kind === "text" ? (
+                <div key={`activity:${block.kind}:${index}`} className="py-1 text-foreground/85">
+                  <AssistantBlock
+                    block={block}
+                    mode={mode}
+                    showCaret={showCaret && block === lastTextBlock}
+                  />
+                </div>
+              ) : (
+                <AssistantBlock
+                  key={`activity:${block.kind}:${index}`}
+                  block={block}
+                  mode={mode}
+                  showCaret={false}
+                />
+              );
+            }
+            // Anything after the thought already moved the trace on, so even a
+            // provider that never marks `thinking_end` folds on the next block.
+            // Reasoning also folds while the surrounding trace (a running tool
+            // call) stays active.
+            const live = thinkingBlockIsLive(
+              block,
+              index === blocks.length - 1,
+              active && mode === "streaming",
+            );
+            return (
               <ThinkingBlock
                 key={`activity:${block.kind}:${index}`}
                 content={block.text}
-                defaultOpen={active}
-                streaming={active}
+                defaultOpen={live}
+                streaming={live}
+                ended={!live}
               />
-            ) : block.kind === "text" ? (
-              <div key={`activity:${block.kind}:${index}`} className="py-1 text-foreground/85">
-                <AssistantBlock
-                  block={block}
-                  mode={mode}
-                  showCaret={showCaret && block === lastTextBlock}
-                />
-              </div>
-            ) : (
-              <AssistantBlock
-                key={`activity:${block.kind}:${index}`}
-                block={block}
-                mode={mode}
-                showCaret={false}
-              />
-            ),
-          )}
+            );
+          })}
         </div>
       </CollapsibleRegion>
     </div>
@@ -2004,17 +2152,27 @@ export function ThinkingBlock({
   label,
   defaultOpen = false,
   streaming = false,
+  ended = false,
 }: {
   content: string;
   label?: string;
   defaultOpen?: boolean;
   streaming?: boolean;
+  /**
+   * The reasoning has stopped producing tokens (`thinking_end`, or the group it
+   * belongs to settled). The disclosure folds the moment this turns true; it
+   * re-opens if the same thought goes live again while streaming.
+   */
+  ended?: boolean;
 }) {
   const t = useT();
   const contentId = useId();
-  const [open, setOpen] = useState(defaultOpen);
+  const autoOpen = defaultOpen && !ended;
+  const [open, setOpen] = useState(autoOpen);
   const [following, setFollowing] = useState(true);
   const [overflowing, setOverflowing] = useState(false);
+  // Only a deliberate click on the header pins the disclosure: scrolling the
+  // thought body is reading, not a toggle, so it must not block the fold.
   const userToggled = useRef(false);
   const followingRef = useRef(true);
   const returningToLatestRef = useRef(false);
@@ -2044,10 +2202,14 @@ export function ThinkingBlock({
   );
 
   useEffect(() => {
+    // Reasoning that just stopped folds on its own; a click on the header is the
+    // only thing allowed to override that. The thought re-opens if it starts
+    // streaming again in the same group. Reading older text inside the body
+    // never blocks the fold — it only keeps the scroll position put.
     if (userToggled.current) return;
-    setOpen(defaultOpen);
-    if (defaultOpen) updateFollowing(true);
-  }, [defaultOpen, updateFollowing]);
+    setOpen(autoOpen);
+    if (autoOpen) updateFollowing(true);
+  }, [autoOpen, updateFollowing]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -2125,7 +2287,6 @@ export function ThinkingBlock({
                 return;
               }
               returningToLatestRef.current = false;
-              userToggled.current = true;
               updateFollowing(false);
             }}
             onScroll={(event) => {
@@ -2136,7 +2297,6 @@ export function ThinkingBlock({
                 if (nextFollowing) returningToLatestRef.current = false;
                 return;
               }
-              if (!nextFollowing) userToggled.current = true;
               updateFollowing(nextFollowing);
             }}
           >
@@ -2161,8 +2321,26 @@ export function ThinkingBlock({
   );
 }
 
-function UsageLabel({ usage }: { usage?: TranscriptRow["usage"] }) {
+function UsageLabel({
+  usage,
+  models,
+  startedAt,
+  endedAt,
+  decodeMs,
+  decodeTokens,
+}: {
+  usage?: TranscriptRow["usage"];
+  models?: string[];
+  /** Turn wall time — a dialog row when the turn has settled. */
+  startedAt?: number;
+  endedAt?: number;
+  /** Live-measured per-turn decode aggregates — the turn speed row. */
+  decodeMs?: number;
+  decodeTokens?: number;
+}) {
   const t = useT();
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLSpanElement>(null);
   if (!usage) return null;
   const tooltip = [
     t("transcriptUsageInput", { count: formatTokenCount(usage.input) }),
@@ -2182,12 +2360,166 @@ function UsageLabel({ usage }: { usage?: TranscriptRow["usage"] }) {
         ? "<$0.0001"
         : `$${usage.cost.total.toFixed(4)}`
       : null;
+  const promptTokens = usage.input + usage.cacheRead + usage.cacheWrite;
+  const cacheHit = formatCacheHitPercent(usage.cacheRead, promptTokens);
+  const routeLabel = models?.join(", ") ?? "";
+  const turnTps =
+    decodeMs !== undefined && decodeMs > 0 && decodeTokens !== undefined
+      ? decodeTokens / (decodeMs / 1_000)
+      : null;
 
   return (
-    <span className="whitespace-nowrap text-[10px] tabular-nums text-muted" title={tooltip}>
-      {formatTokenCount(usage.totalTokens)} {t("transcriptTokenShort")}
-      {cost ? ` / ${cost}` : ""}
+    <span ref={anchorRef} className="relative">
+      <button
+        type="button"
+        className="whitespace-nowrap rounded text-[10px] tabular-nums text-muted transition-colors hover:text-foreground"
+        title={tooltip}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={t("turnUsageTitle")}
+        onClick={() => setOpen((current) => !current)}
+      >
+        {formatTokenCount(usage.totalTokens)} {t("transcriptTokenShort")}
+        {cost ? ` / ${cost}` : ""}
+      </button>
+      <TurnDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={anchorRef}
+        title={t("turnUsageTitle")}
+        value={exactTokens(usage.totalTokens)}
+      >
+        <div className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-0.5">
+          {routeLabel !== "" && (
+            <>
+              <span className="text-muted">{t("turnUsageModel")}</span>
+              <span className="tabular-nums">{routeLabel}</span>
+            </>
+          )}
+          {cacheHit !== null && (
+            <>
+              <span className="text-muted">{t("statsDialogCacheHit")}</span>
+              <span className="tabular-nums">{`${cacheHit}%`}</span>
+            </>
+          )}
+          <span className="text-muted">{t("statsDialogUncachedInput")}</span>
+          <span className="tabular-nums">{exactTokens(usage.input)}</span>
+          <span className="text-muted">{t("usageCacheRead")}</span>
+          <span className="tabular-nums">{exactTokens(usage.cacheRead)}</span>
+          {usage.cacheWrite !== 0 && (
+            <>
+              <span className="text-muted">{t("usageCacheWrite")}</span>
+              <span className="tabular-nums">{exactTokens(usage.cacheWrite)}</span>
+            </>
+          )}
+          <span className="text-muted">{t("usageOutput")}</span>
+          <span className="tabular-nums">
+            {exactTokens(usage.output)}
+            {/* A 0 reasoning count means the provider did not report a
+                breakdown (pi-ai collapses absent to 0) — hide it. */}
+            {usage.reasoning !== undefined && usage.reasoning > 0 && (
+              <span className="ml-1.5 text-muted">
+                {t("transcriptUsageReasoning", { count: formatTokenCount(usage.reasoning) })}
+              </span>
+            )}
+          </span>
+          {startedAt !== undefined && endedAt !== undefined && (
+            <>
+              <span className="text-muted">{t("turnTimeDuration")}</span>
+              <span className="tabular-nums">{formatDuration(startedAt, endedAt)}</span>
+            </>
+          )}
+          {turnTps !== null && (
+            <>
+              <span className="text-muted">{t("turnUsageSpeed")}</span>
+              <span className="tabular-nums">
+                {t("statsTokensPerSecond", { tps: Math.round(turnTps) })}
+              </span>
+            </>
+          )}
+        </div>
+      </TurnDialog>
     </span>
+  );
+}
+
+/** Exact integer token count with digit grouping. */
+function exactTokens(value: number): string {
+  return value.toLocaleString("en-US");
+}
+
+/**
+ * Viewport-clamped fixed dialog anchored above a trigger, portaled to the
+ * body — the transcript scrollport would clip an inline panel. Outside
+ * pointerdown and Escape close it.
+ */
+function TurnDialog({
+  open,
+  onClose,
+  anchorRef,
+  title,
+  value,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  anchorRef: RefObject<HTMLElement | null>;
+  title: string;
+  /** Exact aggregate shown right of the title, matching DSH's titleValue. */
+  value?: string;
+  children: ReactNode;
+}) {
+  const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    const rect = anchorRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const margin = 12;
+    const width = 288; // w-72
+    const left = Math.min(Math.max(margin, rect.left), window.innerWidth - width - margin);
+    const bottom = Math.max(margin, window.innerHeight - rect.top + 8);
+    setPos({ left, bottom });
+  }, [open, anchorRef]);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnPointerDown = (event: PointerEvent) => {
+      if (anchorRef.current?.contains(event.target as Node)) return;
+      if ((event.target as Element | null)?.closest?.("[data-turn-dialog]")) return;
+      onClose();
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("pointerdown", closeOnPointerDown);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnPointerDown);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open, onClose, anchorRef]);
+
+  if (!open || !pos) return null;
+  return createPortal(
+    <div
+      data-turn-dialog
+      role="dialog"
+      aria-label={title}
+      style={{ left: pos.left, bottom: pos.bottom }}
+      className="theme-floating-surface fixed z-50 flex w-72 flex-col gap-y-1 rounded-md border border-border bg-surface-raised p-3 text-left text-[11px] leading-5 shadow-lg"
+    >
+      <span className="flex items-baseline justify-between gap-3">
+        <span className="font-medium">{title}</span>
+        {value !== undefined && <span className="tabular-nums">{value}</span>}
+      </span>
+      <span className="mb-1 h-px bg-border" aria-hidden />
+      {children}
+    </div>,
+    document.body,
   );
 }
 
