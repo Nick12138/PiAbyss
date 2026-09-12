@@ -21,41 +21,38 @@ const STATUS_HINTS: ReadonlyArray<{ codes: readonly number[]; hint: (status: num
   [
     {
       codes: [402],
-      hint: () =>
-        "💡 该渠道余额不足/已欠费（HTTP 402），重试无效。请给该渠道充值，或切换到其他渠道。",
+      hint: () => "💡 该渠道余额不足/已欠费（HTTP 402），重试无效。",
     },
     {
       codes: [401, 403],
-      hint: (status) =>
-        `💡 渠道鉴权失败（HTTP ${status}）：API Key 无效或无权限，请检查该渠道的密钥配置。`,
+      hint: (status) => `💡 渠道鉴权失败（HTTP ${status}）：API Key 无效或无权限。`,
     },
     {
       codes: [429],
-      hint: () => "💡 渠道触发限流或配额耗尽（HTTP 429）：请稍候重试，或切换到其他渠道。",
+      hint: () => "💡 渠道限流或配额耗尽（HTTP 429）。",
     },
     {
       codes: [500, 502, 503, 504, 529],
-      hint: (status) =>
-        `💡 上游服务商网关故障/过载（HTTP ${status}），不是你的网络问题。稍后重试，或切换到其他渠道。`,
+      hint: (status) => `💡 上游网关故障/过载（HTTP ${status}），非本地网络问题。`,
     },
   ];
 
 const MESSAGE_HINTS: ReadonlyArray<{ match: RegExp; hint: string }> = [
   {
     match: /\bterminated\b|socket hang up|econnreset/i,
-    hint: "💡 流式连接被中途掐断（常见于上游网关超时/代理断链，长生成时多发）。可重试；反复出现建议降低思考级别或切换渠道。",
+    hint: "💡 流式连接被中途掐断（上游超时/代理断链）。",
   },
   {
     match: /connection error|fetch failed|econnrefused|enotfound|etimedout|getaddrinfo/i,
-    hint: "💡 连不上服务商接口。请检查网络/代理，以及该渠道 baseUrl 是否可用（渠道宕机时也会表现为连接失败）。",
+    hint: "💡 连不上服务商接口，检查网络/代理与渠道 baseUrl。",
   },
   {
     match: /stream ended without finish_reason/i,
-    hint: "💡 流式响应未正常结束（上游提前断开）。请重试；反复出现说明该渠道不稳定，建议切换渠道。",
+    hint: "💡 流未正常结束（上游提前断开），该渠道不稳定。",
   },
   {
     match: /service temporarily unavailable|temporarily unavailable/i,
-    hint: "💡 服务商暂时不可用（服务端过载/维护），稍后重试或切换渠道。",
+    hint: "💡 服务商暂时不可用（过载/维护）。",
   },
 ];
 

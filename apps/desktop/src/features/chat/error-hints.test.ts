@@ -77,7 +77,7 @@ describe("withFriendlyErrorHint", () => {
     const raw =
       "Service temporarily unavailable. Please try again later. (request id: abc123) (request id: abc123)";
     expect(withFriendlyErrorHint(raw)).toBe(
-      "Service temporarily unavailable. Please try again later. (request id: abc123)\n\n💡 服务商暂时不可用（服务端过载/维护），稍后重试或切换渠道。",
+      "Service temporarily unavailable. Please try again later. (request id: abc123)\n\n💡 服务商暂时不可用（过载/维护）。",
     );
   });
 

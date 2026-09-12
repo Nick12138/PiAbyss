@@ -196,6 +196,32 @@ describe("compaction actions", () => {
     expect(notifications()).toEqual([]);
   });
 
+  it("localizes a refused compaction and keeps it out of the history", async () => {
+    // The SDK refuses to compact a short session by throwing raw English; the
+    // host relays it as a bare INTERNAL_ERROR. Pressing "Compact now" there is
+    // an expected no-op, so it must toast in the UI language without being
+    // retained by the notification history.
+    vi.spyOn(hostClient, "request").mockResolvedValue({
+      ...envelope("agent.compact", { ok: false }),
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "Nothing to compact (session too small)",
+        retryable: false,
+      },
+    } as never);
+
+    await expect(requestCompact()).resolves.toBe(false);
+
+    expect(toasts()).toEqual([
+      {
+        message:
+          "This session has too little history to compact — there is nothing to summarize yet.",
+        level: "info",
+      },
+    ]);
+    expect(notifications()).toEqual([]);
+  });
+
   it("drops the result after a session switch", async () => {
     let resolveRequest!: (response: HostResponseEnvelope) => void;
     vi.spyOn(hostClient, "request").mockImplementation(

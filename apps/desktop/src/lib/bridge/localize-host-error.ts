@@ -21,10 +21,27 @@ export const TRANSIENT_HOST_ERROR_CODES: ReadonlySet<string> = new Set([
   "STALE_REVISION",
 ]);
 
+/** Host *messages* that describe a no-op rather than a failure: the request was
+ *  well-formed and the host behaved correctly, it simply had nothing to do.
+ *  Matching messages still toast, at `info` level, and never enter the
+ *  notification history. See `isInformationalHostMessage`. */
+const INFORMATIONAL_HOST_MESSAGE = /nothing to compact|already compacted/iu;
+
+/** The Pi SDK signals a refused manual compaction by throwing a plain English
+ *  string ("Nothing to compact (session too small)", "Already compacted")
+ *  instead of a typed error, so it reaches the UI as a bare unwrapped
+ *  `INTERNAL_ERROR` whose only useful information is the text. Returns true
+ *  for those refusals: they are expected outcomes of pressing "Compact now" on
+ *  a short session, not failures worth keeping in the history. */
+export function isInformationalHostMessage(error: HostErrorLike | null | undefined): boolean {
+  return INFORMATIONAL_HOST_MESSAGE.test(error?.message ?? "");
+}
+
 /** Choose the notification level for a host error. Transient "busy" conditions
- *  return `info` so they don't linger in the notification history; everything
- *  else returns `error`. */
+ *  and expected no-op refusals return `info` so they don't linger in the
+ *  notification history; everything else returns `error`. */
 export function hostErrorLevel(error: HostErrorLike | null | undefined): "info" | "error" {
+  if (isInformationalHostMessage(error)) return "info";
   return error && TRANSIENT_HOST_ERROR_CODES.has(error.code ?? "") ? "info" : "error";
 }
 
@@ -148,6 +165,14 @@ export function localizeHostError(error: HostErrorLike | null | undefined, t: Tr
   }
   if (PACKAGE_FAILURE_CODES.has(code)) {
     return localizePackageMessage(error.message, t) ?? t("hostErrPackageFailed");
+  }
+  // The SDK's compaction refusals arrive as INTERNAL_ERROR with raw English
+  // text; translate them rather than leaking the SDK wording into the UI.
+  if (/nothing to compact/iu.test(error.message ?? "")) {
+    return t("hostErrCompactNothingToCompact");
+  }
+  if (/already compacted/iu.test(error.message ?? "")) {
+    return t("hostErrCompactAlreadyCompacted");
   }
   const key = CODE_TO_KEY[code];
   if (key) return t(key);

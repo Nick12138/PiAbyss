@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Translate } from "../i18n/use-t";
 import {
   hostErrorLevel,
+  isInformationalHostMessage,
   localizeHostError,
   localizePackageMessage,
   TRANSIENT_HOST_ERROR_CODES,
@@ -19,9 +20,13 @@ describe("localizeHostError", () => {
             ? "界面状态已过期，该操作未生效，请重试。"
             : key === "hostErrStaleGit"
               ? "Git 状态已变化，该操作未生效，请刷新后重试。"
-              : key === "hostErrUnknown"
-                ? "操作失败。"
-                : `[${key}]`;
+              : key === "hostErrCompactNothingToCompact"
+                ? "本会话历史太短，暂无可压缩的内容。"
+                : key === "hostErrCompactAlreadyCompacted"
+                  ? "本会话刚刚压缩过，请继续对话后再压缩。"
+                  : key === "hostErrUnknown"
+                    ? "操作失败。"
+                    : `[${key}]`;
 
   it("maps the not-in-workspace host message to a localized string", () => {
     expect(
@@ -122,6 +127,20 @@ describe("localizeHostError", () => {
     ).toBe("[hostErrPackageFailed]");
   });
 
+  it("localizes the SDK's raw compaction refusals", () => {
+    // The SDK throws plain English strings; the host wraps them as a bare
+    // INTERNAL_ERROR, so only the message can identify them.
+    expect(
+      localizeHostError(
+        { code: "INTERNAL_ERROR", message: "Nothing to compact (session too small)" },
+        t,
+      ),
+    ).toBe("本会话历史太短，暂无可压缩的内容。");
+    expect(localizeHostError({ code: "INTERNAL_ERROR", message: "Already compacted" }, t)).toBe(
+      "本会话刚刚压缩过，请继续对话后再压缩。",
+    );
+  });
+
   it("localizePackageMessage detects known causes and returns undefined otherwise", () => {
     expect(localizePackageMessage("EBUSY: resource busy or locked", t)).toBe(
       "[hostErrPackageFileBusy]",
@@ -160,6 +179,24 @@ describe("hostErrorLevel", () => {
     expect(hostErrorLevel(undefined)).toBe("error");
     expect(hostErrorLevel(null)).toBe("error");
     expect(hostErrorLevel({})).toBe("error");
+  });
+
+  it("treats refused compaction as an info toast that never enters the history", () => {
+    // Pressing "Compact now" on a short session is an expected no-op, not a
+    // failure: it must toast without being retained by the bell history.
+    expect(
+      hostErrorLevel({ code: "INTERNAL_ERROR", message: "Nothing to compact (session too small)" }),
+    ).toBe("info");
+    expect(hostErrorLevel({ code: "INTERNAL_ERROR", message: "Already compacted" })).toBe("info");
+    expect(isInformationalHostMessage({ message: "Nothing to compact (session too small)" })).toBe(
+      true,
+    );
+  });
+
+  it("keeps unrelated INTERNAL_ERROR messages persistent", () => {
+    expect(hostErrorLevel({ code: "INTERNAL_ERROR", message: "Handler threw" })).toBe("error");
+    expect(isInformationalHostMessage({ message: "Handler threw" })).toBe(false);
+    expect(isInformationalHostMessage(undefined)).toBe(false);
   });
 
   it("exposes AGENT_BUSY as a transient host error code", () => {
