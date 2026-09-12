@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -232,6 +232,23 @@ function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
   );
   const summary = runSummaryLabel(snapshot.state, duration, t);
 
+  // DSH-style fold summary: counts of the folded process ride the run summary,
+  // consistent with the main session's turn fold ("N tool calls · M messages").
+  const foldToolCount = middleRows.reduce(
+    (count, row) =>
+      count +
+      row.blocks.filter((block) => block.kind === "tool" || block.kind === "extension").length,
+    0,
+  );
+  const foldMessageCount = middleRows.reduce(
+    (count, row) => count + row.blocks.filter((block) => block.kind === "text").length,
+    0,
+  );
+  const foldCounts =
+    foldToolCount + foldMessageCount > 0
+      ? t("transcriptTurnFoldSummary", { tools: foldToolCount, messages: foldMessageCount })
+      : undefined;
+
   useEffect(() => {
     setExpandedUserRows((current) => {
       if (!firstUserRowKey) return current.size === 0 ? current : new Set();
@@ -257,6 +274,7 @@ function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
           mode={working ? "streaming" : "static"}
           showCaret={working}
           working={working}
+          turnFold={false}
           retryableTurn={undefined}
           retryVisible={false}
           goOnVisible={false}
@@ -299,6 +317,7 @@ function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
               onClick={() => setHistoryExpanded((current) => !current)}
             >
               <span className="font-medium">{summary}</span>
+              {foldCounts && <span className="ml-2 font-medium text-muted/80">{foldCounts}</span>}
               {historyExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
             </button>
             {historyExpanded && middleRows.map((row) => renderRow(row, false))}
@@ -564,10 +583,21 @@ export function SubagentsPanel() {
     [host, workspace],
   );
 
+  const expandedNode = useMemo(
+    () => (expandedId ? (nodes.find(({ node }) => node.id === expandedId)?.node ?? null) : null),
+    [expandedId, nodes],
+  );
+  // The expanded run's primitive state drives the load/poll lifecycle: status
+  // updates that merely replace the node object identity must not re-run the
+  // effect, or a finished conversation would be re-fetched on every status
+  // poll while a sibling keeps running. The node object itself is read
+  // through the ref; only expansion, state change or a host switch re-arms.
+  const expandedState = expandedNode?.state;
+  const expandedNodeRef = useRef(expandedNode);
+  expandedNodeRef.current = expandedNode;
   useEffect(() => {
-    if (!expandedId || !host || !workspace) return;
-    const target = nodes.find(({ node }) => node.id === expandedId)?.node;
-    if (!target) return;
+    const target = expandedNodeRef.current;
+    if (!expandedId || !target || !host || !workspace) return;
     void loadSession(target);
     const interval =
       target.state === "running"
@@ -576,7 +606,7 @@ export function SubagentsPanel() {
     return () => {
       if (interval !== undefined) window.clearInterval(interval);
     };
-  }, [expandedId, host, nodes, workspace, loadSession]);
+  }, [expandedId, expandedState, host, workspace, loadSession]);
 
   const runControl = useCallback(
     async (node: SubagentStatusNode, action: "stop" | "pause" | "continue" | "resume") => {

@@ -788,6 +788,7 @@ export const TranscriptRowView = memo(function TranscriptRowView({
   userCollapsible = false,
   userExpanded = false,
   onToggleUser,
+  turnFold = true,
 }: {
   row: TranscriptRow;
   mode: "streaming" | "static";
@@ -802,6 +803,13 @@ export const TranscriptRowView = memo(function TranscriptRowView({
   userCollapsible?: boolean;
   userExpanded?: boolean;
   onToggleUser?: () => void;
+  /**
+   * Turn fold: when false the settled turn renders its process in streaming
+   * order without the "N tool calls · M messages" summary. Surfaces that own
+   * their own process fold (the subagents panel) turn this off so the
+   * process is not folded twice.
+   */
+  turnFold?: boolean;
 }) {
   const t = useT();
   if (row.role === "user") {
@@ -953,7 +961,7 @@ export const TranscriptRowView = memo(function TranscriptRowView({
     (block) => block.kind !== "thinking",
   );
   const canFold =
-    !working && sections.stepCount > 0 && sections.ordered.length > finalBlocks.length;
+    turnFold && !working && sections.stepCount > 0 && sections.ordered.length > finalBlocks.length;
   const foldBlocks = canFold
     ? sections.ordered.filter((block) => !finalBlocks.includes(block))
     : [];
