@@ -69,7 +69,7 @@ function PluginIcon({ icon, name }: { icon: string; name: string }) {
   return (
     <span
       aria-hidden
-      className="flex size-9 shrink-0 select-none items-center justify-center rounded-md bg-surface-overlay text-lg"
+      className="flex size-8 shrink-0 select-none items-center justify-center rounded-md bg-surface-overlay text-base"
     >
       {isEmoji ? icon : name.slice(0, 1).toUpperCase()}
     </span>
@@ -476,10 +476,6 @@ function PluginCard({
     if (optimistic !== null) setOptimistic(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [packageRevision]);
-  const installSource =
-    entry.install.type === "repo"
-      ? `${catalog.repoSource} (${repoExtensionPattern(entry.install.path)})`
-      : entry.install.source;
   const installed = state.status !== "not-installed";
   const configurable = (entry.config?.length ?? 0) > 0;
   const enabled = optimistic ?? state.status === "enabled";
@@ -494,9 +490,9 @@ function PluginCard({
   return (
     <article
       data-plugin-card={entry.id}
-      className="flex flex-col gap-2.5 rounded-lg border border-border bg-surface p-4"
+      className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3"
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-2">
         <PluginIcon icon={entry.icon} name={entry.name} />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-baseline gap-2">
@@ -531,8 +527,6 @@ function PluginCard({
         )}
       </div>
 
-      <p className="min-h-10 text-xs leading-5 text-muted">{entry.description}</p>
-
       {entry.tags && entry.tags.length > 0 && (
         <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted">
           <Tag size={11} className="shrink-0" />
@@ -544,31 +538,9 @@ function PluginCard({
         </div>
       )}
 
-      <dl className="grid grid-cols-[56px_1fr] gap-x-2 gap-y-0.5 text-[11px]">
-        <dt className="text-muted">{t("pluginInstallSource")}</dt>
-        <dd className="truncate font-mono text-foreground" title={installSource}>
-          {installSource}
-        </dd>
-        {state.packageRecord?.versionOrRef && (
-          <>
-            <dt className="text-muted">{t("pluginVersion")}</dt>
-            <dd className="truncate font-mono text-foreground">
-              {state.packageRecord.versionOrRef}
-            </dd>
-          </>
-        )}
-        {state.packageRecord?.installedPath && (
-          <>
-            <dt className="text-muted">{t("pluginInstalledAt")}</dt>
-            <dd
-              className="truncate font-mono text-foreground"
-              title={state.packageRecord.installedPath}
-            >
-              {state.packageRecord.installedPath}
-            </dd>
-          </>
-        )}
-      </dl>
+      <p className="line-clamp-2 text-xs leading-5 text-muted" title={entry.description}>
+        {entry.description}
+      </p>
 
       {!installed && (
         <div className="mt-auto flex items-center gap-2 pt-1">
@@ -859,7 +831,7 @@ export function PluginLibraryPage() {
         <p className="p-8 text-center text-sm text-muted">{t("pluginsEmpty")}</p>
       ) : (
         <div
-          className="scrollbar-subtle grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto p-4 lg:grid-cols-2 2xl:grid-cols-3"
+          className="scrollbar-subtle grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-2 overflow-y-auto p-3 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
           data-settings-scroll
         >
           {catalog.plugins.map((entry) => (
