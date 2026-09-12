@@ -100,10 +100,7 @@ export const en = {
   menuCopyLink: "Copy link",
   menuPasteAsAttachment: "Paste as attachment",
   menuClearTerminal: "Clear terminal",
-  menuOpenSession: "Open session",
-  menuRevealSession: "Reveal session file",
   menuCopySessionPath: "Copy session path",
-  sessionsRevealFailed: "Could not reveal the session file",
   sessionsPathCopied: "Session path copied",
   sessionsCopyPathFailed: "Could not copy the session path",
 
@@ -263,6 +260,17 @@ export const en = {
     "Pi reads advanced options from settings.json in the agent directory — for example httpProxy, compaction, retry, and npmCommand. Open the file to edit it by hand.",
   generalAdvancedOpenFile: "Open settings.json",
   generalAdvancedRestartHint: "Changes take effect after restarting the Host.",
+  generalDefaultTools: "Default tools",
+  generalDefaultToolsDesc:
+    "Built-in tools enabled for new sessions. Unchecked tools stay callable through bash.",
+  generalDefaultToolsReadDesc: "Read file contents",
+  generalDefaultToolsBashDesc: "Run shell commands",
+  generalDefaultToolsEditDesc: "Edit files in place",
+  generalDefaultToolsWriteDesc: "Create or overwrite files",
+  generalDefaultToolsGrepDesc: "Search file contents with ripgrep",
+  generalDefaultToolsFindDesc: "Find files by name with fd",
+  generalDefaultToolsLsDesc: "List directory entries",
+  generalDefaultToolsRestartHint: "Applies to new sessions; restart the Host to apply now.",
   notifSettingsFileOpenFailed: "Couldn't open the settings file",
 
   // Host section
@@ -351,6 +359,13 @@ export const en = {
   hostErrSessionNotInWorkspace: "Session is not in the current workspace; switch workspace first",
   hostErrStaleState: "Your view was out of date, so the action was not applied. Please retry.",
   hostErrStaleGit: "Git state changed before the action could be applied. Refresh and try again.",
+  // The Pi SDK refuses manual compaction with a raw English throw when the
+  // branch has no cut point. It arrives as a bare INTERNAL_ERROR, so the text
+  // is the only signal — map both refusals to actionable copy.
+  hostErrCompactNothingToCompact:
+    "This session has too little history to compact — there is nothing to summarize yet.",
+  hostErrCompactAlreadyCompacted:
+    "This session was just compacted; continue the conversation before compacting again.",
   hostErrUnknown: "Operation failed.",
 
   // Usage
@@ -1021,10 +1036,6 @@ export const en = {
   sessionsRenameWait: "Wait for the Session run to finish before renaming",
   sessionsPin: "Pin",
   sessionsUnpin: "Unpin",
-  sessionsReload: "Reload",
-  sessionsReloadTitle: "Reload Session from disk",
-  sessionsReloadWait: "Wait for the Session run to finish before reloading",
-  sessionsReloadOnlyActive: "Only the active Session can be reloaded",
   sessionsArchive: "Archive",
   sessionsRestore: "Restore",
   sessionsArchiveTitle: "Archive Session",
@@ -1055,9 +1066,6 @@ export const en = {
   notifCleanupFailed: "Archive cleanup failed",
   notifCleanupPartial: "Deleted {deleted} Sessions; {failed} failed",
   notifCleanupDone: "Deleted {deleted} archived Sessions",
-  notifSessionReloadFailed: "Session reload failed",
-  notifSessionReloaded: "Session reloaded from disk",
-
   // Chat surface
   chatSelectWorkspaceTitle: "Select a workspace to begin",
   chatSelectWorkspaceHint: "Use the folder picker in the sidebar.",
@@ -1149,6 +1157,9 @@ export const en = {
   toolWrite: "Write",
   toolEdit: "Edit",
   toolSearch: "Search",
+  toolGrep: "Grep",
+  toolFind: "Find",
+  toolLs: "List",
   toolPreviewLines: "Preview limited to {count} lines",
   toolRunningOutput: "Running...",
   toolNoOutput: "(no output)",
@@ -1249,7 +1260,6 @@ export const en = {
   contextUsageEstimated: "Approximately {used} / {window} context tokens",
   contextUnavailable: "No model context available",
   contextUsageTitle: "Context usage",
-  contextEstimatedComposition: "Estimated composition",
   contextSystemPrompt: "System prompt",
   contextToolDefinitions: "Tool definitions",
   contextUserPrompts: "User prompts",
@@ -1257,7 +1267,6 @@ export const en = {
   contextToolResults: "Tool results",
   contextSummaries: "Summaries",
   contextOtherFraming: "Other / framing",
-  contextEstimateNote: "Estimated; total from provider.",
   contextEstimatePendingNote:
     "Total and composition are estimated locally until the next model response.",
   contextAutoCompaction: "Auto-compaction",
@@ -1424,6 +1433,8 @@ export const en = {
   dockTreeCurrent: "current",
   dockTreeFork: "Fork from here",
   dockTreeForkFrom: "Fork from: {excerpt}",
+  treeBranchPrev: "Previous branch",
+  treeBranchNext: "Next branch",
 
   // Terminal panels
   dockExtensionCloseFailed: "Could not close extension panel",
@@ -1482,9 +1493,24 @@ export const en = {
   statsExportHtml: "Export HTML",
   statsExporting: "Exporting…",
 
+  // Session stats pills (composer)
+  statsPillSessionTitle: "Session stats",
+  statsPillUsageTitle: "Token usage",
+  statsTokensPerSecond: "{tps} tok/s",
+  statsDialogModelTime: "Model time",
+  statsDialogToolTime: "Tool time",
+  statsDialogTtft: "Avg. TTFT",
+  statsDialogAvgSpeed: "Avg. speed",
+  statsDialogTurns: "Turns",
+  statsDialogSteps: "Steps",
+  statsDialogCacheHit: "Cache hit",
+  statsDialogUncachedInput: "Uncached input",
+  statsDialogNoTimings: "No timing data for this session.",
+
   // Turn usage panels (transcript)
   turnUsageTitle: "Turn usage",
   turnUsageModel: "Provider / model",
+  turnUsageSpeed: "Turn speed",
   turnTimeTitle: "Turn time and speed",
   turnTimeDuration: "Turn duration",
 

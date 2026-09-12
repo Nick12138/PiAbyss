@@ -122,4 +122,46 @@ describe("ChatPage conversation width", () => {
     expect(screen.queryByText("Start in", { exact: false })).toBeNull();
     expect(container.querySelector("[data-transcript-content]")).not.toBeNull();
   });
+
+  it("renders the stats row directly after the composer footer", () => {
+    // The composer trims its bottom padding through the CSS rule
+    // `[data-composer-footer="docked"]:has(+ [data-composer-stats])`, so the
+    // pills row has to be the footer's very next element sibling.
+    useAppStore.getState().applySessionSnapshot(
+      session([
+        { role: "user", content: "Hello", timestamp: 1 },
+        {
+          role: "assistant",
+          content: "Hi there",
+          usage: {
+            input: 100,
+            output: 40,
+            cacheRead: 700,
+            cacheWrite: 0,
+            totalTokens: 840,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        },
+      ]),
+    );
+
+    const { container } = render(<ChatPage />);
+
+    const footer = container.querySelector<HTMLElement>('[data-composer-footer="docked"]');
+    expect(footer).not.toBeNull();
+    expect(footer!.nextElementSibling).toBe(container.querySelector("[data-composer-stats]"));
+  });
+
+  it("leaves the composer as the last child when no stats row renders", () => {
+    useAppStore
+      .getState()
+      .applySessionSnapshot(session([{ role: "user", content: "Hello", timestamp: 1 }]));
+
+    const { container } = render(<ChatPage />);
+
+    const footer = container.querySelector<HTMLElement>('[data-composer-footer="docked"]');
+    expect(footer).not.toBeNull();
+    expect(container.querySelector("[data-composer-stats]")).toBeNull();
+    expect(footer!.nextElementSibling).toBeNull();
+  });
 });

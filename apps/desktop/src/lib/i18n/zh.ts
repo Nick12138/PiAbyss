@@ -96,10 +96,7 @@ export const zh: Record<MessageKey, string> = {
   menuCopyLink: "复制链接",
   menuPasteAsAttachment: "粘贴为附件",
   menuClearTerminal: "清空终端",
-  menuOpenSession: "打开会话",
-  menuRevealSession: "在文件夹中显示会话文件",
   menuCopySessionPath: "复制会话路径",
-  sessionsRevealFailed: "无法显示会话文件",
   sessionsPathCopied: "已复制会话路径",
   sessionsCopyPathFailed: "无法复制会话路径",
 
@@ -247,6 +244,16 @@ export const zh: Record<MessageKey, string> = {
     "Pi 会从 agent 目录下的 settings.json 读取高级选项,例如 httpProxy、compaction、retry、npmCommand。可打开文件手动编辑。",
   generalAdvancedOpenFile: "打开 settings.json",
   generalAdvancedRestartHint: "更改将在重启 Host 后生效。",
+  generalDefaultTools: "默认工具",
+  generalDefaultToolsDesc: "新会话启用的内置工具。未勾选的工具仍可通过 bash 调用。",
+  generalDefaultToolsReadDesc: "读取文件内容",
+  generalDefaultToolsBashDesc: "执行 shell 命令",
+  generalDefaultToolsEditDesc: "原地编辑文件",
+  generalDefaultToolsWriteDesc: "新建或覆盖文件",
+  generalDefaultToolsGrepDesc: "用 ripgrep 搜索文件内容",
+  generalDefaultToolsFindDesc: "用 fd 按文件名查找",
+  generalDefaultToolsLsDesc: "列出目录条目",
+  generalDefaultToolsRestartHint: "对新会话生效；重启 Host 可立即应用。",
   notifSettingsFileOpenFailed: "无法打开设置文件",
 
   // Host section
@@ -330,6 +337,8 @@ export const zh: Record<MessageKey, string> = {
   hostErrSessionNotInWorkspace: "会话不在当前工作区，请先切换工作区",
   hostErrStaleState: "界面状态已过期，该操作未生效，请重试。",
   hostErrStaleGit: "Git 状态已变化，该操作未生效，请刷新后重试。",
+  hostErrCompactNothingToCompact: "本会话历史太短，暂无可压缩的内容。",
+  hostErrCompactAlreadyCompacted: "本会话刚刚压缩过，请继续对话后再压缩。",
   hostErrUnknown: "操作失败。",
 
   // Usage
@@ -938,7 +947,7 @@ export const zh: Record<MessageKey, string> = {
   tgOptDefault: "默认",
 
   // Session list
-  sessionsRecent: "最近对话",
+  sessionsRecent: "最近会话",
   sessionsExpand: "展开对话列表",
   sessionsCollapse: "收起对话列表",
   sessionsClearArchivedTitle: "清理 {count} 个已归档会话",
@@ -970,10 +979,6 @@ export const zh: Record<MessageKey, string> = {
   sessionsRenameWait: "请等待会话运行结束后再重命名",
   sessionsPin: "置顶",
   sessionsUnpin: "取消置顶",
-  sessionsReload: "重新加载",
-  sessionsReloadTitle: "从磁盘重新加载会话",
-  sessionsReloadWait: "请等待会话运行结束后再重新加载",
-  sessionsReloadOnlyActive: "只能重新加载当前会话",
   sessionsArchive: "归档",
   sessionsRestore: "恢复",
   sessionsArchiveTitle: "归档会话",
@@ -1003,8 +1008,6 @@ export const zh: Record<MessageKey, string> = {
   notifCleanupFailed: "清理归档失败",
   notifCleanupPartial: "已删除 {deleted} 个会话，{failed} 个失败",
   notifCleanupDone: "已删除 {deleted} 个已归档会话",
-  notifSessionReloadFailed: "重新加载会话失败",
-  notifSessionReloaded: "已从磁盘重新加载会话",
 
   // Chat surface
   chatSelectWorkspaceTitle: "选择工作区以开始",
@@ -1095,6 +1098,9 @@ export const zh: Record<MessageKey, string> = {
   toolWrite: "写入",
   toolEdit: "编辑",
   toolSearch: "搜索",
+  toolGrep: "内容搜索",
+  toolFind: "文件查找",
+  toolLs: "目录列表",
   toolPreviewLines: "预览仅显示前 {count} 行",
   toolRunningOutput: "运行中...",
   toolNoOutput: "（无输出）",
@@ -1192,7 +1198,6 @@ export const zh: Record<MessageKey, string> = {
   contextUsageEstimated: "约 {used} / 上限 {window} 上下文 tokens",
   contextUnavailable: "没有可用的模型上下文信息",
   contextUsageTitle: "上下文用量",
-  contextEstimatedComposition: "估算构成",
   contextSystemPrompt: "系统提示词",
   contextToolDefinitions: "工具定义",
   contextUserPrompts: "用户提示词",
@@ -1200,7 +1205,6 @@ export const zh: Record<MessageKey, string> = {
   contextToolResults: "工具结果",
   contextSummaries: "摘要",
   contextOtherFraming: "其他 / 协议开销",
-  contextEstimateNote: "各项为估算值，总量由模型服务提供。",
   contextEstimatePendingNote: "总量和各项均为本地估算，将在下一次模型回复后更新。",
   contextAutoCompaction: "自动压缩",
   contextToggleAutoCompaction: "切换自动压缩",
@@ -1365,6 +1369,8 @@ export const zh: Record<MessageKey, string> = {
   dockTreeCurrent: "当前",
   dockTreeFork: "从此处分叉",
   dockTreeForkFrom: "从此条消息分叉：{excerpt}",
+  treeBranchPrev: "上一个分支",
+  treeBranchNext: "下一个分支",
 
   // Terminal panels
   dockExtensionCloseFailed: "无法关闭扩展面板",
@@ -1422,9 +1428,24 @@ export const zh: Record<MessageKey, string> = {
   statsExportHtml: "导出 HTML",
   statsExporting: "导出中…",
 
+  // Session stats pills (composer)
+  statsPillSessionTitle: "会话统计",
+  statsPillUsageTitle: "Token 用量",
+  statsTokensPerSecond: "{tps} tok/s",
+  statsDialogModelTime: "模型用时",
+  statsDialogToolTime: "工具调用用时",
+  statsDialogTtft: "首 token 平均（TTFT）",
+  statsDialogAvgSpeed: "平均速度",
+  statsDialogTurns: "轮数",
+  statsDialogSteps: "步数",
+  statsDialogCacheHit: "缓存命中",
+  statsDialogUncachedInput: "未缓存输入",
+  statsDialogNoTimings: "本会话暂无计时数据。",
+
   // Turn usage panels (transcript)
   turnUsageTitle: "本轮用量",
   turnUsageModel: "提供方 / 模型",
+  turnUsageSpeed: "本轮速度",
   turnTimeTitle: "本轮用时和速度",
   turnTimeDuration: "本轮用时",
 

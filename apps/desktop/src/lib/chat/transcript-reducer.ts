@@ -659,6 +659,11 @@ function mergeLastAssistantInPlace(
     ...message,
     content: mergeContentTiming(last.content, message.content),
     startedAt: numericField(message, "startedAt") ?? numericField(last, "startedAt") ?? eventTime,
+    // The authoritative message carries no desktop-local fields; keep the
+    // live-measured first-delta timestamp so the stats pills still see it.
+    ...(numericField(last, "firstTokenAt") !== undefined
+      ? { firstTokenAt: numericField(last, "firstTokenAt") }
+      : {}),
     ...(complete ? { endedAt: eventTime } : {}),
   };
 }
@@ -690,7 +695,7 @@ function appendAssistantContentEventInPlace(
     });
   }
 
-  const assistant = messages[messages.length - 1]!;
+  const assistant = stampFirstDeltaInPlace(messages, eventTime);
   if (contentKind === "text" && typeof assistant.content === "string" && contentIndex === 0) {
     if (delta && eventType === "text_delta") {
       messages[messages.length - 1] = { ...assistant, content: assistant.content + delta };
@@ -788,6 +793,23 @@ function appendAssistantContentEventInPlace(
   messages[messages.length - 1] = { ...assistant, content: parts };
 }
 
+/**
+ * First content delta on one assistant row stamps the live-measured
+ * first-delta timestamp; the stats pills read it with `startedAt` (TTFT) and
+ * `endedAt` (decode speed). Session-restored rows never carry it, so only
+ * genuinely streamed turns contribute.
+ */
+function stampFirstDeltaInPlace(
+  messages: SerializableAgentMessage[],
+  eventTime: number,
+): SerializableAgentMessage {
+  const assistant = messages[messages.length - 1]!;
+  if (numericField(assistant, "firstTokenAt") !== undefined) return assistant;
+  const next = { ...assistant, firstTokenAt: eventTime };
+  messages[messages.length - 1] = next;
+  return next;
+}
+
 function appendTextDeltaInPlace(
   messages: SerializableAgentMessage[],
   delta: string,
@@ -801,13 +823,15 @@ function appendTextDeltaInPlace(
       role: "assistant",
       content: delta,
       startedAt: eventTime,
+      firstTokenAt: eventTime,
       ...(runId ? { _streamRunId: runId } : {}),
     });
     return;
   }
-  const content = last.content;
+  const assistant = stampFirstDeltaInPlace(messages, eventTime);
+  const content = assistant.content;
   if (typeof content === "string") {
-    messages[messages.length - 1] = { ...last, content: content + delta };
+    messages[messages.length - 1] = { ...assistant, content: content + delta };
   } else if (Array.isArray(content)) {
     const parts = [...content];
     const lastPart = parts[parts.length - 1];
@@ -816,9 +840,9 @@ function appendTextDeltaInPlace(
     } else {
       parts.push({ type: "text", text: delta });
     }
-    messages[messages.length - 1] = { ...last, content: parts };
+    messages[messages.length - 1] = { ...assistant, content: parts };
   } else {
-    messages[messages.length - 1] = { ...last, content: delta };
+    messages[messages.length - 1] = { ...assistant, content: delta };
   }
 }
 

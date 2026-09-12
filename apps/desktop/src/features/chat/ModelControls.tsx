@@ -290,9 +290,6 @@ export function ContextUsageRing() {
           {breakdown && (
             <>
               <span className="my-2 h-px bg-border" />
-              <span className="mb-1 text-[10px] font-medium uppercase text-muted">
-                {t("contextEstimatedComposition")}
-              </span>
               <span className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
                 <span className="text-muted">{t("contextSystemPrompt")}</span>
                 <span className="tabular-nums">~{formatTokenCount(breakdown.systemPrompt)}</span>
@@ -311,9 +308,11 @@ export function ContextUsageRing() {
                 <span className="text-muted">{t("contextOtherFraming")}</span>
                 <span className="tabular-nums">~{formatTokenCount(breakdown.other)}</span>
               </span>
-              <span className="mt-2 text-[10px] text-muted">
-                {t(isEstimated ? "contextEstimatePendingNote" : "contextEstimateNote")}
-              </span>
+              {isEstimated && (
+                <span className="mt-2 text-[10px] text-muted">
+                  {t("contextEstimatePendingNote")}
+                </span>
+              )}
             </>
           )}
           <span className="my-2 h-px bg-border" />

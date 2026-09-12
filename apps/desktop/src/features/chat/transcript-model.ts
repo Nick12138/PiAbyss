@@ -36,6 +36,22 @@ export function executionTraceIsActive(
   return turnActive || tools.some((tool) => tool.status === "running" || tool.status === "waiting");
 }
 
+/**
+ * Reasoning is "live" only while it is the block still producing tokens: it
+ * belongs to the active (trailing) group and no other block has followed it
+ * yet. `endedAt` is stamped by the provider's `thinking_end`, so a thought can
+ * fold the instant reasoning stops instead of waiting for the next tool call or
+ * answer text to arrive. Providers that never emit `thinking_end` simply fall
+ * back to the positional rule: the fold lands as soon as anything else does.
+ */
+export function thinkingBlockIsLive(
+  block: Extract<TranscriptBlock, { kind: "thinking" }>,
+  isLastInGroup: boolean,
+  groupActive: boolean,
+): boolean {
+  return groupActive && isLastInGroup && block.endedAt === undefined;
+}
+
 export type TranscriptContentBlock =
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string; startedAt?: number; endedAt?: number }
@@ -110,6 +126,16 @@ export type TranscriptRow = {
   startedAt?: number;
   endedAt?: number;
   usage?: SerializableUsage;
+  /** Unique `provider/model` labels of the assistant messages in this turn. */
+  models?: string[];
+  /** Live-measured first-delta latency sum over streamed messages (ms). */
+  ttftMs?: number;
+  /** Streamed messages carrying a first-delta timestamp. */
+  ttftSteps?: number;
+  /** Live-measured decode wall time over streamed messages with output (ms). */
+  decodeMs?: number;
+  /** Output tokens over the same live-measured messages. */
+  decodeTokens?: number;
 };
 
 export type BuildTranscriptOptions = {
@@ -434,6 +460,41 @@ function blockTiming(block: TranscriptBlock): { startedAt?: number; endedAt?: nu
     : block.kind === "thinking"
       ? { startedAt: block.startedAt, endedAt: block.endedAt }
       : {};
+}
+
+/**
+ * Fold one assistant message's provider/model and live-measured timing into
+ * its turn row — the per-turn usage dialog's model list plus the turn-time
+ * dialog's TTFT and decode speed. Historical (persisted) messages carry no
+ * timing fields, so only genuinely streamed turns contribute.
+ */
+function extendRowTurnMetrics(row: WorkingTranscriptRow, message: SerializableAgentMessage): void {
+  const provider = stringField(message, "provider");
+  const model = stringField(message, "model");
+  if (provider && model) {
+    const label = `${provider}/${model}`;
+    if (!row.models?.includes(label)) {
+      row.models = row.models ? [...row.models, label] : [label];
+    }
+  }
+  const startedAt = numberField(message, "startedAt");
+  const firstTokenAt = numberField(message, "firstTokenAt");
+  const endedAt = numberField(message, "endedAt");
+  if (startedAt !== undefined && firstTokenAt !== undefined && firstTokenAt > startedAt) {
+    row.ttftMs = (row.ttftMs ?? 0) + (firstTokenAt - startedAt);
+    row.ttftSteps = (row.ttftSteps ?? 0) + 1;
+  }
+  const output = message.usage?.output;
+  if (
+    firstTokenAt !== undefined &&
+    endedAt !== undefined &&
+    endedAt > firstTokenAt &&
+    output !== undefined &&
+    output > 0
+  ) {
+    row.decodeMs = (row.decodeMs ?? 0) + (endedAt - firstTokenAt);
+    row.decodeTokens = (row.decodeTokens ?? 0) + output;
+  }
 }
 
 function copyTextForBlocks(blocks: TranscriptBlock[]): string {
@@ -1037,6 +1098,7 @@ export function buildTranscriptRows(
         if (sourceId) activeAssistant.sourceEndId = sourceId;
         if (outcome) activeAssistant.outcome = outcome;
         extendRowTiming(activeAssistant, messageStartedAt, messageEndedAt);
+        extendRowTurnMetrics(activeAssistant, message);
         for (const block of blocks) {
           const timing = blockTiming(block);
           extendRowTiming(activeAssistant, timing.startedAt, timing.endedAt);
@@ -1062,6 +1124,7 @@ export function buildTranscriptRows(
       };
       rows.push(row);
       activeAssistant = row;
+      extendRowTurnMetrics(row, message);
       for (const block of blocks) {
         const timing = blockTiming(block);
         extendRowTiming(row, timing.startedAt, timing.endedAt);

@@ -9,6 +9,7 @@ import {
   messageText,
   parseUserAttachments,
   reuseStableRows,
+  thinkingBlockIsLive,
   type TranscriptRow,
 } from "./transcript-model";
 
@@ -412,6 +413,26 @@ describe("executionTraceIsActive", () => {
   it("settles only after the agent turn ends", () => {
     expect(executionTraceIsActive([{ status: "done" }], false)).toBe(false);
     expect(executionTraceIsActive([{ status: "running" }], false)).toBe(true);
+  });
+});
+
+describe("thinkingBlockIsLive", () => {
+  it("is live only for the trailing, still-streaming thought in an active group", () => {
+    expect(thinkingBlockIsLive({ kind: "thinking", text: "t" }, true, true)).toBe(true);
+  });
+
+  it("folds as soon as the thought reports its end, mid-stream", () => {
+    expect(thinkingBlockIsLive({ kind: "thinking", text: "t", endedAt: 1 }, true, true)).toBe(
+      false,
+    );
+  });
+
+  it("folds once another block follows the thought", () => {
+    expect(thinkingBlockIsLive({ kind: "thinking", text: "t" }, false, true)).toBe(false);
+  });
+
+  it("folds when its group is no longer active", () => {
+    expect(thinkingBlockIsLive({ kind: "thinking", text: "t" }, true, false)).toBe(false);
   });
 });
 

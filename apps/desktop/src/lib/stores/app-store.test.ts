@@ -126,6 +126,64 @@ describe("app-store epoch wiring", () => {
     ]);
   });
 
+  it("carries desktop-local live timing across an authoritative snapshot", () => {
+    const current = session("s1");
+    current.messages = [
+      ...current.messages,
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "done" }],
+        startedAt: 1_000,
+        firstTokenAt: 1_500,
+        endedAt: 2_500,
+      },
+    ];
+    useAppStore.getState().applySessionSnapshot(current);
+
+    // The run-end snapshot rebuilds messages from persisted entries: the
+    // authoritative assistant message carries no desktop-local timing.
+    useAppStore.getState().applySessionSnapshot({
+      ...session("s1", 2),
+      messages: [
+        { role: "user", content: "hi" },
+        { role: "assistant", content: [{ type: "text", text: "done" }] },
+      ],
+    });
+
+    const messages = useAppStore.getState().session?.messages ?? [];
+    const assistant = messages[1] as Record<string, unknown>;
+    expect(assistant.startedAt).toBe(1_000);
+    expect(assistant.firstTokenAt).toBe(1_500);
+    expect(assistant.endedAt).toBe(2_500);
+  });
+
+  it("drops live timing when the authoritative history was rewritten", () => {
+    const current = session("s1");
+    current.messages = [
+      ...current.messages,
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "done" }],
+        firstTokenAt: 1_500,
+      },
+    ];
+    useAppStore.getState().applySessionSnapshot(current);
+
+    useAppStore.getState().applySessionSnapshot({
+      ...session("s1", 2),
+      messages: [
+        { role: "user", content: "hi" },
+        { role: "assistant", content: [{ type: "text", text: "rewritten" }] },
+      ],
+    });
+
+    const assistant = (useAppStore.getState().session?.messages ?? [])[1] as Record<
+      string,
+      unknown
+    >;
+    expect(assistant.firstTokenAt).toBeUndefined();
+  });
+
   it("preserves an active optimistic send when a same-session generation snapshot races it", () => {
     const current = session("s1", 1);
     current.isIdle = false;

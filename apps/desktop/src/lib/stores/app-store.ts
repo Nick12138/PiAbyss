@@ -178,6 +178,48 @@ function mergeOptimisticMessages(
   return { ...incoming, messages };
 }
 
+/**
+ * Desktop-local live-timing fields (stamped onto assistant messages by the
+ * transcript reducer during streaming) must survive authoritative snapshots:
+ * the host rebuilds messages from persisted entries and cannot know about
+ * them, so the run-end snapshot would otherwise wipe the stats pills' TTFT
+ * and decode-speed data the moment a reply settles.
+ */
+function mergeLiveTiming(
+  current: SessionSnapshot | null,
+  incoming: SessionSnapshot | null,
+): SessionSnapshot | null {
+  if (!current || !incoming || current.sessionId !== incoming.sessionId) return incoming;
+  if (current.messages.length === 0 || incoming.messages.length === 0) return incoming;
+  const currentFingerprints = current.messages.map(optimisticMessageFingerprint);
+  const timingKeys = ["startedAt", "firstTokenAt", "endedAt"] as const;
+  let changed = false;
+  const messages = incoming.messages.map((message, index) => {
+    const previous = current.messages[index];
+    if (!previous) return message;
+    // Same position, same role, same text: the authoritative message IS the
+    // streamed row, so its desktop-local timing fields still apply. A
+    // rewritten history (compaction, fork, edit) has different text and
+    // carries nothing over.
+    if (currentFingerprints[index] !== optimisticMessageFingerprint(message)) return message;
+    const previousRecord = previous as Record<string, unknown>;
+    const next: Record<string, unknown> = { ...message };
+    let touched = false;
+    for (const key of timingKeys) {
+      if (next[key] !== undefined) continue;
+      const value = previousRecord[key];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        next[key] = value;
+        touched = true;
+      }
+    }
+    if (!touched) return message;
+    changed = true;
+    return next as SessionSnapshot["messages"][number];
+  });
+  return changed ? { ...incoming, messages } : incoming;
+}
+
 // Monotonic arrival order shared across persistent and transient notifications.
 let nextNotificationSeq = 0;
 
@@ -866,7 +908,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   applySessionSnapshot: (session) => {
     const current = get();
     const previousSession = current.session;
-    const protectedSession = mergeOptimisticMessages(previousSession, session);
+    const timedSession = mergeLiveTiming(previousSession, session);
+    const protectedSession = mergeOptimisticMessages(previousSession, timedSession);
     const next = epochApplySession(epochSlice(current), protectedSession);
     // Switching away must not clear a still-busy previous session's live dot:
     // it keeps running in the background, so only a non-busy previous session

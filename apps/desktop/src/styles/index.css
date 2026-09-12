@@ -286,6 +286,16 @@ body,
   max-width: var(--conversation-max-width, 600px);
 }
 
+/* The stats pills row renders right below the composer as a following sibling.
+   When it is there, the composer's bottom padding is cut to 5px so the space
+   above the icons matches the row's own 5px padding below them; with no stats
+   row (fresh conversation, or nothing measured yet) the composer keeps its
+   roomier resting padding. `:has(+ …)` reads the real DOM, so the padding
+   follows whatever the pills row actually decided to render. */
+[data-composer-footer="docked"]:has(+ [data-composer-stats]) {
+  padding-bottom: 5px;
+}
+
 .interface-density-control {
   height: var(--interface-control-height);
 }
