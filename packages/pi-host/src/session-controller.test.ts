@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { validateSuccessResult } from "@piabyss/protocol";
+import { createHostError } from "@piabyss/protocol";
 import type { HandlerContext } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { IdentityState } from "./identity.js";
@@ -284,7 +285,19 @@ describe("session.export", () => {
   }
 
   it("exports html and jsonl to the requested path", async () => {
-    const handler = createSessionHandlers(exportFixture(true))["session.export"]!;
+    const factory = exportFixture(true);
+    const calls: Array<[string, string, string | undefined]> = [];
+    (factory as unknown as { exportActiveSession: unknown }).exportActiveSession = async (
+      id: string,
+      format: "html" | "jsonl",
+      path?: string,
+    ) => {
+      calls.push([id, format, path]);
+      return {
+        path: path ?? (format === "html" ? "/exports/default.html" : "/exports/default.jsonl"),
+      };
+    };
+    const handler = createSessionHandlers(factory)["session.export"]!;
 
     const html = await handler({
       id: "55555555-5555-4555-8555-555555555555",
@@ -301,10 +314,46 @@ describe("session.export", () => {
       context: {},
     } as HandlerContext);
     expect(jsonl).toEqual({ result: { path: "/exports/default.jsonl" } });
+    expect(calls).toEqual([
+      ["55555555-5555-4555-8555-555555555555", "html", "/tmp/out.html"],
+      ["55555555-5555-4555-8555-555555555556", "jsonl", undefined],
+    ]);
   });
 
-  it("rejects while the agent is busy", async () => {
-    const handler = createSessionHandlers(exportFixture(false))["session.export"]!;
+  it("routes a Session locator to the file-backed export path", async () => {
+    const factory = exportFixture(true);
+    const exportSession = vi.fn(async () => ({ path: "/exports/other.html" }));
+    (factory as unknown as { exportSession: unknown }).exportSession = exportSession;
+    const handler = createSessionHandlers(factory)["session.export"]!;
+
+    const response = await handler({
+      id: "55555555-5555-4555-8555-555555555557",
+      method: "session.export",
+      params: {
+        format: "html",
+        sessionId: ACTIVE_SESSION_ID,
+        sessionPath: "/sessions/other.jsonl",
+        path: "/tmp/other.html",
+      },
+      context: {},
+    } as HandlerContext);
+
+    expect(response).toEqual({ result: { path: "/exports/other.html" } });
+    expect(exportSession).toHaveBeenCalledWith(
+      expect.any(String),
+      "html",
+      ACTIVE_SESSION_ID,
+      "/sessions/other.jsonl",
+      "/tmp/other.html",
+    );
+  });
+
+  it("rejects while the active agent is busy", async () => {
+    const factory = exportFixture(false);
+    (factory as unknown as { exportActiveSession: unknown }).exportActiveSession = async () => ({
+      error: createHostError("AGENT_BUSY", "Agent busy", { retryable: true }),
+    });
+    const handler = createSessionHandlers(factory)["session.export"]!;
 
     const response = await handler({
       id: "55555555-5555-4555-8555-555555555555",
@@ -388,6 +437,62 @@ describe("session.getStats", () => {
             cost: 0.42,
           }),
         },
+        sessionManager: {
+          getEntries: () => [
+            {
+              type: "message",
+              id: "entry-user-1",
+              message: { role: "user", timestamp: 1_000 },
+            },
+            {
+              type: "message",
+              id: "entry-assistant-1",
+              message: { role: "assistant", timestamp: 5_500 },
+            },
+            {
+              type: "message",
+              id: "entry-toolresult-1",
+              message: { role: "toolResult", timestamp: 8_200 },
+            },
+            // toolResult → assistant closes a second LLM request in the turn.
+            {
+              type: "message",
+              id: "entry-assistant-2",
+              message: { role: "assistant", timestamp: 9_400 },
+            },
+            // Backwards timestamps (clock skew) contribute nothing.
+            {
+              type: "message",
+              message: { role: "toolResult", timestamp: 9_000 },
+            },
+            // Persisted measured timing for the first assistant message.
+            {
+              type: "custom",
+              customType: "piabyss.timing",
+              id: "entry-timing-1",
+              data: {
+                version: 1,
+                messageEntryId: "entry-assistant-1",
+                firstTokenMs: 900,
+                decodeMs: 3_000,
+                outputTokens: 542,
+              },
+            },
+            // A timing entry whose message left the branch folds nothing.
+            {
+              type: "custom",
+              customType: "piabyss.timing",
+              id: "entry-timing-2",
+              data: {
+                version: 1,
+                messageEntryId: "entry-gone",
+                firstTokenMs: 5_000,
+                decodeMs: 9_000,
+                outputTokens: 100,
+              },
+            },
+          ],
+        },
       }),
     } as unknown as WorkspaceGraphFactory;
     const handler = createSessionHandlers(factory)["session.getStats"]!;
@@ -413,6 +518,18 @@ describe("session.getStats", () => {
         cacheRead: 8000,
         cacheWrite: 900,
         total: 10400,
+      },
+      // user(1000) → assistant(5500) = 4500; toolResult(8200) → assistant(9400)
+      // = 1200; assistant(5500) → toolResult(8200) = 2700. TTFT/decode fold
+      // from the piabyss.timing custom entries whose message is still on the
+      // branch: 900ms TTFT over 1 message, 3000ms decode over 542 tokens.
+      timing: {
+        llmMs: 5_700,
+        toolMs: 2_700,
+        ttftMs: 900,
+        ttftSteps: 1,
+        decodeMs: 3_000,
+        decodeTokens: 542,
       },
       cost: 0.42,
       sessionFile: "/sessions/active.jsonl",

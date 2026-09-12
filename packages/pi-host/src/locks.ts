@@ -11,6 +11,7 @@ export type GraphOperationKind =
   | "session.reload"
   | "session.setName"
   | "session.rename"
+  | "session.export"
   | "session.archive"
   | "session.restore"
   | "session.delete"

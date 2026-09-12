@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, rename, unlink } from "node:fs/promises";
-import { basename, join, resolve as pathResolve } from "node:path";
+import { basename, dirname, join, resolve as pathResolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   AgentSession,
   DefaultResourceLoader,
@@ -1266,4 +1267,160 @@ export async function reloadSession(
     };
   }
   return openSession(factory, requestId, sessionPath, { forceReload: true });
+}
+
+/**
+ * HTML rendering lives in an SDK subpath that the package's `exports` map does
+ * not expose, so it cannot be reached by bare specifier. Node's own resolver is
+ * used to locate the installed package instead: walk up from this module until
+ * an installed copy is found (`node_modules/@earendil-works/pi-coding-agent`),
+ * which works for `src` (tsx), `dist` (compiled) and the packaged Host runtime,
+ * and for the pnpm symlink layout.
+ *
+ * Resolution is done lazily so a changed SDK layout only disables HTML export
+ * rather than breaking Host startup.
+ */
+function resolveSdkExportHtmlModule(): string {
+  const segments = fileURLToPath(import.meta.url).split(/[\\/]/);
+  segments.pop(); // drop the file name
+  for (let depth = segments.length; depth > 0; depth -= 1) {
+    const candidate = join(
+      ...segments.slice(0, depth),
+      "node_modules",
+      "@earendil-works",
+      "pi-coding-agent",
+      "dist",
+      "core",
+      "export-html",
+      "index.js",
+    );
+    if (existsSync(candidate)) return candidate;
+  }
+  return "";
+}
+
+async function loadExportFromFile(): Promise<
+  (inputPath: string, outputPath: string) => Promise<string>
+> {
+  const modulePath = resolveSdkExportHtmlModule();
+  if (!modulePath) {
+    throw new Error("The bundled Pi SDK does not expose its HTML export module");
+  }
+  const mod = (await import(pathToFileURL(modulePath).href)) as {
+    exportFromFile(inputPath: string, options?: { outputPath?: string } | string): Promise<string>;
+  };
+  return (inputPath, outputPath) => mod.exportFromFile(inputPath, outputPath);
+}
+
+function exportFailure(error: unknown): { error: HostError } {
+  return {
+    error: createHostError(
+      "INTERNAL_ERROR",
+      error instanceof Error ? error.message : "Export failed",
+    ),
+  };
+}
+
+/** Export the active Session, reusing its live Runtime (keeps custom tool rendering). */
+export async function exportActiveSession(
+  factory: WorkspaceGraphFactory,
+  requestId: string,
+  format: "html" | "jsonl",
+  outputPath?: string,
+): Promise<{ path: string } | { error: HostError }> {
+  const g = factory.graph;
+  if (!g?.agentSession) {
+    return { error: createHostError("AGENT_NOT_READY", "No active session") };
+  }
+  if (!g.agentSession.isIdle || factory.getSessionOperationLock(g.agentSession).isHeld()) {
+    return { error: createHostError("AGENT_BUSY", "Agent busy", { retryable: true }) };
+  }
+  try {
+    const path =
+      format === "html"
+        ? await g.agentSession.exportToHtml(outputPath)
+        : g.agentSession.exportToJsonl(outputPath);
+    return { path };
+  } catch (error) {
+    return exportFailure(error);
+  }
+}
+
+/**
+ * Export one Session file by identity. A background Session may be exported
+ * only while it is idle, because a run appends to the same JSONL file while
+ * the export reads it.
+ */
+export async function exportSession(
+  factory: WorkspaceGraphFactory,
+  requestId: string,
+  format: "html" | "jsonl",
+  sessionId: string,
+  sessionPath: string,
+  outputPath?: string,
+): Promise<{ path: string } | { error: HostError }> {
+  return withSessionFileMutation(factory, requestId, "session.export", async (g) => {
+    const [activeSessions, archivedSessions] = await Promise.all([
+      listSessionFiles(factory, g, false),
+      listSessionFiles(factory, g, true),
+    ]);
+    const target = [...activeSessions, ...archivedSessions].find(
+      (item) => item.id === sessionId && factory.sessionPathsEqual(item.path, sessionPath),
+    );
+    if (!target) {
+      return { error: createHostError("SESSION_NOT_FOUND", "Session not found") };
+    }
+
+    const isActiveSession = Boolean(
+      g.sessionSnapshot?.sessionId === sessionId &&
+      factory.sessionPathsEqual(g.sessionSnapshot.sessionPath, sessionPath),
+    );
+    // A file that is still being appended to must not be read: the export could
+    // capture a truncated transcript. The active Session is judged by its live
+    // Runtime, a retained background Session by its runtime state.
+    if (isActiveSession) {
+      if (
+        !g.agentSession ||
+        !g.agentSession.isIdle ||
+        factory.getSessionOperationLock(g.agentSession).isHeld()
+      ) {
+        return {
+          error: createHostError("AGENT_BUSY", "Wait for the Session run to finish", {
+            retryable: true,
+          }),
+        };
+      }
+    } else {
+      const runtimeInfo = factory.getSessionRuntimeInfo(target.id, target.path);
+      if (runtimeInfo && runtimeInfo.runtimeState !== "idle") {
+        return {
+          error: createHostError("AGENT_BUSY", "Wait for the Session run to finish", {
+            retryable: true,
+          }),
+        };
+      }
+    }
+
+    try {
+      if (format === "jsonl") {
+        // The file already is the canonical JSONL transcript; copy it only
+        // when the caller asked for a different destination.
+        const destination = outputPath ?? target.path;
+        if (!factory.sessionPathsEqual(destination, target.path)) {
+          writeFileSync(destination, readFileSync(target.path));
+        }
+        return { path: destination };
+      }
+      const exportFromFile = await loadExportFromFile();
+      const path = await exportFromFile(target.path, outputPath ?? defaultHtmlExportPath(target));
+      return { path };
+    } catch (error) {
+      return exportFailure(error);
+    }
+  });
+}
+
+function defaultHtmlExportPath(target: { path: string; name?: string }): string {
+  const stem = target.name?.trim() || basename(target.path, ".jsonl");
+  return join(dirname(target.path), `${stem.replace(/[\\/:*?"<>|]/g, "-")}.html`);
 }

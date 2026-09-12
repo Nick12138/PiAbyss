@@ -26,6 +26,8 @@ import {
   cleanupArchivedSessions,
   createSession,
   deleteSession,
+  exportActiveSession,
+  exportSession,
   listSessions,
   openSession,
   refineActiveSessionName,
@@ -374,6 +376,20 @@ export class WorkspaceGraphFactory {
 
   async renameSession(requestId: string, sessionId: string, sessionPath: string, name: string) {
     return renameSession(this, requestId, sessionId, sessionPath, name);
+  }
+
+  async exportActiveSession(requestId: string, format: "html" | "jsonl", outputPath?: string) {
+    return exportActiveSession(this, requestId, format, outputPath);
+  }
+
+  async exportSession(
+    requestId: string,
+    format: "html" | "jsonl",
+    sessionId: string,
+    sessionPath: string,
+    outputPath?: string,
+  ) {
+    return exportSession(this, requestId, format, sessionId, sessionPath, outputPath);
   }
 
   setActiveSessionName(name: string) {
