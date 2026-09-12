@@ -1,7 +1,8 @@
-import { Search } from "lucide-react";
+import { GitBranch, Search } from "lucide-react";
 import { useAppStore } from "../lib/stores/app-store";
 import { useT } from "../lib/i18n/use-t";
 import { requestGlobalSearchOpen } from "../lib/commands/events";
+import { requestTreeOverlay } from "../lib/tree-overlay";
 import { NotificationCenter } from "./NotificationCenter";
 import { DockToggleButton } from "./DockToggleButton";
 import { WindowControls, resolveWindowControlsPlatform } from "./WindowControls";
@@ -113,10 +114,7 @@ export function AppTopBar({
             <div className="pointer-events-none flex min-w-0 items-center justify-start gap-2">
               {sessionActive && (
                 <>
-                  <h1
-                    className="truncate text-base font-semibold leading-5"
-                    title={sessionName}
-                  >
+                  <h1 className="truncate text-base font-semibold leading-5" title={sessionName}>
                     {sessionName}
                   </h1>
                   <span
@@ -149,12 +147,8 @@ export function AppTopBar({
               aria-hidden="true"
             />
             <div className="min-w-0 flex-1 truncate">
-              <h1 className="truncate text-base font-semibold leading-5">
-                {t(meta.title)}
-              </h1>
-              {meta.subtitle && (
-                <p className="truncate text-xs text-muted">{t(meta.subtitle)}</p>
-              )}
+              <h1 className="truncate text-base font-semibold leading-5">{t(meta.title)}</h1>
+              {meta.subtitle && <p className="truncate text-xs text-muted">{t(meta.subtitle)}</p>}
             </div>
           </div>
         ) : null}
@@ -168,8 +162,22 @@ export function AppTopBar({
         ref={actionsSlotRef}
       />
 
-      {/* Right segment: right-panel toggle (chat only) + native window controls. */}
+      {/* Right segment: session tree + right-panel toggle (chat only) + native
+          window controls. The session tree left the dock, so its entry lives
+          here next to the other chat-level actions. */}
       <div className="flex shrink-0 items-center gap-1" data-app-topbar-right>
+        {page === "chat" && (
+          <button
+            type="button"
+            title={t("commandOpenTree")}
+            aria-label={t("commandOpenTree")}
+            disabled={!session}
+            className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+            onClick={requestTreeOverlay}
+          >
+            <GitBranch size={15} />
+          </button>
+        )}
         {page === "chat" && <DockToggleButton />}
         {platform === "windows" && <WindowControls platform="windows" />}
       </div>

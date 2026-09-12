@@ -30,18 +30,16 @@ import {
 import { WorkspaceFiles } from "../features/dock/WorkspaceFiles";
 import { clearFileSession, ensureFileCanLeave } from "../features/dock/file-session";
 import { BrowserPanel } from "../features/dock/BrowserPanel";
-import { TreePanel } from "../features/dock/TreePanel";
 import { ChangesPanel } from "../features/dock/ChangesPanel";
 import { SubagentsPanel } from "../features/dock/SubagentsPanel";
 import { subscribeDockBrowser } from "../lib/dock-browser";
 import { subscribeChangesPanel } from "../lib/dock-changes";
-import { subscribeTreePanel } from "../lib/dock-tree";
+import { requestTreeOverlay } from "../lib/tree-overlay";
 import { useT } from "../lib/i18n/use-t";
 import { subscribeDockCommands } from "../lib/commands/events";
 
 export type DockTabId =
   | "files"
-  | "tree"
   | "changes"
   | "subagents"
   | `browser:${number}`
@@ -376,10 +374,11 @@ export function RightDock() {
     setAddMenuOpen(false);
   };
 
-  const createTree = () => {
-    setTabOrder((current) => (current.includes("tree") ? current : [...current, "tree"]));
-    setActiveTab("tree");
+  // The session tree is an on-demand overlay now (the dock tab is gone), so
+  // the add-menu entry opens it directly instead of creating a dock page.
+  const openSessionTree = () => {
     setAddMenuOpen(false);
+    requestTreeOverlay();
   };
 
   const createChanges = () => {
@@ -422,22 +421,6 @@ export function RightDock() {
     subagentsStatus.runs.length,
     subagentsStatus.totalActive,
   ]);
-
-  useEffect(
-    () =>
-      subscribeTreePanel(() => {
-        createTree();
-        if (!useAppStore.getState().dockOpen) {
-          setDockOpen(true);
-          setSidebarPref("piabyss.dock.open", true);
-        }
-        return true;
-      }),
-    // createTree/setDockOpen are stable within a mount; resubscribing per
-    // render would drop queued open requests.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
 
   useEffect(
     () =>
@@ -555,7 +538,7 @@ export function RightDock() {
       });
       return;
     }
-    if (tabId === "tree" || tabId === "changes" || tabId === "subagents") {
+    if (tabId === "changes" || tabId === "subagents") {
       closeOrderTab(tabId);
       return;
     }
@@ -572,7 +555,6 @@ export function RightDock() {
 
   const tabInfo = (tabId: DockTabId) => {
     if (tabId === "files") return { label: t("dockFiles"), Icon: FolderTree };
-    if (tabId === "tree") return { label: t("dockTree"), Icon: GitBranch };
     if (tabId === "changes") return { label: t("gitChanges"), Icon: GitCompareArrows };
     if (tabId === "subagents") return { label: t("dockSubagents"), Icon: Users };
     if (tabId.startsWith("browser:")) {
@@ -878,7 +860,7 @@ export function RightDock() {
                     type="button"
                     role="menuitem"
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay"
-                    onClick={createTree}
+                    onClick={openSessionTree}
                   >
                     <GitBranch size={14} />
                     {t("dockSessionTree")}
@@ -938,16 +920,6 @@ export function RightDock() {
             className={`min-h-0 min-w-0 flex-1 ${activeTab === "files" ? "flex" : "hidden"}`}
           >
             <WorkspaceFiles visible={activeTab === "files" && dockOpen} />
-          </div>
-        )}
-        {tabOrder.includes("tree") && (
-          <div
-            role="tabpanel"
-            id="dock-panel-tree"
-            aria-labelledby="dock-tab-tree"
-            className={`min-h-0 min-w-0 flex-1 ${activeTab === "tree" ? "flex" : "hidden"}`}
-          >
-            <TreePanel visible={activeTab === "tree" && dockOpen} />
           </div>
         )}
         {tabOrder.includes("changes") && (
@@ -1031,7 +1003,7 @@ export function RightDock() {
                   type="button"
                   aria-label={t("dockOpenNamed", { label: t("dockSessionTree") })}
                   className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
-                  onClick={createTree}
+                  onClick={openSessionTree}
                 >
                   <GitBranch size={17} className="shrink-0" />
                   <span>{t("dockSessionTree")}</span>

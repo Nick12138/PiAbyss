@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -11,10 +11,11 @@ import type {
   WorkspaceSnapshot,
 } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
-import { __resetDraftPersistenceForTests } from "../../lib/draft-persistence";
 import { subscribeTranscriptScroll } from "../../lib/transcript-navigation";
 import { useAppStore } from "../../lib/stores/app-store";
-import { TreePanel } from "./TreePanel";
+import { requestTreeOverlay, clearPendingTreeOverlayForTest } from "../../lib/tree-overlay";
+import { SessionTreeOverlay } from "./SessionTreeOverlay";
+import { useSessionTreeSync } from "./tree-data";
 
 const HOST_ID = "11111111-1111-4111-8111-111111111111";
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
@@ -33,11 +34,7 @@ function host(): HostStatusSnapshot {
     nodeVersion: process.version,
     agentDir: "/agent",
     phase: "ready",
-    capabilities: {
-      packageUpdateCheck: true,
-      extensionUi: true,
-      sessionExport: true,
-    },
+    capabilities: { packageUpdateCheck: true, extensionUi: true, sessionExport: true },
     modelConfigHealth: { state: "ok", source: "ModelRegistry.getError" },
   };
 }
@@ -100,10 +97,7 @@ const TREE: SerializableSessionTreeNode[] = [
             entry: {
               id: "a1",
               type: "message",
-              message: {
-                role: "assistant",
-                content: [{ type: "text", text: "the answer" }],
-              },
+              message: { role: "assistant", content: [{ type: "text", text: "the answer" }] },
             },
             children: [
               {
@@ -155,8 +149,15 @@ function envelope(method: string, result: unknown): HostResponseEnvelope {
   } as HostResponseEnvelope;
 }
 
-describe("TreePanel", () => {
+/** The overlay reads the shared store; sync is mounted alongside it. */
+function Harness() {
+  useSessionTreeSync();
+  return <SessionTreeOverlay />;
+}
+
+describe("SessionTreeOverlay", () => {
   beforeEach(() => {
+    clearPendingTreeOverlayForTest();
     useAppStore.setState({ desktopSettings: { language: "en" } as never });
     useAppStore.getState().setHost(null);
     useAppStore.getState().setWorkspace(null);
@@ -165,29 +166,65 @@ describe("TreePanel", () => {
     useAppStore.getState().setHost(host());
     useAppStore.getState().setWorkspace(workspace());
     useAppStore.getState().applySessionSnapshot(session());
-    useAppStore.setState({
-      draftTexts: {},
-      draftTargets: {},
-      draftEditVersions: {},
-      draftHydratedWorkspace: null,
-    });
   });
 
   afterEach(() => {
-    __resetDraftPersistenceForTests();
     vi.restoreAllMocks();
     cleanup();
   });
 
-  it("localizes the empty session state in Chinese", () => {
-    useAppStore.setState({ desktopSettings: { language: "zh" } as never });
-    useAppStore.getState().applySessionSnapshot(null);
-    render(<TreePanel visible />);
+  it("stays closed until the overlay is requested", async () => {
+    vi.spyOn(hostClient, "request").mockResolvedValue(
+      envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never,
+    );
+    render(<Harness />);
 
-    expect(screen.getByText("当前没有活动会话。")).toBeVisible();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    act(() => requestTreeOverlay());
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 
-  it("loads the tree and navigates to an abandoned branch", async () => {
+  it("renders conversation turns and collapses non-conversation entries", async () => {
+    vi.spyOn(hostClient, "request").mockResolvedValue(
+      envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never,
+    );
+    render(<Harness />);
+    act(() => requestTreeOverlay());
+
+    expect(await screen.findByText("abandoned attempt")).toBeInTheDocument();
+    expect(screen.queryByText("model_change")).not.toBeInTheDocument();
+    expect(screen.queryByText("tool output")).not.toBeInTheDocument();
+    // The leaf is a hidden tool result; the marker lands on the deepest
+    // visible turn along its path.
+    expect(screen.getByText("trunk follow-up").closest("button")).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+  });
+
+  it("jumps the transcript to an on-path row without rewiring the session", async () => {
+    const request = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue(envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never);
+    const seen: string[] = [];
+    const unsubscribe = subscribeTranscriptScroll((navRequest) => {
+      if (navRequest.sourceId) seen.push(navRequest.sourceId);
+      return true;
+    });
+    const user = userEvent.setup();
+    render(<Harness />);
+    act(() => requestTreeOverlay());
+
+    await user.click((await screen.findByText("the answer")).closest("button")!);
+
+    await waitFor(() => expect(seen).toContain("a1"));
+    expect(request).not.toHaveBeenCalledWith("agent.navigateTree", expect.anything());
+    // Selecting a row dismisses the overlay.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    unsubscribe();
+  });
+
+  it("navigates to an off-branch row and marks the session as tree-navigated", async () => {
     const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
       if (method === "session.getTree") {
         return envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never;
@@ -199,22 +236,10 @@ describe("TreePanel", () => {
       }) as never;
     });
     const user = userEvent.setup();
-    render(<TreePanel visible />);
+    render(<Harness />);
+    act(() => requestTreeOverlay());
 
-    expect(await screen.findByText("abandoned attempt")).toBeInTheDocument();
-    expect(request).toHaveBeenCalledWith("session.getTree", EXPECTED_CONTEXT, null);
-
-    // Non-conversation entries are collapsed out of the panel.
-    expect(screen.queryByText("model_change")).not.toBeInTheDocument();
-    expect(screen.queryByText("tool output")).not.toBeInTheDocument();
-
-    // The actual leaf is a hidden tool result; the marker falls back to the
-    // deepest visible row on its path.
-    const current = screen.getByText("trunk follow-up").closest("button")!;
-    expect(current).not.toBeDisabled();
-    expect(current).toHaveAttribute("aria-current", "true");
-
-    await user.click(screen.getByText("abandoned attempt").closest("button")!);
+    await user.click((await screen.findByText("abandoned attempt")).closest("button")!);
 
     await waitFor(() =>
       expect(request).toHaveBeenCalledWith("agent.navigateTree", EXPECTED_CONTEXT, {
@@ -225,80 +250,7 @@ describe("TreePanel", () => {
     expect(useAppStore.getState().sessionTreeNavigated).toBe(true);
   });
 
-  it("scrolls the transcript to an on-path message instead of rewiring the session", async () => {
-    const navigateSpy = vi
-      .spyOn(hostClient, "request")
-      .mockResolvedValue(envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never);
-    const seen: string[] = [];
-    const unsubscribe = subscribeTranscriptScroll((request) => {
-      if (request.sourceId) seen.push(request.sourceId);
-      return true;
-    });
-    const user = userEvent.setup();
-    render(<TreePanel visible />);
-
-    await screen.findByText("abandoned attempt");
-    await user.click(screen.getByText("the answer").closest("button")!);
-
-    await waitFor(() => expect(seen).toContain("a1"));
-    expect(navigateSpy).not.toHaveBeenCalledWith("agent.navigateTree", expect.anything());
-    unsubscribe();
-  });
-
-  it("constrains tree message text so narrow panels can ellipsize it", async () => {
-    vi.spyOn(hostClient, "request").mockResolvedValue(
-      envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never,
-    );
-    render(<TreePanel visible />);
-
-    const message = await screen.findByText("the answer");
-    const button = message.closest("button")!;
-
-    expect(button).toHaveClass("min-w-0", "max-w-full", "overflow-hidden");
-    expect(message).toHaveClass("min-w-0", "max-w-full", "overflow-hidden", "text-ellipsis");
-  });
-
-  it("adds five pixels of horizontal outer spacing to the current badge and fork button", async () => {
-    vi.spyOn(hostClient, "request").mockResolvedValue(
-      envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never,
-    );
-    render(<TreePanel visible />);
-
-    await screen.findByText("abandoned attempt");
-
-    expect(screen.getByText("current")).toHaveClass("mx-[5px]");
-    expect(screen.getByRole("button", { name: "Fork from: abandoned attempt" })).toHaveClass(
-      "mx-[5px]",
-    );
-  });
-
-  it("hides the fork action for the first user message", async () => {
-    vi.spyOn(hostClient, "request").mockResolvedValue(
-      envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never,
-    );
-    render(<TreePanel visible />);
-
-    await screen.findByText("first ask");
-
-    expect(screen.queryByRole("button", { name: "Fork from: first ask" })).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Fork from: abandoned attempt" }),
-    ).toBeInTheDocument();
-  });
-
-  it("disables navigation while the agent is busy", async () => {
-    useAppStore.getState().applySessionSnapshot(session({ isIdle: false, isStreaming: true }));
-    vi.spyOn(hostClient, "request").mockResolvedValue(
-      envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never,
-    );
-    render(<TreePanel visible />);
-
-    expect(await screen.findByText("abandoned attempt")).toBeInTheDocument();
-    expect(screen.getByText("Agent is busy — navigation disabled")).toBeInTheDocument();
-    expect(screen.getByText("abandoned attempt").closest("button")).toBeDisabled();
-  });
-
-  it("forks from a user row via the inline fork button", async () => {
+  it("forks from a user row", async () => {
     const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
       if (method === "session.getTree") {
         return envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never;
@@ -309,10 +261,10 @@ describe("TreePanel", () => {
       }) as never;
     });
     const user = userEvent.setup();
-    render(<TreePanel visible />);
+    render(<Harness />);
+    act(() => requestTreeOverlay());
 
-    await screen.findByText("abandoned attempt");
-    await user.click(screen.getByRole("button", { name: "Fork from: abandoned attempt" }));
+    await user.click(await screen.findByRole("button", { name: "Fork from: abandoned attempt" }));
 
     await waitFor(() =>
       expect(request).toHaveBeenCalledWith(
@@ -324,6 +276,28 @@ describe("TreePanel", () => {
     );
   });
 
+  it("hides the fork action for the first user message and disables actions while busy", async () => {
+    useAppStore.getState().applySessionSnapshot(session({ isIdle: false, isStreaming: true }));
+    vi.spyOn(hostClient, "request").mockResolvedValue(
+      envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never,
+    );
+    render(<Harness />);
+    act(() => requestTreeOverlay());
+
+    expect(await screen.findByText("Agent is busy — navigation disabled")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Fork from: first ask" })).not.toBeInTheDocument();
+    expect(screen.getByText("abandoned attempt").closest("button")).toBeDisabled();
+  });
+
+  it("localizes the empty session state in Chinese", async () => {
+    useAppStore.setState({ desktopSettings: { language: "zh" } as never });
+    useAppStore.getState().applySessionSnapshot(null);
+    render(<Harness />);
+    act(() => requestTreeOverlay());
+
+    expect(await screen.findByText("当前没有活动会话。")).toBeInTheDocument();
+  });
+
   it("shows tree load errors", async () => {
     vi.spyOn(hostClient, "request").mockResolvedValue({
       ...envelope("session.getTree", undefined),
@@ -331,8 +305,27 @@ describe("TreePanel", () => {
       result: undefined,
       error: { code: "HOST_NOT_READY", message: "Server not bound" },
     } as never);
-    render(<TreePanel visible />);
+    render(<Harness />);
+    act(() => requestTreeOverlay());
 
     expect(await screen.findByText("Server not bound")).toBeInTheDocument();
+  });
+
+  it("closes on Escape and on a backdrop click", async () => {
+    vi.spyOn(hostClient, "request").mockResolvedValue(
+      envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never,
+    );
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    act(() => requestTreeOverlay());
+    await screen.findByRole("dialog");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    act(() => requestTreeOverlay());
+    const dialog = await screen.findByRole("dialog");
+    await user.click(dialog.parentElement!);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

@@ -18,6 +18,7 @@ import { SettingsPage } from "../features/settings/SettingsPage";
 import { SettingsTopBarActionsContext } from "../features/settings/settings-top-bar";
 import { ExtensionUiModal } from "../features/chat/ExtensionUiModal";
 import { GlobalSearchHost } from "../features/sessions/GlobalSearchModal";
+import { SessionTreeOverlay } from "../features/tree/SessionTreeOverlay";
 import { WorkspaceSwitchTransition } from "../features/workspaces/WorkspaceSwitchTransition";
 import { applyTheme } from "../lib/theme";
 import { applyAppearancePreferences } from "../lib/appearance-preferences";
@@ -1356,6 +1357,7 @@ export function App() {
       </SettingsTopBarActionsContext.Provider>
       <ExtensionUiModal />
       <GlobalSearchHost />
+      {page === "chat" && <SessionTreeOverlay />}
       <CommandLayer />
       {startupVisible && (
         <StartupScreen stage={startupStage} exiting={startupPhase === "exiting"} />

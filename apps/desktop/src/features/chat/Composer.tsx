@@ -65,7 +65,7 @@ import { BUILTIN_COMMANDS, matchBuiltinCommand } from "./builtin-commands";
 import { abortCompaction, requestCompact } from "./compaction-actions";
 import { SessionStatsModal } from "./SessionStatsModal";
 import { ForkModal } from "./ForkModal";
-import { requestTreePanel } from "../../lib/dock-tree";
+import { requestTreeOverlay } from "../../lib/tree-overlay";
 import {
   appendOptimisticUserMessage,
   removeOptimisticUserMessage,
@@ -1282,7 +1282,7 @@ export function Composer({
     if (builtin?.name === "tree") {
       deleteDraft(draftTarget);
       dismissCompletion();
-      requestTreePanel();
+      requestTreeOverlay();
       return;
     }
     if (builtin?.name === "fork") {
@@ -1479,6 +1479,10 @@ export function Composer({
 
   return (
     <div
+      // "welcome" is the vertically centered empty-conversation layout; only
+      // the docked composer trims its bottom padding when the stats pills
+      // render below it (see the `:has(+ …)` rule in styles/index.css).
+      data-composer-footer={welcomeWorkspaceName ? "welcome" : "docked"}
       className={
         welcomeWorkspaceName
           ? "flex min-h-0 flex-1 flex-col justify-center px-5 pb-14 pt-6"

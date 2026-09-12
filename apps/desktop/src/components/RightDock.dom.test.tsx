@@ -8,7 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../lib/stores/app-store";
 import { requestDockBrowser } from "../lib/dock-browser";
 import { clearPendingChangesPanelForTest, requestChangesPanel } from "../lib/dock-changes";
-import { clearPendingTreePanelForTest, requestTreePanel } from "../lib/dock-tree";
+import { requestTreeOverlay } from "../lib/tree-overlay";
+
+vi.mock("../lib/tree-overlay", () => ({ requestTreeOverlay: vi.fn() }));
 
 vi.mock("../features/dock/ShellTerminal", () => ({
   ShellTerminal: ({ profileId, visible }: { profileId: string; visible: boolean }) => (
@@ -75,7 +77,6 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
-  clearPendingTreePanelForTest();
   clearPendingChangesPanelForTest();
 });
 
@@ -390,19 +391,15 @@ describe("RightDock pages", () => {
     expect(screen.getByRole("button", { name: "New dock page" })).toHaveFocus();
   });
 
-  it("opens the Tree page as a singleton via requestTreePanel", async () => {
-    useAppStore.setState({ dockOpen: false });
+  it("opens the session-tree overlay from the add menu instead of a dock page", async () => {
+    const user = userEvent.setup();
     render(<RightDock />);
 
-    act(() => requestTreePanel());
-    expect(await screen.findByRole("tab", { name: "Tree" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    expect(useAppStore.getState().dockOpen).toBe(true);
+    await openAddMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Session tree" }));
 
-    act(() => requestTreePanel());
-    expect(screen.getAllByRole("tab", { name: "Tree" })).toHaveLength(1);
+    expect(requestTreeOverlay).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("tab", { name: "Tree" })).not.toBeInTheDocument();
   });
 
   it("opens the Changes page as a singleton via requestChangesPanel", async () => {

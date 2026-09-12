@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SerializableSessionTreeNode } from "@piabyss/protocol";
 import {
+  branchAlternatives,
   currentPathIds,
   entryExcerpt,
   filterConversationTree,
@@ -268,5 +269,48 @@ describe("flattenSessionTree", () => {
     expect(wide.rows[0]!.excerpt.length).toBe(200);
     expect(narrow.rows[0]!.excerpt.length).toBeLessThanOrEqual(20);
     expect(narrow.rows[0]!.excerpt.endsWith("…")).toBe(true);
+  });
+});
+
+describe("branchAlternatives", () => {
+  it("exposes sibling branches for an on-path turn", () => {
+    const points = branchAlternatives(TREE, "u3");
+    // u2 (trunk, alternative 1) and u3 (active, alternative 2) are siblings
+    // under the assistant turn a1.
+    const point = points.get("u2")!;
+    expect(point.alternatives).toEqual([
+      { targetId: "u2", excerpt: "trunk follow-up" },
+      { targetId: "u3", excerpt: "abandoned" },
+    ]);
+    expect(point.activeIndex).toBe(0);
+    expect(points.get("u3")).toEqual({ alternatives: point.alternatives, activeIndex: 1 });
+  });
+
+  it("tracks the active alternative when the leaf moves", () => {
+    const trunk = branchAlternatives(TREE, "tr1").get("u2")!;
+    expect(trunk.activeIndex).toBe(0);
+  });
+
+  it("ignores linear turns and off-path branches", () => {
+    const points = branchAlternatives(TREE, "tr1");
+    // u1 has a single child (a1); a1's branch point is keyed on u2/u3 only.
+    expect(points.has("u1")).toBe(false);
+    expect(points.has("a1")).toBe(false);
+  });
+
+  it("returns nothing without a leaf", () => {
+    expect(branchAlternatives(TREE, null).size).toBe(0);
+  });
+
+  it("groups multiple replies to one user message into one branch point", () => {
+    const tree = [
+      userNode("u1", "ask", [
+        assistantNode("a1", "first reply"),
+        assistantNode("a2", "second reply"),
+      ]),
+    ];
+    const point = branchAlternatives(tree, "a2")!.get("a2")!;
+    expect(point.alternatives.map((alt) => alt.targetId)).toEqual(["a1", "a2"]);
+    expect(point.activeIndex).toBe(1);
   });
 });

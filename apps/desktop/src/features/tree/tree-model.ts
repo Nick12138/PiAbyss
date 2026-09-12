@@ -248,3 +248,51 @@ export function flattenSessionTree(
   }
   return { rows, laneCount };
 }
+
+/** One switchable sibling branch of a turn on the current path. */
+type TreeBranchAlternative = { targetId: string; excerpt: string };
+
+/** Sibling alternatives for a turn, keyed by the turn's last entry id. */
+export type TreeBranchPoint = {
+  alternatives: TreeBranchAlternative[];
+  /** Index of the currently active alternative within `alternatives`. */
+  activeIndex: number;
+};
+
+/** Tooltip length for inline alternative titles. */
+const BRANCH_EXCERPT_LIMIT = 120;
+
+/**
+ * Branch points along the current leaf path for the inline ‹ n/m › navigators:
+ * every on-path turn whose parent has more than one child (multiple user
+ * messages from the same fork, or multiple replies to the same user message).
+ * Keyed by the turn-chain's last entry id, which is exactly what transcript
+ * rows can look up (`sourceId` for user rows, `sourceEndId` for assistant
+ * rows) and what `agent.navigateTree` accepts as `targetId`. Only on-path
+ * turns appear in the result, and the walk descends only into the active
+ * child, so the cost is linear in the visible path length.
+ */
+export function branchAlternatives(
+  nodes: SerializableSessionTreeNode[],
+  leafId: string | null,
+): Map<string, TreeBranchPoint> {
+  const result = new Map<string, TreeBranchPoint>();
+  if (!leafId) return result;
+  const path = currentPathIds(nodes, leafId);
+  const visit = (siblings: TurnNode[]): void => {
+    const activeIndex = siblings.findIndex((sibling) => sibling.ids.some((id) => path.has(id)));
+    if (activeIndex < 0) return;
+    if (siblings.length > 1) {
+      const alternatives = siblings.map((sibling) => ({
+        targetId: sibling.ids[sibling.ids.length - 1]!,
+        excerpt: sibling.excerpt,
+      }));
+      siblings.forEach((sibling, index) => {
+        result.set(sibling.ids[sibling.ids.length - 1]!, { alternatives, activeIndex: index });
+      });
+    }
+    visit(siblings[activeIndex]!.children);
+  };
+  visit(buildConversationTurns(nodes, BRANCH_EXCERPT_LIMIT));
+  return result;
+}

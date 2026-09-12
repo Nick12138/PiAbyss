@@ -1,7 +1,7 @@
 import type { MessageKey } from "../i18n";
 import type { AppState } from "../stores/app-store";
 import { useAppStore } from "../stores/app-store";
-import { requestTreePanel } from "../dock-tree";
+import { requestTreeOverlay } from "../tree-overlay";
 import { abortCurrentAgent, createNewSession, isCreateSessionPending } from "./actions";
 import {
   requestDockCommand,
@@ -66,7 +66,7 @@ export const appCommands: readonly AppCommand[] = [
     id: "chat.tree",
     titleKey: "commandOpenTree",
     chord: "mod+t",
-    run: requestTreePanel,
+    run: requestTreeOverlay,
   },
   {
     id: "sessions.globalSearch",
