@@ -1,4 +1,4 @@
-import { Circle, CircleCheck, CircleDot } from "lucide-react";
+import { Circle, CircleCheck, LoaderCircle } from "lucide-react";
 import { useT } from "../../lib/i18n/use-t";
 import type { TodoItem } from "./todo-model";
 
@@ -19,7 +19,11 @@ export function TodoRow({
   const t = useT();
   const text = item.status === "in_progress" && item.activeForm ? item.activeForm : item.content;
   const Icon =
-    item.status === "completed" ? CircleCheck : item.status === "in_progress" ? CircleDot : Circle;
+    item.status === "completed"
+      ? CircleCheck
+      : item.status === "in_progress"
+        ? LoaderCircle
+        : Circle;
   const statusLabel =
     item.status === "completed"
       ? t("todoStatusCompleted")
@@ -50,7 +54,7 @@ export function TodoRow({
           item.status === "completed"
             ? "text-success"
             : item.status === "in_progress"
-              ? "text-accent"
+              ? "text-accent animate-spin"
               : "text-muted"
         }`}
       />
