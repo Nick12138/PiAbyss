@@ -6,13 +6,11 @@ import {
   CircleAlert,
   Copy,
   FileOutput,
-  FolderOpen,
   MessageCircleQuestion,
   Pencil,
   Pin,
   PinOff,
   Plus,
-  RefreshCw,
   Trash2,
   X,
 } from "lucide-react";
@@ -33,7 +31,6 @@ import {
 } from "../../lib/session-pins";
 import {
   captureRequestGeneration,
-  activeSessionContext,
   isCurrentRequestGeneration,
   mergeHostIdentity,
   nullableSessionContext,
@@ -57,7 +54,7 @@ import { deleteSessionDrafts } from "../../lib/draft-persistence";
 import {
   canArchiveSession,
   canDeleteSession,
-  canReloadSession,
+  canExportSession,
   canRenameSession,
   filterSessionItems,
   groupSessionItemsByTime,
@@ -149,6 +146,7 @@ export function SessionList({
   const sessionMutationBlocked = sessionMutationPending || sessionOpenPending || sessionOpenBlocked;
   const refreshRequest = useRef(0);
   const mutationRequest = useRef(0);
+  const renameInputRef = useRef<HTMLInputElement>(null);
   const itemsWorkspaceId = useRef<string | null>(null);
   const mounted = useRef(true);
   const performSessionOpenRef = useRef(performSessionOpen);
@@ -428,10 +426,20 @@ export function SessionList({
   }
 
   function beginRename(item: SessionCatalogEntry) {
-    if (!canRenameSession(item, session) || sessionMutationBlocked) return;
+    if (item.archived || !canRenameSession(item, session) || sessionMutationBlocked) return;
     setEditingSessionId(item.sessionId);
     setNameDraft(sessionDisplayName(item, t("sessionsUntitled")));
   }
+
+  // The rename input must own keyboard focus as soon as it mounts; a bare
+  // autoFocus is fragile inside portalled or re-keyed rows, and selecting the
+  // whole name makes replacing it one keystroke.
+  useEffect(() => {
+    const input = renameInputRef.current;
+    if (!editingSessionId || !input) return;
+    input.focus();
+    input.select();
+  }, [editingSessionId]);
 
   function cancelRename() {
     setEditingSessionId(null);
@@ -707,48 +715,6 @@ export function SessionList({
     }
   }
 
-  async function reloadSessionFromDisk() {
-    if (!host || !workspace || !session || sessionMutationBlocked || !session.isIdle) {
-      return;
-    }
-    const request = ++mutationRequest.current;
-    const generation = captureRequestGeneration(host);
-    setSessionMutationPending(true);
-    try {
-      const res = await hostClient.request(
-        "session.reload",
-        activeSessionContext(host, workspace, session),
-        null,
-      );
-      if (
-        request !== mutationRequest.current ||
-        !isCurrentRequestGeneration(useAppStore.getState().host, generation, {
-          session: true,
-        })
-      ) {
-        return;
-      }
-      if (!res.ok) {
-        pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
-        return;
-      }
-      setSession(res.result);
-      const currentHost = useAppStore.getState().host;
-      if (currentHost) {
-        const nextHost = mergeHostIdentity(currentHost, res);
-        if (nextHost) useAppStore.getState().setHost(nextHost);
-      }
-      pushNotification(t("notifSessionReloaded"), "success");
-    } catch (error) {
-      pushNotification(
-        error instanceof Error ? error.message : t("notifSessionReloadFailed"),
-        "error",
-      );
-    } finally {
-      if (request === mutationRequest.current) setSessionMutationPending(false);
-    }
-  }
-
   const allItems = prioritizePinnedSessions(sessionCatalogItems(sessionCatalog), pinnedSessionIds);
   const visibleItems = filterSessionItems(allItems, filter);
   const groupedItems = groupSessionItemsByTime(visibleItems);
@@ -873,8 +839,8 @@ export function SessionList({
                         const pinned = pinnedSessionIds.includes(item.sessionId);
                         const canRename = canRenameSession(item, session);
                         const canDelete = canDeleteSession(item, session);
-                        const canReload = canReloadSession(item, session);
                         const canArchive = canArchiveSession(item, session);
+                        const canExport = canExportSession(item, session);
                         const terminalState = item.archived
                           ? undefined
                           : sessionTerminalStates[workspace?.id ?? ""]?.[item.sessionId];
@@ -922,16 +888,6 @@ export function SessionList({
                                 trigger: contextMenuTrigger(event.target),
                                 items: [
                                   {
-                                    id: "session.open",
-                                    label: t("menuOpenSession"),
-                                    disabled:
-                                      item.archived ||
-                                      !item.sessionPath ||
-                                      sessionMutationPending ||
-                                      sessionOpenBlocked,
-                                    onSelect: () => openSession(item.sessionPath),
-                                  },
-                                  {
                                     id: "session.rename",
                                     label: t("sessionsRename"),
                                     icon: Pencil,
@@ -945,61 +901,10 @@ export function SessionList({
                                     onSelect: () => togglePinnedSession(item),
                                   },
                                   {
-                                    id: "session.reload",
-                                    label: t("sessionsReload"),
-                                    icon: RefreshCw,
-                                    disabled: !canReload,
-                                    onSelect: () => void reloadSessionFromDisk(),
-                                  },
-                                  {
-                                    id: item.archived ? "session.restore" : "session.archive",
-                                    label: item.archived
-                                      ? t("sessionsRestore")
-                                      : t("sessionsArchive"),
-                                    icon: item.archived ? ArchiveRestore : Archive,
-                                    separatorBefore: true,
-                                    disabled: !item.archived && !canArchive,
-                                    onSelect: () =>
-                                      runSessionFileAction(
-                                        item.archived ? "session.restore" : "session.archive",
-                                        item,
-                                      ),
-                                  },
-                                  {
-                                    id: "session.exportHtml",
-                                    label: t("statsExportHtml"),
-                                    icon: FileOutput,
-                                    disabled: !active || !session?.isIdle,
-                                    onSelect: () => requestExport("html"),
-                                  },
-                                  {
-                                    id: "session.exportJsonl",
-                                    label: t("statsExportJsonl"),
-                                    icon: FileOutput,
-                                    disabled: !active || !session?.isIdle,
-                                    onSelect: () => requestExport("jsonl"),
-                                  },
-                                  {
-                                    id: "session.reveal",
-                                    label: t("menuRevealSession"),
-                                    icon: FolderOpen,
-                                    separatorBefore: true,
-                                    onSelect: async () => {
-                                      try {
-                                        const { invoke } = await import("@tauri-apps/api/core");
-                                        await invoke("desktop_open_path", {
-                                          path: item.sessionPath,
-                                          mode: "reveal",
-                                        });
-                                      } catch {
-                                        pushNotification(t("sessionsRevealFailed"), "warning");
-                                      }
-                                    },
-                                  },
-                                  {
                                     id: "session.copyPath",
                                     label: t("menuCopySessionPath"),
                                     icon: Copy,
+                                    separatorBefore: true,
                                     onSelect: async () => {
                                       try {
                                         await navigator.clipboard.writeText(item.sessionPath);
@@ -1008,6 +913,30 @@ export function SessionList({
                                         pushNotification(t("sessionsCopyPathFailed"), "warning");
                                       }
                                     },
+                                  },
+                                  {
+                                    id: "session.exportHtml",
+                                    label: t("statsExportHtml"),
+                                    icon: FileOutput,
+                                    disabled: !active && !canExport,
+                                    onSelect: () =>
+                                      requestExport("html", {
+                                        kind: "session",
+                                        sessionId: item.sessionId,
+                                        sessionPath: item.sessionPath,
+                                      }),
+                                  },
+                                  {
+                                    id: "session.exportJsonl",
+                                    label: t("statsExportJsonl"),
+                                    icon: FileOutput,
+                                    disabled: !active && !canExport,
+                                    onSelect: () =>
+                                      requestExport("jsonl", {
+                                        kind: "session",
+                                        sessionId: item.sessionId,
+                                        sessionPath: item.sessionPath,
+                                      }),
                                   },
                                   {
                                     id: "session.delete",
@@ -1031,7 +960,7 @@ export function SessionList({
                                 }}
                               >
                                 <input
-                                  autoFocus
+                                  ref={renameInputRef}
                                   aria-label={t("sessionsNameAria")}
                                   value={nameDraft}
                                   maxLength={120}

@@ -88,8 +88,6 @@ const EXPECTED_CONTEXT = {
   expectedHostInstanceId: HOST_ID,
   expectedWorkspaceId: WORKSPACE_ID,
   expectedWorkspaceRevision: 1,
-  expectedSessionId: SESSION_ID,
-  expectedSessionRevision: 3,
 };
 
 function exportEnvelope(path: string): HostResponseEnvelope {
@@ -171,6 +169,51 @@ describe("requestExport", () => {
         path: "/tmp/out.html",
       }),
     );
+  });
+
+  it("exports a Session that is not the active one by locator", async () => {
+    saveMock.mockResolvedValue("/tmp/other.html");
+    const request = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue(exportEnvelope("/tmp/other.html") as never);
+
+    await expect(
+      requestExport("html", {
+        kind: "session",
+        sessionId: "44444444-4444-4444-8444-444444444444",
+        sessionPath: "/sessions/Old name.jsonl",
+      }),
+    ).resolves.toBe(true);
+
+    // A background Session export keeps the workspace-scope context; the target
+    // travels in the params so the Host can read that Session's file.
+    expect(request).toHaveBeenCalledExactlyOnceWith(
+      "session.export",
+      EXPECTED_CONTEXT,
+      {
+        format: "html",
+        path: "/tmp/other.html",
+        sessionId: "44444444-4444-4444-8444-444444444444",
+        sessionPath: "/sessions/Old name.jsonl",
+      },
+      null,
+    );
+  });
+
+  it("does not gate a background Session export on the active Session being idle", async () => {
+    useAppStore.getState().applySessionSnapshot(session({ isIdle: false }));
+    saveMock.mockResolvedValue("/tmp/other.jsonl");
+    vi.spyOn(hostClient, "request").mockResolvedValue(exportEnvelope("/tmp/other.jsonl") as never);
+
+    await expect(
+      requestExport("jsonl", {
+        kind: "session",
+        sessionId: "44444444-4444-4444-8444-444444444444",
+        sessionPath: "/sessions/other.jsonl",
+      }),
+    ).resolves.toBe(true);
+
+    expect(saveMock).toHaveBeenCalled();
   });
 
   it("does nothing when the save dialog is cancelled", async () => {

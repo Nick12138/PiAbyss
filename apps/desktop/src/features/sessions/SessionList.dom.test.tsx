@@ -101,7 +101,7 @@ describe("SessionList actions", () => {
     expect(screen.queryByRole("button", { name: "Unpin" })).not.toBeInTheDocument();
   });
 
-  it("exposes reload and archive in the session context menu", async () => {
+  it("lists the session menu in task order without reload, archive, or reveal", async () => {
     render(
       <>
         <MenuHost />
@@ -110,8 +110,32 @@ describe("SessionList actions", () => {
     );
     fireEvent.contextMenu(screen.getByText("Position the menu"));
 
-    expect(await screen.findByRole("menuitem", { name: "Reload" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Archive" })).toBeInTheDocument();
+    expect(await screen.findByRole("menuitem", { name: "Rename" })).toBeInTheDocument();
+    const labels = screen.getAllByRole("menuitem").map((item) => item.textContent);
+    expect(labels).toEqual([
+      "Rename",
+      "Pin",
+      "Copy session path",
+      "Export HTML",
+      "Export JSONL",
+      "Delete",
+    ]);
+    expect(screen.queryByRole("menuitem", { name: "Reload" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Archive" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Reveal session file" })).not.toBeInTheDocument();
+  });
+
+  it("offers export for a background session instead of disabling it", async () => {
+    render(
+      <>
+        <MenuHost />
+        <SessionList />
+      </>,
+    );
+    fireEvent.contextMenu(screen.getByText("Position the menu"));
+
+    expect(await screen.findByRole("menuitem", { name: "Export HTML" })).toBeEnabled();
+    expect(screen.getByRole("menuitem", { name: "Export JSONL" })).toBeEnabled();
   });
 
   it("keeps a live session's green dot visible without hover", () => {

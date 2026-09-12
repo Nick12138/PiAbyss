@@ -114,22 +114,14 @@ export function groupSessionItemsByTime(
   }));
 }
 
-export function canReloadSession(
-  item: SessionCatalogEntry,
-  session: SessionSnapshot | null,
-): boolean {
-  return Boolean(
-    !item.archived &&
-    session?.sessionId === item.sessionId &&
-    session.sessionPath &&
-    session.isIdle,
-  );
-}
-
 export function canRenameSession(
   item: SessionCatalogEntry,
   session: SessionSnapshot | null,
 ): boolean {
+  // Archived Sessions live in the archive directory and are excluded from the
+  // active list's mutations; renaming one would silently write to a file the
+  // user cannot currently see.
+  if (item.archived) return false;
   // Renaming is metadata-only and is safe while the current Session is
   // running. Background runtimes remain excluded because their live snapshot
   // is not the foreground editing target.
@@ -147,6 +139,19 @@ export function canArchiveSession(
   session: SessionSnapshot | null,
 ): boolean {
   if (item.archived) return false;
+  if (session?.sessionId === item.sessionId) return session.isIdle;
+  return !isSessionRuntimeBusy(item.runtimeState);
+}
+
+/**
+ * Export reads the Session JSONL file, so a Session that is still appending to
+ * it must finish first. Archived Sessions are static files and always safe.
+ */
+export function canExportSession(
+  item: SessionCatalogEntry,
+  session: SessionSnapshot | null,
+): boolean {
+  if (item.archived) return true;
   if (session?.sessionId === item.sessionId) return session.isIdle;
   return !isSessionRuntimeBusy(item.runtimeState);
 }

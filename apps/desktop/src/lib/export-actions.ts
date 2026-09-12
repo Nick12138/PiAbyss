@@ -1,15 +1,21 @@
 import { useAppStore } from "./stores/app-store";
 import { hostClient } from "./bridge/host-client";
 import {
-  activeSessionContext,
   captureRequestGeneration,
   isCurrentRequestGeneration,
+  workspaceContext,
 } from "./bridge/host-context";
 import { requestWithRetry } from "./bridge/request-retry";
 import { tCurrent } from "./i18n/use-t";
 import { hostErrorLevel, localizeHostError } from "./bridge/localize-host-error";
 
 export type ExportFormat = "html" | "jsonl";
+
+/** Identity of the Session to export; omit it to export the active Session. */
+export type ExportTarget =
+  { kind: "active" } | { kind: "session"; sessionId: string; sessionPath: string };
+
+export const ACTIVE_EXPORT_TARGET: ExportTarget = { kind: "active" };
 
 export function exportFileName(
   name: string | undefined,
@@ -21,14 +27,25 @@ export function exportFileName(
 }
 
 /**
- * Export the active session through a native save dialog. Surfaces the
- * outcome via notifications and reveals the file on success. Returns true
- * when the export completed.
+ * Export a Session through a native save dialog. Defaults to the active
+ * Session; a `session` target exports that Session file instead. Surfaces the
+ * outcome via notifications and reveals the file on success.
  */
-export async function requestExport(format: ExportFormat): Promise<boolean> {
+export async function requestExport(
+  format: ExportFormat,
+  target: ExportTarget = ACTIVE_EXPORT_TARGET,
+): Promise<boolean> {
   const { host, workspace, session, pushNotification } = useAppStore.getState();
-  if (!host || !workspace || !session) return false;
-  if (!session.isIdle) {
+  if (!host || !workspace) return false;
+  const exportSessionId = target.kind === "session" ? target.sessionId : session?.sessionId;
+  const exportName =
+    target.kind === "session"
+      ? target.sessionPath.replace(/^.*[\\/]/, "").replace(/\.jsonl$/i, "")
+      : session?.name;
+  if (!exportSessionId) return false;
+  const isActiveTarget = target.kind === "active";
+  if (isActiveTarget && !session) return false;
+  if (isActiveTarget && !session?.isIdle) {
     pushNotification(tCurrent("notifExportWait"), "info");
     return false;
   }
@@ -36,7 +53,7 @@ export async function requestExport(format: ExportFormat): Promise<boolean> {
   try {
     const { save } = await import("@tauri-apps/plugin-dialog");
     targetPath = await save({
-      defaultPath: exportFileName(session.name, session.sessionId, format),
+      defaultPath: exportFileName(exportName, exportSessionId, format),
       filters: [
         format === "html"
           ? { name: "HTML", extensions: ["html"] }
@@ -57,8 +74,14 @@ export async function requestExport(format: ExportFormat): Promise<boolean> {
     const res = await requestWithRetry(() =>
       hostClient.request(
         "session.export",
-        activeSessionContext(host, workspace, session),
-        { format, path: targetPath },
+        workspaceContext(host, workspace),
+        {
+          format,
+          path: targetPath,
+          ...(target.kind === "session"
+            ? { sessionId: target.sessionId, sessionPath: target.sessionPath }
+            : {}),
+        },
         null,
       ),
     );

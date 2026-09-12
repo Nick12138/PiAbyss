@@ -4,7 +4,7 @@ import {
   includeActiveSession,
   canArchiveSession,
   canDeleteSession,
-  canReloadSession,
+  canExportSession,
   canRenameSession,
   filterSessionItems,
   groupSessionItemsByTime,
@@ -128,24 +128,6 @@ describe("sessionStatusDotClass", () => {
   });
 });
 
-describe("canReloadSession", () => {
-  const item = {
-    sessionId: "active-session",
-    sessionPath: "C:/sessions/active.jsonl",
-    cwd: "C:/workspace",
-    updatedAt: 1,
-    runtimeState: "idle" as const,
-  };
-
-  it("allows only the persisted active idle Session", () => {
-    expect(canReloadSession(item, active)).toBe(true);
-    expect(canReloadSession(item, { ...active, isIdle: false })).toBe(false);
-    expect(canReloadSession({ ...item, archived: true }, active)).toBe(false);
-    expect(canReloadSession({ ...item, sessionId: "other" }, active)).toBe(false);
-    expect(canReloadSession(item, { ...active, sessionPath: undefined })).toBe(false);
-  });
-});
-
 describe("last Session path cleanup", () => {
   it("matches only the exact Host canonical path", () => {
     expect(shouldClearLastSessionPath("/sessions/Alpha.jsonl", "/sessions/Alpha.jsonl")).toBe(true);
@@ -198,6 +180,42 @@ describe("canRenameSession", () => {
     ).toBe(true);
     expect(canRenameSession({ ...item, runtimeState: "running" }, active)).toBe(false);
     expect(canRenameSession({ ...item, runtimeState: "idle" }, active)).toBe(false);
+  });
+
+  it("blocks archived Sessions even though their runtime state is inactive", () => {
+    expect(canRenameSession({ ...item, archived: true }, null)).toBe(false);
+    expect(canRenameSession({ ...item, archived: true, runtimeState: "error" }, active)).toBe(
+      false,
+    );
+  });
+});
+
+describe("canExportSession", () => {
+  const item = {
+    sessionId: "inactive-session",
+    sessionPath: "C:/sessions/inactive.jsonl",
+    cwd: "C:/workspace",
+    updatedAt: 1,
+    runtimeState: "inactive" as const,
+  };
+
+  it("allows idle files, including archived ones and the running foreground Session only when idle", () => {
+    expect(canExportSession(item, active)).toBe(true);
+    expect(canExportSession({ ...item, archived: true }, active)).toBe(true);
+    expect(
+      canExportSession({ ...item, sessionId: active.sessionId, runtimeState: "running" }, active),
+    ).toBe(true);
+  });
+
+  it("blocks Sessions that are still appending to their file", () => {
+    expect(
+      canExportSession(
+        { ...item, sessionId: active.sessionId, runtimeState: "running" },
+        { ...active, isIdle: false },
+      ),
+    ).toBe(false);
+    expect(canExportSession({ ...item, runtimeState: "running" }, active)).toBe(false);
+    expect(canExportSession({ ...item, runtimeState: "queued" }, active)).toBe(false);
   });
 });
 
