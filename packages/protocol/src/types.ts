@@ -328,6 +328,8 @@ export type PiSettingsSnapshot = {
   defaultProjectTrust: "ask" | "always" | "never";
   steeringMode: "all" | "one-at-a-time";
   followUpMode: "all" | "one-at-a-time";
+  /** Built-in tools enabled for new sessions; omitted means pi's own defaults. */
+  defaultTools?: string[];
   models: PiSettingsModel[];
 };
 
@@ -339,6 +341,7 @@ export type PiSettingsPatch = {
   defaultProjectTrust?: "ask" | "always" | "never";
   steeringMode?: "all" | "one-at-a-time";
   followUpMode?: "all" | "one-at-a-time";
+  defaultTools?: string[];
 };
 
 /** Scope of a settings-configured skill path (mirrors Settings scopes). */
@@ -1167,6 +1170,23 @@ export type SessionTokenTotals = {
   total: number;
 };
 
+export type SessionStatsTiming = {
+  /** Summed request wall time over assistant steps, derived from persisted
+   * entry timestamps (trigger entry → assistant message completion). */
+  llmMs: number;
+  /** Summed tool wall time, derived from persisted entry timestamps
+   * (assistant message completion → tool result). */
+  toolMs: number;
+  /** First-token latency sum and message count from persisted `piabyss.timing`
+   * custom entries. Absent when no timing has been persisted yet. */
+  ttftMs?: number;
+  ttftSteps?: number;
+  /** Decode wall time and output tokens over the same persisted messages.
+   * Absent when no measured message reported output tokens. */
+  decodeMs?: number;
+  decodeTokens?: number;
+};
+
 export type SessionStatsSnapshot = {
   messageCount: number;
   toolCallCount?: number;
@@ -1176,6 +1196,9 @@ export type SessionStatsSnapshot = {
   toolResultCount?: number;
   /** Aggregated over ALL session entries, including compacted-away history. */
   tokens?: SessionTokenTotals;
+  /** Approximate wall-clock timings over ALL session entries, including
+   * compacted-away history. Absent from hosts that do not derive it. */
+  timing?: SessionStatsTiming;
   cost?: number;
   sessionFile?: string;
 };

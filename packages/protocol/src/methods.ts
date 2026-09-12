@@ -232,6 +232,7 @@ export type WorkspaceOnlyMethod =
   | "session.cleanupArchived"
   | "session.getSnapshot"
   | "session.rename"
+  | "session.export"
   | "session.usageReport"
   | "subagents.getSession"
   | "subagents.stop"
@@ -256,7 +257,6 @@ export type ActiveSessionMethod =
   | "session.getStats"
   | "session.getForkPoints"
   | "session.fork"
-  | "session.export"
   | "session.getCommands"
   | "agent.prompt"
   | "agent.steer"
@@ -372,7 +372,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "session.getStats": "activeSession",
   "session.getForkPoints": "activeSession",
   "session.fork": "activeSession",
-  "session.export": "activeSession",
+  "session.export": "workspace",
   "session.usageReport": "workspace",
   "session.searchAll": "host",
   "session.getCommands": "activeSession",

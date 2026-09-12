@@ -663,9 +663,14 @@ export function validateRequestParams<M extends HostMethod>(
         ? ok(params)
         : fail("invalid session.fork params", { method });
     case "session.export":
-      return exactObject(params, ["format"], ["path"]) &&
+      return exactObject(params, ["format"], ["sessionId", "sessionPath", "path"]) &&
         (params.format === "html" || params.format === "jsonl") &&
-        (params.path === undefined || (isString(params.path) && params.path.length > 0))
+        (params.path === undefined || (isString(params.path) && params.path.length > 0)) &&
+        (params.sessionId === undefined || isNonEmptyString(params.sessionId)) &&
+        (params.sessionPath === undefined || isNonEmptyString(params.sessionPath)) &&
+        // The target is either the active Session (no locator) or one fully
+        // identified Session file; a partial locator would be ambiguous.
+        (params.sessionId === undefined) === (params.sessionPath === undefined)
         ? ok(params)
         : fail("invalid session.export params", { method });
     case "agent.setAutoCompaction":

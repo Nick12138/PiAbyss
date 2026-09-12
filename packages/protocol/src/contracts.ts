@@ -138,7 +138,7 @@ export type HostContextMap = {
   "session.getStats": ActiveSessionContext;
   "session.getForkPoints": ActiveSessionContext;
   "session.fork": ActiveSessionContext;
-  "session.export": ActiveSessionContext;
+  "session.export": WorkspaceContext;
   "session.usageReport": WorkspaceContext;
   "session.searchAll": HostContext;
   "session.getCommands": ActiveSessionContext;
@@ -275,7 +275,12 @@ export type HostRequestParams = {
   "session.getStats": null;
   "session.getForkPoints": null;
   "session.fork": { entryId: string; position?: "before" | "at" };
-  "session.export": { format: "html" | "jsonl"; path?: string };
+  "session.export": {
+    format: "html" | "jsonl";
+    sessionId?: string;
+    sessionPath?: string;
+    path?: string;
+  };
   "session.usageReport": null;
   "session.searchAll": { query: string; limit?: number; includeArchived?: boolean };
   "session.getCommands": null;

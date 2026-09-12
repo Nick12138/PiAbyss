@@ -2082,10 +2082,13 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
             "followUpMode",
             "models",
           ],
-          ["defaultProvider", "defaultModel"],
+          ["defaultProvider", "defaultModel", "defaultTools"],
         ) &&
         (result.defaultProvider === undefined || isString(result.defaultProvider)) &&
         (result.defaultModel === undefined || isString(result.defaultModel)) &&
+        (result.defaultTools === undefined ||
+          (Array.isArray(result.defaultTools) &&
+            result.defaultTools.every((name) => isString(name)))) &&
         ["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(
           String(result.defaultThinkingLevel),
         ) &&
@@ -2311,6 +2314,7 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
             "assistantMessageCount",
             "toolResultCount",
             "tokens",
+            "timing",
             "cost",
             "sessionFile",
           ],
@@ -2330,6 +2334,20 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
             isFiniteNumber(result.tokens.cacheRead) &&
             isFiniteNumber(result.tokens.cacheWrite) &&
             isFiniteNumber(result.tokens.total))) &&
+        (result.timing === undefined ||
+          (isPlainObject(result.timing) &&
+            hasExactKeys(
+              result.timing,
+              ["llmMs", "toolMs"],
+              ["ttftMs", "ttftSteps", "decodeMs", "decodeTokens"],
+            ) &&
+            isFiniteNumber(result.timing.llmMs) &&
+            isFiniteNumber(result.timing.toolMs) &&
+            (result.timing.ttftMs === undefined || isFiniteNumber(result.timing.ttftMs)) &&
+            (result.timing.ttftSteps === undefined || isFiniteNumber(result.timing.ttftSteps)) &&
+            (result.timing.decodeMs === undefined || isFiniteNumber(result.timing.decodeMs)) &&
+            (result.timing.decodeTokens === undefined ||
+              isFiniteNumber(result.timing.decodeTokens)))) &&
         (result.cost === undefined || isFiniteNumber(result.cost)) &&
         (result.sessionFile === undefined || isString(result.sessionFile))
         ? null
