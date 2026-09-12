@@ -36,6 +36,7 @@ import { UsageSettings } from "./UsageSettings";
 import { ShortcutsSettings } from "./ShortcutsSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { PiSettings } from "./PiSettings";
+import { DefaultToolsSetting } from "./DefaultToolsSetting";
 import { RestartHostButton } from "./restart-host";
 import { hostClient } from "../../lib/bridge/host-client";
 import { SettingsTopBarActionsContext, SETTINGS_SECTION_META } from "./settings-top-bar";
@@ -365,6 +366,7 @@ function GeneralSettings() {
             <h2 className="mb-2 text-[13px] font-medium text-muted">{t("generalAdvancedGroup")}</h2>
             <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
               <p className="text-sm text-muted">{t("generalAdvancedDesc")}</p>
+              <DefaultToolsSetting />
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"

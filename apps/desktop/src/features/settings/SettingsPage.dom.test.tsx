@@ -265,8 +265,11 @@ describe("SettingsPage navigation guard", () => {
     expect(apple).toHaveAttribute("data-state", "active");
     expect(vercel).toHaveAttribute("data-state", "inactive");
 
-    await user.click(screen.getByLabelText("Color mode"));
-    await user.click(await screen.findByRole("option", { name: "Light" }));
+    await user.click(
+      within(screen.getByRole("group", { name: "Color mode" })).getByRole("button", {
+        name: "Light",
+      }),
+    );
     await waitFor(() => expect(useAppStore.getState().desktopSettings?.theme).toBe("light"));
     expect(useAppStore.getState().desktopSettings?.themeFamily).toBe("apple");
     expect(document.documentElement).toHaveClass("light");
@@ -421,8 +424,11 @@ describe("SettingsPage navigation guard", () => {
     });
     render(<SettingsPage initialSection="appearance" />);
 
-    await user.click(screen.getByLabelText("Color mode"));
-    await user.click(await screen.findByRole("option", { name: "Light" }));
+    await user.click(
+      within(screen.getByRole("group", { name: "Color mode" })).getByRole("button", {
+        name: "Light",
+      }),
+    );
 
     await waitFor(() =>
       expect(tauriMocks.invoke).toHaveBeenCalledWith("desktop_settings_patch", {
