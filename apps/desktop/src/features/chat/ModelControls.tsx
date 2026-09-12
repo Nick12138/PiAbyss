@@ -515,6 +515,19 @@ export function ModelControls() {
   const thinkingLevels = resolveThinkingLevels(session?.model, models);
   const currentThinkingLevel = session?.thinkingLevel ?? "";
   const thinkingDisabled = !session || thinkingLevels.length === 0;
+  // The trigger shows the effective depth next to the model name, the way the
+  // model providers label it (e.g. "deepseek-v4-flash High"). A model without
+  // selectable levels says nothing rather than implying a level it cannot hold.
+  const activeThinkingLevel =
+    thinkingLevels.length > 0 && currentThinkingLevel
+      ? thinkingLevelLabel(currentThinkingLevel)
+      : "";
+  const triggerTitle = activeModelLabel || t("modelSelect");
+  // Screen readers must hear the depth as a word boundary (`Grok 4.5 Off`),
+  // which the two adjacent spans cannot express on their own.
+  const triggerAccessibleName = activeThinkingLevel
+    ? `${activeModelDisplayName || t("modelNone")} ${activeThinkingLevel}`
+    : activeModelDisplayName || t("modelNone");
   const thinkingMenuLabel = session?.model
     ? t("modelThinkingFor", { model: modelOptionLabel(session.model) })
     : t("modelThinkingDepth");
@@ -700,12 +713,18 @@ export function ModelControls() {
           disabled={!session}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
-          title={activeModelLabel || t("modelSelect")}
+          aria-label={triggerAccessibleName}
+          title={triggerTitle}
           onClick={() => {
             setMenuOpen((open) => !open);
           }}
         >
           <span className="truncate leading-none">{activeModelDisplayName || t("modelNone")}</span>
+          {activeThinkingLevel && (
+            <span className="shrink-0 whitespace-nowrap leading-none text-foreground/70">
+              {activeThinkingLevel}
+            </span>
+          )}
           <ChevronDown
             className={`shrink-0 transition-transform ${menuOpen ? "rotate-180" : ""}`}
             size={13}

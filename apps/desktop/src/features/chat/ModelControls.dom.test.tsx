@@ -14,6 +14,19 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
 import { ModelControls } from "./ModelControls";
 
+/** The trigger's accessible name is the model name with the thinking level
+ *  appended (`deepseek-v4-flash High`); the name starts with the model name. */
+const MODEL_TRIGGER_NAME = /^Grok 4\.5( |$)/;
+const CENTERED_TRIGGER_NAME = /^Model 24( |$)/;
+
+function modelTrigger() {
+  return screen.getByRole("button", { name: MODEL_TRIGGER_NAME });
+}
+
+function findModelTrigger() {
+  return screen.findByRole("button", { name: MODEL_TRIGGER_NAME });
+}
+
 const HOST_ID = "11111111-1111-4111-8111-111111111111";
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
 const SESSION_ID = "33333333-3333-4333-8333-333333333333";
@@ -141,8 +154,13 @@ describe("ModelControls thinking-depth footer", () => {
     const user = userEvent.setup();
     render(<ModelControls />);
 
-    await user.click(await screen.findByRole("button", { name: "Grok 4.5" }));
+    await user.click(await findModelTrigger());
     await screen.findByRole("menu", { name: "Models" });
+
+    // The trigger mirrors the effective depth next to the model name. The two
+    // labels are separate spans (the gap is CSS), so match them individually.
+    expect(modelTrigger()).toHaveAccessibleName("Grok 4.5 Off");
+    expect(modelTrigger()).toHaveTextContent(/^Grok 4\.5\s*Off$/);
 
     // The pinned footer shows the current level and opens the submenu.
     const footer = screen.getByRole("button", { name: /Thinking depth/ });
@@ -174,6 +192,7 @@ describe("ModelControls thinking-depth footer", () => {
     );
     expect(screen.getByRole("menu", { name: "Models" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Thinking depth/ })).toHaveTextContent("High");
+    expect(modelTrigger()).toHaveTextContent(/^Grok 4\.5\s*High$/);
   });
 
   it("disables the pinned footer when the model has no thinking levels", async () => {
@@ -194,12 +213,14 @@ describe("ModelControls thinking-depth footer", () => {
     const user = userEvent.setup();
     render(<ModelControls />);
 
-    await user.click(await screen.findByRole("button", { name: "Grok 4.5" }));
+    await user.click(await findModelTrigger());
     await screen.findByRole("menu", { name: "Models" });
 
     const footer = screen.getByRole("button", { name: /Thinking depth/ });
     expect(footer).toBeDisabled();
     expect(footer).toHaveTextContent("—");
+    // No selectable levels → the trigger stays a bare model name.
+    expect(modelTrigger()).toHaveTextContent("Grok 4.5");
     useAppStore.getState().setConnecting(true);
   });
 
@@ -227,7 +248,7 @@ describe("ModelControls thinking-depth footer", () => {
     const user = userEvent.setup();
     render(<ModelControls />);
 
-    await user.click(await screen.findByRole("button", { name: "Grok 4.5" }));
+    await user.click(await findModelTrigger());
     await screen.findByRole("menu", { name: "Models" });
 
     const footer = screen.getByRole("button", { name: /Thinking depth/ });
@@ -259,7 +280,7 @@ describe("ModelControls thinking-depth footer", () => {
     const user = userEvent.setup();
     render(<ModelControls />);
 
-    await user.click(await screen.findByRole("button", { name: "Grok 4.5" }));
+    await user.click(await findModelTrigger());
     await screen.findByRole("menu", { name: "Models" });
 
     const footer = screen.getByRole("button", { name: /Thinking depth/ });
@@ -314,7 +335,7 @@ describe("ModelControls model switch while running", () => {
     const user = userEvent.setup();
     render(<ModelControls />);
 
-    await user.click(await screen.findByRole("button", { name: "Grok 4.5" }));
+    await user.click(await findModelTrigger());
     await user.click(await screen.findByRole("menuitemradio", { name: "Grok 4.5 Fast" }));
 
     await waitFor(() =>
@@ -401,7 +422,7 @@ describe("ModelControls model menu width", () => {
     const user = userEvent.setup();
     render(<ModelControls />);
 
-    await user.click(screen.getByRole("button", { name: "Grok 4.5" }));
+    await user.click(modelTrigger());
     await screen.findByRole("menu", { name: "Models" });
 
     // The floated width tracks the model names automatically — no drag handle.
@@ -426,7 +447,7 @@ describe("ModelControls model menu width", () => {
 
     render(<ModelControls />);
 
-    const button = await screen.findByRole("button", { name: "Grok 4.5" });
+    const button = await findModelTrigger();
     expect(button).toHaveAttribute("title", "天机阁/Grok 4.5");
     useAppStore.getState().setConnecting(true);
   });
@@ -453,7 +474,7 @@ describe("ModelControls model menu width", () => {
     const user = userEvent.setup();
     render(<ModelControls />);
 
-    await user.click(screen.getByRole("button", { name: "Grok 4.5" }));
+    await user.click(modelTrigger());
     const menu = await screen.findByRole("menu", { name: "Models" });
 
     // Provider names appear as section headers; rows show plain model names.
@@ -491,7 +512,7 @@ describe("ModelControls model menu width", () => {
     const user = userEvent.setup();
     render(<ModelControls />);
 
-    await user.click(screen.getByRole("button", { name: "Grok 4.5" }));
+    await user.click(modelTrigger());
     const menu = await screen.findByRole("menu", { name: "Models" });
     const menuShell = menu.parentElement?.parentElement;
 
@@ -520,7 +541,7 @@ describe("ModelControls model menu width", () => {
     const user = userEvent.setup();
     render(<ModelControls />);
 
-    await user.click(screen.getByRole("button", { name: "Grok 4.5" }));
+    await user.click(modelTrigger());
     const menu = await screen.findByRole("menu", { name: "Models" });
     const menuShell = menu.parentElement?.parentElement;
 
@@ -571,7 +592,7 @@ describe("ModelControls selected-model centering", () => {
 
     render(<ModelControls />);
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "Model 24" }));
+    await user.click(await screen.findByRole("button", { name: CENTERED_TRIGGER_NAME }));
     const menu = await screen.findByRole("menu", { name: "Models" });
 
     // (1060 - 100) - 320 / 2 + 32 / 2 = 816 → the selection lands mid-viewport.
