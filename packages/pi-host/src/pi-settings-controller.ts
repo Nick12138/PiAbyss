@@ -58,6 +58,7 @@ function snapshot(settingsManager: SettingsManager, runtime: ModelRuntime): PiSe
     defaultProjectTrust: settingsManager.getDefaultProjectTrust(),
     steeringMode: settingsManager.getSteeringMode(),
     followUpMode: settingsManager.getFollowUpMode(),
+    ...(settings.defaultTools ? { defaultTools: [...settings.defaultTools] } : {}),
     models: modelSummaries(runtime),
   };
 }
@@ -138,6 +139,12 @@ export function createPiSettingsHandlers(
       }
       if (patch.steeringMode !== undefined) jsonPatch.steeringMode = patch.steeringMode;
       if (patch.followUpMode !== undefined) jsonPatch.followUpMode = patch.followUpMode;
+      if (patch.defaultTools !== undefined) {
+        // De-duplicate while keeping the caller's order. Pi treats an empty array
+        // as "no built-in tools" (extension tools stay enabled), so persist it
+        // verbatim rather than dropping the key.
+        jsonPatch.defaultTools = [...new Set(patch.defaultTools)];
+      }
 
       try {
         writeGlobalSettings(factory.deps.agentDir, jsonPatch);
