@@ -325,12 +325,15 @@ export function WorkspacePicker() {
       // Transient SERVICE_GRAPH_BUSY collisions (an in-flight read holding the
       // serviceGraphLock) are retryable by design; give the switch a short
       // retry window instead of surfacing a one-off busy toast.
+      // optimistic: the Host commits a pending shell (servicesReady: false)
+      // and returns before the full build, so the picker switches instantly —
+      // the session lands via a later snapshot event.
       const attempted = await requestWithRetry(
         () =>
           hostClient.request(
             "workspace.setCurrent",
             workspaceContext(host, workspace),
-            { cwd },
+            { cwd, optimistic: true },
             60_000,
           ),
         undefined,

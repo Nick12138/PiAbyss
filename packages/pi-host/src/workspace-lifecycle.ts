@@ -22,6 +22,7 @@ import type { ProviderOwnerToken } from "./extension-provider-ownership.js";
 import { captureFilesystemFingerprint } from "./filesystem-fingerprint.js";
 import { acquireWithAbort } from "./locks.js";
 import { logger } from "./logger.js";
+import type { GraphOperationHandle } from "./operation-lifecycle.js";
 import { buildPackageSnapshot, type ResourceIdMap } from "./package-snapshot.js";
 import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
@@ -76,6 +77,15 @@ export class WorkspaceLifecycle {
   private reactivatingGraph: WorkspaceGraph | null = null;
   /** Outgoing graph mid-switch (bound for event flow, not yet parked). */
   private parkingGraph: WorkspaceGraph | null = null;
+  /**
+   * Deferred fingerprint jobs (park-time capture / post-reactivation drift
+   * verify), one per graph. The full-tree stat walk must never sit on the
+   * switch critical path: it delays the response and can fail an
+   * already-committed switch.
+   */
+  private fingerprintJobs = new Map<WorkspaceGraph, Promise<void>>();
+  /** In-flight optimistic builds keyed by the switch requestId. */
+  private optimisticBuilds = new Map<string, Promise<void>>();
 
   constructor(
     private readonly context: WorkspaceLifecycleContext,
@@ -208,16 +218,32 @@ export class WorkspaceLifecycle {
   async setCurrent(
     cwd: string,
     requestId: string,
+    options: { optimistic?: boolean } = {},
   ): Promise<{ workspace: WorkspaceSnapshot; session?: SessionSnapshot } | { error: HostError }> {
     const server = this.context.getServer();
     if (!server) {
       return { error: createHostError("HOST_NOT_READY", "Server not bound") };
     }
-    const operation = server.graphOperations.begin({
+    let operation = server.graphOperations.begin({
       operationKind: "workspace.setCurrent",
       requestId,
       operationId: randomUUID(),
     });
+    if (!operation) {
+      // An in-flight optimistic switch holds the slot: supersede it so a
+      // rapid second switch lands right after its unwind instead of failing
+      // busy. The stale build is discarded; the newer target rebuilds.
+      const active = server.graphOperations.getActive();
+      if (active && active.operationKind === "workspace.setCurrent") {
+        active.cancel("Superseded by a newer workspace switch");
+        await active.completion;
+        operation = server.graphOperations.begin({
+          operationKind: "workspace.setCurrent",
+          requestId,
+          operationId: randomUUID(),
+        });
+      }
+    }
     if (!operation) {
       return {
         error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
@@ -230,6 +256,9 @@ export class WorkspaceLifecycle {
     }
 
     let previousGraph: WorkspaceGraph | null = null;
+    // The optimistic path hands the lock and the operation slot to the
+    // background build; every other path releases them in the finally.
+    let ownsLock = true;
     try {
       const lockState = await acquireWithAbort(
         server.serviceGraphLock,
@@ -286,6 +315,74 @@ export class WorkspaceLifecycle {
         signal: operation.signal,
       });
       if (reactivated) return reactivated;
+
+      // ---- Optimistic path: commit the pending shell now, build in the
+      // background. Only user-initiated switches take it (the startup preload
+      // stays blocking so host.ready never lands mid-build).
+      if (options.optimistic) {
+        // Retain (park) the outgoing graph first — fast now that the
+        // fingerprint capture is deferred — so a rapid switch back is an
+        // instant reactivation, then take the foreground with the shell.
+        if (previousGraph) await this.retainGraph(previousGraph);
+        const previousIdentity = server.getIdentity();
+        if (previousIdentity.sessionId) {
+          await this.context.deps.attachmentStore?.discardSessionDrafts(previousIdentity.sessionId);
+        }
+
+        const pendingGraph: WorkspaceGraph = {
+          workspaceId,
+          cwd,
+          canonicalCwd: canonical,
+          revision,
+          servicesReady: false,
+          settingsManager: null,
+          packageManager: null,
+          resourceLoader: null,
+          sessionManager: null,
+          agentSession: null,
+          extensionsResult: null,
+          packageSnapshot: null,
+          sessionSnapshot: null,
+          toolRevision: 0,
+          resourceIdMap: new Map(),
+          unsubscribeAgent: null,
+          extensionUiActivate: null,
+          extensionUiCleanup: null,
+          extensionUiUpdateIdentity: null,
+          extensionUiReplayState: null,
+          resourceReloadRequired: false,
+          idleSessionCache: new Map(),
+          backgroundSessions: new Map(),
+          providerOwner: null,
+        };
+        this.context.setGraph(pendingGraph);
+        server.identity.workspaceId = workspaceId;
+        server.identity.workspaceRevision = revision;
+        server.identity.sessionId = null;
+        server.identity.sessionRevision = candidateSessionRevision;
+        server.identity.packageRevision = candidatePackageRevision;
+        this.refreshAgentPhase();
+        server.setLastError(undefined);
+        const workspace = this.buildWorkspaceSnapshot(pendingGraph);
+        server.emit("workspace.changed", workspace);
+        this.context.onBoundWorkspacesChanged?.();
+        this.parkingGraph = null;
+
+        // Hand the lock and the operation slot to the background build.
+        ownsLock = false;
+        this.scheduleOptimisticBuild({
+          requestId,
+          pendingGraph,
+          workspaceId,
+          cwd,
+          canonicalCwd: canonical,
+          revision,
+          sessionRevision: candidateSessionRevision,
+          packageRevision: candidatePackageRevision,
+          operation,
+        });
+        return { workspace };
+      }
 
       // Suspending a busy graph's providers would break its in-flight model
       // calls during the build window. Skip the pre-merge suspension there:
@@ -358,7 +455,7 @@ export class WorkspaceLifecycle {
         return { error };
       }
 
-      if (previousGraph) await this.retainGraph(previousGraph, operation.signal);
+      if (previousGraph) await this.retainGraph(previousGraph);
       if (previousIdentity.sessionId && previousIdentity.sessionId !== server.identity.sessionId) {
         await this.context.deps.attachmentStore?.discardSessionDrafts(previousIdentity.sessionId);
       }
@@ -387,9 +484,140 @@ export class WorkspaceLifecycle {
       };
     } finally {
       this.parkingGraph = null;
-      server.serviceGraphLock.release(requestId);
-      operation.finish();
+      if (ownsLock) {
+        server.serviceGraphLock.release(requestId);
+        operation.finish();
+      }
     }
+  }
+
+  /** Test seam: await every in-flight optimistic workspace build. */
+  async flushOptimisticBuilds(): Promise<void> {
+    while (this.optimisticBuilds.size > 0) {
+      await Promise.all([...this.optimisticBuilds.values()]);
+    }
+  }
+
+  /**
+   * Background continuation of an optimistic switch: builds the full service
+   * graph for the committed pending shell. Owns the serviceGraphLock and the
+   * operation slot until it settles; a superseding switch cancels this
+   * operation and awaits this promise before taking over. The outgoing graph
+   * was already retained at shell-commit time, so an abort just discards the
+   * candidate — the pending shell stays until the newer switch replaces it.
+   */
+  private scheduleOptimisticBuild(args: {
+    requestId: string;
+    pendingGraph: WorkspaceGraph;
+    workspaceId: string;
+    cwd: string;
+    canonicalCwd: string;
+    revision: number;
+    sessionRevision: number;
+    packageRevision: number;
+    operation: GraphOperationHandle;
+  }): void {
+    const server = this.context.getServer();
+    if (!server) return;
+    if (this.optimisticBuilds.has(args.requestId)) return;
+    const build = (async () => {
+      const { operation } = args;
+      const startedAt = Date.now();
+      try {
+        const built = await this.buildServices({
+          workspaceId: args.workspaceId,
+          cwd: args.cwd,
+          canonicalCwd: args.canonicalCwd,
+          revision: args.revision,
+          sessionRevision: args.sessionRevision,
+          packageRevision: args.packageRevision,
+        });
+        if (operation.signal.aborted) {
+          if ("graph" in built) await this.disposeGraph(built.graph);
+          operation.signal.throwIfAborted();
+        }
+        if ("error" in built) {
+          await this.commitWorkspaceFailure({
+            previousGraph: null,
+            workspaceId: args.workspaceId,
+            cwd: args.cwd,
+            canonicalCwd: args.canonicalCwd,
+            revision: args.revision,
+            sessionRevision: args.sessionRevision,
+            packageRevision: args.packageRevision,
+            error: built.error,
+          });
+          return;
+        }
+        this.context.setGraph(built.graph);
+        server.identity.sessionId = built.graph.sessionSnapshot?.sessionId ?? null;
+        server.identity.sessionRevision = args.sessionRevision;
+        let publishExtensionUi = () => {};
+        try {
+          publishExtensionUi = await activateOnce(built.graph);
+        } catch (err) {
+          const error = createHostError(
+            "WORKSPACE_SWITCH_FAILED",
+            err instanceof Error ? err.message : "Extension bind failed",
+          );
+          await this.disposeGraph(built.graph);
+          await this.commitWorkspaceFailure({
+            previousGraph: null,
+            workspaceId: args.workspaceId,
+            cwd: args.cwd,
+            canonicalCwd: args.canonicalCwd,
+            revision: args.revision,
+            sessionRevision: args.sessionRevision,
+            packageRevision: args.packageRevision,
+            error,
+          });
+          return;
+        }
+        this.refreshAgentPhase();
+        server.setLastError(undefined);
+        const workspace = this.buildWorkspaceSnapshot(built.graph);
+        this.publishWorkspaceSnapshots(server, built.graph, workspace);
+        built.graph.subagentStatusBridge?.setIdentity(server.getIdentity());
+        built.graph.subagentStatusBridge?.markReady();
+        publishExtensionUi();
+        this.context.onBoundWorkspacesChanged?.();
+        logger.info("workspace graph built (optimistic)", {
+          cwd: args.canonicalCwd,
+          totalMs: Date.now() - startedAt,
+        });
+      } catch (err) {
+        if (operation.signal.aborted) {
+          // Superseded: the newer switch owns the graph state now. Nothing to
+          // restore — the shell stays until the newer switch replaces it.
+          logger.info("optimistic workspace build superseded", {
+            cwd: args.canonicalCwd,
+          });
+          return;
+        }
+        logger.error("optimistic workspace build crashed", {
+          cwd: args.canonicalCwd,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        await this.commitWorkspaceFailure({
+          previousGraph: null,
+          workspaceId: args.workspaceId,
+          cwd: args.cwd,
+          canonicalCwd: args.canonicalCwd,
+          revision: args.revision,
+          sessionRevision: args.sessionRevision,
+          packageRevision: args.packageRevision,
+          error: createHostError(
+            "WORKSPACE_SWITCH_FAILED",
+            err instanceof Error ? err.message : "Optimistic workspace build failed",
+          ),
+        });
+      } finally {
+        server.serviceGraphLock.release(args.requestId);
+        operation.finish();
+        this.optimisticBuilds.delete(args.requestId);
+      }
+    })();
+    this.optimisticBuilds.set(args.requestId, build);
   }
 
   private retainedGraphKey(canonicalCwd: string): string {
@@ -425,6 +653,88 @@ export class WorkspaceLifecycle {
       markers.push("packageManager:null");
     }
     return captureFilesystemFingerprint({ roots, markers, signal });
+  }
+
+  /** Test seam: await every in-flight deferred fingerprint job. */
+  async flushFingerprintJobs(): Promise<void> {
+    while (this.fingerprintJobs.size > 0) {
+      await Promise.all([...this.fingerprintJobs.values()]);
+    }
+  }
+
+  /**
+   * Schedule deferred fingerprint work off the switch critical path: baseline
+   * capture at park time, or drift verification right after a reactivation
+   * (compareAgainst set). One job per graph at a time; a capture still in
+   * flight makes reactivation assume unchanged instead of waiting on it.
+   */
+  private scheduleFingerprintCapture(graph: WorkspaceGraph, compareAgainst?: string): void {
+    if (this.fingerprintJobs.has(graph)) return;
+    const job = (async () => {
+      const startedAt = Date.now();
+      try {
+        const current = await this.retainedGraphFingerprint(graph);
+        if (compareAgainst !== undefined && current !== compareAgainst) {
+          logger.info("workspace graph changed on disk while away", {
+            cwd: graph.canonicalCwd,
+            fingerprintMs: Date.now() - startedAt,
+          });
+          await this.handleDeferredFingerprintDrift(graph);
+          return;
+        }
+        graph.retainedFingerprint = current;
+        logger.info("workspace graph retention fingerprint captured", {
+          cwd: graph.canonicalCwd,
+          fingerprintMs: Date.now() - startedAt,
+          deferred: true,
+        });
+      } catch (error) {
+        // A capture failure must never fail a (possibly committed) switch:
+        // leave the graph fingerprint-less so reactivation falls back to the
+        // rebuild (idle) or reuse (parked) branch.
+        graph.retainedFingerprint = undefined;
+        logger.warn("workspace graph retention fingerprint capture failed", {
+          cwd: graph.canonicalCwd,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        // The has(graph) guard keeps one job per graph, so this is always
+        // the job that was registered for it.
+        this.fingerprintJobs.delete(graph);
+      }
+    })();
+    this.fingerprintJobs.set(graph, job);
+  }
+
+  /**
+   * Drift found by deferred verification. The old switch-time compare would
+   * have rebuilt instead of reactivating; in the background the graph is
+   * already bound, so the closest safe action is: dispose a parked idle graph
+   * now (next switch-in rebuilds fresh), keep busy parked graphs (their live
+   * sessions must never be aborted) and the active graph (in-memory resources
+   * stay in use; the stale marker forces a rebuild on its next park).
+   */
+  private async handleDeferredFingerprintDrift(graph: WorkspaceGraph): Promise<void> {
+    if (this.context.getGraph() === graph) {
+      graph.staleOnDisk = true;
+      logger.warn("Active workspace changed on disk; rebuilding on next park", {
+        cwd: graph.canonicalCwd,
+      });
+      return;
+    }
+    if (!this.isBoundGraph(graph)) return;
+    if (this.graphIsBusy(graph)) {
+      logger.warn("Parked busy workspace changed on disk; reusing graph", {
+        cwd: graph.canonicalCwd,
+      });
+      return;
+    }
+    logger.info("Parked idle workspace changed on disk; disposing for fresh rebuild", {
+      cwd: graph.canonicalCwd,
+    });
+    this.retainedGraphs.delete(this.retainedGraphKey(graph.canonicalCwd));
+    await this.disposeGraph(graph);
+    this.context.onBoundWorkspacesChanged?.();
   }
 
   private graphIsBusy(graph: WorkspaceGraph): boolean {
@@ -474,7 +784,17 @@ export class WorkspaceLifecycle {
     };
   }
 
-  private async retainGraph(graph: WorkspaceGraph, signal?: AbortSignal): Promise<void> {
+  private async retainGraph(graph: WorkspaceGraph): Promise<void> {
+    if (graph.staleOnDisk && !this.graphIsBusy(graph)) {
+      // Deferred verification found on-disk drift while this graph was bound:
+      // an idle graph is rebuilt on next switch-in instead of being parked.
+      graph.staleOnDisk = undefined;
+      logger.info("Retained workspace changed on disk; rebuilding", {
+        cwd: graph.canonicalCwd,
+      });
+      await this.disposeGraph(graph);
+      return;
+    }
     // Same-workspace Session cache is deliberately in-memory only. Releasing
     // it here lets the workspace graph retain its established fingerprint and
     // provider lifecycle without carrying arbitrary conversation runtimes.
@@ -512,18 +832,10 @@ export class WorkspaceLifecycle {
       // incoming graph. Preserve that pre-merge snapshot when retention finishes.
       this.suspendGraphProviders(graph);
     }
-    const fingerprintStartedAt = Date.now();
-    try {
-      graph.retainedFingerprint = await this.retainedGraphFingerprint(graph, signal);
-      logger.info("workspace graph retention fingerprint captured", {
-        cwd: graph.canonicalCwd,
-        fingerprintMs: Date.now() - fingerprintStartedAt,
-      });
-    } catch (error) {
-      graph.retainedFingerprint = undefined;
-      if (this.context.getGraph() !== graph) await this.disposeGraph(graph);
-      throw error;
-    }
+    // The full-tree stat walk runs off the switch critical path (it must not
+    // delay the response or fail an already-committed switch). Until it lands
+    // the graph counts as fingerprint-pending: reactivation assumes unchanged.
+    this.scheduleFingerprintCapture(graph);
 
     const key = this.retainedGraphKey(graph.canonicalCwd);
     const existing = this.retainedGraphs.get(key);
@@ -663,36 +975,18 @@ export class WorkspaceLifecycle {
 
     const retainedFingerprint = graph.retainedFingerprint;
     graph.retainedFingerprint = undefined;
-    if (!retainedFingerprint) {
+    // The on-disk compare moved off the critical path (deferred verification
+    // after commit). A capture still in flight from park time counts as
+    // "assume unchanged": only a switch landing inside that tiny window could
+    // miss drift, and the deferred verification still reports it.
+    const capturePending = this.fingerprintJobs.has(graph);
+    if (!retainedFingerprint && !capturePending) {
       if (graph.backgroundRunning) {
         // A parked graph may have lost its fingerprint (e.g. an invalidation
         // pass). Rebuilding would abort its live background sessions, so
         // reuse the graph as-is and let the next retention capture a fresh
         // fingerprint.
         logger.warn("Parked workspace has no retained fingerprint; reusing graph", {
-          cwd: args.canonical,
-        });
-      } else {
-        logger.info("Retained workspace changed on disk; rebuilding", {
-          cwd: args.canonical,
-        });
-        await this.disposeGraph(graph);
-        return null;
-      }
-    }
-
-    let currentFingerprint: string;
-    try {
-      currentFingerprint = await this.retainedGraphFingerprint(graph, args.signal);
-    } catch (err) {
-      await this.disposeGraph(graph);
-      throw err;
-    }
-    if (retainedFingerprint !== undefined && retainedFingerprint !== currentFingerprint) {
-      if (graph.backgroundRunning) {
-        // Fingerprint drift on a parked graph must never trigger a rebuild:
-        // that would abort its live background sessions. Reuse as-is.
-        logger.warn("Parked workspace changed on disk; reusing graph without rebuild", {
           cwd: args.canonical,
         });
       } else {
@@ -776,11 +1070,12 @@ export class WorkspaceLifecycle {
         });
       }
       markStep("bind");
-      // Disk state was verified unchanged (fingerprint match): the previous
-      // package snapshot is still accurate apart from its revision, so reuse
-      // it instead of re-deriving it from the package manager on every switch.
-      const packageSnapshotUnchanged =
-        retainedFingerprint !== undefined && retainedFingerprint === currentFingerprint;
+      // Disk state was known unchanged at park time (fingerprint match) or the
+      // capture is still in flight: the previous package snapshot is still
+      // accurate apart from its revision, so reuse it instead of re-deriving
+      // it from the package manager on every switch. The deferred drift
+      // verification corrects a stale reuse after the fact.
+      const packageSnapshotUnchanged = retainedFingerprint !== undefined || capturePending;
       graph.packageSnapshot =
         packageSnapshotUnchanged && graph.packageSnapshot
           ? { ...graph.packageSnapshot, revision: args.packageRevision }
@@ -868,7 +1163,7 @@ export class WorkspaceLifecycle {
     }
     markStep("activate");
 
-    if (args.previousGraph) await this.retainGraph(args.previousGraph, args.signal);
+    if (args.previousGraph) await this.retainGraph(args.previousGraph);
     markStep("retainPrevious");
     if (previousIdentity.sessionId && previousIdentity.sessionId !== server.identity.sessionId) {
       await this.context.deps.attachmentStore?.discardSessionDrafts(previousIdentity.sessionId);
@@ -881,6 +1176,10 @@ export class WorkspaceLifecycle {
     graph.subagentStatusBridge?.markReady();
     publishExtensionUi();
     this.context.onBoundWorkspacesChanged?.();
+    // Deferred drift verification: compares on-disk state at reactivate time
+    // against the park-time baseline, off the switch critical path. A no-op
+    // while a park-time capture is still in flight (it becomes the baseline).
+    this.scheduleFingerprintCapture(graph, retainedFingerprint);
     logger.info("workspace graph reactivated", {
       cwd: graph.canonicalCwd,
       totalMs: Date.now() - startedAt,
@@ -904,7 +1203,7 @@ export class WorkspaceLifecycle {
     signal?: AbortSignal;
   }): Promise<WorkspaceSnapshot> {
     const server = this.context.getServer()!;
-    if (args.previousGraph) await this.retainGraph(args.previousGraph, args.signal);
+    if (args.previousGraph) await this.retainGraph(args.previousGraph);
     const failedGraph: WorkspaceGraph = {
       workspaceId: args.workspaceId,
       cwd: args.cwd,

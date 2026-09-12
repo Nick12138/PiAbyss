@@ -364,7 +364,7 @@ describe("openSessionAcrossWorkspaces", () => {
     expect(request).toHaveBeenCalledWith(
       "workspace.setCurrent",
       expect.objectContaining({ hostInstanceId: HOST_ID }),
-      { cwd: "/proj/other" },
+      { cwd: "/proj/other", optimistic: true },
       60_000,
     );
     expect(useAppStore.getState().workspace?.id).toBe(OTHER_WORKSPACE_ID);
@@ -406,7 +406,7 @@ describe("openSessionAcrossWorkspaces", () => {
     expect(request).toHaveBeenCalledWith(
       "workspace.setCurrent",
       expect.objectContaining({ hostInstanceId: HOST_ID }),
-      { cwd: "/proj/other" },
+      { cwd: "/proj/other", optimistic: true },
       60_000,
     );
     expect(useAppStore.getState().workspace?.id).toBe(OTHER_WORKSPACE_ID);
@@ -504,7 +504,7 @@ describe("openSessionAcrossWorkspaces", () => {
     expect(request).toHaveBeenCalledWith(
       "workspace.setCurrent",
       expect.objectContaining({ hostInstanceId: HOST_ID }),
-      { cwd: "/proj/other" },
+      { cwd: "/proj/other", optimistic: true },
       60_000,
     );
     expect(waitForWorkspaceActivation).toHaveBeenCalled();

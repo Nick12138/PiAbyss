@@ -102,7 +102,7 @@ export async function openSessionAcrossWorkspaces(
             hostClient.request(
               "workspace.setCurrent",
               workspaceContext(host, state.workspace),
-              { cwd: target.cwd },
+              { cwd: target.cwd, optimistic: true },
               60_000,
             ),
           undefined,

@@ -551,9 +551,9 @@ export function validateRequestParams<M extends HostMethod>(
         ? ok(params)
         : fail(`invalid ${method} params`, { method });
     case "workspace.setCurrent":
-      return exactObject(params, ["cwd"]) && isNonEmptyString(params.cwd)
+      return exactObject(params, ["cwd"], ["optimistic"]) && isNonEmptyString(params.cwd)
         ? ok(params)
-        : fail("params must be { cwd: string }", { method });
+        : fail("params must be { cwd: string, optimistic?: boolean }", { method });
     case "session.create":
       return exactObject(params, [], ["name"]) &&
         (params.name === undefined || isNonEmptyString(params.name))

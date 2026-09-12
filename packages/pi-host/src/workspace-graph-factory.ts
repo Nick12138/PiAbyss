@@ -330,10 +330,13 @@ export class WorkspaceGraphFactory {
     return activateOnce(g);
   }
 
-  /** Atomic Workspace switch facade. */
+  /** Atomic Workspace switch facade. `optimistic` commits a pending shell and
+   * builds the full graph in the background (user-initiated switches only —
+   * the startup preload stays blocking so host.ready never lands mid-build). */
   async setCurrent(
     cwd: string,
     requestId: string,
+    options: { optimistic?: boolean } = {},
   ): Promise<
     | {
         workspace: WorkspaceSnapshot;
@@ -341,7 +344,7 @@ export class WorkspaceGraphFactory {
       }
     | { error: HostError }
   > {
-    return this.workspaceLifecycle.setCurrent(cwd, requestId);
+    return this.workspaceLifecycle.setCurrent(cwd, requestId, options);
   }
 
   /** @internal — session-lifecycle module */

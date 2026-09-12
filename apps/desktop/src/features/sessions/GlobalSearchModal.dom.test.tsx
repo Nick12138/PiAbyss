@@ -250,7 +250,7 @@ describe("GlobalSearchModal", () => {
       expect(methods).toContain("workspace.setCurrent");
     });
     const setCurrentCall = request.mock.calls.find((call) => call[0] === "workspace.setCurrent");
-    expect(setCurrentCall?.[2]).toEqual({ cwd: "/proj/other" });
+    expect(setCurrentCall?.[2]).toEqual({ cwd: "/proj/other", optimistic: true });
     // The archived result switches the workspace but does not open the session.
     const methods = request.mock.calls.map((call) => call[0]);
     expect(methods).not.toContain("session.open");

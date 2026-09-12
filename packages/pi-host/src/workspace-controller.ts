@@ -89,7 +89,12 @@ export function createWorkspaceHandlers(
       }
 
       fileService.dispose();
-      const result = await factory.setCurrent(params.cwd, ctx.id);
+      // Optimistic switch (opt-in via params): commit the pending shell and
+      // return before the full graph build, so the UI switches instantly (the
+      // shell carries servicesReady: false and the session lands via a later
+      // snapshot). Callers without the flag keep today's blocking contract.
+      const optimistic = (params as { cwd: string; optimistic?: boolean }).optimistic === true;
+      const result = await factory.setCurrent(params.cwd, ctx.id, { optimistic });
       if ("error" in result) return { error: result.error };
       gitService?.stopWatching();
       return { result };

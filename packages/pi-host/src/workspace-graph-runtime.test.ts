@@ -1067,6 +1067,8 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
         retainedGraphFingerprint: (graph: WorkspaceGraph, signal?: AbortSignal) => Promise<string>;
         buildServices: () => Promise<{ graph: WorkspaceGraph }>;
         disposeRetainedGraphs: () => Promise<void>;
+        flushFingerprintJobs: () => Promise<void>;
+        flushOptimisticBuilds: () => Promise<void>;
       };
     };
     const internal = factoryInternals.workspaceLifecycle;
@@ -1319,10 +1321,9 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
     }
   });
 
-  it("cancels the outgoing retain fingerprint during a Workspace switch", async () => {
+  it("defers the outgoing retain fingerprint off the switch critical path", async () => {
     const state = setup();
     try {
-      const previousSession = state.previous.agentSession!;
       const candidateSession = fakeSession(true, BACKGROUND_SESSION_ID);
       const candidate = fakeWorkspaceGraph(
         state.retainedDir,
@@ -1341,35 +1342,223 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
         markFingerprintStarted = resolve;
       });
       let releaseFingerprint!: () => void;
-      let receivedSignal: AbortSignal | undefined;
-      vi.spyOn(state.internal, "retainedGraphFingerprint").mockImplementation(
-        (_graph, signal) =>
-          new Promise((resolve, reject) => {
-            receivedSignal = signal;
-            releaseFingerprint = () => resolve("outgoing-fingerprint");
-            signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
-            markFingerprintStarted();
+      vi.spyOn(state.internal, "retainedGraphFingerprint").mockImplementation(async () => {
+        markFingerprintStarted();
+        await new Promise<void>((resolve) => {
+          releaseFingerprint = resolve;
+        });
+        return "outgoing-fingerprint";
+      });
+
+      const switching = state.factory.setCurrent(state.retainedDir, "switch-deferred");
+      await fingerprintStarted;
+
+      // The deferred stat walk must not block the response: flush the
+      // microtask chain with one macrotask — if setCurrent still awaited the
+      // fingerprint, the switch could not have settled by now.
+      let settled = false;
+      switching.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(settled).toBe(true);
+
+      const result = await switching;
+      expect("error" in result).toBe(false);
+      expect(state.factory.getGraph()).toBe(candidate);
+      expect(state.previous.backgroundRunning).toBe(false);
+      expect(state.server.serviceGraphLock.isHeld()).toBe(false);
+      expect(state.server.graphOperations.getActive()).toBeNull();
+
+      // The deferred capture lands afterwards and becomes the baseline.
+      releaseFingerprint();
+      await state.internal.flushFingerprintJobs();
+      expect(state.previous.retainedFingerprint).toBe("outgoing-fingerprint");
+    } finally {
+      rmSync(state.root, { recursive: true, force: true });
+    }
+  });
+
+  it("reuses a retained graph whose park-time capture is still in flight", async () => {
+    const state = setup();
+    try {
+      const retainedSession = fakeSession(true, BACKGROUND_SESSION_ID);
+      const retained = fakeWorkspaceGraph(
+        state.retainedDir,
+        "99999999-9999-4999-8999-999999999999",
+        retainedSession,
+      );
+      let markCaptureStarted!: () => void;
+      const captureStarted = new Promise<void>((resolve) => {
+        markCaptureStarted = resolve;
+      });
+      const releasers: Array<() => void> = [];
+      vi.spyOn(state.internal, "retainedGraphFingerprint").mockImplementation(async () => {
+        markCaptureStarted();
+        await new Promise<void>((resolve) => {
+          releasers.push(resolve);
+        });
+        return "late-fingerprint";
+      });
+      await state.internal.retainGraph(retained);
+      await captureStarted;
+      // The deferred capture has not landed: no baseline yet.
+      expect(retained.retainedFingerprint).toBeUndefined();
+
+      // A quick switch back must reuse the graph instead of waiting out the
+      // pending stat walk (or rebuilding it).
+      const result = await state.internal.tryReactivateRetainedGraph({
+        canonical: state.retainedDir,
+        previousGraph: state.previous,
+        revision: 8,
+        sessionRevision: 10,
+        packageRevision: 5,
+      });
+      expect("error" in (result as { error?: unknown })).toBe(false);
+      expect(state.factory.getGraph()).toBe(retained);
+
+      for (const release of releasers) release();
+      await state.internal.flushFingerprintJobs();
+    } finally {
+      rmSync(state.root, { recursive: true, force: true });
+    }
+  });
+
+  it("optimistic switch commits a pending shell and builds in the background", async () => {
+    const state = setup();
+    try {
+      const candidateSession = fakeSession(true, BACKGROUND_SESSION_ID);
+      const candidate = fakeWorkspaceGraph(
+        state.retainedDir,
+        "c0c0c0c0-c0c0-4c0c-8c0c-c0c0c0c0c0c0",
+        candidateSession,
+      );
+      let resolveBuild!: (value: { graph: WorkspaceGraph }) => void;
+      vi.spyOn(
+        state.internal as unknown as {
+          buildServices: () => Promise<{ graph: WorkspaceGraph }>;
+        },
+        "buildServices",
+      ).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveBuild = resolve;
           }),
       );
 
-      const switching = state.factory.setCurrent(state.retainedDir, "switch-retain-cancelled");
-      await fingerprintStarted;
-      const operation = state.server.graphOperations.getActive();
-      expect(operation?.operationKind).toBe("workspace.setCurrent");
-      operation?.cancel("Host shutdown");
-      releaseFingerprint();
-
-      const result = await switching;
-
-      expect(receivedSignal).toBe(operation?.signal);
-      expect("error" in result && result.error).toMatchObject({
-        code: "WORKSPACE_SWITCH_FAILED",
-        retryable: true,
+      const result = await state.factory.setCurrent(state.retainedDir, "opt-shell", {
+        optimistic: true,
       });
+
+      expect("error" in result).toBe(false);
+      const workspace = (result as { workspace: { servicesReady: boolean } }).workspace;
+      expect(workspace.servicesReady).toBe(false);
+      expect(state.factory.getGraph()?.servicesReady).toBe(false);
+      expect(state.identity.workspaceId).not.toBe(WORKSPACE_ID);
+      expect(state.identity.sessionId).toBeNull();
+      // The background build owns the lock and the operation slot.
+      expect(state.server.serviceGraphLock.isHeld()).toBe(true);
+      expect(state.server.graphOperations.getActive()).not.toBeNull();
+
+      resolveBuild({ graph: candidate });
+      await state.internal.flushOptimisticBuilds();
+
       expect(state.factory.getGraph()).toBe(candidate);
-      expect(previousSession.dispose).toHaveBeenCalledTimes(1);
+      expect(state.identity.sessionId).toBe(BACKGROUND_SESSION_ID);
       expect(state.server.serviceGraphLock.isHeld()).toBe(false);
       expect(state.server.graphOperations.getActive()).toBeNull();
+      expect(state.server.emit).toHaveBeenCalledWith(
+        "workspace.changed",
+        expect.objectContaining({ servicesReady: true }),
+      );
+    } finally {
+      rmSync(state.root, { recursive: true, force: true });
+    }
+  });
+
+  it("supersedes an in-flight optimistic switch instead of failing busy", async () => {
+    const state = setup();
+    try {
+      const staleCandidate = fakeWorkspaceGraph(
+        state.retainedDir,
+        "d0d0d0d0-d0d0-4d0d-8d0d-d0d0d0d0d0d0",
+        fakeSession(true, BACKGROUND_SESSION_ID),
+      );
+      let resolveFirstBuild!: (value: { graph: WorkspaceGraph }) => void;
+      const buildServices = vi
+        .spyOn(
+          state.internal as unknown as {
+            buildServices: () => Promise<{ graph: WorkspaceGraph }>;
+          },
+          "buildServices",
+        )
+        .mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolveFirstBuild = resolve;
+            }),
+        );
+
+      await state.factory.setCurrent(state.retainedDir, "opt-stale", { optimistic: true });
+      expect(state.server.serviceGraphLock.isHeld()).toBe(true);
+
+      // A rapid second switch supersedes the in-flight build: it cancels the
+      // stale operation and lands once the unwind releases the lock. The
+      // previous workspace was already retained at shell-commit time, so the
+      // second switch reactivates it instantly (no second build).
+      const second = state.factory.setCurrent(state.previous.canonicalCwd, "opt-second", {
+        optimistic: true,
+      });
+      await vi.waitFor(() =>
+        expect(state.server.graphOperations.getActive()?.signal.aborted).toBe(true),
+      );
+      resolveFirstBuild({ graph: staleCandidate });
+      const result = await second;
+
+      expect("error" in result).toBe(false);
+      expect(state.factory.getGraph()).toBe(state.previous);
+      await state.internal.flushOptimisticBuilds();
+      expect(state.server.serviceGraphLock.isHeld()).toBe(false);
+      expect(state.server.graphOperations.getActive()).toBeNull();
+      expect(buildServices).toHaveBeenCalledOnce();
+    } finally {
+      rmSync(state.root, { recursive: true, force: true });
+    }
+  });
+
+  it("surfaces an optimistic build failure as workspaceError", async () => {
+    const state = setup();
+    try {
+      vi.spyOn(
+        state.internal as unknown as {
+          buildServices: () => Promise<{ graph: WorkspaceGraph } | { error: unknown }>;
+        },
+        "buildServices",
+      ).mockResolvedValue({
+        error: {
+          code: "WORKSPACE_SWITCH_FAILED",
+          message: "boom",
+          retryable: false,
+        },
+      });
+
+      const result = await state.factory.setCurrent(state.retainedDir, "opt-fail", {
+        optimistic: true,
+      });
+      // The shell commit still succeeds; the failure surfaces via the events.
+      expect("error" in result).toBe(false);
+      await state.internal.flushOptimisticBuilds();
+
+      expect(state.factory.getGraph()?.servicesReady).toBe(false);
+      expect(state.server.setLastError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "boom" }),
+      );
+      expect(state.server.setPhase).toHaveBeenCalledWith("workspaceError");
     } finally {
       rmSync(state.root, { recursive: true, force: true });
     }
@@ -1413,7 +1602,7 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
     }
   });
 
-  it("discards a retained graph when project resources changed on disk", async () => {
+  it("reuses a drifted retained graph, then rebuilds it on the next park", async () => {
     const state = setup();
     try {
       const retainedSession = fakeSession(true, BACKGROUND_SESSION_ID);
@@ -1423,10 +1612,16 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
         retainedSession,
       );
       await state.internal.retainGraph(retained);
+      await state.internal.flushFingerprintJobs();
+      const baseline = retained.retainedFingerprint;
+      expect(baseline).toBeDefined();
+
       const extensionsDir = join(state.retainedDir, ".pi", "extensions");
       mkdirSync(extensionsDir, { recursive: true });
       writeFileSync(join(extensionsDir, "changed.ts"), "export default () => {};\n");
 
+      // Reactivation no longer blocks on the on-disk compare: the drifted
+      // graph is reused, and the deferred verification flags it afterwards.
       const result = await state.internal.tryReactivateRetainedGraph({
         canonical: state.retainedDir,
         previousGraph: state.previous,
@@ -1435,9 +1630,16 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
         packageRevision: 5,
       });
 
-      expect(result).toBeNull();
-      expect(state.factory.getGraph()).toBe(state.previous);
-      expect(retainedSession.bindExtensions).not.toHaveBeenCalled();
+      expect("error" in (result as { error?: unknown })).toBe(false);
+      expect(state.factory.getGraph()).toBe(retained);
+      await state.internal.flushFingerprintJobs();
+      expect(retained.staleOnDisk).toBe(true);
+
+      // The next park disposes the stale idle graph instead of retaining it.
+      const away = await state.factory.setCurrent(state.previous.canonicalCwd, "switch-away-stale");
+      expect("error" in away).toBe(false);
+      await state.internal.flushFingerprintJobs();
+      expect(state.factory.getGraph()).not.toBe(retained);
       expect(retainedSession.dispose).toHaveBeenCalledTimes(1);
     } finally {
       rmSync(state.root, { recursive: true, force: true });
@@ -1490,7 +1692,7 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
     }
   });
 
-  it("discards a retained graph when models-store.json is created", async () => {
+  it("flags a stale agentDir for rebuild when models-store.json is created", async () => {
     const state = setup();
     try {
       const retainedSession = fakeSession(true, BACKGROUND_SESSION_ID);
@@ -1500,6 +1702,7 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
         retainedSession,
       );
       await state.internal.retainGraph(retained);
+      await state.internal.flushFingerprintJobs();
       writeFileSync(
         join(state.agentDir, "models-store.json"),
         JSON.stringify({ custom: { source: "runtime" } }),
@@ -1513,16 +1716,16 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
         packageRevision: 5,
       });
 
-      expect(result).toBeNull();
-      expect(state.factory.getGraph()).toBe(state.previous);
-      expect(retainedSession.bindExtensions).not.toHaveBeenCalled();
-      expect(retainedSession.dispose).toHaveBeenCalledTimes(1);
+      expect("error" in (result as { error?: unknown })).toBe(false);
+      expect(state.factory.getGraph()).toBe(retained);
+      await state.internal.flushFingerprintJobs();
+      expect(retained.staleOnDisk).toBe(true);
     } finally {
       rmSync(state.root, { recursive: true, force: true });
     }
   });
 
-  it("disposes a retained graph when fingerprinting is cancelled", async () => {
+  it("disposes a retained graph when reactivation is cancelled", async () => {
     const state = setup();
     try {
       const retainedSession = fakeSession(true, BACKGROUND_SESSION_ID);
@@ -1532,16 +1735,22 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
         retainedSession,
       );
       await state.internal.retainGraph(retained);
+      await state.internal.flushFingerprintJobs();
 
-      let markFingerprintStarted!: () => void;
-      const fingerprintStarted = new Promise<void>((resolve) => {
-        markFingerprintStarted = resolve;
+      // The critical-path fingerprint step is gone; cancellation now lands on
+      // the bind step before the candidate is committed.
+      let markBindStarted!: () => void;
+      const bindStarted = new Promise<void>((resolve) => {
+        markBindStarted = resolve;
       });
-      vi.spyOn(state.internal, "retainedGraphFingerprint").mockImplementation(
-        (_graph, signal) =>
-          new Promise((_resolve, reject) => {
-            markFingerprintStarted();
-            signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      let releaseBind!: () => void;
+      Reflect.set(
+        retainedSession,
+        "bindExtensions",
+        () =>
+          new Promise<void>((resolve) => {
+            markBindStarted();
+            releaseBind = () => resolve();
           }),
       );
       const controller = new AbortController();
@@ -1554,8 +1763,9 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
         packageRevision: 5,
         signal: controller.signal,
       });
-      await fingerprintStarted;
+      await bindStarted;
       controller.abort(new Error("Host shutdown"));
+      releaseBind();
 
       await expect(reactivating).rejects.toThrow("Host shutdown");
       expect(state.factory.getGraph()).toBe(state.previous);

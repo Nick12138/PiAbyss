@@ -223,7 +223,7 @@ export type HostRequestParams = {
   "system.shutdown": null;
   "piSettings.get": null;
   "piSettings.patch": PiSettingsPatch;
-  "workspace.setCurrent": { cwd: string };
+  "workspace.setCurrent": { cwd: string; optimistic?: boolean };
   "workspace.getCurrent": null;
   "workspace.searchFiles": { query: string; limit?: number };
   "workspace.listDirectory": { path: string };

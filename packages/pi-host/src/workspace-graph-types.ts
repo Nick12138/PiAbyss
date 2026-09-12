@@ -56,6 +56,12 @@ export type WorkspaceGraph = {
   backgroundSessions: Map<string, BackgroundSessionRuntime>;
   /** Disk/config fingerprint captured when this graph was parked. */
   retainedFingerprint?: string;
+  /**
+   * Set by deferred fingerprint verification: on-disk state drifted while this
+   * graph was bound. A busy graph keeps running; an idle one is disposed
+   * instead of parked next time so the next switch-in rebuilds fresh.
+   */
+  staleOnDisk?: boolean;
   /** True while a busy graph is parked in the background with live sessions. */
   backgroundRunning?: boolean;
   /** Identity captured when the graph was parked; events from parked sessions carry it. */
