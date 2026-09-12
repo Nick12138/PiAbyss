@@ -361,7 +361,8 @@ describe("Transcript Session-open scrolling", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
-  it("shows dangling tool calls as stopped after an interrupted Session becomes idle", () => {
+  it("shows dangling tool calls as stopped after an interrupted Session becomes idle", async () => {
+    const user = userEvent.setup();
     act(() =>
       useAppStore.setState({
         session: {
@@ -382,8 +383,56 @@ describe("Transcript Session-open scrolling", () => {
 
     render(<Transcript />);
 
+    // The settled turn folds its process into the turn summary; the trace
+    // rows live behind the fold and read as stopped once revealed.
+    expect(screen.getByText("2 tool calls · 0 messages")).toBeInTheDocument();
+    expect(screen.queryByText("Stopped after 2 actions")).not.toBeInTheDocument();
+    expect(screen.queryByText("Running 2 actions")).not.toBeInTheDocument();
+
+    await user.click(screen.getByText("2 tool calls · 0 messages"));
     expect(screen.getByText("Stopped after 2 actions")).toBeInTheDocument();
     expect(screen.queryByText("Running 2 actions")).not.toBeInTheDocument();
+  });
+
+  it("folds a completed turn's process into the summary and keeps the final message", async () => {
+    const user = userEvent.setup();
+    act(() =>
+      useAppStore.setState({
+        session: {
+          ...session(SESSION_A, "Folded turn"),
+          messages: [
+            { role: "user", content: "Do the thing" },
+            {
+              role: "assistant",
+              stopReason: "toolUse",
+              content: [
+                { type: "text", text: "Let me check first." },
+                { type: "toolCall", id: "fold-a", name: "bash", arguments: {} },
+              ],
+            },
+            { role: "toolResult", toolCallId: "fold-a", toolName: "bash", content: "ok" },
+            {
+              role: "assistant",
+              stopReason: "stop",
+              content: [{ type: "text", text: "All done." }],
+            },
+          ],
+        },
+      }),
+    );
+
+    render(<Transcript />);
+
+    // The settled turn folds the intermediate message and tool call into the
+    // turn summary; only the final result message stays visible.
+    expect(screen.getByText("1 tool calls · 1 messages")).toBeInTheDocument();
+    expect(screen.getByText("All done.")).toBeInTheDocument();
+    expect(screen.queryByText("Let me check first.")).not.toBeInTheDocument();
+
+    // Expanding the summary reveals the full ordered process.
+    await user.click(screen.getByText("1 tool calls · 1 messages"));
+    expect(screen.getByText("Let me check first.")).toBeInTheDocument();
+    expect(screen.getByText("All done.")).toBeInTheDocument();
   });
 
   describe("progressive mounting", () => {

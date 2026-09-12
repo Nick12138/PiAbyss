@@ -231,4 +231,85 @@ describe("ThinkingBlock scrolling", () => {
     fireEvent.transitionEnd(region!, { propertyName: "grid-template-rows" });
     expect(screen.queryByText("Trace detail")).not.toBeInTheDocument();
   });
+
+  it("expands the process while the turn runs and folds it after completion", async () => {
+    const blocks = [{ kind: "text" as const, text: "Trace detail" }];
+    const { rerender } = render(
+      <ExecutionTrace
+        blocks={blocks}
+        stepCount={1}
+        mode="streaming"
+        showCaret={false}
+        turnActive
+      />,
+    );
+
+    const toggle = screen.getByRole("button", { name: "Running 1 action" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await waitFor(() => expect(screen.getByText("Trace detail")).toBeInTheDocument());
+
+    rerender(
+      <ExecutionTrace
+        blocks={blocks}
+        stepCount={1}
+        mode="static"
+        showCaret={false}
+        turnActive={false}
+      />,
+    );
+
+    const settled = screen.getByRole("button", { name: "1 action completed" });
+    expect(settled).toHaveAttribute("aria-expanded", "false");
+    const region = document.getElementById(settled.getAttribute("aria-controls")!);
+    expect(region).toHaveAttribute("data-state", "closed");
+    fireEvent.transitionEnd(region!, { propertyName: "grid-template-rows" });
+    expect(screen.queryByText("Trace detail")).not.toBeInTheDocument();
+  });
+
+  it("keeps a manual toggle across active transitions", () => {
+    const blocks = [{ kind: "text" as const, text: "Trace detail" }];
+    const { rerender } = render(
+      <ExecutionTrace
+        blocks={blocks}
+        stepCount={1}
+        mode="streaming"
+        showCaret={false}
+        turnActive
+      />,
+    );
+
+    const toggle = screen.getByRole("button", { name: "Running 1 action" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    // Still active: the manual collapse survives the active sync.
+    rerender(
+      <ExecutionTrace
+        blocks={blocks}
+        stepCount={1}
+        mode="streaming"
+        showCaret={false}
+        turnActive
+      />,
+    );
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    // The turn completes: the manual expansion survives the fold.
+    rerender(
+      <ExecutionTrace
+        blocks={blocks}
+        stepCount={1}
+        mode="static"
+        showCaret={false}
+        turnActive={false}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "1 action completed" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
 });

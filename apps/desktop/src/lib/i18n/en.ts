@@ -1097,6 +1097,7 @@ export const en = {
   transcriptTraceStoppedMany: "Stopped after {count} actions",
   transcriptTraceImageOne: "{count} image",
   transcriptTraceImageMany: "{count} images",
+  transcriptTurnFoldSummary: "{tools} tool calls · {messages} messages",
   transcriptThoughtProcess: "Thought process",
   transcriptThinking: "Thinking",
   transcriptUnsupportedContent: "Unsupported content",

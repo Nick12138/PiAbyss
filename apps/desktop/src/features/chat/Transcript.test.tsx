@@ -36,7 +36,7 @@ describe("DurationLabel", () => {
 });
 
 describe("ExecutionTrace", () => {
-  it("shows a spinner for an active turn and keeps its content collapsed", () => {
+  it("shows a spinner for an active turn with its process expanded", () => {
     const markup = renderToStaticMarkup(
       <ExecutionTrace
         blocks={[toolBlock("tool-1", "done")]}
@@ -52,10 +52,10 @@ describe("ExecutionTrace", () => {
     expect(markup).toContain("execution-trace-spinner");
     expect(markup).not.toContain("lucide-list-tree");
     expect(markup).not.toContain("lucide-brain");
-    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).toContain('aria-expanded="true"');
   });
 
-  it("settles after the agent turn ends", () => {
+  it("settles after the agent turn ends and folds the process to its summary row", () => {
     const markup = renderToStaticMarkup(
       <ExecutionTrace
         blocks={[toolBlock("tool-1", "done")]}
@@ -70,6 +70,7 @@ describe("ExecutionTrace", () => {
     expect(markup).toContain("lucide-list-tree");
     expect(markup).not.toContain("lucide-loader-circle");
     expect(markup).not.toContain("execution-trace-spinner");
+    expect(markup).toContain('aria-expanded="false"');
   });
 
   it("keeps a mixed completed-and-running trace active", () => {

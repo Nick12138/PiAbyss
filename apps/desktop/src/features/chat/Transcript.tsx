@@ -944,6 +944,24 @@ export const TranscriptRowView = memo(function TranscriptRowView({
     .reverse()
     .find((block): block is Extract<TranscriptBlock, { kind: "text" }> => block.kind === "text");
 
+  // DSH-style turn fold: once the turn settles, its whole process — every
+  // intermediate message, thinking block and tool call — collapses into one
+  // summary row ("N tool calls · M messages") and only the final result
+  // message stays visible. While the turn is running (or the process adds
+  // nothing beyond the final message) everything renders in streaming order.
+  const finalBlocks: TranscriptBlock[] = sections.final.filter(
+    (block) => block.kind !== "thinking",
+  );
+  const canFold =
+    !working && sections.stepCount > 0 && sections.ordered.length > finalBlocks.length;
+  const foldBlocks = canFold
+    ? sections.ordered.filter((block) => !finalBlocks.includes(block))
+    : [];
+  const foldToolCount = foldBlocks.filter(
+    (block) => block.kind === "tool" || block.kind === "extension",
+  ).length;
+  const foldMessageCount = foldBlocks.filter((block) => block.kind === "text").length;
+
   return (
     <div className="group/assistant relative w-full">
       <div className="flex h-7 items-center gap-2">
@@ -953,13 +971,31 @@ export const TranscriptRowView = memo(function TranscriptRowView({
         )}
       </div>
       <div className="mt-2 min-w-0 space-y-3">
-        <AssistantOrderedContent
-          blocks={sections.ordered}
-          mode={mode}
-          showCaret={showCaret}
-          lastTextBlock={lastTextBlock}
-          turnActive={working}
-        />
+        {canFold ? (
+          <>
+            <TurnProcessFold
+              blocks={foldBlocks}
+              toolCount={foldToolCount}
+              messageCount={foldMessageCount}
+            />
+            {finalBlocks.map((block, index) => (
+              <AssistantBlock
+                key={`turn-fold-final:${index}`}
+                block={block}
+                mode="static"
+                showCaret={false}
+              />
+            ))}
+          </>
+        ) : (
+          <AssistantOrderedContent
+            blocks={sections.ordered}
+            mode={mode}
+            showCaret={showCaret}
+            lastTextBlock={lastTextBlock}
+            turnActive={working}
+          />
+        )}
         {row.outcome && (row.outcome.status === "error" || row.outcome.status === "aborted") && (
           <AssistantOutcome outcome={row.outcome} showGoOn={goOnVisible} />
         )}
@@ -1171,7 +1207,18 @@ export function ExecutionTrace({
       const status = block.row.extensionPresentation?.status;
       return status === "pending" || status === "running";
     });
-  const [open, setOpen] = useState(false);
+  // DSH-style process fold: while the trace is active (the turn is still
+  // streaming or a tool call is running) the process stays expanded so it can
+  // be watched live; once the activity settles the trace collapses back to its
+  // summary row, leaving only the final result message visible. A manual
+  // toggle wins — the active sync stops after the user expands or collapses
+  // the region by hand.
+  const [open, setOpen] = useState(active);
+  const userToggled = useRef(false);
+  useEffect(() => {
+    if (userToggled.current) return;
+    setOpen(active);
+  }, [active]);
   const failed =
     tools.filter((block) => block.tool.status === "error").length +
     extensions.filter((block) => block.row.extensionPresentation?.status === "failed").length;
@@ -1205,7 +1252,10 @@ export function ExecutionTrace({
     <div className="execution-trace">
       <button
         type="button"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          userToggled.current = true;
+          setOpen((current) => !current);
+        }}
         className="flex h-8 w-full items-center gap-2 rounded-md text-left text-xs font-medium text-foreground/80 transition-colors hover:text-foreground"
         aria-expanded={open}
         aria-controls={contentId}
@@ -1254,6 +1304,61 @@ export function ExecutionTrace({
               />
             ),
           )}
+        </div>
+      </CollapsibleRegion>
+    </div>
+  );
+}
+
+/**
+ * DSH-style turn fold: one collapsed summary row for a settled turn's whole
+ * process — every intermediate message, thinking block and tool call. The
+ * final result message stays visible outside; expanding the summary reveals
+ * the full ordered process. While the turn runs the process streams live
+ * instead, so the summary only materializes once the activity has folded.
+ */
+function TurnProcessFold({
+  blocks,
+  toolCount,
+  messageCount,
+}: {
+  blocks: TranscriptBlock[];
+  toolCount: number;
+  messageCount: number;
+}) {
+  const t = useT();
+  const contentId = useId();
+  const [open, setOpen] = useState(false);
+  const summary = t("transcriptTurnFoldSummary", { tools: toolCount, messages: messageCount });
+  return (
+    <div className="turn-process-fold">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex h-8 w-full items-center gap-2 rounded-md text-left text-xs font-medium text-foreground/80 transition-colors hover:text-foreground"
+        aria-expanded={open}
+        aria-controls={contentId}
+      >
+        <ListTree size={14} className="shrink-0 text-muted" aria-hidden="true" />
+        <span className="min-w-0 truncate" title={summary}>
+          {summary}
+        </span>
+        <ChevronRight
+          size={13}
+          className={`ml-auto transition-transform duration-[160ms] motion-reduce:transition-none ${
+            open ? "rotate-90" : ""
+          }`}
+        />
+      </button>
+      <CollapsibleRegion open={open} id={contentId}>
+        <div className="ml-2 mt-1 border-l border-border py-1 pl-4">
+          <AssistantOrderedContent
+            blocks={blocks}
+            mode="static"
+            showCaret={false}
+            lastTextBlock={undefined}
+            turnActive={false}
+          />
         </div>
       </CollapsibleRegion>
     </div>

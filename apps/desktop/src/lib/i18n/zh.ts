@@ -1043,6 +1043,7 @@ export const zh: Record<MessageKey, string> = {
   transcriptTraceStoppedMany: "🎉 完成 {count} 个后停止了",
   transcriptTraceImageOne: "{count} 张图片",
   transcriptTraceImageMany: "{count} 张图片",
+  transcriptTurnFoldSummary: "{tools}次工具调用 · {messages}条消息",
   transcriptThoughtProcess: "💡 灵光一闪",
   transcriptThinking: "🧠 顿悟",
   transcriptUnsupportedContent: "🤷 看不懂的内容",
