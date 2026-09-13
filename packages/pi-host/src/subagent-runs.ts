@@ -16,6 +16,7 @@ import type { JsonValue, SerializableSessionEntry, SubagentStatusState } from "@
 const MAX_ENTRIES = 160;
 const MAX_STRING_LENGTH = 64_000;
 const MAX_TOTAL_TEXT = 240_000;
+const MAX_TASK_TEXT = 24_000;
 const MAX_OBJECT_KEYS = 96;
 const MAX_ARRAY_ITEMS = 96;
 
@@ -235,6 +236,22 @@ export function readSubagentRunTranscript(runId: string): SubagentRunTranscript 
   // entries are collected. Raw line length is an upper bound on the bounded
   // pass below (string truncation only shrinks values), so the budget can
   // never exhaust mid-window and drop the newest entries again.
+  //
+  // The start is also snapped to a turn boundary: a window beginning on a
+  // toolResult would render its assistant tool call as an orphan turn with
+  // a misleading aborted-trace label, so the start moves forward to the
+  // next user/assistant entry.
+  const isBoundaryRecord = (record: Record<string, unknown>): boolean => {
+    if (record.type !== "message") return false;
+    const message = record.message as Record<string, unknown> | undefined;
+    return (
+      !!message &&
+      (message.role === "user" ||
+        message.role === "assistant" ||
+        message.role === "bashExecution")
+    );
+  };
+
   const windowStartIndex = (() => {
     let keptEntries = 0;
     let rawChars = 0;
@@ -264,10 +281,35 @@ export function readSubagentRunTranscript(runId: string): SubagentRunTranscript 
     return 0;
   })();
 
+  // Snap the raw window start forward to the first turn-boundary entry so
+  // the window never opens with an orphan toolResult.
+  let snappedStart = windowStartIndex;
+  while (snappedStart < lines.length) {
+    const line = lines[snappedStart];
+    if (line && line.trim()) {
+      try {
+        const raw = JSON.parse(line) as Record<string, unknown>;
+        if (
+          !raw ||
+          typeof raw !== "object" ||
+          typeof raw.id !== "string" ||
+          typeof raw.type !== "string" ||
+          raw.type === "session" ||
+          isBoundaryRecord(raw)
+        ) {
+          break;
+        }
+      } catch {
+        break;
+      }
+    }
+    snappedStart += 1;
+  }
+
   const entries: SerializableSessionEntry[] = [];
   const budget = { value: MAX_TOTAL_TEXT };
-  let truncated = windowStartIndex > 0;
-  for (let index = windowStartIndex; index < lines.length; index += 1) {
+  let truncated = snappedStart > 0;
+  for (let index = snappedStart; index < lines.length; index += 1) {
     const line = lines[index];
     if (line === undefined || !line.trim()) continue;
     let raw: unknown;
@@ -294,6 +336,34 @@ export function readSubagentRunTranscript(runId: string): SubagentRunTranscript 
     entries.push(bounded as SerializableSessionEntry);
     if (budget.value <= 0) {
       truncated = true;
+      break;
+    }
+  }
+  // The panel's collapsed view (task → folded process → final answer) needs
+  // the run's first user message. Large transcripts truncate it away, so
+  // prepend it (with its own small budget) when the tail window lacks one.
+  if (!entries.some((entry) => {
+    const message = (entry as { message?: { role?: unknown } }).message;
+    return message?.role === "user";
+  })) {
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let raw: unknown;
+      try {
+        raw = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!raw || typeof raw !== "object") continue;
+      const record = hideAcceptanceReports(stripFileMarkers(raw)) as Record<string, unknown>;
+      if (record.type !== "message") continue;
+      const message = record.message as Record<string, unknown> | undefined;
+      if (message?.role !== "user") continue;
+      const taskBudget = { value: MAX_TASK_TEXT };
+      const bounded = boundedJson(record, taskBudget);
+      if (bounded && isJsonValue(bounded) && typeof bounded === "object" && !Array.isArray(bounded)) {
+        entries.unshift(bounded as SerializableSessionEntry);
+      }
       break;
     }
   }

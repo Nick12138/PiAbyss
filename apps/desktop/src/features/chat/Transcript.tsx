@@ -913,6 +913,9 @@ export const TranscriptRowView = memo(function TranscriptRowView({
   userCollapsible = false,
   userExpanded = false,
   onToggleUser,
+  resultCollapsible = false,
+  resultExpanded = false,
+  onToggleResult,
   turnFold = true,
 }: {
   row: TranscriptRow;
@@ -930,6 +933,10 @@ export const TranscriptRowView = memo(function TranscriptRowView({
   userCollapsible?: boolean;
   userExpanded?: boolean;
   onToggleUser?: () => void;
+  /** Collapsible final-answer row (the subagents panel's result view). */
+  resultCollapsible?: boolean;
+  resultExpanded?: boolean;
+  onToggleResult?: () => void;
   /**
    * Turn fold: when false the settled turn renders its process in streaming
    * order without the "N tool calls · M messages" summary. Surfaces that own
@@ -1081,6 +1088,74 @@ export const TranscriptRowView = memo(function TranscriptRowView({
     .reverse()
     .find((block): block is Extract<TranscriptBlock, { kind: "text" }> => block.kind === "text");
 
+  // Collapsible final answer: when the surface (subagents panel) opts in and
+  // the answer is not yet expanded, render a clamped summary bubble with an
+  // expand button, mirroring the collapsible user message.
+  const resultSummary = row.blocks
+    .filter((block): block is Extract<TranscriptBlock, { kind: "text" }> => block.kind === "text")
+    .map((block) => block.text)
+    .join("\n\n")
+    .trim();
+  const canCollapseResult =
+    resultCollapsible &&
+    !working &&
+    resultSummary.length > 0 &&
+    row.outcome?.status !== "error" &&
+    row.outcome?.status !== "aborted";
+  if (canCollapseResult && !resultExpanded) {
+    return (
+      <div className="group/assistant relative w-full">
+        <div className="flex h-7 items-center gap-2">
+          <AssistantAvatar />
+        </div>
+        <div className="mt-2 min-w-0 space-y-3">
+          <div className="w-fit max-w-full rounded-xl rounded-bl-md bg-surface-overlay px-3.5 py-2.5 text-sm leading-6">
+            <div className="line-clamp-3 max-w-full whitespace-pre-wrap break-words">
+              {resultSummary}
+            </div>
+            {onToggleResult && (
+              <button
+                type="button"
+                className="mt-1 ml-auto flex h-6 items-center gap-1 text-[10px] text-muted hover:text-foreground"
+                title={t("transcriptExpandMessage")}
+                aria-label={t("transcriptExpandMessage")}
+                onClick={onToggleResult}
+              >
+                <ChevronDown size={12} />
+                {t("transcriptExpandMessage")}
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="mt-2 flex h-7 items-center gap-2">
+          <DurationLabel
+            startedAt={row.startedAt}
+            endedAt={row.endedAt}
+            active={working}
+            decodeMs={row.decodeMs}
+            decodeTokens={row.decodeTokens}
+            ttftMs={row.ttftMs}
+            ttftSteps={row.ttftSteps}
+          />
+          <div className="ml-auto flex items-center gap-1">
+            <CopyMessageButton
+              text={row.copyText}
+              className="opacity-0 group-hover/assistant:opacity-100"
+            />
+            <UsageLabel
+              usage={row.usage}
+              models={row.models}
+              startedAt={row.startedAt}
+              endedAt={row.endedAt}
+              decodeMs={row.decodeMs}
+              decodeTokens={row.decodeTokens}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // DSH-style turn fold: once the turn settles, its whole process — every
   // intermediate message, thinking block and tool call — collapses into one
   // summary row ("N tool calls · M messages") and only the final result
@@ -1149,6 +1224,18 @@ export const TranscriptRowView = memo(function TranscriptRowView({
         />
         {navigator}
         <div className="ml-auto flex items-center gap-1">
+          {resultCollapsible && resultExpanded && onToggleResult && (
+            <button
+              type="button"
+              className="flex h-6 items-center gap-1 text-[10px] text-muted hover:text-foreground"
+              title={t("transcriptCollapseMessage")}
+              aria-label={t("transcriptCollapseMessage")}
+              onClick={onToggleResult}
+            >
+              <ChevronUp size={12} />
+              {t("transcriptCollapseMessage")}
+            </button>
+          )}
           {!readOnly && !working && row.sourceEndId && (
             <ForkFromTurnButton
               entryId={row.sourceEndId}

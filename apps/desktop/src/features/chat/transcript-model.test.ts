@@ -437,6 +437,42 @@ describe("thinkingBlockIsLive", () => {
 });
 
 describe("buildTranscriptRows", () => {
+  it("splits literal <thinking> tags inside text blocks into thinking blocks", () => {
+    const messages: SerializableAgentMessage[] = [
+      {
+        role: "assistant",
+        stopReason: "stop",
+        content: [
+          {
+            type: "text",
+            text:
+              "<thinking>先检查入口</thinking>## 概览\n\n正文内容",
+          },
+        ],
+      },
+    ];
+
+    const rows = buildTranscriptRows(messages, { turnActive: false });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.blocks).toEqual([
+      { kind: "thinking", text: "先检查入口" },
+      { kind: "text", text: "## 概览\n\n正文内容" },
+    ]);
+  });
+
+  it("leaves text with an unclosed <thinking> tag untouched", () => {
+    const messages: SerializableAgentMessage[] = [
+      {
+        role: "assistant",
+        stopReason: "stop",
+        content: [{ type: "text", text: "<thinking>还没写完" }],
+      },
+    ];
+
+    const rows = buildTranscriptRows(messages, { turnActive: false });
+    expect(rows[0]!.blocks).toEqual([{ kind: "text", text: "<thinking>还没写完" }]);
+  });
+
   it("settles dangling tool calls when the restored session is idle", () => {
     const messages: SerializableAgentMessage[] = [
       {
@@ -1200,6 +1236,68 @@ describe("Pi extension and session entry messages", () => {
     expect(rows.map((row) => row.role)).toEqual(["summary", "user"]);
     expect(rows[0]?.summary).toMatchObject({ kind: "branch", text: "" });
     expect(rows[1]?.copyText).toBe("Live prompt after branching");
+  });
+
+  it("keeps the live tail visible after an entry that cannot be projected", () => {
+    // A `message` entry whose payload is not a projectable agent message (here:
+    // no `message` at all) renders nothing. It must not consume a position in
+    // the entry-side count, or the length-based tail alignment drops that many
+    // live rows off the end of the transcript — the desktop would lose a just
+    // sent (still optimistic) user bubble until the next full snapshot.
+    const entries = [
+      {
+        id: "kept-user",
+        type: "message",
+        parentId: null,
+        message: { role: "user", content: "Earlier prompt" },
+      },
+      {
+        id: "kept-assistant",
+        type: "message",
+        parentId: "kept-user",
+        message: { role: "assistant", content: "Earlier answer" },
+      },
+      { id: "unprojectable", type: "message", parentId: "kept-assistant" },
+    ];
+    const messages = [
+      { role: "user", content: "Earlier prompt" },
+      { role: "assistant", content: "Earlier answer" },
+      { role: "user", content: "Just sent", _optimisticKey: "opt-1" },
+    ] as SerializableAgentMessage[];
+
+    const rows = buildTranscriptRows(messages, { entries: entries as never });
+
+    expect(rows.map((row) => row.role)).toEqual(["user", "assistant", "user"]);
+    expect(rows[2]?.copyText).toBe("Just sent");
+  });
+
+  it("keeps the live tail visible across multiple unprojectable entries", () => {
+    const entries = [
+      {
+        id: "kept-user",
+        type: "message",
+        parentId: null,
+        message: { role: "user", content: "Earlier prompt" },
+      },
+      { id: "bad-1", type: "message", parentId: "kept-user" },
+      { id: "bad-2", type: "message", parentId: "bad-1", message: { role: 7 } },
+      { id: "bad-3", type: "message", parentId: "bad-2", message: "not-an-object" },
+    ];
+
+    const rows = buildTranscriptRows(
+      [
+        { role: "user", content: "Earlier prompt" },
+        { role: "user", content: "Just sent", _optimisticKey: "opt-1" },
+        { role: "assistant", content: "Streaming answer" },
+      ] as SerializableAgentMessage[],
+      { entries: entries as never },
+    );
+
+    expect(rows.map((row) => row.copyText || row.role)).toEqual([
+      "Earlier prompt",
+      "Just sent",
+      "Streaming answer",
+    ]);
   });
 
   it("counts a whitespace branch summary like the SDK projection", () => {

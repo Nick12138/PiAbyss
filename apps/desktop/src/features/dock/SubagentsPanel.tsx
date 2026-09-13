@@ -162,6 +162,9 @@ function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
   const t = useT();
   const [expandedUserRows, setExpandedUserRows] = useState<ReadonlySet<string>>(new Set());
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  // The final-answer row starts expanded; the user can collapse it to a
+  // clamped summary bubble (mirroring the collapsible task message).
+  const [resultCollapsed, setResultCollapsed] = useState(false);
   const isRunning = snapshot.state === "running";
   const entries = snapshot.entries;
   const rows = useMemo(
@@ -265,8 +268,15 @@ function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
   const tailRow = rows[rows.length - 1];
   const workingRowKey = isRunning && tailRow?.role === "assistant" ? tailRow.key : undefined;
 
+  // The final answer row: the collapsed layout's result row, or (when the
+  // transcript has no task message to anchor it) the tail assistant row of a
+  // finished run. Both support collapse/expand.
+  const resultRowKey = collapsible
+    ? [...rows].reverse().find((row) => row.role === "assistant")?.key
+    : undefined;
   const renderRow = (row: TranscriptRow, isFirstUser = row.key === firstUserRowKey) => {
     const working = row.key === workingRowKey;
+    const isResult = row.key === resultRowKey;
     return (
       <div className="transcript-row" data-row-key={row.key} key={row.key}>
         <TranscriptRowView
@@ -289,6 +299,11 @@ function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
                     current.has(row.key) ? new Set() : new Set([row.key]),
                   )
               : undefined
+          }
+          resultCollapsible={isResult && collapsible}
+          resultExpanded={isResult ? !resultCollapsed : true}
+          onToggleResult={
+            isResult && collapsible ? () => setResultCollapsed((current) => !current) : undefined
           }
         />
       </div>

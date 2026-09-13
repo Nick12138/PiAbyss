@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HostStatusSnapshot, WorkspaceSnapshot } from "@piabyss/protocol";
@@ -326,6 +326,99 @@ describe("SubagentsPanel", () => {
     request.mockRestore();
   });
 
+  it("collapses the final answer to a summary bubble and expands on click", async () => {
+    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      if (method === "subagents.getSession") {
+        return {
+          protocolVersion: 1,
+          id: crypto.randomUUID(),
+          method,
+          hostInstanceId: host.hostInstanceId,
+          workspaceId: workspace.id,
+          workspaceRevision: workspace.revision,
+          sessionId: null,
+          sessionRevision: 0,
+          packageRevision: 0,
+          ok: true,
+          result: {
+            nodeId: "run-result",
+            sessionId: "s2",
+            state: "complete",
+            truncated: false,
+            updatedAt: 1787545104000,
+            entries: [
+              {
+                type: "message",
+                id: "u1",
+                timestamp: "2026-01-01T00:00:00.000Z",
+                message: {
+                  role: "user",
+                  content: [{ type: "text", text: "Do the task" }],
+                },
+              },
+              {
+                type: "message",
+                id: "a2",
+                timestamp: "2026-01-01T00:02:00.000Z",
+                message: {
+                  role: "assistant",
+                  content: [
+                    { type: "text", text: "Line one of the report\n\nLine two of the report" },
+                  ],
+                },
+              },
+            ],
+          },
+        } as never;
+      }
+      throw new Error(`Unexpected method ${method}`);
+    });
+    useAppStore.setState({
+      host,
+      workspace,
+      desktopSettings: { language: "en" } as never,
+      subagentsStatus: {
+        ...baseStatus,
+        runs: [{ id: "run-result", kind: "subagent", label: "Result task", state: "complete" }],
+      },
+    });
+
+    render(<SubagentsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Result task" }));
+
+    // Assert through textContent: the streaming markdown renderer splits the
+    // answer into per-word animated spans, so exact-text queries are flaky
+    // once another test has warmed the lazy markdown chunk.
+    const resultRow = () => {
+      const el = document.querySelector('[data-row-key="assistant:a2"]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    };
+    const resultState = () => ({
+      collapsed: Boolean(resultRow().querySelector('button[aria-label="Expand message"]')),
+      expanded: Boolean(resultRow().querySelector('button[aria-label="Collapse message"]')),
+      summaryClamp: Boolean(resultRow().querySelector(".line-clamp-3")),
+    });
+
+    // The final answer starts fully expanded with a collapse control.
+    await waitFor(() => expect(resultState().expanded).toBe(true));
+    expect(resultState().collapsed).toBe(false);
+    expect(resultState().summaryClamp).toBe(false);
+
+    fireEvent.click(resultRow().querySelector('button[aria-label="Collapse message"]') as HTMLElement);
+
+    // Collapsed: clamped summary bubble with an expand control.
+    await waitFor(() => expect(resultState().collapsed).toBe(true));
+    expect(resultState().expanded).toBe(false);
+    expect(resultState().summaryClamp).toBe(true);
+
+    fireEvent.click(resultRow().querySelector('button[aria-label="Expand message"]') as HTMLElement);
+    await waitFor(() => expect(resultState().expanded).toBe(true));
+    expect(resultState().summaryClamp).toBe(false);
+
+    request.mockRestore();
+  });
+
   it("renders the running tail row in streaming style with a working header", async () => {
     const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
       if (method === "subagents.getSession") {
@@ -389,12 +482,14 @@ describe("SubagentsPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Stream task" }));
 
     expect(await screen.findByText("Stream the task")).toBeVisible();
-    expect(screen.getByText("Streaming answer")).toBeVisible();
 
     // The tail assistant row carries the working header, a streaming caret
-    // and the active execution-trace spinner.
-    const tailRow = screen.getByText("Streaming answer").closest("[data-row-key]");
+    // and the active execution-trace spinner. Assert through the row's text
+    // content: the streaming markdown renderer splits words into animated
+    // spans, so a single-text-node query is not reliable.
+    const tailRow = document.querySelector('[data-row-key="assistant:a1"]');
     expect(tailRow).not.toBeNull();
+    expect((tailRow?.textContent ?? "").replace(/\s+/g, "")).toContain("Streaminganswer");
     expect(tailRow?.querySelector(".execution-trace-spinner")).toBeInTheDocument();
     expect(tailRow?.textContent).toContain("Pi is working...");
 

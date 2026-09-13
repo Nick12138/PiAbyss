@@ -172,4 +172,88 @@ describe("subagent-runs", () => {
     // tail window starts after it and only the final answer survives.
     expect(ids).toEqual(["final"]);
   });
+
+  it("prepends the first user task message when the tail window lacks one", () => {
+    const task = JSON.stringify({
+      type: "message",
+      id: "task",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      message: { role: "user", content: [{ type: "text", text: "原始任务描述" }] },
+    });
+    // A 240KB+ tool result forces the window to start after it, dropping the task.
+    const bigToolResult = JSON.stringify({
+      type: "message",
+      id: "t1",
+      timestamp: "2026-01-01T00:00:10.000Z",
+      message: {
+        role: "toolResult",
+        toolCallId: "call_1",
+        toolName: "read",
+        isError: false,
+        content: [{ type: "text", text: "x".repeat(300_000) }],
+      },
+    });
+    const finalAnswer = JSON.stringify({
+      type: "message",
+      id: "final",
+      timestamp: "2026-01-01T00:01:00.000Z",
+      message: { role: "assistant", content: [{ type: "text", text: "最终报告" }] },
+    });
+    writeRun("run_task", [task, bigToolResult, finalAnswer]);
+
+    const transcript = readSubagentRunTranscript("run_task");
+    expect(transcript).not.toBeNull();
+    const ids = transcript!.entries.map((entry) => (entry as { id?: string }).id);
+    expect(ids).toEqual(["task", "final"]);
+    const first = transcript!.entries[0] as {
+      message?: { role?: string; content?: { type: string; text?: string }[] };
+    };
+    expect(first.message?.role).toBe("user");
+    expect(first.message?.content?.[0]?.text).toBe("原始任务描述");
+  });
+
+  it("snaps the window start to a turn boundary, dropping orphan tool results", () => {
+    const task = JSON.stringify({
+      type: "message",
+      id: "task",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      message: { role: "user", content: [{ type: "text", text: "任务" }] },
+    });
+    const toolCall = JSON.stringify({
+      type: "message",
+      id: "call-entry",
+      timestamp: "2026-01-01T00:00:20.000Z",
+      message: {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "call_9", name: "grep", arguments: { pattern: "x" } }],
+      },
+    });
+    const orphanResult = (id: string) =>
+      JSON.stringify({
+        type: "message",
+        id,
+        timestamp: "2026-01-01T00:00:30.000Z",
+        message: {
+          role: "toolResult",
+          toolCallId: "call_9",
+          toolName: "grep",
+          isError: false,
+          content: [{ type: "text", text: "y".repeat(150_000) }],
+        },
+      });
+    const finalAnswer = JSON.stringify({
+      type: "message",
+      id: "final",
+      timestamp: "2026-01-01T00:01:00.000Z",
+      message: { role: "assistant", content: [{ type: "text", text: "报告" }] },
+    });
+    // Two 150KB results exceed the 240KB budget, so the raw window lands on
+    // the first orphan result; snapping must skip both and start at "final".
+    writeRun("run_snap", [task, toolCall, orphanResult("o1"), orphanResult("o2"), finalAnswer]);
+
+    const transcript = readSubagentRunTranscript("run_snap");
+    expect(transcript).not.toBeNull();
+    const ids = transcript!.entries.map((entry) => (entry as { id?: string }).id);
+    expect(ids).toEqual(["task", "final"]);
+  });
 });

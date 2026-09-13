@@ -415,12 +415,48 @@ function toolTraceFromPart(part: SerializableAgentContent, index: number): ToolT
   };
 }
 
+/**
+ * Some providers inline reasoning as a literal `<thinking>...</thinking>`
+ * prefix inside a text block instead of emitting a dedicated thinking part.
+ * Split it into a real thinking block (plus optional trailing thinking
+ * blocks) so the renderer folds it like native reasoning.
+ */
+function splitLiteralThinkingBlocks(blocks: TranscriptBlock[]): TranscriptBlock[] {
+  const result: TranscriptBlock[] = [];
+  for (const block of blocks) {
+    if (block.kind !== "text" || !block.text.includes("<thinking>")) {
+      result.push(block);
+      continue;
+    }
+    // Fast path: no well-formed closing tag → keep the text untouched.
+    const closing = block.text.indexOf("</thinking>");
+    if (closing < 0) {
+      result.push(block);
+      continue;
+    }
+    let rest = block.text;
+    while (rest.includes("<thinking>")) {
+      const open = rest.indexOf("<thinking>");
+      const close = rest.indexOf("</thinking>", open);
+      if (close < 0) break;
+      const before = rest.slice(0, open).trim();
+      const thought = rest.slice(open + "<thinking>".length, close).trim();
+      rest = rest.slice(close + "</thinking>".length);
+      if (before) result.push({ kind: "text", text: before });
+      if (thought) result.push({ kind: "thinking", text: thought });
+    }
+    const trailing = rest.trim();
+    if (trailing) result.push({ kind: "text", text: trailing });
+  }
+  return result;
+}
+
 function blocksForMessage(
   message: SerializableAgentMessage,
   sourceIndex: number,
 ): TranscriptBlock[] {
   if (typeof message.content === "string") {
-    return message.content ? [{ kind: "text", text: message.content }] : [];
+    return message.content ? splitLiteralThinkingBlocks([{ kind: "text", text: message.content }]) : [];
   }
   const blocks: TranscriptBlock[] = [];
   for (const [partIndex, part] of contentParts(message).entries()) {
@@ -432,7 +468,7 @@ function blocksForMessage(
     const block = contentBlockFromPart(part);
     if (block) blocks.push(block);
   }
-  return blocks;
+  return splitLiteralThinkingBlocks(blocks);
 }
 
 function applyToolResult(trace: ToolTrace, result: ToolResultRecord): void {
@@ -810,9 +846,15 @@ function sourceMessages(
     const sourceKey = sourceId ?? `${type}:${sources.length}`;
     const timestamp = timestampField(record);
     if (type === "message") {
-      projectedMessageCount += 1;
       const message = asAgentMessage(record.message);
+      // Only a projected message consumes a position in `session.messages`.
+      // An entry whose payload cannot be projected (missing/non-string role)
+      // yields no message, so counting it here would desynchronize the
+      // length-based tail alignment below and silently swallow that many live
+      // rows off the end of the transcript — including an unacknowledged
+      // optimistic user bubble. See the tail loop at the end of this function.
       if (message) {
+        projectedMessageCount += 1;
         sources.push({
           kind: "message",
           message,
@@ -931,6 +973,12 @@ function sourceMessages(
     // rendered. Their data is for extension/session state, not conversation UI.
   }
 
+  // Length alignment: the first `projectedMessageCount` messages are the ones
+  // the entry path already projected; anything past that is a live row the
+  // desktop holds but the session file has not recorded yet (an in-flight
+  // assistant turn, an optimistic user bubble). Both sides must count only
+  // messages that actually reached the projection — see the `type === "message"`
+  // branch above.
   const tailStart = Math.min(projectedMessageCount, messages.length);
   for (let index = tailStart; index < messages.length; index += 1) {
     const message = messages[index];
