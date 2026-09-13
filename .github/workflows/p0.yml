@@ -20,13 +20,13 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9.15.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.19.0
           cache: pnpm
@@ -39,13 +39,13 @@ jobs:
     env:
       ARTIFACTS_DIR: artifacts/p0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9.15.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
           cache: pnpm
@@ -53,7 +53,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .runtime-cache
           key: ${{ runner.os }}-release-runtime-${{ hashFiles('scripts/release-runtime.lock.json') }}
@@ -62,7 +62,7 @@ jobs:
       - run: pnpm package:sidecar:with-node
       - run: pnpm validate:resources
       - run: pnpm smoke:staged-host
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: p0-resource-layout-${{ github.run_id }}-${{ github.run_attempt }}
