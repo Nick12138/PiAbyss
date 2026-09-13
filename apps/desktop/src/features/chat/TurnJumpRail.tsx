@@ -36,7 +36,7 @@ function activeStopIndex(stops: TurnRailStop[], element: HTMLElement): number | 
   return best;
 }
 
-export function turnRailTooltip(stop: TurnRailStop, index: number, total: number): string {
+function turnRailTooltip(stop: TurnRailStop, index: number, total: number): string {
   const excerpt =
     stop.excerpt.length > TOOLTIP_LIMIT
       ? `${stop.excerpt.slice(0, TOOLTIP_LIMIT - 1)}…`
