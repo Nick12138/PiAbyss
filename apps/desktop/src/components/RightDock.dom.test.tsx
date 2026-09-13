@@ -148,7 +148,7 @@ describe("RightDock pages", () => {
     expect(screen.getByRole("button", { name: "关闭：浏览器" })).toBeVisible();
   });
 
-  it("auto-adds and focuses Subagents on first use, then respects a manual collapse", async () => {
+  it("does not auto-open the dock when a session has active subagents", async () => {
     useAppStore.setState({
       dockOpen: false,
       session: { sessionId: "session-1", messages: [], entries: [] } as unknown as SessionSnapshot,
@@ -163,7 +163,6 @@ describe("RightDock pages", () => {
       },
     });
 
-    const user = userEvent.setup();
     render(
       <>
         <DockToggleButton />
@@ -171,46 +170,26 @@ describe("RightDock pages", () => {
       </>,
     );
 
-    await waitFor(() => expect(useAppStore.getState().dockOpen).toBe(true));
-    expect(screen.getByRole("tab", { name: "Subagents" })).toHaveAttribute("aria-selected", "true");
-
-    await user.click(screen.getByRole("button", { name: "New dock page" }));
-    await user.click(screen.getByRole("menuitem", { name: "Files" }));
-    expect(screen.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
-
-    await user.click(screen.getByRole("button", { name: "Collapse right panel" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("tab", { name: "Subagents" }),
+      ).not.toBeInTheDocument(),
+    );
     expect(useAppStore.getState().dockOpen).toBe(false);
 
+    // Switching to another session with active subagents must not open it either.
     act(() => {
       useAppStore.setState({
-        subagentsStatus: {
-          version: 1,
-          available: true,
-          generatedAt: 2,
-          totalActive: 0,
-          omitted: 0,
-          fleet: [],
-          runs: [],
-        },
-      });
-    });
-    act(() => {
-      useAppStore.setState({
-        subagentsStatus: {
-          version: 1,
-          available: true,
-          generatedAt: 3,
-          totalActive: 1,
-          omitted: 0,
-          fleet: [],
-          runs: [],
-        },
+        session: {
+          sessionId: "session-2",
+          messages: [],
+          entries: [],
+        } as unknown as SessionSnapshot,
       });
     });
 
     expect(useAppStore.getState().dockOpen).toBe(false);
-    expect(screen.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
-    expect(document.querySelector("#dock-panel-subagents")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Subagents" })).not.toBeInTheDocument();
   });
 
   it("toggles the dock open state through the toolbar button", async () => {

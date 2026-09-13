@@ -14,7 +14,7 @@ import { join } from "node:path";
 import type { JsonValue, SerializableSessionEntry, SubagentStatusState } from "@piabyss/protocol";
 
 const MAX_ENTRIES = 160;
-const MAX_STRING_LENGTH = 16_000;
+const MAX_STRING_LENGTH = 64_000;
 const MAX_TOTAL_TEXT = 240_000;
 const MAX_OBJECT_KEYS = 96;
 const MAX_ARRAY_ITEMS = 96;
@@ -137,7 +137,7 @@ function boundedJson(value: unknown, budget: { value: number }, depth = 0): Json
   if (typeof value === "string") {
     const text = value.slice(0, Math.min(MAX_STRING_LENGTH, budget.value));
     budget.value -= text.length;
-    return text;
+    return text.length < value.length ? `${text}…` : text;
   }
   if (Array.isArray(value)) {
     const result: JsonValue[] = [];
@@ -209,12 +209,66 @@ export function readSubagentRunTranscript(runId: string): SubagentRunTranscript 
     return null;
   }
 
-  const entries: SerializableSessionEntry[] = [];
-  const budget = { value: MAX_TOTAL_TEXT };
+  // Session metadata lives in the header block at the start of the file and
+  // must survive even when the tail window below excludes the first lines.
   let sessionId = `sub-${runId}`;
   let name: string | undefined;
-  let truncated = lines.length > MAX_ENTRIES;
   for (const line of lines) {
+    if (!line.trim()) continue;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(line);
+    } catch {
+      break;
+    }
+    if (!raw || typeof raw !== "object") break;
+    const record = raw as Record<string, unknown>;
+    if (record.type !== "session") break;
+    if (typeof record.id === "string" && record.id) sessionId = record.id;
+    if (typeof record.name === "string" && record.name) name = record.name;
+  }
+
+  // Keep the TAIL of the conversation: the panel renders the most recent
+  // entries (including the run's final answer), and the desktop's "earlier
+  // content omitted" hint assumes the tail is kept. Walk backwards and stop
+  // once the raw size of the window reaches MAX_TOTAL_TEXT or MAX_ENTRIES
+  // entries are collected. Raw line length is an upper bound on the bounded
+  // pass below (string truncation only shrinks values), so the budget can
+  // never exhaust mid-window and drop the newest entries again.
+  const windowStartIndex = (() => {
+    let keptEntries = 0;
+    let rawChars = 0;
+    let index = lines.length;
+    while (index > 0) {
+      index -= 1;
+      const line = lines[index];
+      if (!line || !line.trim()) continue;
+      let raw: unknown;
+      try {
+        raw = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!raw || typeof raw !== "object") continue;
+      const record = raw as Record<string, unknown>;
+      if (typeof record.id !== "string" || typeof record.type !== "string") continue;
+      if (record.type === "session") continue;
+      // Always include at least the newest entry, even if it alone exceeds
+      // the budget; the bounded pass trims it.
+      if (keptEntries > 0 && (keptEntries >= MAX_ENTRIES || rawChars + line.length > MAX_TOTAL_TEXT)) {
+        return index + 1;
+      }
+      keptEntries += 1;
+      rawChars += line.length;
+    }
+    return 0;
+  })();
+
+  const entries: SerializableSessionEntry[] = [];
+  const budget = { value: MAX_TOTAL_TEXT };
+  let truncated = windowStartIndex > 0;
+  for (let index = windowStartIndex; index < lines.length; index += 1) {
+    const line = lines[index];
     if (line === undefined || !line.trim()) continue;
     let raw: unknown;
     try {
@@ -225,11 +279,7 @@ export function readSubagentRunTranscript(runId: string): SubagentRunTranscript 
     }
     if (!raw || typeof raw !== "object") continue;
     const record = hideAcceptanceReports(stripFileMarkers(raw)) as Record<string, unknown>;
-    if (record.type === "session") {
-      if (typeof record.id === "string" && record.id) sessionId = record.id;
-      if (typeof record.name === "string" && record.name) name = record.name;
-      continue;
-    }
+    if (record.type === "session") continue;
     if (typeof record.id !== "string" || typeof record.type !== "string") continue;
     const bounded = boundedJson(record, budget);
     if (
@@ -257,8 +307,8 @@ export function readSubagentRunTranscript(runId: string): SubagentRunTranscript 
   return {
     sessionId,
     ...(name ? { name } : {}),
-    entries: entries.slice(-MAX_ENTRIES),
-    truncated: truncated || entries.length > MAX_ENTRIES,
+    entries,
+    truncated,
     updatedAt,
   };
 }

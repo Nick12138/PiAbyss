@@ -153,10 +153,8 @@ export function RightDock() {
   const dockOpen = useAppStore((state) => state.dockOpen);
   const panel = useAppStore((state) => state.extensionTerminal);
   const workspaceCwd = useAppStore((state) => state.workspace?.canonicalCwd ?? null);
-  const session = useAppStore((state) => state.session);
-  const subagentsStatus = useAppStore((state) => state.subagentsStatus);
-  const terminalProfile = useAppStore((state) => state.desktopSettings?.terminalProfile ?? "auto");
   const setDockOpen = useAppStore((state) => state.setDockOpen);
+  const terminalProfile = useAppStore((state) => state.desktopSettings?.terminalProfile ?? "auto");
   const pushNotification = useAppStore((state) => state.pushNotification);
   const initialExtensionTab = panel ? extensionTabId(panel.requestId) : null;
   const [activeTab, setActiveTab] = useState<DockTabId | null>(initialExtensionTab);
@@ -172,10 +170,6 @@ export function RightDock() {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [overflowMenuOpen, setOverflowMenuOpen] = useState(false);
   const [mainOverflows, setMainOverflows] = useState(false);
-  const subagentsAvailabilityRef = useRef({
-    sessionId: session?.sessionId ?? null,
-    hasBeenUsed: false,
-  });
   const nextShellId = useRef(1);
   const nextShellGeneration = useRef(1);
   const nextBrowserId = useRef(1);
@@ -392,35 +386,6 @@ export function RightDock() {
     setActiveTab("subagents");
     setAddMenuOpen(false);
   };
-
-  useEffect(() => {
-    const sessionId = session?.sessionId ?? null;
-    const availability = subagentsAvailabilityRef.current;
-    const sessionChanged = availability.sessionId !== sessionId;
-    if (sessionChanged) {
-      availability.sessionId = sessionId;
-      availability.hasBeenUsed = false;
-    }
-    // With the my-pi-plugins pi-subagent bridge the run list includes
-    // historical runs from previous sessions, so only auto-open the panel for
-    // genuinely active runs (manual open is always available via the add menu).
-    const hasSubagentActivity = subagentsStatus.totalActive > 0;
-    if (!hasSubagentActivity || availability.hasBeenUsed) return;
-
-    availability.hasBeenUsed = true;
-    setTabOrder((current) => (current.includes("subagents") ? current : [...current, "subagents"]));
-    setActiveTab("subagents");
-    if (!dockOpen) {
-      setDockOpen(true);
-      setSidebarPref("piabyss.dock.open", true);
-    }
-  }, [
-    dockOpen,
-    session?.sessionId,
-    setDockOpen,
-    subagentsStatus.runs.length,
-    subagentsStatus.totalActive,
-  ]);
 
   useEffect(
     () =>

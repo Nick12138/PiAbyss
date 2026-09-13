@@ -117,4 +117,59 @@ describe("subagent-runs", () => {
     expect(mapSubagentRunState("interrupted")).toBe("stopped");
     expect(mapSubagentRunState(undefined)).toBe("running");
   });
+
+  it("keeps the tail of large transcripts so the final answer survives", () => {
+    const bigToolResult = JSON.stringify({
+      type: "message",
+      id: "t1",
+      timestamp: "2026-01-01T00:00:10.000Z",
+      message: {
+        role: "toolResult",
+        toolCallId: "call_1",
+        toolName: "read",
+        isError: false,
+        content: [{ type: "text", text: "x".repeat(300_000) }],
+      },
+    });
+    const early = (id: string) =>
+      JSON.stringify({
+        type: "message",
+        id,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        message: { role: "assistant", content: [{ type: "text", text: `early ${id}` }] },
+      });
+    const finalAnswer = JSON.stringify({
+      type: "message",
+      id: "final",
+      timestamp: "2026-01-01T00:01:00.000Z",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "最终调查结果".repeat(1000) }],
+      },
+    });
+    writeRun("run_tail", [
+      JSON.stringify({ type: "session", id: "sub-run_tail", name: "尾窗任务", version: 3 }),
+      early("a1"),
+      early("a2"),
+      bigToolResult,
+      finalAnswer,
+    ]);
+
+    const transcript = readSubagentRunTranscript("run_tail");
+    expect(transcript).not.toBeNull();
+    expect(transcript!.sessionId).toBe("sub-run_tail");
+    expect(transcript!.name).toBe("尾窗任务");
+    expect(transcript!.truncated).toBe(true);
+    const last = transcript!.entries.at(-1) as {
+      message?: { role?: string; content?: { type: string; text?: string }[] };
+    };
+    expect(last.message?.role).toBe("assistant");
+    expect(last.message?.content?.some((block) => block.text?.includes("最终调查结果"))).toBe(true);
+    const ids = transcript!.entries.map((entry) => (entry as { id?: string }).id);
+    expect(ids).not.toContain("a1");
+    expect(ids).not.toContain("a2");
+    // The oversized tool result alone exceeds MAX_TOTAL_TEXT, so the contiguous
+    // tail window starts after it and only the final answer survives.
+    expect(ids).toEqual(["final"]);
+  });
 });
