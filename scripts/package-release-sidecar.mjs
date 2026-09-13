@@ -25,6 +25,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { resolvePnpmCommand } from "./pnpm-command.mjs";
 import {
   assertPiPackageTree,
   assertReleaseProductionManifest,
@@ -224,14 +225,19 @@ function stageHostWithDeploy() {
   try {
     rmSync(deployedFrom, { recursive: true, force: true });
     console.log("[package-sidecar] pnpm deploy --prod ->", deployedFrom);
-    const deploy = timedStage("pnpm deploy production Host", () =>
-      spawnSync("pnpm", ["--filter", "@piabyss/pi-host", "deploy", "--prod", deployedFrom], {
-        cwd: root,
-        encoding: "utf8",
-        shell: true,
-        env: process.env,
-      }),
-    );
+    const deploy = timedStage("pnpm deploy production Host", () => {
+      const { executable, prefixArgs, shell } = resolvePnpmCommand();
+      return spawnSync(
+        executable,
+        [...prefixArgs, "--filter", "@piabyss/pi-host", "deploy", "--prod", deployedFrom],
+        {
+          cwd: root,
+          encoding: "utf8",
+          shell,
+          env: process.env,
+        },
+      );
+    });
     if (
       deploy.status !== 0 ||
       !existsSync(join(deployedFrom, "node_modules", "@earendil-works", "pi-coding-agent"))

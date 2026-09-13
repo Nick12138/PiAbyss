@@ -18,6 +18,7 @@ import {
   chmodSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
+import { resolvePnpmCommand } from "./pnpm-command.mjs";
 import { inspectWindowsInstaller } from "./windows-installer-integrity.mjs";
 import { writeReleaseResourceManifest } from "./release-resource-manifest.mjs";
 
@@ -38,15 +39,24 @@ const outDir = join(root, "apps/desktop/src-tauri/target/release-staging");
 const stageTimingsMs = {};
 mkdirSync(outDir, { recursive: true });
 
-function run(cmd, args) {
-  console.log(`\n=== ${cmd} ${args.join(" ")} ===`);
-  const r = spawnSync(cmd, args, { cwd: root, stdio: "inherit", shell: true, env: process.env });
+function spawnPnpm(args, options) {
+  const { executable, prefixArgs, shell } = resolvePnpmCommand();
+  return spawnSync(executable, [...prefixArgs, ...args], {
+    shell,
+    env: process.env,
+    ...options,
+  });
+}
+
+function runPnpm(args) {
+  console.log(`\n=== pnpm ${args.join(" ")} ===`);
+  const r = spawnPnpm(args, { cwd: root, stdio: "inherit" });
   if (r.status !== 0) {
     writeManifest({
       status: "failed",
       primaryInstaller: null,
       exitCode: r.status ?? 1,
-      failedStep: `${cmd} ${args.join(" ")}`,
+      failedStep: `pnpm ${args.join(" ")}`,
     });
     process.exit(r.status ?? 1);
   }
@@ -281,11 +291,11 @@ if (reusedSourceBuildCommit) {
     `[package:release] reusing verify:p0 JavaScript build for ${reusedSourceBuildCommit}`,
   );
 } else {
-  timedStage("build JavaScript packages", () => run("pnpm", ["build"]));
+  timedStage("build JavaScript packages", () => runPnpm(["build"]));
 }
-timedStage("stage controlled sidecar runtime", () => run("pnpm", ["package:sidecar:with-node"]));
-timedStage("validate staged resources", () => run("pnpm", ["validate:resources"]));
-timedStage("smoke staged Host", () => run("pnpm", ["smoke:staged-host"]));
+timedStage("stage controlled sidecar runtime", () => runPnpm(["package:sidecar:with-node"]));
+timedStage("validate staged resources", () => runPnpm(["validate:resources"]));
+timedStage("smoke staged Host", () => runPnpm(["smoke:staged-host"]));
 
 const stagedResourceDir = join(root, "apps", "desktop", "src-tauri", "resources");
 let resourceManifestProof;
@@ -329,10 +339,9 @@ const tauriStatus = timedStage("build Tauri NSIS candidate", () => {
     });
     return r.status ?? 1;
   }
-  const r = spawnSync(
-    "pnpm",
+  const r = spawnPnpm(
     ["--filter", "@piabyss/desktop", "exec", "tauri", "build", "--bundles", "nsis"],
-    { cwd: root, stdio: "inherit", shell: true, env: process.env },
+    { cwd: root, stdio: "inherit" },
   );
   return r.status ?? 1;
 });
