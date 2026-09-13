@@ -16,6 +16,7 @@ import {
   respondExtensionUi,
   type ExtensionUiBinding,
 } from "./extension-ui-bridge.js";
+import { ASK_USER_QUESTION_TOOL_NAME, buildAskUserQuestionTool } from "./ask-user-question-tool.js";
 import { createTestModelServices } from "./test-helpers/model-runtime.js";
 import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp-agent.js";
 
@@ -495,6 +496,48 @@ describe("pinned published Extension compatibility", () => {
       loaded.cleanup();
     }
   }, 30_000);
+
+  it("lets the built-in ask_user_question win the name against an installed rpiv package", async () => {
+    // PiAbyss ships its own ask_user_question. The SDK merges registered
+    // extension tools first and `customTools` second, so the built-in must win
+    // even when a third-party package registering the same name is installed
+    // and loaded. If this regresses, the model silently gets the package's
+    // tool back (the reported symptom: preview markdown folded into the title).
+    const layout = createTempAgentLayout("piabyss-real-extension-precedence-");
+    try {
+      const settingsManager = SettingsManager.create(layout.projectDir, layout.agentDir, {
+        projectTrusted: true,
+      });
+      const { modelRuntime } = await createTestModelServices(layout.agentDir);
+      const resourceLoader = new DefaultResourceLoader({
+        cwd: layout.projectDir,
+        agentDir: layout.agentDir,
+        settingsManager,
+        additionalExtensionPaths: [RPIV_V2_ENTRYPOINT],
+      });
+      await resourceLoader.reload();
+      const { session } = await createAgentSession({
+        cwd: layout.projectDir,
+        agentDir: layout.agentDir,
+        modelRuntime,
+        settingsManager,
+        resourceLoader,
+        sessionManager: SessionManager.inMemory(),
+        customTools: [buildAskUserQuestionTool()],
+      });
+      try {
+        const definition = session.getToolDefinition(ASK_USER_QUESTION_TOOL_NAME);
+        expect(definition).toBeDefined();
+        expect(definition!.promptSnippet).toBe(
+          "Ask the user a structured question with typed options",
+        );
+      } finally {
+        session.dispose();
+      }
+    } finally {
+      layout.cleanup();
+    }
+  }, 60_000);
 
   it("keeps the pinned rpiv v1 package on the custom terminal fallback", async () => {
     const loaded = await loadPublishedExtension(RPIV_V1_ENTRYPOINT, "session-rpiv-v1");

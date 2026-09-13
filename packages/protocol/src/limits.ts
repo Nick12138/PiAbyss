@@ -54,6 +54,11 @@ export const MAX_EXTENSION_UI_OPTIONS = 1_000;
 export const MAX_EXTENSION_UI_OPTION_ID_LENGTH = 1_024;
 export const MAX_EXTENSION_UI_OPTION_LABEL_LENGTH = 1_024;
 export const MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH = 2_048;
+/** Rich per-option preview (mockups, ASCII layouts, snippets). Larger than a
+ *  description because previews carry whole diagrams; still bounded so one
+ *  request cannot exceed the JSONL frame budget (MAX_EXTENSION_UI_OPTIONS ×
+ *  this stays far below MAX_HOST_JSONL_FRAME_BYTES). */
+export const MAX_EXTENSION_UI_OPTION_PREVIEW_LENGTH = 16_384;
 export const MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH = 120;
 export const MAX_EXTENSION_UI_CORRELATION_ID_LENGTH = 256;
 

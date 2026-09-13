@@ -304,7 +304,7 @@ diff --git a/dist/core/extensions/types.d.ts b/dist/core/extensions/types.d.ts
 index 556623b..c0e09d4 100644
 --- a/dist/core/extensions/types.d.ts
 +++ b/dist/core/extensions/types.d.ts
-@@ -33,12 +33,44 @@ export type { BuildSystemPromptOptions } from "../system-prompt.ts";
+@@ -33,12 +33,46 @@ export type { BuildSystemPromptOptions } from "../system-prompt.ts";
  export type { AgentToolResult, AgentToolUpdateCallback, ToolExecutionMode };
  export type { AppKeybinding, KeybindingsManager } from "../keybindings.ts";
  /** Options for extension UI dialogs. */
@@ -318,6 +318,8 @@ index 556623b..c0e09d4 100644
 +    optionDetails?: Array<{
 +        id: string;
 +        description?: string;
++        /** Rich preview rendered in a monospace panel beside/below the options. */
++        preview?: string;
 +        destructive?: boolean;
 +    }>;
 +}

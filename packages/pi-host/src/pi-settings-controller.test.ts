@@ -1,10 +1,15 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { PiSettingsSnapshot } from "@piabyss/protocol";
-import { createPiSettingsHandlers } from "./pi-settings-controller.js";
+import {
+  createPiSettingsHandlers,
+  removeSupersededPackages,
+  SUPERSEDED_PACKAGES,
+  withoutSupersededPackages,
+} from "./pi-settings-controller.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 
 /** Minimal ModelRuntime stand-in: modelSummaries only touches these two. */
@@ -140,5 +145,106 @@ describe("piSettings defaultTools", () => {
     const handlers = setup();
     const result = await patch(handlers, { defaultTools: [] });
     expect(result.defaultTools).toEqual([]);
+  });
+});
+
+describe("superseded extension packages", () => {
+  it("drops only the exact superseded entries and keeps everything else", () => {
+    const packages = [
+      "npm:betterwright",
+      { source: "git:github.com/example/mono", extensions: ["packages/a/**"] },
+      SUPERSEDED_PACKAGES[0],
+      "npm:@llblab/pi-telegram",
+    ];
+    const next = withoutSupersededPackages(packages);
+    expect(next).toEqual([
+      "npm:betterwright",
+      { source: "git:github.com/example/mono", extensions: ["packages/a/**"] },
+      "npm:@llblab/pi-telegram",
+    ]);
+  });
+
+  it("reports no change when nothing is superseded", () => {
+    expect(withoutSupersededPackages(["npm:betterwright"])).toBeNull();
+    expect(withoutSupersededPackages([])).toBeNull();
+    // Not an array (absent or malformed settings) is never rewritten.
+    expect(withoutSupersededPackages(undefined)).toBeNull();
+    expect(withoutSupersededPackages({ source: "x" })).toBeNull();
+  });
+
+  it("rewrites settings.json once and is idempotent afterwards", () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "piabyss-superseded-"));
+    try {
+      writeFileSync(
+        join(agentDir, "settings.json"),
+        JSON.stringify(
+          {
+            theme: "dark",
+            packages: ["npm:betterwright", SUPERSEDED_PACKAGES[0]],
+          },
+          null,
+          2,
+        ),
+      );
+      expect(removeSupersededPackages(agentDir)).toBe(true);
+      const after = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8")) as {
+        theme?: string;
+        packages?: string[];
+      };
+      expect(after.packages).toEqual(["npm:betterwright"]);
+      // Unrelated keys survive the rewrite.
+      expect(after.theme).toBe("dark");
+      // Second run has nothing left to do.
+      expect(removeSupersededPackages(agentDir)).toBe(false);
+    } finally {
+      rmSync(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves a settings file without a packages key untouched", () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "piabyss-superseded-none-"));
+    try {
+      writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ theme: "dark" }, null, 2));
+      expect(removeSupersededPackages(agentDir)).toBe(false);
+      expect(JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8"))).toEqual({
+        theme: "dark",
+      });
+    } finally {
+      rmSync(agentDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("piSettings askUserQuestionEnabled", () => {
+  let agentDir = "";
+
+  afterEach(() => {
+    if (agentDir) rmSync(agentDir, { recursive: true, force: true });
+    agentDir = "";
+  });
+
+  it("defaults to enabled and round-trips an explicit disable", async () => {
+    agentDir = mkdtempSync(join(tmpdir(), "piabyss-pi-settings-ask-"));
+    const handlers = createPiSettingsHandlers(fakeFactory(fakeRuntime([]), agentDir), agentDir);
+
+    const initial = (await handlers["piSettings.get"]!({} as never)) as {
+      result?: PiSettingsSnapshot;
+    };
+    expect(initial.result?.askUserQuestionEnabled).toBe(true);
+
+    const patched = (await handlers["piSettings.patch"]!({
+      params: { askUserQuestionEnabled: false },
+    } as never)) as { result?: PiSettingsSnapshot };
+    expect(patched.result?.askUserQuestionEnabled).toBe(false);
+
+    const written = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8")) as {
+      askUserQuestionEnabled?: boolean;
+    };
+    expect(written.askUserQuestionEnabled).toBe(false);
+
+    const reread = (await handlers["piSettings.get"]!({} as never)) as {
+      result?: PiSettingsSnapshot;
+    };
+    expect(reread.result?.askUserQuestionEnabled).toBe(false);
   });
 });

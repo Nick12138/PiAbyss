@@ -330,6 +330,11 @@ export type PiSettingsSnapshot = {
   followUpMode: "all" | "one-at-a-time";
   /** Built-in tools enabled for new sessions; omitted means pi's own defaults. */
   defaultTools?: string[];
+  /**
+   * Whether PiAbyss's built-in `ask_user_question` tool is offered to the model.
+   * Omitted means enabled.
+   */
+  askUserQuestionEnabled?: boolean;
   models: PiSettingsModel[];
 };
 
@@ -342,6 +347,7 @@ export type PiSettingsPatch = {
   steeringMode?: "all" | "one-at-a-time";
   followUpMode?: "all" | "one-at-a-time";
   defaultTools?: string[];
+  askUserQuestionEnabled?: boolean;
 };
 
 /** Scope of a settings-configured skill path (mirrors Settings scopes). */
@@ -1062,6 +1068,12 @@ export type ExtensionUiOption = {
   id: string;
   label: string;
   description?: string;
+  /**
+   * Rich markdown preview for this option (mockups, ASCII layouts, code).
+   * Rendered in a monospace panel beside (wide) or below (narrow) the option
+   * list. Plain monospace text — not interpreted as HTML.
+   */
+  preview?: string;
   destructive?: boolean;
 };
 

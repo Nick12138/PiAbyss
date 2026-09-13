@@ -31,6 +31,11 @@ import {
 } from "./session-list-projection.js";
 import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { createReadAttachmentTool } from "./attachment-tool.js";
+import {
+  buildAskUserQuestionTool,
+  createAskUserQuestionActivationExtension,
+  isAskUserQuestionEnabled,
+} from "./ask-user-question-tool.js";
 import { createHostAgentSession } from "./agent-session-factory.js";
 
 function sessionStorageDirs(factory: WorkspaceGraphFactory, g: WorkspaceGraph) {
@@ -479,7 +484,12 @@ async function createSessionResourceLoader(
     cwd: g.canonicalCwd,
     agentDir: factory.deps.agentDir,
     settingsManager: g.settingsManager!,
-    ...(g.subagentStatusBridge ? { extensionFactories: [g.subagentStatusBridge.extension] } : {}),
+    extensionFactories: [
+      ...(g.subagentStatusBridge ? [g.subagentStatusBridge.extension] : []),
+      createAskUserQuestionActivationExtension(() =>
+        isAskUserQuestionEnabled(factory.deps.agentDir),
+      ),
+    ],
   });
   // Session create/open must not reach the network. Without this the SDK would
   // npm-install or git-clone any configured package missing from disk, in a
@@ -619,8 +629,13 @@ export async function createSession(
       resourceLoader: candidateResourceLoader,
       sessionManager,
       ...(factory.deps.attachmentStore
-        ? { customTools: [createReadAttachmentTool(factory.deps.attachmentStore)] }
-        : {}),
+        ? {
+            customTools: [
+              createReadAttachmentTool(factory.deps.attachmentStore),
+              buildAskUserQuestionTool(),
+            ],
+          }
+        : { customTools: [buildAskUserQuestionTool()] }),
     });
     const session = created.session;
     const extensionsResult = created.extensionsResult;
@@ -956,8 +971,13 @@ export async function openSession(
         resourceLoader: candidateResourceLoader,
         sessionManager,
         ...(factory.deps.attachmentStore
-          ? { customTools: [createReadAttachmentTool(factory.deps.attachmentStore)] }
-          : {}),
+          ? {
+              customTools: [
+                createReadAttachmentTool(factory.deps.attachmentStore),
+                buildAskUserQuestionTool(),
+              ],
+            }
+          : { customTools: [buildAskUserQuestionTool()] }),
       });
       candidateSession = created.session;
       const session = created.session;

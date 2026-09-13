@@ -26,7 +26,16 @@ const SENSITIVE_KEY_SUFFIXES = [
   "credential",
   "credentials",
 ];
-const TOKEN_PREFIX_PATTERN = /(?:sk-|key-)[A-Za-z0-9._\-/+=]{8,}/gi;
+/**
+ * Bare token-prefix detection must not fire inside an ordinary word.
+ *
+ * `key-`/`sk-` runs are only secret-shaped at a word boundary, and the `+`/`/`
+ * characters allowed inside a token also occur in scoped npm names
+ * (`npm:@scope/some-package)`. Without the leading guard, `-package` matched
+ * as a `key-`-style run and every logged package name became `[REDACTED]`,
+ * erasing the diagnostics that tell the user which package was removed.
+ */
+const TOKEN_PREFIX_PATTERN = /(?<![A-Za-z0-9._@\-])(?:sk-|key-)[A-Za-z0-9._\-]{8,}/gi;
 const AUTH_SCHEME_PATTERN = /(?:Bearer|Basic)\s+\S+/gi;
 const SECRET_ASSIGNMENT_PATTERN =
   /\b(api[_-]?key|token|access[_-]?token|refresh[_-]?token|authorization|auth[_-]?header|password|client[_-]?secret|secret|credential)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,}]+)/gi;

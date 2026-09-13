@@ -116,7 +116,31 @@ await session.bindExtensions({
 });
 ```
 
-`uiContext` implements positional `ExtensionUIContext` APIs (`select(title, options)`, `confirm(title, message)`, `input`, `editor`, `notify`, `setStatus`, `setWidget`). TUI-only methods (custom editor/footer/header factories) are no-op or throw a clear unsupported error — they never access private setters.
+`uiContext` implements positional `ExtensionUIContext` APIs (`select(title, options)`, `confirm(title, message)`, `input`, `editor`, `notify`, `setStatus`, `setWidget`). `custom()` is implemented too — it drives a real `pi-tui` instance over `VirtualTerminal` and is rendered in the Right Dock, not in the transcript. `mode` is still declared `"rpc"`, which is what makes an Extension that branches on it (any host-declared TUI capability check) take its native-dialog path instead. Because PiAbyss ships its own
+`ask_user_question` tool, that branch is the intended one for extensions
+that treat `rpc` as "native dialogs are better here".
+
+## Built-in `ask_user_question`
+
+PiAbyss ships its own `ask_user_question` tool as a Host-selected custom tool
+(`createAgentSession({ customTools })`), not as a disk-loaded extension package.
+The SDK merges registered extension tools first and `customTools` second, so the
+built-in deterministically owns the name even when a third-party package
+registering the same name is installed; the package is additionally removed from
+`settings.json`'s `packages[]` on startup, so the plugin library does not list an
+entry whose tool can never run.
+
+It deliberately does **not** use `ctx.ui.custom()`. Each question becomes one
+native `ui.select`; option descriptions and previews travel in the
+`piabyss.optionDetails` metadata on `ExtensionUiOption`, and Desktop renders the
+preview in a monospace panel beside (wide) or below (narrow) the option list.
+Previews are rendered as literal monospace text — not markdown — because their
+value is exact column alignment.
+
+The tool is registered but not active by default: `settings.json`'s explicit
+`defaultTools` list is what seeds the active set. A small inline extension
+factory re-adds it before every turn (and removes it when the user disables
+`askUserQuestionEnabled` in Settings → Pi defaults).
 
 The narrow SDK patch invokes `invocationRunner` around each registered tool and each
 individual Extension event handler. PiAbyss stores the resulting trusted `SourceInfo`

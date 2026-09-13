@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useT } from "../../lib/i18n/use-t";
 import type { ExtensionUiRequestState } from "../../lib/stores/extension-ui-state";
+import { hasOptionPreviews, OptionPreview } from "./OptionPreview";
 import type { ExtensionUiResponseController } from "./use-extension-ui-response";
 
 type KnownExtensionUiOrigin = Exclude<
@@ -20,6 +21,8 @@ type KnownExtensionUiOrigin = Exclude<
 
 const OPTION_SEARCH_THRESHOLD = 12;
 const OPTION_VIRTUALIZATION_THRESHOLD = 100;
+/** Pane width (px) at or above which previews sit beside the options. */
+const PREVIEW_SIDE_BY_SIDE_MIN_WIDTH = 720;
 
 function originActivity(origin: KnownExtensionUiOrigin): string | undefined {
   switch (origin.invocationKind) {
@@ -98,6 +101,9 @@ export function ExtensionUiRequestContent({
   const { input, setInput, submitting, error, respond } = controller;
   const [optionQuery, setOptionQuery] = useState("");
   const optionScrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [sideBySide, setSideBySide] = useState(false);
+  const [focusedOptionId, setFocusedOptionId] = useState<string | null>(null);
   const [selectSubmitSource, setSelectSubmitSource] = useState<
     { kind: "option"; id: string } | { kind: "freeform" } | null
   >(null);
@@ -134,7 +140,36 @@ export function ExtensionUiRequestContent({
   useEffect(() => {
     setSelectSubmitSource(null);
     setOptionQuery("");
+    setFocusedOptionId(null);
   }, [request.requestId]);
+
+  // Previews are ASCII layouts: side-by-side keeps them readable, but a narrow
+  // pane would clip them, so the layout stacks below the options instead.
+  const previewsAvailable = request.kind === "select" && hasOptionPreviews(options);
+  useEffect(() => {
+    const node = contentRef.current;
+    if (!previewsAvailable || !node) {
+      setSideBySide(false);
+      return;
+    }
+    const update = () => setSideBySide(node.clientWidth >= PREVIEW_SIDE_BY_SIDE_MIN_WIDTH);
+    update();
+    if (typeof ResizeObserver !== "function") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [previewsAvailable, request.requestId]);
+
+  // Only the focused option's preview is shown. Rendering every option's preview
+  // at once buries the list and makes comparison harder, not easier.
+  const previewOption = useMemo(() => {
+    if (!previewsAvailable) return undefined;
+    if (focusedOptionId) {
+      const focused = options.find((option) => option.id === focusedOptionId);
+      if (focused) return focused;
+    }
+    return options[0];
+  }, [focusedOptionId, options, previewsAvailable]);
 
   useEffect(() => {
     if (optionScrollRef.current) optionScrollRef.current.scrollTop = 0;
@@ -165,6 +200,7 @@ export function ExtensionUiRequestContent({
         aria-label={option.description ? `${option.label}. ${option.description}` : option.label}
         aria-posinset={virtualizeOptions ? index + 1 : undefined}
         aria-setsize={virtualizeOptions ? filteredOptions.length : undefined}
+        data-option-focused={previewOption?.id === option.id ? "true" : undefined}
         className={`flex min-h-10 w-full flex-col justify-center rounded-md border px-2.5 py-1.5 text-left transition-colors disabled:cursor-not-allowed ${
           optionSubmitting
             ? option.destructive
@@ -175,6 +211,8 @@ export function ExtensionUiRequestContent({
               : "border-border text-foreground/90 hover:bg-surface-overlay disabled:opacity-45"
         }`}
         onClick={() => void respondToSelect({ kind: "option", id: option.id }, option.id)}
+        onFocus={() => setFocusedOptionId(option.id)}
+        onMouseEnter={() => setFocusedOptionId(option.id)}
       >
         <span className="text-xs font-medium">{option.label}</span>
         {option.description && (
@@ -203,7 +241,7 @@ export function ExtensionUiRequestContent({
   );
 
   return (
-    <div className="min-w-0" aria-busy={submitting}>
+    <div ref={contentRef} className="min-w-0" aria-busy={submitting}>
       <div className="flex min-w-0 items-start gap-2.5">
         {highRisk ? (
           <CircleAlert size={17} className="mt-0.5 shrink-0 text-warning" />
@@ -314,7 +352,7 @@ export function ExtensionUiRequestContent({
                   <p role="status" className="py-3 text-center text-xs text-muted">
                     {t("extUiNoMatchingOptions")}
                   </p>
-                ) : virtualizeOptions ? (
+                ) : virtualizeOptions && !previewOption ? (
                   <div
                     ref={optionScrollRef}
                     className="max-h-60 overflow-y-auto pr-1"
@@ -340,13 +378,38 @@ export function ExtensionUiRequestContent({
                       })}
                     </div>
                   </div>
-                ) : (
+                ) : !previewOption ? (
                   <div className="max-h-60 space-y-1 overflow-y-auto pr-1">
                     {filteredOptions.map((option, index) => (
                       <div key={option.id}>{renderOption(option, index)}</div>
                     ))}
                   </div>
-                )}
+                ) : null}
+
+                {previewOption ? (
+                  <div
+                    className={`max-h-[22rem] overflow-y-auto pr-1 ${
+                      sideBySide
+                        ? "grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+                        : "space-y-3"
+                    }`}
+                    data-extension-option-pane="true"
+                  >
+                    <div
+                      className={
+                        sideBySide ? "max-h-[22rem] space-y-1 overflow-y-auto" : "space-y-1"
+                      }
+                    >
+                      {filteredOptions.map((option, index) => (
+                        <div key={option.id}>{renderOption(option, index)}</div>
+                      ))}
+                    </div>
+                    <OptionPreview
+                      option={previewOption}
+                      fallbackLabel={t("extUiPreviewFallback")}
+                    />
+                  </div>
+                ) : null}
               </>
             ) : (
               <p className="py-2 text-xs text-muted">{t("extUiNoOptions")}</p>

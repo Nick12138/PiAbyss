@@ -15,6 +15,7 @@ import {
   MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH,
   MAX_EXTENSION_UI_OPTION_ID_LENGTH,
   MAX_EXTENSION_UI_OPTION_LABEL_LENGTH,
+  MAX_EXTENSION_UI_OPTION_PREVIEW_LENGTH,
   MAX_EXTENSION_UI_OPTIONS,
   MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH,
   MAX_EXTENSION_UI_TITLE_LENGTH,
@@ -157,6 +158,7 @@ describe("extension-ui-bridge", () => {
           {
             id: "described",
             description: "d".repeat(MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH + 1),
+            preview: "p".repeat(MAX_EXTENSION_UI_OPTION_PREVIEW_LENGTH + 1),
           },
         ],
       },
@@ -166,7 +168,7 @@ describe("extension-ui-bridge", () => {
       title: string;
       sourceLabel: string;
       correlationId: string;
-      options: Array<{ id: string; label: string; description?: string }>;
+      options: Array<{ id: string; label: string; description?: string; preview?: string }>;
     };
 
     expect(selectRequest.title).toHaveLength(MAX_EXTENSION_UI_TITLE_LENGTH);
@@ -176,6 +178,9 @@ describe("extension-ui-bridge", () => {
     expect(selectRequest.options[0]?.description).toHaveLength(
       MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH,
     );
+    // An Extension-supplied preview is bounded before it reaches the wire, so a
+    // hostile or buggy payload cannot exceed the frame budget.
+    expect(selectRequest.options[0]?.preview).toHaveLength(MAX_EXTENSION_UI_OPTION_PREVIEW_LENGTH);
     expect(selectRequest.options[1]?.id).toHaveLength(MAX_EXTENSION_UI_OPTION_ID_LENGTH);
     expect(selectRequest.options[1]?.label).toHaveLength(MAX_EXTENSION_UI_OPTION_LABEL_LENGTH);
     expect(selectRequest.options[2]?.id).not.toBe(selectRequest.options[1]?.id);

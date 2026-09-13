@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { PiSettingsPatch, PiSettingsSnapshot, ThinkingLevel } from "@piabyss/protocol";
 import { Select } from "../../components/Select";
+import { Switch } from "../../components/Switch";
 import { useT } from "../../lib/i18n/use-t";
 import type { MessageKey } from "../../lib/i18n";
 import { hostClient } from "../../lib/bridge/host-client";
@@ -39,6 +40,7 @@ const DEFAULT_SETTINGS: PiSettingsSnapshot = {
   defaultProjectTrust: "ask",
   steeringMode: "one-at-a-time",
   followUpMode: "one-at-a-time",
+  askUserQuestionEnabled: true,
   models: [],
 };
 
@@ -268,6 +270,21 @@ export function PiSettings() {
               { value: "one-at-a-time", label: t("generalFollowUpOneAtATime") },
               { value: "all", label: t("generalFollowUpAll") },
             ]}
+          />
+        </SettingRow>
+
+        <SettingRow
+          label={t("generalAskUserQuestion")}
+          description={t("generalAskUserQuestionDesc")}
+          saving={saving === "askUserQuestionEnabled"}
+        >
+          <Switch
+            checked={settings.askUserQuestionEnabled ?? true}
+            disabled={loading}
+            label={t("generalAskUserQuestion")}
+            onChange={(next) =>
+              void patch("askUserQuestionEnabled", { askUserQuestionEnabled: next })
+            }
           />
         </SettingRow>
 

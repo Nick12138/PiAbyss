@@ -7,6 +7,7 @@ import {
   MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH,
   MAX_EXTENSION_UI_OPTION_ID_LENGTH,
   MAX_EXTENSION_UI_OPTION_LABEL_LENGTH,
+  MAX_EXTENSION_UI_OPTION_PREVIEW_LENGTH,
   MAX_EXTENSION_UI_OPTIONS,
   MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH,
   MAX_EXTENSION_UI_TITLE_LENGTH,
@@ -1748,10 +1749,11 @@ function isExtensionUiRequest(value: unknown): boolean {
         value.options.every(
           (item) =>
             isPlainObject(item) &&
-            hasExactKeys(item, ["id", "label"], ["description", "destructive"]) &&
+            hasExactKeys(item, ["id", "label"], ["description", "preview", "destructive"]) &&
             isBoundedString(item.id, MAX_EXTENSION_UI_OPTION_ID_LENGTH) &&
             isBoundedString(item.label, MAX_EXTENSION_UI_OPTION_LABEL_LENGTH) &&
             isOptionalBoundedString(item.description, MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH) &&
+            isOptionalBoundedString(item.preview, MAX_EXTENSION_UI_OPTION_PREVIEW_LENGTH) &&
             (item.destructive === undefined || isBoolean(item.destructive)),
         ))) &&
     isOptionalBoundedString(value.defaultValue, MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH) &&

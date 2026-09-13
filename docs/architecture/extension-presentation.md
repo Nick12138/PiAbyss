@@ -241,7 +241,8 @@ Compatibility is organized by behavior class rather than package popularity:
 | Layer | Evidence |
 |---|---|
 | Contract fixture | Real SDK loader coverage for subagent dialog/widget/custom/activity, permission and repository guards, planning select/editor, 150-option selection, persistent widgets, registered message renderer snapshots, provider-only registration, background ownership, and shutdown cleanup |
-| Pinned published packages | Exact `@juicesharp/rpiv-ask-user-question` `2.1.0` RPC/group/envelope path and `1.20.0` custom-terminal fallback, both locked with registry integrity hashes |
+| Pinned published packages | Exact `@juicesharp/rpiv-ask-user-question` `2.1.0` RPC/group/envelope path and `1.20.0` custom-terminal fallback, both locked with registry integrity hashes. The `2.1.0` alias also pins the precedence contract: PiAbyss's built-in `ask_user_question` must win the name against an installed package registering it |
+| Built-in tool | `ask_user_question` ships as a Host `customTools` entry with its own unit coverage (question walking, sentinel/freeform routing, multi-select numeric input, activation switch) |
 | Scheduled latest audit | Weekly/manual GitHub workflow replaces only the disposable v2 test alias with npm `latest`; it is separate from pull-request and `main` gates |
 
 Core routing contains no representative package-name branch. The published packages

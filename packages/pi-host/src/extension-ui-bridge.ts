@@ -32,6 +32,7 @@ import {
   MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH,
   MAX_EXTENSION_UI_OPTION_ID_LENGTH,
   MAX_EXTENSION_UI_OPTION_LABEL_LENGTH,
+  MAX_EXTENSION_UI_OPTION_PREVIEW_LENGTH,
   MAX_EXTENSION_UI_OPTIONS,
   MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH,
   MAX_EXTENSION_UI_TITLE_LENGTH,
@@ -191,6 +192,7 @@ function stripAnsi(text: string): string {
 
 type PiAbyssDialogOptionDetails = {
   description?: string;
+  preview?: string;
   destructive?: boolean;
 };
 
@@ -301,9 +303,11 @@ function normalizePiAbyssDialogMetadata(value: unknown): NormalizedPiAbyssDialog
         MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH,
       );
       const destructive = typeof item.destructive === "boolean" ? item.destructive : undefined;
-      if (description === undefined && destructive === undefined) continue;
+      const preview = boundedSanitizedString(item.preview, MAX_EXTENSION_UI_OPTION_PREVIEW_LENGTH);
+      if (description === undefined && destructive === undefined && preview === undefined) continue;
       normalized.optionDetails.set(id, {
         ...(description ? { description } : {}),
+        ...(preview ? { preview } : {}),
         ...(destructive !== undefined ? { destructive } : {}),
       });
     }
@@ -523,6 +527,7 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
             id: optionId,
             label: boundedSanitizedText(item.label ?? "", MAX_EXTENSION_UI_OPTION_LABEL_LENGTH),
             ...(details?.description ? { description: details.description } : {}),
+            ...(details?.preview ? { preview: details.preview } : {}),
             ...(details?.destructive !== undefined ? { destructive: details.destructive } : {}),
           };
         })

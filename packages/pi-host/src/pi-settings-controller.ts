@@ -38,6 +38,56 @@ function writeGlobalSettings(agentDir: string, patch: Record<string, unknown>): 
   writeFileSync(path, JSON.stringify(next, null, 2) + "\n", "utf8");
 }
 
+/**
+ * PiAbyss ships its own `ask_user_question` tool, so the third-party package that
+ * used to provide it is removed from the package list on first read.
+ *
+ * Without this, both implementations stay installed and the plugin library lists
+ * a package whose tool can never run (the Host's built-in wins the name), which
+ * reads as a broken/duplicate entry. Only the exact `packages[]` string entries
+ * are dropped; object entries and every other package are left byte-identical.
+ */
+export const SUPERSEDED_PACKAGES = ["npm:@juicesharp/rpiv-ask-user-question"] as const;
+
+function isSupersededPackage(entry: unknown): boolean {
+  return typeof entry === "string" && SUPERSEDED_PACKAGES.some((source) => source === entry);
+}
+
+/**
+ * Returns the packages array with superseded entries removed, or `null` when no
+ * change is needed (so callers can skip the write entirely).
+ */
+export function withoutSupersededPackages(packages: unknown): unknown[] | null {
+  if (!Array.isArray(packages)) return null;
+  const next = packages.filter((entry) => !isSupersededPackage(entry));
+  return next.length === packages.length ? null : next;
+}
+
+/**
+ * Drop the superseded package entries from `settings.json` once. Returns true when
+ * the file was rewritten. Failures are swallowed: a settings file that cannot be
+ * migrated must never block Host startup.
+ */
+export function removeSupersededPackages(agentDir: string): boolean {
+  try {
+    const current = readGlobalSettings(agentDir);
+    const next = withoutSupersededPackages(current.packages);
+    if (!next) return false;
+    writeGlobalSettings(agentDir, { packages: next });
+    logger.info("Removed superseded extension packages from settings", {
+      removed: SUPERSEDED_PACKAGES.filter((source) =>
+        (current.packages as unknown[]).includes(source),
+      ),
+    });
+    return true;
+  } catch (error) {
+    logger.warn("Failed to remove superseded extension packages", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
 function modelSummaries(runtime: ModelRuntime): ModelSummary[] {
   return runtime.getAvailableSnapshot().map((model) => ({
     provider: model.provider,
@@ -59,6 +109,8 @@ function snapshot(settingsManager: SettingsManager, runtime: ModelRuntime): PiSe
     steeringMode: settingsManager.getSteeringMode(),
     followUpMode: settingsManager.getFollowUpMode(),
     ...(settings.defaultTools ? { defaultTools: [...settings.defaultTools] } : {}),
+    askUserQuestionEnabled:
+      (settings as { askUserQuestionEnabled?: unknown }).askUserQuestionEnabled !== false,
     models: modelSummaries(runtime),
   };
 }
@@ -144,6 +196,9 @@ export function createPiSettingsHandlers(
         // as "no built-in tools" (extension tools stay enabled), so persist it
         // verbatim rather than dropping the key.
         jsonPatch.defaultTools = [...new Set(patch.defaultTools)];
+      }
+      if (patch.askUserQuestionEnabled !== undefined) {
+        jsonPatch.askUserQuestionEnabled = patch.askUserQuestionEnabled;
       }
 
       try {

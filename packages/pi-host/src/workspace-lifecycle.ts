@@ -27,6 +27,11 @@ import { buildPackageSnapshot, type ResourceIdMap } from "./package-snapshot.js"
 import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
 import { createReadAttachmentTool } from "./attachment-tool.js";
+import {
+  buildAskUserQuestionTool,
+  createAskUserQuestionActivationExtension,
+  isAskUserQuestionEnabled,
+} from "./ask-user-question-tool.js";
 import type { SessionRuntimeCache } from "./session-runtime-cache.js";
 import type { PiHostServer } from "./server.js";
 import type { GraphFactoryDeps, WorkspaceGraph } from "./workspace-graph-types.js";
@@ -1309,7 +1314,10 @@ export class WorkspaceLifecycle {
         cwd: args.canonicalCwd,
         agentDir,
         settingsManager,
-        ...(statusBridge ? { extensionFactories: [statusBridge.extension] } : {}),
+        extensionFactories: [
+          ...(statusBridge ? [statusBridge.extension] : []),
+          createAskUserQuestionActivationExtension(() => isAskUserQuestionEnabled(agentDir)),
+        ],
       });
       // Workspace selection (including the startup preload) must not reach the
       // network; see withoutImplicitPackageInstall. Resource discovery and the
@@ -1368,8 +1376,13 @@ export class WorkspaceLifecycle {
             resourceLoader,
             sessionManager,
             ...(this.context.deps.attachmentStore
-              ? { customTools: [createReadAttachmentTool(this.context.deps.attachmentStore)] }
-              : {}),
+              ? {
+                  customTools: [
+                    createReadAttachmentTool(this.context.deps.attachmentStore),
+                    buildAskUserQuestionTool(),
+                  ],
+                }
+              : { customTools: [buildAskUserQuestionTool()] }),
           }),
       );
       candidateSession = session;

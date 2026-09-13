@@ -46,7 +46,7 @@ import { createAttachmentHandlers } from "./attachment-controller.js";
 import { createGitHandlers } from "./git-controller.js";
 import { GitService } from "./git-service.js";
 import { refreshActiveSessionSnapshot } from "./session-snapshot.js";
-import { createPiSettingsHandlers } from "./pi-settings-controller.js";
+import { createPiSettingsHandlers, removeSupersededPackages } from "./pi-settings-controller.js";
 import { createSkillHandlers } from "./skill-controller.js";
 import { createPromptHandlers } from "./prompt-controller.js";
 import { createSubagentStatusBridge } from "./subagent-status-extension.js";
@@ -192,6 +192,12 @@ async function main(): Promise<void> {
   // models-store.json and recomposes providers, so a downgrade is only safe
   // while the pre-migration bytes still exist.
   const migrationBackup = await ensureMigrationBackup(agentDir);
+
+  // PiAbyss now ships its own `ask_user_question` tool, so the third-party
+  // package that used to provide it is dropped from the package list before
+  // any resource loader reads settings. Runs after the migration backup so the
+  // pre-removal bytes are always recoverable.
+  removeSupersededPackages(agentDir);
 
   // Cwd-independent services (PROJECT_SPEC §8.1)
   const credentialStore = FileCredentialStore.forAgentDir(agentDir);

@@ -50,9 +50,7 @@ describe("structured logger redaction", () => {
       ),
     );
 
-    expect(entry.message).toBe(
-      "token=[REDACTED] clientSecret=[REDACTED] authorization=[REDACTED]",
-    );
+    expect(entry.message).toBe("token=[REDACTED] clientSecret=[REDACTED] authorization=[REDACTED]");
   });
 
   it("redacts sensitive keys recursively without mutating the caller", () => {
@@ -109,5 +107,21 @@ describe("structured logger redaction", () => {
     }).not.toThrow();
 
     expect(entry?.meta).toBe("[UNSERIALIZABLE]");
+  });
+});
+
+describe("package-name redaction", () => {
+  it("keeps scoped package names readable in log meta", () => {
+    // Regression: `npm:@scope/some-package` contains a `-package` run, and the
+    // old token pattern (`key-` + 8 chars) matched the inner `sk-...-package`
+    // substring, turning every logged package name into `[REDACTED]` and
+    // making removed/installed package diagnostics unreadable.
+    const entry: CapturedLogEntry = captureEntry(() =>
+      log("info", "Removed superseded extension packages", {
+        removed: ["npm:@juicesharp/rpiv-ask-user-question"],
+      }),
+    );
+    expect(JSON.stringify(entry.meta)).toContain("npm:@juicesharp/rpiv-ask-user-question");
+    expect(JSON.stringify(entry.meta)).not.toContain("[REDACTED]");
   });
 });
