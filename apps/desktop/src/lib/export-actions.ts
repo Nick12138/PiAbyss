@@ -15,7 +15,8 @@ export type ExportFormat = "html" | "jsonl";
 export type ExportTarget =
   { kind: "active" } | { kind: "session"; sessionId: string; sessionPath: string };
 
-export const ACTIVE_EXPORT_TARGET: ExportTarget = { kind: "active" };
+/** Default target for every export entry point. */
+const ACTIVE_EXPORT_TARGET: ExportTarget = { kind: "active" };
 
 export function exportFileName(
   name: string | undefined,

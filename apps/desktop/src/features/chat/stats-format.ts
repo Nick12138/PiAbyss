@@ -45,7 +45,7 @@ export type FoldedUsage = {
 
 /** Desktop-local live-timing fields stamped onto assistant messages by the
  * transcript reducer; only genuinely streamed turns carry them. */
-export type AssistantTiming = {
+type AssistantTiming = {
   startedAt?: number;
   firstTokenAt?: number;
   endedAt?: number;
