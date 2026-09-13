@@ -594,7 +594,10 @@ export function Transcript() {
   }
 
   return (
-    <div className="relative min-h-0 flex-1">
+    // isolate: keep the turn rail's z-10 inside this container's stacking
+    // context, so the right dock (later flex sibling) always paints above the
+    // rail when they overlap.
+    <div className="relative isolate min-h-0 flex-1">
       <div
         ref={scrollRef}
         data-transcript-scroll
