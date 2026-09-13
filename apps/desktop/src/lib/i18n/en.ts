@@ -271,6 +271,8 @@ export const en = {
   generalDefaultToolsFindDesc: "Find files by name with fd",
   generalDefaultToolsLsDesc: "List directory entries",
   generalDefaultToolsRestartHint: "Applies to new sessions; restart the Host to apply now.",
+  generalDefaultToolsConfigure: "Configure ({count})",
+  generalDefaultToolsConfigureEmpty: "Configure",
   notifSettingsFileOpenFailed: "Couldn't open the settings file",
 
   // Host section

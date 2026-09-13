@@ -31,6 +31,13 @@ function settingsResult(defaultTools?: string[]): { ok: true; result: PiSettings
   };
 }
 
+async function openToolDialog() {
+  const user = userEvent.setup();
+  const entry = await screen.findByRole("button", { name: /^Configure/ });
+  await user.click(entry);
+  return screen.findByRole("dialog");
+}
+
 beforeEach(() => {
   useAppStore.getState().setHost(CONNECTED_HOST as never);
   useAppStore.getState().setDesktopSettings({
@@ -54,7 +61,8 @@ describe("DefaultToolsSetting", () => {
     vi.spyOn(hostClient, "request").mockResolvedValue(settingsResult() as never);
     render(<DefaultToolsSetting />);
 
-    const group = screen.getByRole("group", { name: "Default tools" });
+    const dialog = await openToolDialog();
+    const group = within(dialog).getByRole("group", { name: "Default tools" });
     expect(within(group).getByRole("checkbox", { name: /Read/ })).toBeChecked();
     expect(within(group).getByRole("checkbox", { name: /Run/ })).toBeChecked();
     expect(within(group).getByRole("checkbox", { name: /Edit/ })).toBeChecked();
@@ -64,19 +72,33 @@ describe("DefaultToolsSetting", () => {
     expect(within(group).getByRole("checkbox", { name: /List/ })).not.toBeChecked();
   });
 
-  it("mirrors a stored selection and sends the toggle to piSettings.patch", async () => {
+  it("mirrors a stored selection and sends the saved draft to piSettings.patch", async () => {
     const user = userEvent.setup();
     const request = vi
       .spyOn(hostClient, "request")
-      .mockResolvedValue(settingsResult(["read", "bash", "grep"]) as never);
+      .mockImplementation(((method: string, _context: unknown, payload: unknown) =>
+        Promise.resolve(
+          settingsResult(
+            method === "piSettings.patch"
+              ? ((payload as { defaultTools?: string[] } | null)?.defaultTools ?? [
+                  "read",
+                  "bash",
+                  "grep",
+                ])
+              : ["read", "bash", "grep"],
+          ) as never,
+        )) as unknown as typeof hostClient.request);
     render(<DefaultToolsSetting />);
 
-    const group = screen.getByRole("group", { name: "Default tools" });
+    const dialog = await openToolDialog();
+    const group = within(dialog).getByRole("group", { name: "Default tools" });
     await waitFor(() =>
       expect(within(group).getByRole("checkbox", { name: /Grep/ })).toBeChecked(),
     );
 
     await user.click(within(group).getByRole("checkbox", { name: /List/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
     await waitFor(() =>
       expect(request).toHaveBeenLastCalledWith(
         "piSettings.patch",
@@ -84,9 +106,37 @@ describe("DefaultToolsSetting", () => {
         { defaultTools: ["read", "bash", "grep", "ls"] },
       ),
     );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Configure/ })).toHaveAccessibleName(/4/);
   });
 
-  it("rolls the checkbox back when the Host rejects the patch", async () => {
+  it("keeps the dialog selection pending until Save and discards it on Cancel", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(hostClient, "request")
+      .mockResolvedValueOnce(settingsResult(["read", "bash"]) as never)
+      // piSettings.get is not re-issued on cancel, so the mock stays unused.
+      .mockResolvedValue(settingsResult(["read", "bash"]) as never);
+    render(<DefaultToolsSetting />);
+
+    const dialog = await openToolDialog();
+    const group = within(dialog).getByRole("group", { name: "Default tools" });
+    await waitFor(() =>
+      expect(within(group).getByRole("checkbox", { name: /Read/ })).toBeChecked(),
+    );
+
+    await user.click(within(group).getByRole("checkbox", { name: /Grep/ }));
+    expect(within(group).getByRole("checkbox", { name: /Grep/ })).toBeChecked();
+
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    const entry = screen.getByRole("button", { name: /^Configure/ });
+    expect(entry).toHaveAccessibleName(/2/);
+    const request = vi.mocked(hostClient.request);
+    expect(request.mock.calls.filter(([method]) => method === "piSettings.patch")).toHaveLength(0);
+  });
+
+  it("rolls the saved value back when the Host rejects the patch", async () => {
     const user = userEvent.setup();
     vi.spyOn(hostClient, "request")
       .mockResolvedValueOnce(settingsResult(["read", "bash"]) as never)
@@ -96,14 +146,16 @@ describe("DefaultToolsSetting", () => {
       } as never);
     render(<DefaultToolsSetting />);
 
-    const group = screen.getByRole("group", { name: "Default tools" });
+    const dialog = await openToolDialog();
+    const group = within(dialog).getByRole("group", { name: "Default tools" });
     await waitFor(() =>
       expect(within(group).getByRole("checkbox", { name: /Read/ })).toBeChecked(),
     );
 
     await user.click(within(group).getByRole("checkbox", { name: /Grep/ }));
-    await waitFor(() =>
-      expect(within(group).getByRole("checkbox", { name: /Grep/ })).not.toBeChecked(),
-    );
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    const entry = await screen.findByRole("button", { name: /^Configure/ });
+    expect(entry).toHaveAccessibleName(/2/);
   });
 });

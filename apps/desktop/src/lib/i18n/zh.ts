@@ -254,6 +254,8 @@ export const zh: Record<MessageKey, string> = {
   generalDefaultToolsFindDesc: "用 fd 按文件名查找",
   generalDefaultToolsLsDesc: "列出目录条目",
   generalDefaultToolsRestartHint: "对新会话生效；重启 Host 可立即应用。",
+  generalDefaultToolsConfigure: "配置（{count}）",
+  generalDefaultToolsConfigureEmpty: "配置",
   notifSettingsFileOpenFailed: "无法打开设置文件",
 
   // Host section
