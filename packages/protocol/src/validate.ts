@@ -752,6 +752,8 @@ export function validateRequestParams<M extends HostMethod>(
           "defaultProjectTrust",
           "steeringMode",
           "followUpMode",
+          "defaultTools",
+          "askUserQuestionEnabled",
         ],
       ) &&
         (params.defaultProvider === undefined || isNonEmptyString(params.defaultProvider)) &&
@@ -770,7 +772,12 @@ export function validateRequestParams<M extends HostMethod>(
         (params.steeringMode === undefined ||
           ["all", "one-at-a-time"].includes(String(params.steeringMode))) &&
         (params.followUpMode === undefined ||
-          ["all", "one-at-a-time"].includes(String(params.followUpMode)))
+          ["all", "one-at-a-time"].includes(String(params.followUpMode))) &&
+        (params.defaultTools === undefined ||
+          (Array.isArray(params.defaultTools) &&
+            params.defaultTools.every((name) => typeof name === "string"))) &&
+        (params.askUserQuestionEnabled === undefined ||
+          typeof params.askUserQuestionEnabled === "boolean")
         ? ok(params)
         : fail("invalid piSettings.patch params", { method });
     case "model.setThinkingLevel":

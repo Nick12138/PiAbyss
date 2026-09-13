@@ -26,6 +26,7 @@ import {
   toJsonValue,
   validateEventPayload,
   validateMethodContext,
+  validateRequestParams,
   validateSerializableAgentToolResult,
   validateSuccessResult,
 } from "./validate.js";
@@ -1405,5 +1406,48 @@ describe("ModelConfigHealth degraded state", () => {
     expect(
       validateSuccessResult("piSettings.get", { ...PI_SETTINGS, defaultTools: ["read", "bash"] }),
     ).toMatchObject({ ok: true });
+  });
+
+  // Regression: piSettings.patch's param whitelist drifts behind the SDK
+  // settings it proxies. `defaultTools` and `askUserQuestionEnabled` were both
+  // persisted by the Host but rejected here, so the desktop switch silently
+  // failed with "invalid piSettings.patch params".
+  it("accepts defaultTools and askUserQuestionEnabled in a piSettings.patch", () => {
+    expect(
+      validateRequestParams("piSettings.patch", {
+        defaultTools: ["read", "bash"],
+        askUserQuestionEnabled: false,
+      }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it("accepts each piSettings.patch field on its own", () => {
+    for (const params of [
+      { askUserQuestionEnabled: true },
+      { askUserQuestionEnabled: false },
+      { defaultTools: [] },
+      { defaultProvider: "openai", defaultModel: "gpt-5" },
+      { defaultThinkingLevel: "high" },
+      { retryMaxRetries: 0 },
+      { defaultProjectTrust: "never" },
+      { steeringMode: "all" },
+      { followUpMode: "one-at-a-time" },
+    ]) {
+      expect(validateRequestParams("piSettings.patch", params)).toMatchObject({ ok: true });
+    }
+  });
+
+  it("rejects malformed piSettings.patch values", () => {
+    for (const params of [
+      { askUserQuestionEnabled: "yes" },
+      { defaultTools: ["read", 1] },
+      { defaultTools: "read" },
+      { retryMaxRetries: -1 },
+      { retryMaxRetries: 21 },
+      { steeringMode: "sometimes" },
+      { unknownField: true },
+    ]) {
+      expect(validateRequestParams("piSettings.patch", params)).toMatchObject({ ok: false });
+    }
   });
 });
