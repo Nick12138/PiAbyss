@@ -17,6 +17,21 @@ export const PLUGIN_LIBRARY_REGISTRY_URL =
   "https://raw.githubusercontent.com/Nick12138/my-pi-plugins/main/plugins.json";
 export const PLUGIN_LIBRARY_REPO_SOURCE = "git:github.com/Nick12138/my-pi-plugins";
 
+/**
+ * Registry entries whose functionality PiAbyss now ships built in.
+ *
+ * The curated registry still advertises them, but installing one would give the
+ * user a package whose tool can never run (the Host's built-in implementation
+ * wins the name). They are filtered out of the catalog so the library only
+ * offers things that can actually take effect, and a warning records the drop
+ * instead of silently hiding a registry entry.
+ *
+ * Keyed by install source, so it keeps working if the registry renames the id.
+ */
+export const SUPERSEDED_PLUGIN_SOURCES: readonly string[] = [
+  "npm:@juicesharp/rpiv-ask-user-question",
+];
+
 const CATALOG_TTL_MS = 10 * 60_000;
 const FETCH_TIMEOUT_MS = 15_000;
 const MAX_REGISTRY_BYTES = 512 * 1024;
@@ -221,6 +236,10 @@ export async function getPluginLibraryCatalog(
     }
     if (seenIds.has(entry.id)) {
       warnings.push(`Dropped duplicate registry entry "${entry.id}"`);
+      continue;
+    }
+    if (entry.install.type !== "repo" && SUPERSEDED_PLUGIN_SOURCES.includes(entry.install.source)) {
+      warnings.push(`Hid registry entry "${entry.id}": PiAbyss ships this built in`);
       continue;
     }
     seenIds.add(entry.id);

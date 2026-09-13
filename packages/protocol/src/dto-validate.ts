@@ -2084,13 +2084,16 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
             "followUpMode",
             "models",
           ],
-          ["defaultProvider", "defaultModel", "defaultTools"],
+          ["defaultProvider", "defaultModel", "defaultTools", "askUserQuestionEnabled"],
         ) &&
         (result.defaultProvider === undefined || isString(result.defaultProvider)) &&
         (result.defaultModel === undefined || isString(result.defaultModel)) &&
         (result.defaultTools === undefined ||
           (Array.isArray(result.defaultTools) &&
             result.defaultTools.every((name) => isString(name)))) &&
+        // Always present on the wire: the Host normalizes a missing/invalid
+        // setting to `true`, so an absent key is a Host bug, not "default on".
+        isBoolean(result.askUserQuestionEnabled) &&
         ["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(
           String(result.defaultThinkingLevel),
         ) &&

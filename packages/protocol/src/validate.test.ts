@@ -1369,4 +1369,41 @@ describe("ModelConfigHealth degraded state", () => {
       ),
     ).toMatchObject({ ok: false });
   });
+
+  // Regression: the Host gained `askUserQuestionEnabled` on the snapshot, but the
+  // result validator's key whitelist was not widened with it, so every
+  // piSettings.get/patch response failed with "Handler returned invalid ... result".
+  const PI_SETTINGS = {
+    defaultThinkingLevel: "medium",
+    retryMaxRetries: 3,
+    defaultProjectTrust: "ask",
+    steeringMode: "one-at-a-time",
+    followUpMode: "one-at-a-time",
+    askUserQuestionEnabled: true,
+    models: [],
+  };
+
+  it("accepts a piSettings snapshot carrying askUserQuestionEnabled", () => {
+    expect(validateSuccessResult("piSettings.get", PI_SETTINGS)).toMatchObject({ ok: true });
+    expect(validateSuccessResult("piSettings.patch", PI_SETTINGS)).toMatchObject({ ok: true });
+  });
+
+  it("rejects a piSettings snapshot that omits askUserQuestionEnabled", () => {
+    // The Host normalizes a missing setting to true, so the key is always on the
+    // wire; its absence means the Host regressed, not "default enabled".
+    const { askUserQuestionEnabled: _omitted, ...withoutFlag } = PI_SETTINGS;
+    expect(validateSuccessResult("piSettings.get", withoutFlag)).toMatchObject({ ok: false });
+  });
+
+  it("rejects a non-boolean askUserQuestionEnabled", () => {
+    expect(
+      validateSuccessResult("piSettings.get", { ...PI_SETTINGS, askUserQuestionEnabled: "yes" }),
+    ).toMatchObject({ ok: false });
+  });
+
+  it("still accepts a snapshot with the optional defaultTools list", () => {
+    expect(
+      validateSuccessResult("piSettings.get", { ...PI_SETTINGS, defaultTools: ["read", "bash"] }),
+    ).toMatchObject({ ok: true });
+  });
 });

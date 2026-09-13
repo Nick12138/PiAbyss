@@ -39,6 +39,8 @@ import { PiSettings } from "./PiSettings";
 import { DefaultToolsSetting } from "./DefaultToolsSetting";
 import { RestartHostButton } from "./restart-host";
 import { hostClient } from "../../lib/bridge/host-client";
+import { hostContext } from "../../lib/bridge/host-context";
+import { notifyOperationFailure } from "../../lib/notify-operation-error";
 import { SettingsTopBarActionsContext, SETTINGS_SECTION_META } from "./settings-top-bar";
 
 type ShellProfileSummary = {
@@ -61,6 +63,46 @@ function GeneralSettings() {
   const [shellCatalogLoading, setShellCatalogLoading] = useState(false);
   const [shellCatalogError, setShellCatalogError] = useState<string | null>(null);
   const [decisionPresentationSaving, setDecisionPresentationSaving] = useState(false);
+  // The ask_user_question switch is a Pi setting (settings.json), not a desktop
+  // preference, so it is read/written through piSettings rather than
+  // desktopSettings like its neighbours in the "while the agent is running" group.
+  const [askUserQuestionEnabled, setAskUserQuestionEnabled] = useState(true);
+  const [piSettingsLoading, setPiSettingsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!host) return;
+    let cancelled = false;
+    hostClient
+      .request("piSettings.get", hostContext(host), null)
+      .then((response) => {
+        if (cancelled || !response.ok) return;
+        setAskUserQuestionEnabled(response.result.askUserQuestionEnabled !== false);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setPiSettingsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [host]);
+
+  async function patchAskUserQuestion(next: boolean) {
+    if (!host) return;
+    const previous = askUserQuestionEnabled;
+    setAskUserQuestionEnabled(next);
+    try {
+      const response = await hostClient.request("piSettings.patch", hostContext(host), {
+        askUserQuestionEnabled: next,
+      });
+      if (!response.ok) throw new Error(response.error.message);
+      setAskUserQuestionEnabled(response.result.askUserQuestionEnabled !== false);
+    } catch (error) {
+      // Roll the optimistic toggle back so the switch never claims a saved state.
+      setAskUserQuestionEnabled(previous);
+      notifyOperationFailure(error, String(error));
+    }
+  }
 
   async function openSettingsFile() {
     if (!host?.agentDir) return;
@@ -225,6 +267,20 @@ function GeneralSettings() {
                     { value: "followUp", label: t("generalBusySendFollowUp") },
                     { value: "steer", label: t("generalBusySendSteer") },
                   ]}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="min-w-0">
+                  <span className="block text-sm">{t("generalAskUserQuestion")}</span>
+                  <span className="block text-xs text-muted">
+                    {t("generalAskUserQuestionDesc")}
+                  </span>
+                </span>
+                <Switch
+                  checked={askUserQuestionEnabled}
+                  disabled={piSettingsLoading}
+                  label={t("generalAskUserQuestion")}
+                  onChange={(next) => void patchAskUserQuestion(next)}
                 />
               </div>
             </div>

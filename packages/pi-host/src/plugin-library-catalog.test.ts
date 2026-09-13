@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   PLUGIN_LIBRARY_REGISTRY_URL,
   PLUGIN_LIBRARY_REPO_SOURCE,
+  SUPERSEDED_PLUGIN_SOURCES,
   getPluginLibraryCatalog,
   resetPluginLibraryCatalogCache,
 } from "./plugin-library-catalog.js";
@@ -308,5 +309,50 @@ describe("getPluginLibraryCatalog", () => {
     if (!("catalog" in out)) throw new Error(out.error.message);
     expect(out.catalog.plugins).toHaveLength(0);
     expect(out.catalog.warnings).toHaveLength(1);
+  });
+});
+
+describe("superseded registry entries", () => {
+  it("hides entries whose functionality PiAbyss ships built in", async () => {
+    const registry = {
+      specVersion: 1,
+      plugins: [
+        ...VALID_REGISTRY.plugins,
+        {
+          id: "pi-ask-user-question",
+          name: "交互式提问",
+          description: "Agent 提问弹窗.",
+          icon: "❓",
+          version: "2.1.0",
+          install: { type: "npm", source: SUPERSEDED_PLUGIN_SOURCES[0] },
+        },
+      ],
+    };
+    const out = await getPluginLibraryCatalog({ fetchImpl: fetchJson(registry) });
+    if ("error" in out) throw new Error(out.error.message);
+    expect(out.catalog.plugins.map((plugin) => plugin.id)).toEqual(["pi-web", "pi-browser"]);
+    // The drop is reported rather than silent, so a stale registry stays visible.
+    expect(out.catalog.warnings).toEqual([
+      'Hid registry entry "pi-ask-user-question": PiAbyss ships this built in',
+    ]);
+  });
+
+  it("matches on install source, so a registry rename still hides the entry", async () => {
+    const registry = {
+      specVersion: 1,
+      plugins: [
+        {
+          id: "renamed-ask-tool",
+          name: "Renamed",
+          description: "Same package.",
+          icon: "❓",
+          version: "2.1.0",
+          install: { type: "npm", source: SUPERSEDED_PLUGIN_SOURCES[0] },
+        },
+      ],
+    };
+    const out = await getPluginLibraryCatalog({ fetchImpl: fetchJson(registry) });
+    if ("error" in out) throw new Error(out.error.message);
+    expect(out.catalog.plugins).toEqual([]);
   });
 });
