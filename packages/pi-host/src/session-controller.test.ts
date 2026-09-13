@@ -491,6 +491,20 @@ describe("session.getStats", () => {
                 outputTokens: 100,
               },
             },
+            // A legacy degenerate burst window (whole message in one chunk)
+            // folds TTFT but stays out of the decode aggregates.
+            {
+              type: "custom",
+              customType: "piabyss.timing",
+              id: "entry-timing-3",
+              data: {
+                version: 1,
+                messageEntryId: "entry-assistant-2",
+                firstTokenMs: 0,
+                decodeMs: 6,
+                outputTokens: 42,
+              },
+            },
           ],
         },
       }),
@@ -522,12 +536,14 @@ describe("session.getStats", () => {
       // user(1000) → assistant(5500) = 4500; toolResult(8200) → assistant(9400)
       // = 1200; assistant(5500) → toolResult(8200) = 2700. TTFT/decode fold
       // from the piabyss.timing custom entries whose message is still on the
-      // branch: 900ms TTFT over 1 message, 3000ms decode over 542 tokens.
+      // branch: 900ms TTFT over 2 messages (the degenerate burst window keeps
+      // its TTFT), 3000ms decode over 542 tokens (the 6ms burst window is
+      // excluded).
       timing: {
         llmMs: 5_700,
         toolMs: 2_700,
         ttftMs: 900,
-        ttftSteps: 1,
+        ttftSteps: 2,
         decodeMs: 3_000,
         decodeTokens: 542,
       },

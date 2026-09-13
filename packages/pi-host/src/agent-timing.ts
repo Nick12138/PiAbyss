@@ -13,6 +13,15 @@
 /** customType of the session-file custom entries that carry measured timing. */
 export const TIMING_ENTRY_CUSTOM_TYPE = "piabyss.timing";
 
+/**
+ * Decode windows below this are burst deliveries — the whole message arrived
+ * in one chunk (non-streamed or fully buffered responses), so there is no
+ * real streaming decode; a tokens-per-ms reading over such a window would be
+ * fictional (hundreds of thousands of tok/s). Such messages keep their TTFT
+ * but stay out of the decode aggregates.
+ */
+export const MIN_DECODE_MS = 50;
+
 /** Timing payload persisted as a custom entry after one assistant message. */
 export type PersistedMessageTiming = {
   /** message_start → first non-empty content delta. */
@@ -107,7 +116,7 @@ export class AgentMessageTimingTracker {
         : null;
     if (outputTokens === null || outputTokens <= 0) return { firstTokenMs };
     const decodeMs = nonNegative(now - state.firstTokenAt);
-    if (decodeMs === null) return { firstTokenMs };
+    if (decodeMs === null || decodeMs < MIN_DECODE_MS) return { firstTokenMs };
     return { firstTokenMs, decodeMs, outputTokens };
   }
 }

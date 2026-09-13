@@ -8,7 +8,7 @@ import {
 } from "@piabyss/protocol";
 import type { HandlerContext, MethodHandler } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
-import { TIMING_ENTRY_CUSTOM_TYPE } from "./agent-timing.js";
+import { MIN_DECODE_MS, TIMING_ENTRY_CUSTOM_TYPE } from "./agent-timing.js";
 import { buildSessionUsageReport } from "./session-usage-report.js";
 import { searchSessions } from "./session-search.js";
 import { invalidateSessionListProjection } from "./session-list-projection.js";
@@ -138,7 +138,15 @@ function deriveSessionTiming(entries: readonly unknown[]): {
     }
     const entryDecode = nonNegativeNumber(data.decodeMs);
     const entryOutput = nonNegativeNumber(data.outputTokens);
-    if (entryDecode !== null && entryOutput !== null && entryOutput > 0) {
+    // Legacy persisted entries can carry degenerate burst windows (the whole
+    // message arrived in one chunk); a tokens-per-ms reading over them would
+    // be fictional, so they stay out of the decode aggregates.
+    if (
+      entryDecode !== null &&
+      entryDecode >= MIN_DECODE_MS &&
+      entryOutput !== null &&
+      entryOutput > 0
+    ) {
       decodeMs += entryDecode;
       decodeTokens += entryOutput;
     }

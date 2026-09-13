@@ -820,8 +820,9 @@ export class SessionRuntimeCache {
    * Measure one raw agent event for assistant-message timing and, when a
    * message settles with measured data, persist a custom entry into the
    * session file. pi emits message_end BEFORE persisting the message, so the
-   * append is deferred to a microtask — it then lands after the message entry
-   * and its id is the just-settled assistant entry.
+   * append is deferred to a microtask, and the leaf id is read inside that
+   * microtask — reading it at message_end time would yield the triggering
+   * user/tool-result entry, orphaning the timing (the fold then drops it).
    */
   private observeMessageTiming(
     session: AgentSession,
@@ -831,10 +832,10 @@ export class SessionRuntimeCache {
   ): void {
     const timing = this.messageTimings.observe(session, eventType, event);
     if (!timing) return;
-    const entryId = sessionManager.getLeafId();
-    if (!entryId) return;
     queueMicrotask(() => {
       try {
+        const entryId = sessionManager.getLeafId();
+        if (!entryId) return;
         sessionManager.appendCustomEntry(TIMING_ENTRY_CUSTOM_TYPE, {
           version: 1,
           messageEntryId: entryId,

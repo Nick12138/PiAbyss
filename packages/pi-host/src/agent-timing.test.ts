@@ -69,6 +69,16 @@ describe("AgentMessageTimingTracker", () => {
     expect(timing).toEqual({ firstTokenMs: 200 });
   });
 
+  it("keeps burst-delivered messages out of the decode aggregates", () => {
+    // The whole message arrived in one chunk a few ms after message_start:
+    // no real streaming decode, so a tokens-per-ms reading would be fictional.
+    const tracker = new AgentMessageTimingTracker();
+    tracker.observe(session, "message_start", messageStart(), 1_000);
+    tracker.observe(session, "message_update", delta("whole message at once"), 1_000);
+    const timing = tracker.observe(session, "message_end", messageEnd(), 1_006);
+    expect(timing).toEqual({ firstTokenMs: 0 });
+  });
+
   it("skips aborted and failed messages", () => {
     const tracker = new AgentMessageTimingTracker();
     tracker.observe(session, "message_start", messageStart(), 1_000);
