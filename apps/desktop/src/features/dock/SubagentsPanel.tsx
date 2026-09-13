@@ -162,9 +162,9 @@ function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
   const t = useT();
   const [expandedUserRows, setExpandedUserRows] = useState<ReadonlySet<string>>(new Set());
   const [historyExpanded, setHistoryExpanded] = useState(false);
-  // The final-answer row starts expanded; the user can collapse it to a
-  // clamped summary bubble (mirroring the collapsible task message).
-  const [resultCollapsed, setResultCollapsed] = useState(false);
+  // The final-answer row starts collapsed as a clamped summary bubble and
+  // expands on click (mirroring the collapsible task message).
+  const [resultExpanded, setResultExpanded] = useState(false);
   const isRunning = snapshot.state === "running";
   const entries = snapshot.entries;
   const rows = useMemo(
@@ -268,12 +268,15 @@ function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
   const tailRow = rows[rows.length - 1];
   const workingRowKey = isRunning && tailRow?.role === "assistant" ? tailRow.key : undefined;
 
-  // The final answer row: the collapsed layout's result row, or (when the
-  // transcript has no task message to anchor it) the tail assistant row of a
-  // finished run. Both support collapse/expand.
-  const resultRowKey = collapsible
+  // The final answer row: the collapsed layout renders it from its own
+  // `resultRows` slice, whose key is the LAST assistant entry of the turn,
+  // while the full row list keys the merged turn by its FIRST entry. Match on
+  // the sliced row when the collapsed layout is active, and fall back to the
+  // tail assistant row (a finished run without a task message to anchor it).
+  const tailAssistantRowKey = collapsible
     ? [...rows].reverse().find((row) => row.role === "assistant")?.key
     : undefined;
+  const resultRowKey = collapsedMode && resultRow ? resultRow.key : tailAssistantRowKey;
   const renderRow = (row: TranscriptRow, isFirstUser = row.key === firstUserRowKey) => {
     const working = row.key === workingRowKey;
     const isResult = row.key === resultRowKey;
@@ -301,9 +304,9 @@ function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
               : undefined
           }
           resultCollapsible={isResult && collapsible}
-          resultExpanded={isResult ? !resultCollapsed : true}
+          resultExpanded={isResult ? resultExpanded : true}
           onToggleResult={
-            isResult && collapsible ? () => setResultCollapsed((current) => !current) : undefined
+            isResult && collapsible ? () => setResultExpanded((current) => !current) : undefined
           }
         />
       </div>

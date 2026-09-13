@@ -1090,7 +1090,9 @@ export const TranscriptRowView = memo(function TranscriptRowView({
 
   // Collapsible final answer: when the surface (subagents panel) opts in and
   // the answer is not yet expanded, render a clamped summary bubble with an
-  // expand button, mirroring the collapsible user message.
+  // expand button, mirroring the collapsible user message. The clamp keeps
+  // 5 lines visible (the user message clamps to 3) so a short summary reads
+  // without expanding.
   const resultSummary = row.blocks
     .filter((block): block is Extract<TranscriptBlock, { kind: "text" }> => block.kind === "text")
     .map((block) => block.text)
@@ -1110,7 +1112,7 @@ export const TranscriptRowView = memo(function TranscriptRowView({
         </div>
         <div className="mt-2 min-w-0 space-y-3">
           <div className="w-fit max-w-full rounded-xl rounded-bl-md bg-surface-overlay px-3.5 py-2.5 text-sm leading-6">
-            <div className="line-clamp-3 max-w-full whitespace-pre-wrap break-words">
+            <div className="line-clamp-5 max-w-full whitespace-pre-wrap break-words">
               {resultSummary}
             </div>
             {onToggleResult && (

@@ -397,24 +397,22 @@ describe("SubagentsPanel", () => {
     const resultState = () => ({
       collapsed: Boolean(resultRow().querySelector('button[aria-label="Expand message"]')),
       expanded: Boolean(resultRow().querySelector('button[aria-label="Collapse message"]')),
-      summaryClamp: Boolean(resultRow().querySelector(".line-clamp-3")),
+      summaryClamp: Boolean(resultRow().querySelector(".line-clamp-5")),
     });
 
-    // The final answer starts fully expanded with a collapse control.
-    await waitFor(() => expect(resultState().expanded).toBe(true));
-    expect(resultState().collapsed).toBe(false);
-    expect(resultState().summaryClamp).toBe(false);
-
-    fireEvent.click(resultRow().querySelector('button[aria-label="Collapse message"]') as HTMLElement);
-
-    // Collapsed: clamped summary bubble with an expand control.
+    // The final answer starts collapsed as a clamped summary bubble.
     await waitFor(() => expect(resultState().collapsed).toBe(true));
     expect(resultState().expanded).toBe(false);
     expect(resultState().summaryClamp).toBe(true);
 
     fireEvent.click(resultRow().querySelector('button[aria-label="Expand message"]') as HTMLElement);
     await waitFor(() => expect(resultState().expanded).toBe(true));
+    expect(resultState().collapsed).toBe(false);
     expect(resultState().summaryClamp).toBe(false);
+
+    fireEvent.click(resultRow().querySelector('button[aria-label="Collapse message"]') as HTMLElement);
+    await waitFor(() => expect(resultState().collapsed).toBe(true));
+    expect(resultState().summaryClamp).toBe(true);
 
     request.mockRestore();
   });
