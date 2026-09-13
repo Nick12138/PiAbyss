@@ -69,6 +69,7 @@ import { BranchNavigator } from "../tree/BranchNavigator";
 import { branchAlternatives, type TreeBranchPoint } from "../tree/tree-model";
 import { useSessionTree } from "../tree/tree-data";
 import { navigateTreeTo } from "../tree/session-tree-nav";
+import { TurnJumpRail, turnRailStops } from "./TurnJumpRail";
 import { formatCacheHitPercent } from "./stats-format";
 import { requestGoOn, requestRetry } from "../../lib/retry-actions";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
@@ -241,6 +242,14 @@ export function Transcript() {
     },
     [t],
   );
+
+  // Turn jump rail: user message turns for the right-edge quick jump strip —
+  // the fast "back to the first / the Nth message" path for long chats.
+  const railStops = useMemo(() => turnRailStops(shownRows), [shownRows]);
+  const railVisible = railStops.length >= 2;
+  const onRailJump = useCallback((sourceId: string) => {
+    requestTranscriptScroll({ sourceId });
+  }, []);
 
   const handleRetry = useCallback(
     (row: TranscriptRow): Promise<void> =>
@@ -589,7 +598,13 @@ export function Transcript() {
       <div
         ref={scrollRef}
         data-transcript-scroll
-        className="scrollbar-subtle h-full overflow-y-auto px-3 py-4 sm:px-6 sm:py-5"
+        // The turn rail's gutter: when the rail is visible, reserve 36px
+        // (8px gap + ~20px rail + 8px gap) on the right so right-aligned user
+        // bubbles never extend underneath it and the rail sits centered
+        // between the content edge and the native scrollbar.
+        className={`scrollbar-subtle h-full overflow-y-auto px-3 py-4 sm:px-6 sm:py-5 ${
+          railVisible ? "pr-9 sm:pr-9" : ""
+        }`}
         onWheel={(event) => {
           lastUserScrollAtRef.current = performance.now();
           if (event.deltaY < 0) stopFollowing();
@@ -783,6 +798,7 @@ export function Transcript() {
           <ArrowDown size={15} />
         </button>
       )}
+      <TurnJumpRail stops={railStops} onJump={onRailJump} viewport={scrollRef} />
     </div>
   );
 }

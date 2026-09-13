@@ -1091,6 +1091,8 @@ export const en = {
   transcriptShowEarlier: "Show earlier messages ({count} hidden)",
   transcriptPiWorking: "Pi is working...",
   transcriptJumpLatest: "Jump to latest message",
+  turnRailLabel: "Quick jump to a message",
+  turnRailReadingMark: "Current reading position",
   transcriptThinkingJumpLatest: "Jump to latest thought",
   transcriptAttachmentAlt: "Attachment",
   transcriptToolResultAlt: "Tool result",

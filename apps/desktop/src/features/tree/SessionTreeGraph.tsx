@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { GitFork, LoaderCircle } from "lucide-react";
 import { useT } from "../../lib/i18n/use-t";
 import type { TreeRow } from "./tree-model";
@@ -90,11 +91,21 @@ export function SessionTreeGraph({
   const t = useT();
   const firstUserId = rows.find((row) => row.kind === "user")?.id;
   const actionLocked = busy || navigating !== null || forking !== null;
+  const currentRow = rows.find((row) => row.isCurrent);
+  const currentRowRef = useRef<HTMLDivElement | null>(null);
+
+  // Keep the current turn in view whenever the drawer opens or the current
+  // row moves (fork refresh): long trees scroll the "current" marker out of
+  // the viewport otherwise. Guarded: jsdom has no scrollIntoView.
+  useEffect(() => {
+    currentRowRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [currentRow?.id]);
   return (
     <>
       {rows.map((row) => (
         <div
           key={row.id}
+          ref={row.isCurrent ? currentRowRef : undefined}
           className={`group flex min-w-0 max-w-full h-7 items-stretch overflow-hidden pl-2 ${
             row.isCurrent ? "bg-surface-overlay/60" : "hover:bg-surface-overlay/40"
           }`}

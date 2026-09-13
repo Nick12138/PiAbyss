@@ -1032,6 +1032,8 @@ export const zh: Record<MessageKey, string> = {
   transcriptShowEarlier: "显示更早的消息（已隐藏 {count} 条）",
   transcriptPiWorking: "🤔 Pi 琢磨中...",
   transcriptJumpLatest: "⬇️ 跳到最新",
+  turnRailLabel: "快速跳转到历史消息",
+  turnRailReadingMark: "当前阅读位置",
   transcriptThinkingJumpLatest: "⬇️ 跳到最新顿悟",
   transcriptAttachmentAlt: "附件",
   transcriptToolResultAlt: "工具结果",
