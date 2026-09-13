@@ -172,10 +172,14 @@ export function TelegramWorkspaceRow({
         )}
         <span className="min-w-0 flex-1 truncate">{title}</span>
         {subtitle && <span className="shrink-0 truncate text-[10px] text-muted">{subtitle}</span>}
-        {statusDot && (
-          <span className={`size-[8.2px] shrink-0 rounded-full ${statusDot}`} title={statusTitle} />
-        )}
       </button>
+      {/* The status dot always sits at the far right edge of the row. */}
+      {statusDot && (
+        <span
+          className={`mr-1.5 size-[8.2px] shrink-0 rounded-full ${statusDot}`}
+          title={statusTitle}
+        />
+      )}
       {settingsOpen && (
         <TelegramSettingsDialog
           onCancel={() => setSettingsOpen(false)}

@@ -637,9 +637,6 @@ export function WorkspacePicker() {
                       />
                     )}
                     <span className="min-w-0 flex-1 truncate">{workspaceDisplayName(path)}</span>
-                    {statusDot && (
-                      <span className={`size-[8.2px] shrink-0 rounded-full ${statusDot}`} />
-                    )}
                   </button>
                   {!active && (
                     <button
@@ -652,6 +649,11 @@ export function WorkspacePicker() {
                     >
                       <X size={13} />
                     </button>
+                  )}
+                  {/* The status dot always sits at the far right edge of the
+                      row, after any hover action, so its column never shifts. */}
+                  {statusDot && (
+                    <span className={`mr-1.5 size-[8.2px] shrink-0 rounded-full ${statusDot}`} />
                   )}
                 </li>
               );
@@ -703,12 +705,6 @@ export function WorkspacePicker() {
                           {gateway.handle}
                         </span>
                       )}
-                      <span
-                        className={`size-[8.2px] shrink-0 rounded-full ${statusDot}`}
-                        title={
-                          gateway.connected ? t("botGatewayConnected") : t("botGatewayDisconnected")
-                        }
-                      />
                     </span>
                     <button
                       type="button"
@@ -719,6 +715,14 @@ export function WorkspacePicker() {
                     >
                       <Trash2 size={13} />
                     </button>
+                    {statusDot && (
+                      <span
+                        className={`mr-1.5 size-[8.2px] shrink-0 rounded-full ${statusDot}`}
+                        title={
+                          gateway.connected ? t("botGatewayConnected") : t("botGatewayDisconnected")
+                        }
+                      />
+                    )}
                   </li>
                 );
               })}

@@ -172,9 +172,9 @@ describe("TelegramWorkspaceRow", () => {
       bridgeLoading: false,
     });
     render(<TelegramWorkspaceRow onActivate={onActivate} />);
-    const row = screen.getByRole("button", { name: /@liu_worker_bot/ });
-    expect(row.querySelector(".bg-success.status-dot-pulse")).not.toBeNull();
-    expect(row.querySelector(".bg-danger")).toBeNull();
+    const row = screen.getByRole("button", { name: /@liu_worker_bot/ }).closest("li");
+    expect(row?.querySelector(".bg-success.status-dot-pulse")).not.toBeNull();
+    expect(row?.querySelector(".bg-danger")).toBeNull();
     globalThis.localStorage?.removeItem("piabyss.telegram.bridgeEnabled.v1");
   });
 
@@ -185,9 +185,9 @@ describe("TelegramWorkspaceRow", () => {
       bridgeLoading: false,
     });
     render(<TelegramWorkspaceRow onActivate={onActivate} />);
-    const row = screen.getByRole("button", { name: /@liu_worker_bot/ });
-    expect(row.querySelector(".bg-success.status-dot-pulse")).toBeNull();
-    expect(row.querySelector(".bg-danger")).toBeNull();
+    const row = screen.getByRole("button", { name: /@liu_worker_bot/ }).closest("li");
+    expect(row?.querySelector(".bg-success.status-dot-pulse")).toBeNull();
+    expect(row?.querySelector(".bg-danger")).toBeNull();
     globalThis.localStorage?.removeItem("piabyss.telegram.bridgeEnabled.v1");
   });
 
@@ -200,9 +200,9 @@ describe("TelegramWorkspaceRow", () => {
       bridgeLoading: false,
     });
     render(<TelegramWorkspaceRow onActivate={onActivate} />);
-    const row = screen.getByRole("button", { name: /@liu_worker_bot/ });
-    expect(row.querySelector(".bg-success.status-dot-pulse")).toBeNull();
-    expect(row.querySelector(".bg-danger")).toBeNull();
+    const row = screen.getByRole("button", { name: /@liu_worker_bot/ }).closest("li");
+    expect(row?.querySelector(".bg-success.status-dot-pulse")).toBeNull();
+    expect(row?.querySelector(".bg-danger")).toBeNull();
   });
 
   it("shows a red status dot when the bridge has been turned on but is disconnected", () => {
@@ -212,8 +212,8 @@ describe("TelegramWorkspaceRow", () => {
       bridgeLoading: false,
     });
     render(<TelegramWorkspaceRow onActivate={onActivate} />);
-    const row = screen.getByRole("button", { name: /@liu_worker_bot/ });
-    expect(row.querySelector(".bg-danger")).not.toBeNull();
+    const row = screen.getByRole("button", { name: /@liu_worker_bot/ }).closest("li");
+    expect(row?.querySelector(".bg-danger")).not.toBeNull();
     globalThis.localStorage?.removeItem("piabyss.telegram.bridgeEnabled.v1");
   });
 });

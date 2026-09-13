@@ -1038,17 +1038,6 @@ export function SessionList({
                                         <span aria-hidden="true">{decisionWaiting.count}</span>
                                       </span>
                                     ) : null}
-                                    {statusDot && (
-                                      <span
-                                        className="flex size-[9.2px] shrink-0 items-center justify-center"
-                                        aria-label={statusLabel ?? undefined}
-                                        title={statusLabel ?? undefined}
-                                      >
-                                        <span
-                                          className={`size-[8.2px] rounded-full ${statusDot}`}
-                                        />
-                                      </span>
-                                    )}
                                   </div>
                                 </button>
                                 {pinned && (
@@ -1099,6 +1088,18 @@ export function SessionList({
                                       )}
                                     </button>
                                   </div>
+                                )}
+                                {/* The status dot is always pinned to the far right
+                                  edge of the row, so it sits in the same column
+                                  whether or not a pin/archive action is shown. */}
+                                {statusDot && (
+                                  <span
+                                    className="mr-1.5 flex size-[9.2px] shrink-0 items-center justify-center"
+                                    aria-label={statusLabel ?? undefined}
+                                    title={statusLabel ?? undefined}
+                                  >
+                                    <span className={`size-[8.2px] rounded-full ${statusDot}`} />
+                                  </span>
                                 )}
                               </>
                             )}
