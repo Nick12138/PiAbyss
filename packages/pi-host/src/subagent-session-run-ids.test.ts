@@ -115,6 +115,59 @@ describe("collectSessionRunIds", () => {
     expect(collectSessionRunIds(sessionsDir, "session-1")).toEqual(new Set(["run_spawned1"]));
   });
 
+  it("ignores a list output that merely contains 已提交 inside a run title", () => {
+    writeSession("session-1", [
+      {
+        type: "message",
+        message: {
+          role: "toolResult",
+          toolName: "subagent",
+          content: [
+            {
+              type: "text",
+              text: [
+                "子代理列表（共 2 个，运行中 0）：",
+                "- run_foreign1 [已完成]「复查已提交的 A/B/C 改造」 reviewer  - run_foreign2 [已完成]「无关」 worker",
+              ].join("\n"),
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(collectSessionRunIds(sessionsDir, "session-1")).toEqual(new Set());
+  });
+
+  it("prefers the structured details.runIds over any text in the result", () => {
+    writeSession("session-1", [
+      {
+        type: "message",
+        message: {
+          role: "toolResult",
+          toolName: "subagent",
+          content: [
+            {
+              type: "text",
+              text: '已提交 1 个子代理任务（并发上限 10，超出的自动排队）：\n- run_owned1\n\n查看列表：subagent(action:"list")。',
+            },
+          ],
+          details: { runIds: ["run_owned1"], maxConcurrency: 10 },
+        },
+      },
+      {
+        type: "message",
+        message: {
+          role: "toolResult",
+          toolName: "subagent",
+          content: [{ type: "text", text: "子代理列表（共 94 个，运行中 4）：\n- run_foreign1" }],
+          details: { runs: [{ id: "run_foreign1" }] },
+        },
+      },
+    ]);
+
+    expect(collectSessionRunIds(sessionsDir, "session-1")).toEqual(new Set(["run_owned1"]));
+  });
+
   it("returns null when the session file does not exist", () => {
     expect(collectSessionRunIds(sessionsDir, "missing-session")).toBeNull();
   });

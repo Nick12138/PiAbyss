@@ -103,12 +103,52 @@ export function resetSessionRunIdCache(): void {
   sessionRunIdCache = null;
 }
 
+/** The structured details list is plugin-generated, so it only needs a shape check. */
+const STRUCTURED_RUN_ID = /^run_[a-z0-9]+$/;
+/** Spawn confirmation header, e.g. "已提交 2 个子代理任务（并发上限 10…）：". */
+const SPAWN_CONFIRMATION_HEADER = /^已提交\s*\d+\s*个子代理任务/;
+/** A run bullet in the spawn confirmation body ("- run_xxx"). */
+const SPAWN_CONFIRMATION_BULLET = /^[ \t]*[-*][ \t]*(run_[a-z0-9]{8,})\b/;
+
+/** Run ids a `subagent` tool result actually submitted.
+ *
+ * The plugin returns them as structured `details.runIds`, which is the only
+ * authoritative source. Matching the raw result text is *not* evidence of a
+ * spawn: an `action:"list"`/`"result"` output routinely mentions dozens of
+ * foreign run ids, and its text can even contain "已提交" through a run title
+ * like「复查已提交的 A/B/C 改造」 — that one title used to make every listed
+ * run look like a run this session had spawned. For older plugin versions
+ * without `details`, only the anchored confirmation shape counts: the
+ * "已提交 N 个子代理任务" header followed by its "- run_xxx" bullet lines. */
+function spawnedRunIds(record: { content?: unknown; details?: unknown }): string[] {
+  const details = record.details;
+  if (details && typeof details === "object") {
+    const runIds = (details as { runIds?: unknown }).runIds;
+    if (Array.isArray(runIds)) {
+      return runIds
+        .filter((id): id is string => typeof id === "string")
+        .map((id) => id.trim())
+        .filter((id) => STRUCTURED_RUN_ID.test(id));
+    }
+  }
+  const lines = toolResultText(record.content).split(/\r?\n/);
+  const header = lines.findIndex((line) => SPAWN_CONFIRMATION_HEADER.test(line.trim()));
+  if (header < 0) return [];
+  const ids: string[] = [];
+  for (let index = header + 1; index < lines.length; index += 1) {
+    const match = SPAWN_CONFIRMATION_BULLET.exec(lines[index] ?? "");
+    if (!match?.[1]) break;
+    ids.push(match[1]);
+  }
+  return ids;
+}
+
 /** Extract the run ids the given session spawned by scanning its transcript.
- * Only `subagent` tool RESULTS that report a successful submission ("已提交")
- * count as spawns — mentions in `list`/`result`/wait outputs are ignored,
- * otherwise one `subagent(action:"list")` call would attribute every run to
- * the session. Uses a per-session mtime cache so the 750ms status poll stays
- * cheap. Returns null when the session file cannot be resolved. */
+ * Only `subagent` tool RESULTS that report a successful submission count as
+ * spawns — mentions in `list`/`result`/wait outputs are ignored, otherwise one
+ * `subagent(action:"list")` call would attribute every run to the session.
+ * Uses a per-session mtime cache so the 750ms status poll stays cheap.
+ * Returns null when the session file cannot be resolved. */
 export function collectSessionRunIds(
   sessionsDir: string,
   sessionId: string | null | undefined,
@@ -158,12 +198,14 @@ export function collectSessionRunIds(
       if (!entry || typeof entry !== "object") continue;
       const message = (entry as { message?: unknown }).message;
       if (!message || typeof message !== "object") continue;
-      const record = message as { role?: unknown; toolName?: unknown; content?: unknown };
+      const record = message as {
+        role?: unknown;
+        toolName?: unknown;
+        content?: unknown;
+        details?: unknown;
+      };
       if (record.role !== "toolResult" || record.toolName !== "subagent") continue;
-      const text = toolResultText(record.content);
-      // A spawn confirmation looks like "已提交 1 个子代理任务… - run_xxx".
-      if (!text.includes("已提交")) continue;
-      for (const match of text.matchAll(/\brun_[a-z0-9]{8,}/g)) ids.add(match[0]);
+      for (const id of spawnedRunIds(record)) ids.add(id);
     }
   } catch {
     return null;
