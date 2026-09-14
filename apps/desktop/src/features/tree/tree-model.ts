@@ -1,34 +1,8 @@
 import type { JsonValue, SerializableSessionTreeNode } from "@piabyss/protocol";
 
-export type TreeRowKind = "user" | "assistant" | "other";
-
-type TreeRailMark = { lane: number; accent: boolean };
-
-export type TreeRow = {
-  id: string;
-  kind: TreeRowKind;
-  excerpt: string;
-  /** Branch label recorded on the node, if any. */
-  label?: string;
-  /** True when the row lies on the path from the root to the current leaf. */
-  onPath: boolean;
-  /** Deepest visible row on the current leaf path. */
-  isCurrent: boolean;
-  /** Rail lane of the node dot; the trunk is lane 0. */
-  lane: number;
-  /** Upper half-link at the node's lane (from the parent or a fork connector). */
-  linkUp: boolean;
-  linkUpAccent: boolean;
-  /** Lower half-link at the node's lane (to the chain child on the next row). */
-  linkDown: boolean;
-  linkDownAccent: boolean;
-  /** Fork curves leaving this row's node toward a branch lane. */
-  forks: TreeRailMark[];
-  /** Branch connectors passing vertically through this row. */
-  passes: TreeRailMark[];
-};
-
-export type SessionTreeLayout = { rows: TreeRow[]; laneCount: number };
+/** Role bucket of a conversation entry, shared by the excerpt helper and the
+ *  inline branch navigators' turn model. */
+type TreeRowKind = "user" | "assistant" | "other";
 
 /** Hard ceiling (CSS ellipsis handles the precise width-based cutoff). */
 const EXCERPT_LIMIT = 512;
@@ -80,10 +54,7 @@ export function entryExcerpt(
 }
 
 /** Ids from the root to the entry with `leafId`, or an empty set. */
-export function currentPathIds(
-  nodes: SerializableSessionTreeNode[],
-  leafId: string | null,
-): Set<string> {
+function currentPathIds(nodes: SerializableSessionTreeNode[], leafId: string | null): Set<string> {
   const path = new Set<string>();
   if (!leafId) return path;
   const visit = (node: SerializableSessionTreeNode, trail: string[]): boolean => {
@@ -161,92 +132,6 @@ function buildConversationTurns(nodes: SerializableSessionTreeNode[], limit: num
     };
   };
   return filterConversationTree(nodes).map((node) => toTurn(node));
-}
-
-/**
- * Commit-graph layout of the conversation turns, DFS order. The trunk (first
- * child chain) keeps its parent's lane; every later sibling gets a fresh lane
- * that stays free from its fork row down to its first row, so connectors
- * never overlap another branch's chain. The current path is a continuous
- * accent rail; the current marker lands on the deepest visible turn along the
- * leaf path — the actual leaf entry may be a collapsed one (e.g. a tool
- * result).
- */
-export function flattenSessionTree(
-  nodes: SerializableSessionTreeNode[],
-  leafId: string | null,
-  maxChars = EXCERPT_LIMIT,
-): SessionTreeLayout {
-  const path = currentPathIds(nodes, leafId);
-  const rows: TreeRow[] = [];
-  const members: string[][] = [];
-  let laneCount = 1;
-
-  // Returns the maximum lane used inside the subtree, so a later sibling can
-  // pick the first lane that is free across every row its connector spans.
-  const visit = (
-    turn: TurnNode,
-    lane: number,
-    parentIndex: number | null,
-    isBranch: boolean,
-  ): number => {
-    const index = rows.length;
-    const onPath = turn.ids.some((id) => path.has(id));
-    rows.push({
-      id: turn.ids[turn.ids.length - 1]!,
-      kind: turn.kind,
-      excerpt: turn.excerpt,
-      ...(turn.label ? { label: turn.label } : {}),
-      onPath,
-      isCurrent: false,
-      lane,
-      linkUp: false,
-      linkUpAccent: false,
-      linkDown: false,
-      linkDownAccent: false,
-      forks: [],
-      passes: [],
-    });
-    members.push(turn.ids);
-    if (parentIndex !== null) {
-      if (isBranch) {
-        rows[parentIndex]!.forks.push({ lane, accent: onPath });
-        for (let i = parentIndex + 1; i < index; i += 1) {
-          rows[i]!.passes.push({ lane, accent: onPath });
-        }
-      } else {
-        rows[parentIndex]!.linkDown = true;
-        rows[parentIndex]!.linkDownAccent = onPath;
-      }
-      rows[index]!.linkUp = true;
-      rows[index]!.linkUpAccent = onPath;
-    }
-    let maxLane = lane;
-    turn.children.forEach((child, childIndex) => {
-      const childLane = childIndex === 0 ? lane : maxLane + 1;
-      maxLane = Math.max(maxLane, visit(child, childLane, index, childIndex > 0));
-    });
-    laneCount = Math.max(laneCount, maxLane + 1);
-    return maxLane;
-  };
-
-  let rootMax = -1;
-  buildConversationTurns(nodes, maxChars).forEach((turn, index) => {
-    rootMax = Math.max(rootMax, visit(turn, index === 0 ? 0 : rootMax + 1, null, false));
-  });
-
-  const rowIndexByMember = new Map<string, number>();
-  members.forEach((ids, index) => {
-    for (const id of ids) rowIndexByMember.set(id, index);
-  });
-  for (const id of [...path].reverse()) {
-    const index = rowIndexByMember.get(id);
-    if (index !== undefined) {
-      rows[index]!.isCurrent = true;
-      break;
-    }
-  }
-  return { rows, laneCount };
 }
 
 /** One switchable sibling branch of a turn on the current path. */

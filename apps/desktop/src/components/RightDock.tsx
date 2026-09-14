@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import {
   ChevronDown,
   FolderTree,
-  GitBranch,
   GitCompareArrows,
   Globe2,
   LoaderCircle,
@@ -34,7 +33,6 @@ import { ChangesPanel } from "../features/dock/ChangesPanel";
 import { SubagentsPanel } from "../features/dock/SubagentsPanel";
 import { subscribeDockBrowser } from "../lib/dock-browser";
 import { subscribeChangesPanel } from "../lib/dock-changes";
-import { requestTreeOverlay } from "../lib/tree-overlay";
 import { useT } from "../lib/i18n/use-t";
 import { subscribeDockCommands } from "../lib/commands/events";
 
@@ -366,13 +364,6 @@ export function RightDock() {
     if (!tabOrder.includes("files")) setTabOrder((current) => [...current, "files"]);
     setActiveTab("files");
     setAddMenuOpen(false);
-  };
-
-  // The session tree is an on-demand overlay now (the dock tab is gone), so
-  // the add-menu entry opens it directly instead of creating a dock page.
-  const openSessionTree = () => {
-    setAddMenuOpen(false);
-    requestTreeOverlay();
   };
 
   const createChanges = () => {
@@ -824,15 +815,6 @@ export function RightDock() {
                   <button
                     type="button"
                     role="menuitem"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay"
-                    onClick={openSessionTree}
-                  >
-                    <GitBranch size={14} />
-                    {t("dockSessionTree")}
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
                     disabled={!workspaceCwd}
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay disabled:opacity-40"
                     onClick={createChanges}
@@ -963,15 +945,6 @@ export function RightDock() {
                 >
                   <FolderTree size={17} className="shrink-0" />
                   <span>{t("dockFiles")}</span>
-                </button>
-                <button
-                  type="button"
-                  aria-label={t("dockOpenNamed", { label: t("dockSessionTree") })}
-                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
-                  onClick={openSessionTree}
-                >
-                  <GitBranch size={17} className="shrink-0" />
-                  <span>{t("dockSessionTree")}</span>
                 </button>
                 <button
                   type="button"

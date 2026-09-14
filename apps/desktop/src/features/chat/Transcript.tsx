@@ -225,8 +225,7 @@ export function Transcript() {
   // Inline branch navigators: sibling alternatives for the rows on the
   // current leaf path, derived from the shared session tree. User rows look
   // up by `sourceId`; assistant rows by `sourceEndId` — both match the
-  // turn-chain last entry id the tree model keys by. The overlay button and
-  // Ctrl+T open the full tree (SessionTreeOverlay).
+  // turn-chain last entry id the tree model keys by.
   const tree = useSessionTree();
   const branchPoints = useMemo(() => {
     if (!tree.tree || !tree.leafId) return new Map<string, TreeBranchPoint>();

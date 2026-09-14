@@ -14,9 +14,8 @@ import { useT } from "../../lib/i18n/use-t";
 
 /**
  * Shared session-tree state. The tree is read through one `session.getTree`
- * RPC (which briefly takes the Host's service graph lock), so the overlay and
- * the inline branch navigators consume this single store instead of each
- * fetching on their own.
+ * RPC (which briefly takes the Host's service graph lock), so every consumer
+ * shares this single store instead of fetching on its own.
  */
 type SessionTreeState = {
   /** Session the current tree belongs to; stale trees are dropped on switch. */
@@ -25,7 +24,7 @@ type SessionTreeState = {
   leafId: string | null;
   /** Localized load error, null when the tree loaded (or is loading). */
   error: string | null;
-  /** Manual-refresh counter bumped by the overlay's refresh button. */
+  /** Manual-refresh counter bumped by `refreshSessionTree`. */
   refreshSeq: number;
 };
 
@@ -57,14 +56,9 @@ function getSessionTree(): SessionTreeState {
   return state;
 }
 
-/** React binding for consumers: the overlay and the inline navigators. */
+/** React binding for consumers: the inline branch navigators. */
 export function useSessionTree(): SessionTreeState {
   return useSyncExternalStore(subscribeSessionTree, getSessionTree);
-}
-
-/** Ask the sync effect to refetch (overlay refresh button). */
-export function refreshSessionTree(): void {
-  setSessionTree({ refreshSeq: state.refreshSeq + 1 });
 }
 
 /**

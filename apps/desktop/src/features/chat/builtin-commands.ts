@@ -17,10 +17,6 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
     description: "Show session info and stats",
   },
   {
-    name: "tree",
-    description: "Navigate session tree (switch branches)",
-  },
-  {
     name: "fork",
     description: "Create a new fork from a previous user message",
   },

@@ -15,9 +15,8 @@ describe("matchBuiltinCommand", () => {
     });
   });
 
-  it("matches /session, /tree, /fork, and /export", () => {
+  it("matches /session, /fork, and /export", () => {
     expect(matchBuiltinCommand("/session")).toEqual({ name: "session" });
-    expect(matchBuiltinCommand("/tree")).toEqual({ name: "tree" });
     expect(matchBuiltinCommand("/fork")).toEqual({ name: "fork" });
     expect(matchBuiltinCommand("/export")).toEqual({ name: "export" });
     expect(matchBuiltinCommand("/export jsonl")).toEqual({

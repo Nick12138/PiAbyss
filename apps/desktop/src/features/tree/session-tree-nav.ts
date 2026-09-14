@@ -14,7 +14,7 @@ import { type Translate } from "../../lib/i18n/use-t";
  * Rewire the active session's leaf to `targetId`. Returns true when the
  * transcript can act on the result (scroll or applied navigation), false when
  * the request was silently skipped (no session, busy, stale, superseded).
- * Errors surface as notifications, matching the tree overlay's behavior.
+ * Errors surface as notifications, matching the previous full-tree panel.
  */
 export async function navigateTreeTo(targetId: string, t: Translate): Promise<boolean> {
   const current = useAppStore.getState();

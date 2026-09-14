@@ -1,8 +1,7 @@
-import { GitBranch, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { useAppStore } from "../lib/stores/app-store";
 import { useT } from "../lib/i18n/use-t";
 import { requestGlobalSearchOpen } from "../lib/commands/events";
-import { requestTreeOverlay } from "../lib/tree-overlay";
 import { NotificationCenter } from "./NotificationCenter";
 import { DockToggleButton } from "./DockToggleButton";
 import { WindowControls, resolveWindowControlsPlatform } from "./WindowControls";
@@ -162,22 +161,9 @@ export function AppTopBar({
         ref={actionsSlotRef}
       />
 
-      {/* Right segment: session tree + right-panel toggle (chat only) + native
-          window controls. The session tree left the dock, so its entry lives
-          here next to the other chat-level actions. */}
+      {/* Right segment: right-panel toggle (chat only) + native window
+          controls. */}
       <div className="flex shrink-0 items-center gap-1" data-app-topbar-right>
-        {page === "chat" && (
-          <button
-            type="button"
-            title={t("commandOpenTree")}
-            aria-label={t("commandOpenTree")}
-            disabled={!session}
-            className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
-            onClick={requestTreeOverlay}
-          >
-            <GitBranch size={15} />
-          </button>
-        )}
         {page === "chat" && <DockToggleButton />}
         {platform === "windows" && <WindowControls platform="windows" />}
       </div>

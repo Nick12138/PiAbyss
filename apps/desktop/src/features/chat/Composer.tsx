@@ -65,7 +65,6 @@ import { BUILTIN_COMMANDS, matchBuiltinCommand } from "./builtin-commands";
 import { abortCompaction, requestCompact } from "./compaction-actions";
 import { SessionStatsModal } from "./SessionStatsModal";
 import { ForkModal } from "./ForkModal";
-import { requestTreeOverlay } from "../../lib/tree-overlay";
 import {
   appendOptimisticUserMessage,
   removeOptimisticUserMessage,
@@ -280,7 +279,6 @@ function builtinCompletionItems(t: Translate): CompletionItem[] {
   const descriptions = {
     compact: "composerBuiltinCompact",
     session: "composerBuiltinSession",
-    tree: "composerBuiltinTree",
     fork: "composerBuiltinFork",
     export: "composerBuiltinExport",
     login: "composerBuiltinLogin",
@@ -1277,12 +1275,6 @@ export function Composer({
       deleteDraft(draftTarget);
       dismissCompletion();
       setStatsOpen(true);
-      return;
-    }
-    if (builtin?.name === "tree") {
-      deleteDraft(draftTarget);
-      dismissCompletion();
-      requestTreeOverlay();
       return;
     }
     if (builtin?.name === "fork") {

@@ -8,9 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../lib/stores/app-store";
 import { requestDockBrowser } from "../lib/dock-browser";
 import { clearPendingChangesPanelForTest, requestChangesPanel } from "../lib/dock-changes";
-import { requestTreeOverlay } from "../lib/tree-overlay";
-
-vi.mock("../lib/tree-overlay", () => ({ requestTreeOverlay: vi.fn() }));
 
 vi.mock("../features/dock/ShellTerminal", () => ({
   ShellTerminal: ({ profileId, visible }: { profileId: string; visible: boolean }) => (
@@ -129,7 +126,6 @@ describe("RightDock pages", () => {
       "收起面板 (Ctrl+J)",
     );
     expect(screen.getByRole("button", { name: "打开：文件" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "打开：会话树" })).toBeVisible();
     expect(screen.getByRole("button", { name: "打开：改动" })).toBeVisible();
     expect(screen.getByRole("button", { name: "打开：浏览器" })).toBeVisible();
     expect(screen.getByRole("button", { name: "打开：终端" })).toBeVisible();
@@ -137,7 +133,6 @@ describe("RightDock pages", () => {
 
     await user.click(screen.getByRole("button", { name: "新建 Dock 页面" }));
     expect(screen.getByRole("menuitem", { name: "文件" })).toBeVisible();
-    expect(screen.getByRole("menuitem", { name: "会话树" })).toBeVisible();
     expect(screen.getByRole("menuitem", { name: "改动" })).toBeVisible();
     expect(screen.getByRole("menuitem", { name: "浏览器" })).toBeVisible();
     expect(screen.getByRole("menuitem", { name: "终端" })).toBeVisible();
@@ -171,9 +166,7 @@ describe("RightDock pages", () => {
     );
 
     await waitFor(() =>
-      expect(
-        screen.queryByRole("tab", { name: "Subagents" }),
-      ).not.toBeInTheDocument(),
+      expect(screen.queryByRole("tab", { name: "Subagents" })).not.toBeInTheDocument(),
     );
     expect(useAppStore.getState().dockOpen).toBe(false);
 
@@ -359,8 +352,6 @@ describe("RightDock pages", () => {
     await openAddMenu(user);
     await waitFor(() => expect(screen.getByRole("menuitem", { name: "Files" })).toHaveFocus());
     await user.keyboard("{ArrowDown}");
-    expect(screen.getByRole("menuitem", { name: "Session tree" })).toHaveFocus();
-    await user.keyboard("{ArrowDown}");
     expect(screen.getByRole("menuitem", { name: "Changes" })).toHaveFocus();
     await user.keyboard("{ArrowDown}");
     expect(screen.getByRole("menuitem", { name: "Browser" })).toHaveFocus();
@@ -368,17 +359,6 @@ describe("RightDock pages", () => {
     expect(screen.getByRole("menuitem", { name: "Subagents" })).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(screen.getByRole("button", { name: "New dock page" })).toHaveFocus();
-  });
-
-  it("opens the session-tree overlay from the add menu instead of a dock page", async () => {
-    const user = userEvent.setup();
-    render(<RightDock />);
-
-    await openAddMenu(user);
-    await user.click(screen.getByRole("menuitem", { name: "Session tree" }));
-
-    expect(requestTreeOverlay).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("tab", { name: "Tree" })).not.toBeInTheDocument();
   });
 
   it("opens the Changes page as a singleton via requestChangesPanel", async () => {
