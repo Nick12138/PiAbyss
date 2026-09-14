@@ -8,9 +8,9 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { TurnJumpRail, turnRailStops, type TurnRailStop } from "./TurnJumpRail";
 
 const STOPS: TurnRailStop[] = [
-  { sourceId: "u1", rowKey: "k1", excerpt: "first ask" },
-  { sourceId: "u2", rowKey: "k2", excerpt: "second ask" },
-  { sourceId: "u3", rowKey: "k3", excerpt: "third ask" },
+  { sourceId: "u1", rowKey: "k1", excerpt: "first ask", agentExcerpt: "response 1", agentPending: false },
+  { sourceId: "u2", rowKey: "k2", excerpt: "second ask", agentExcerpt: undefined, agentPending: false },
+  { sourceId: "u3", rowKey: "k3", excerpt: "third ask", agentExcerpt: "response 3", agentPending: false },
 ];
 
 /** The rail needs a scrollport ref for active-tick tracking. */
@@ -69,14 +69,15 @@ describe("TurnJumpRail", () => {
 
     const popup = document.querySelector<HTMLElement>("[data-turn-rail-popup]")!;
     expect(popup).toBeInTheDocument();
-    // The popup lists every turn, not just the hovered one.
-    expect(popup).toHaveTextContent("first ask");
+    // The popup shows the hovered turn with # prefix
+    expect(popup).toHaveTextContent("#2");
     expect(popup).toHaveTextContent("second ask");
-    expect(popup).toHaveTextContent("third ask");
-    expect(popup.querySelector('[data-hovered="true"]')).toHaveTextContent("second ask");
+    expect(popup).toHaveTextContent("无回复");
 
-    await user.click(within(popup).getByText("third ask"));
-    expect(onJump).toHaveBeenCalledWith("u3");
+    // Clicking on the rail area (not the popup) should jump to the hovered turn
+    const rail = screen.getByRole("navigation");
+    await user.click(rail);
+    expect(onJump).toHaveBeenCalledWith("u2");
     expect(document.querySelector("[data-turn-rail-popup]")).toBeNull();
   });
 
@@ -113,8 +114,8 @@ describe("TurnJumpRail", () => {
     ];
 
     expect(turnRailStops(rows)).toEqual([
-      { sourceId: "u1", rowKey: "k1", excerpt: "hello" },
-      { sourceId: "u4", rowKey: "k4", excerpt: "indented first line" },
+      { sourceId: "u1", rowKey: "k1", excerpt: "hello", agentExcerpt: "hi", agentPending: false },
+      { sourceId: "u4", rowKey: "k4", excerpt: "indented first line", agentExcerpt: undefined, agentPending: false },
     ]);
   });
 });
