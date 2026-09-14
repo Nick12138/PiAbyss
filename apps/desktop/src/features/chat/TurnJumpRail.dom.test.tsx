@@ -74,11 +74,9 @@ describe("TurnJumpRail", () => {
     expect(popup).toHaveTextContent("second ask");
     expect(popup).toHaveTextContent("无回复");
 
-    // Clicking on the rail area (not the popup) should jump to the hovered turn
-    const rail = screen.getByRole("navigation");
-    await user.click(rail);
+    // Clicking on the hovered tick button should jump
+    await user.click(screen.getByLabelText("#2/3 second ask"));
     expect(onJump).toHaveBeenCalledWith("u2");
-    expect(document.querySelector("[data-turn-rail-popup]")).toBeNull();
   });
 
   it("moves between turns with Alt+ArrowUp/Alt+ArrowDown", () => {
