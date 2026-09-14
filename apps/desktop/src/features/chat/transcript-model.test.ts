@@ -1838,3 +1838,144 @@ describe("retryable turns", () => {
     });
   });
 });
+
+describe("per-message projection cache", () => {
+  it("reuses projections for persisted entries across rebuilds", () => {
+    const entries = [
+      {
+        type: "message",
+        id: "entry-user-1",
+        parentId: null,
+        message: { role: "user", content: "Question" },
+      },
+      {
+        type: "message",
+        id: "entry-assistant-1",
+        parentId: "entry-user-1",
+        message: { role: "assistant", content: [{ type: "text", text: "Settled answer" }] },
+      },
+    ];
+    const options = { entries: entries as never };
+    const messages: SerializableAgentMessage[] = [
+      { role: "user", content: "Question" },
+      { role: "assistant", content: [{ type: "text", text: "Settled answer" }] },
+    ];
+    const first = buildTranscriptRows(messages, options);
+    const second = buildTranscriptRows(messages, options);
+    // Same entries + same messages: projections are identical by value...
+    expect(second.length).toBe(first.length);
+    for (let index = 0; index < first.length; index += 1) {
+      expect(second[index]?.key).toBe(first[index]?.key);
+      // ...and the cached block references are shared, so memoized rows skip
+      // re-render work entirely.
+      for (let blockIndex = 0; blockIndex < first[index]!.blocks.length; blockIndex += 1) {
+        expect(second[index]!.blocks[blockIndex]).toBe(first[index]!.blocks[blockIndex]);
+      }
+    }
+  });
+
+  it("reuses block projections by reference for unchanged messages", () => {
+    const messages: SerializableAgentMessage[] = [
+      { role: "user", content: "Question" },
+      { role: "assistant", content: [{ type: "text", text: "Settled answer" }] },
+    ];
+    const first = buildTranscriptRows(messages);
+    const second = buildTranscriptRows(messages);
+    expect(second).toHaveLength(first.length);
+    for (let index = 0; index < first.length; index += 1) {
+      const a = first[index]!;
+      const b = second[index]!;
+      expect(b.key).toBe(a.key);
+      for (let blockIndex = 0; blockIndex < a.blocks.length; blockIndex += 1) {
+        // Cached projection: the settled block objects are reused verbatim,
+        // so memoized rows skip re-rendering entirely.
+        expect(b.blocks[blockIndex]).toBe(a.blocks[blockIndex]);
+      }
+    }
+  });
+
+  it("applies a tool status update without mutating the cached projection", () => {
+    const assistant: SerializableAgentMessage = {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "cache-1", name: "bash", arguments: { command: "pwd" } }],
+    };
+    const running: SerializableAgentMessage = {
+      role: "tool",
+      content: [
+        {
+          type: "toolCall",
+          id: "cache-1",
+          name: "bash",
+          status: "running",
+          arguments: '{"command":"pwd"}',
+        },
+      ],
+    };
+    const done: SerializableAgentMessage = {
+      role: "tool",
+      content: [
+        {
+          type: "toolCall",
+          id: "cache-1",
+          name: "bash",
+          status: "done",
+          arguments: '{"command":"pwd"}',
+          result: "ok",
+        },
+      ],
+    };
+
+    const firstRows = buildTranscriptRows([assistant, running]);
+    const secondRows = buildTranscriptRows([assistant, done]);
+
+    const firstTool = firstRows[0]?.blocks.find((block) => block.kind === "tool");
+    const secondTool = secondRows[0]?.blocks.find((block) => block.kind === "tool");
+    expect(firstTool?.kind === "tool" ? firstTool.tool.status : undefined).toBe("running");
+    expect(secondTool?.kind === "tool" ? secondTool.tool.status : undefined).toBe("done");
+    expect(secondTool?.kind === "tool" ? secondTool.tool.result : undefined).toBe("ok");
+    // The first build's projection was not retroactively mutated.
+    expect(firstTool?.kind === "tool" ? firstTool.tool.status : undefined).toBe("running");
+  });
+
+  it("settles open tools on inactive turns without mutating the cached projection", () => {
+    const messages: SerializableAgentMessage[] = [
+      { role: "user", content: "Run it" },
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "cache-2", name: "bash", arguments: {} }],
+      },
+    ];
+    const activeRows = buildTranscriptRows(messages, { turnActive: true });
+    const idleRows = buildTranscriptRows(messages, { turnActive: false });
+
+    const activeTool = activeRows[1]?.blocks.find((block) => block.kind === "tool");
+    const idleTool = idleRows[1]?.blocks.find((block) => block.kind === "tool");
+    expect(activeTool?.kind === "tool" ? activeTool.tool.status : undefined).toBe("waiting");
+    expect(idleTool?.kind === "tool" ? idleTool.tool.status : undefined).toBe("aborted");
+    // The active build's cached block was not retroactively settled.
+    expect(activeTool?.kind === "tool" ? activeTool.tool.status : undefined).toBe("waiting");
+  });
+
+  it("applies a persisted tool result without mutating the cached assistant projection", () => {
+    const assistant: SerializableAgentMessage = {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "cache-3", name: "read", arguments: { path: "a.ts" } }],
+    };
+    const result: SerializableAgentMessage = {
+      role: "toolResult",
+      toolCallId: "cache-3",
+      toolName: "read",
+      content: [{ type: "text", text: "file body" }],
+    } as unknown as SerializableAgentMessage;
+
+    const firstRows = buildTranscriptRows([assistant, result]);
+    const secondRows = buildTranscriptRows([assistant, result]);
+    const firstTool = firstRows[0]?.blocks.find((block) => block.kind === "tool");
+    const secondTool = secondRows[0]?.blocks.find((block) => block.kind === "tool");
+    expect(firstTool?.kind === "tool" ? firstTool.tool.status : undefined).toBe("done");
+    expect(secondTool?.kind === "tool" ? secondTool.tool.result : undefined).toBe("file body");
+    // The settled clone is rebuilt per pass but stays value-equivalent, so
+    // reuseStableRows keeps the previously rendered row object.
+    expect(secondTool).toStrictEqual(firstTool);
+  });
+});

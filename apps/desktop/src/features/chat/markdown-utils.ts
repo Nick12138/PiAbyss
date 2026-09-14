@@ -21,6 +21,136 @@ export function codeLineCount(value: string): number {
   return value.replace(/\n$/, "").split("\n").length;
 }
 
+/**
+ * Frozen-prefix streaming split (DSH-style): while a message streams, split
+ * the accumulated text at blank lines (outside fenced code blocks) and treat
+ * every segment except the trailing two as frozen. Frozen segments render as
+ * memoized static blocks — each is parsed once — so per-chunk work tracks the
+ * tail size instead of the whole reply. The split is computed incrementally:
+ * an append-only continuation reuses the previously frozen segment strings by
+ * reference, so memoized blocks never even re-run their string comparison.
+ *
+ * Known deviation while streaming (matches the reference implementation): a
+ * reference-style link or footnote whose definition sits on the other side of
+ * the freeze boundary renders literally until the settled full parse
+ * self-heals it.
+ */
+export type StreamingMarkdownSplit = {
+  /** The full source this state was computed from (idempotency guard). */
+  source: string;
+  /** Settled segment texts (stable references across append-only updates). */
+  frozen: string[];
+  /** Exact source prefix covered by `frozen` (separators included). */
+  frozenText: string;
+  /** The live trailing source, at most the last two segments. */
+  tail: string;
+};
+
+/** Segments kept live at the end of a streaming message. */
+const STREAMING_TAIL_SEGMENTS = 2;
+/** Below this length the whole message stays one live tail. */
+const STREAMING_SPLIT_MIN_LENGTH = 600;
+
+/** Opening fence marker (``` or ~~~) at the start of a line, CommonMark-style. */
+const FENCE_OPEN_PATTERN = /^ {0,3}(`{3,}|~{3,})/;
+/** Closing fence: the same marker, alone on its line. */
+const FENCE_CLOSE_PATTERN = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
+
+/**
+ * Update a streaming split for the next accumulated text. Append-only inputs
+ * reuse the frozen prefix; a rewritten input falls back to a full recompute.
+ *
+ * @param prev - The previous split state, or null on first use.
+ * @param text - The full accumulated markdown source.
+ * @returns the split for `text`.
+ */
+export function updateStreamingSplit(
+  prev: StreamingMarkdownSplit | null,
+  text: string,
+): StreamingMarkdownSplit {
+  if (prev !== null && prev.source === text) return prev;
+  if (text.length < STREAMING_SPLIT_MIN_LENGTH) {
+    return { source: text, frozen: [], frozenText: "", tail: text };
+  }
+  const reusable =
+    prev !== null &&
+    text.length >= prev.frozenText.length &&
+    (prev.frozenText.length === 0 || text.startsWith(prev.frozenText));
+  const frozen: string[] = reusable ? [...prev!.frozen] : [];
+  const base = reusable ? prev!.frozenText.length : 0;
+
+  // Scan [base, text.length) into segments separated by blank lines outside
+  // fences. The frozen prefix always ends at fence level 0, so the scan starts
+  // outside any fence.
+  const segments: Array<{ start: number; end: number }> = [];
+  /** Slice one segment, dropping the line terminator that precedes the
+   *  separator so frozen segments are content-only. */
+  const segmentText = (from: number, to: number): string => {
+    let end = to;
+    if (end > from && text[end - 1] === "\n") end -= text[end - 2] === "\r" ? 2 : 1;
+    return text.slice(from, end);
+  };
+  let fenceMarker: string | null = null;
+  let segmentStart = base;
+  let cursor = base;
+  while (cursor < text.length) {
+    const lineEnd = text.indexOf("\n", cursor);
+    const next = lineEnd === -1 ? text.length : lineEnd + 1;
+    const line = text.slice(cursor, lineEnd === -1 ? text.length : lineEnd).replace(/\r$/, "");
+    if (fenceMarker === null) {
+      const open = FENCE_OPEN_PATTERN.exec(line);
+      if (open) {
+        fenceMarker = open[1]![0]!;
+      } else if (line.trim() === "" && cursor > segmentStart) {
+        segments.push({ start: segmentStart, end: cursor });
+        // The blank run is the separator; the next segment starts after it.
+        while (cursor < text.length) {
+          const blankEnd = text.indexOf("\n", cursor);
+          const blankNext = blankEnd === -1 ? text.length : blankEnd + 1;
+          const blank = text
+            .slice(cursor, blankEnd === -1 ? text.length : blankEnd)
+            .replace(/\r$/, "");
+          if (blank.trim() !== "") break;
+          cursor = blankNext;
+        }
+        segmentStart = cursor;
+        continue;
+      }
+    } else {
+      const close = FENCE_CLOSE_PATTERN.exec(line);
+      if (close && close[1]![0]! === fenceMarker) fenceMarker = null;
+    }
+    cursor = next;
+  }
+  if (segmentStart < text.length) {
+    segments.push({ start: segmentStart, end: text.length });
+  }
+
+  const frozenCount = Math.max(0, segments.length - STREAMING_TAIL_SEGMENTS);
+  if (frozenCount === 0) {
+    return {
+      source: text,
+      frozen,
+      frozenText: reusable ? prev!.frozenText : "",
+      tail: text.slice(base),
+    };
+  }
+  const frozenEnd = segments[frozenCount]!.start;
+  const frozenSegments = segments
+    .slice(0, frozenCount)
+    .map((segment) => segmentText(segment.start, segment.end));
+  const tail = segments
+    .slice(frozenCount)
+    .map((segment) => segmentText(segment.start, segment.end))
+    .join("\n\n");
+  return {
+    source: text,
+    frozen: frozen.concat(frozenSegments),
+    frozenText: text.slice(0, frozenEnd),
+    tail,
+  };
+}
+
 type MicromarkEvent = ReturnType<typeof postprocess>[number];
 
 type MermaidFence = {

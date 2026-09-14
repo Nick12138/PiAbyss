@@ -1420,8 +1420,7 @@ export function AssistantOrderedContent({
               key={`ordered-thinking:${workIndex}:${index}`}
               content={block.text}
               label={t("transcriptThoughtProcess")}
-              defaultOpen={live}
-              streaming={live}
+              running={live}
               ended={!live}
             />,
           );
@@ -1604,8 +1603,7 @@ export function ExecutionTrace({
               <ThinkingBlock
                 key={`activity:${block.kind}:${index}`}
                 content={block.text}
-                defaultOpen={live}
-                streaming={live}
+                running={live}
                 ended={!live}
               />
             );
@@ -1685,7 +1683,7 @@ function AssistantBlock({
     return <LazyMarkdownMessage content={block.text} mode={mode} showCaret={showCaret} />;
   }
   if (block.kind === "thinking") {
-    return <ThinkingBlock content={block.text} streaming={mode === "streaming"} />;
+    return <ThinkingBlock content={block.text} running={mode === "streaming"} />;
   }
   if (block.kind === "image") {
     return (
@@ -2297,21 +2295,35 @@ function formatJson(value: unknown, truncatedLabel = "[details truncated]"): str
 
 const THINKING_FOLLOW_THRESHOLD_PX = 24;
 
+/** Latest line of a streaming reasoning text (the collapsed live preview). */
+function latestLine(text: string): string {
+  const visible = text.trimEnd();
+  const newline = visible.lastIndexOf("\n");
+  return newline === -1 ? visible : visible.slice(newline + 1);
+}
+
+/** First line of a settled reasoning text (the collapsed preview). */
+function firstLine(text: string): string {
+  const newline = text.indexOf("\n");
+  return newline === -1 ? text : text.slice(0, newline);
+}
+
 export function ThinkingBlock({
   content,
   label,
   defaultOpen = false,
-  streaming = false,
+  running = false,
   ended = false,
 }: {
   content: string;
   label?: string;
   defaultOpen?: boolean;
-  streaming?: boolean;
+  /** The reasoning block is still producing tokens (trailing live thought). */
+  running?: boolean;
   /**
    * The reasoning has stopped producing tokens (`thinking_end`, or the group it
    * belongs to settled). The disclosure folds the moment this turns true; it
-   * re-opens if the same thought goes live again while streaming.
+   * stays open if the reader expanded it by hand.
    */
   ended?: boolean;
 }) {
@@ -2328,7 +2340,9 @@ export function ThinkingBlock({
   const returningToLatestRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const text = sanitizeAgentText(content);
+  const summary = sanitizeAgentText(
+    running ? latestLine(content) : firstLine(content),
+  ).trim();
 
   const updateFollowing = useCallback((next: boolean) => {
     followingRef.current = next;
@@ -2353,9 +2367,10 @@ export function ThinkingBlock({
 
   useEffect(() => {
     // Reasoning that just stopped folds on its own; a click on the header is the
-    // only thing allowed to override that. The thought re-opens if it starts
-    // streaming again in the same group. Reading older text inside the body
-    // never blocks the fold — it only keeps the scroll position put.
+    // only thing allowed to override that. Live reasoning no longer auto-opens
+    // (the collapsed preview line covers it), so in practice only an explicitly
+    // requested open (defaultOpen) can be folded back. Reading older text inside
+    // the body never blocks the fold — it only keeps the scroll position put.
     if (userToggled.current) return;
     setOpen(autoOpen);
     if (autoOpen) updateFollowing(true);
@@ -2363,21 +2378,21 @@ export function ThinkingBlock({
 
   useLayoutEffect(() => {
     if (!open) return;
-    syncScrollLayout(streaming && followingRef.current);
-  }, [open, streaming, syncScrollLayout, text]);
+    syncScrollLayout(running && followingRef.current);
+  }, [open, running, syncScrollLayout, content]);
 
   useLayoutEffect(() => {
     if (!open || typeof ResizeObserver === "undefined") return;
     const observed = contentRef.current;
     if (!observed) return;
     const observer = new ResizeObserver(() => {
-      syncScrollLayout(streaming && followingRef.current);
+      syncScrollLayout(running && followingRef.current);
     });
     observer.observe(observed);
     return () => observer.disconnect();
-  }, [open, streaming, syncScrollLayout]);
+  }, [open, running, syncScrollLayout]);
 
-  if (!text.trim()) return null;
+  if (!content.trim()) return null;
 
   function scrollToLatest() {
     const element = scrollRef.current;
@@ -2409,10 +2424,19 @@ export function ThinkingBlock({
         aria-expanded={open}
         aria-controls={contentId}
       >
-        <span>{label ?? t("transcriptThinking")}</span>
+        <span className="shrink-0">{label ?? t("transcriptThinking")}</span>
+        {!open && summary !== "" && (
+          <span
+            className="thinking-summary"
+            data-follow-end={running || undefined}
+            aria-hidden="true"
+          >
+            <span className="thinking-summary-text">{summary}</span>
+          </span>
+        )}
         <ChevronRight
           size={13}
-          className={`ml-auto transition-transform duration-[160ms] motion-reduce:transition-none ${
+          className={`ml-auto shrink-0 transition-transform duration-[160ms] motion-reduce:transition-none ${
             open ? "rotate-90" : ""
           }`}
         />
@@ -2451,7 +2475,7 @@ export function ThinkingBlock({
             }}
           >
             <div ref={contentRef} data-thinking-content>
-              <LazyMarkdownMessage content={text} className="thinking-markdown" />
+              <div className="thinking-plain">{content}</div>
             </div>
           </div>
           {overflowing && !following && (

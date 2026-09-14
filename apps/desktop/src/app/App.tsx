@@ -812,21 +812,20 @@ export function App() {
           return;
         }
 
-        let agentEventFrame: number | null = null;
         let agentEventTimer: number | null = null;
         let pendingAgentEvents: TimedAgentEventEnvelope[] = [];
 
-        // Streaming deltas must not depend on rAF alone: a throttled/occluded
-        // WebView stops firing animation frames while DOM paints keep working,
-        // which previously parked the whole live transcript until any
-        // non-delta event (stop / settle) forced a flush.
-        const AGENT_EVENT_FLUSH_FALLBACK_MS = 50;
+        // Only message_update deltas are buffered (see the agent.event case);
+        // structural events apply immediately after an inline flush. Deltas
+        // flush coalesced on a timer at ~20Hz — the DSH cadence — so a fast
+        // token stream pays one reducer+render pass per window instead of one
+        // per animation frame. Structural events arriving mid-window flush
+        // synchronously ahead of their own application (the
+        // `agentEventBuffer.flush()` call before the switch), so they are never
+        // delayed by this timer.
+        const AGENT_EVENT_FLUSH_MS = 48;
 
         const clearScheduledAgentFlush = () => {
-          if (agentEventFrame !== null) {
-            window.cancelAnimationFrame(agentEventFrame);
-            agentEventFrame = null;
-          }
           if (agentEventTimer !== null) {
             window.clearTimeout(agentEventTimer);
             agentEventTimer = null;
@@ -905,16 +904,11 @@ export function App() {
               payload: event.payload,
               receivedAt: Date.now(),
             });
-            if (agentEventFrame !== null || agentEventTimer !== null) return;
-            // Whichever fires first flushes and cancels the other.
-            agentEventFrame = window.requestAnimationFrame(() => {
-              agentEventFrame = null;
-              flushAgentEvents();
-            });
+            if (agentEventTimer !== null) return;
             agentEventTimer = window.setTimeout(() => {
               agentEventTimer = null;
               flushAgentEvents();
-            }, AGENT_EVENT_FLUSH_FALLBACK_MS);
+            }, AGENT_EVENT_FLUSH_MS);
           },
           flush: flushAgentEvents,
         };

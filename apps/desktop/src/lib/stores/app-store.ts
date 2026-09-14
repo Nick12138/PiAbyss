@@ -83,7 +83,23 @@ const EMPTY_SUBAGENTS_STATUS: SubagentsStatusSnapshot = {
   runs: [],
 };
 
+/**
+ * Fingerprint cache: messages are immutable between snapshots (the reducer
+ * replaces objects rather than mutating them), so the computed fingerprint is
+ * stable per message object. During streaming, snapshot merges run per flush
+ * and would otherwise re-stringify the whole session every frame.
+ */
+const messageFingerprintCache = new WeakMap<object, string>();
+
 function optimisticMessageFingerprint(message: { role: string; content: unknown }): string {
+  const cached = messageFingerprintCache.get(message);
+  if (cached !== undefined) return cached;
+  const fingerprint = computeMessageFingerprint(message);
+  messageFingerprintCache.set(message, fingerprint);
+  return fingerprint;
+}
+
+function computeMessageFingerprint(message: { role: string; content: unknown }): string {
   const content = message.content;
   // Host-injected attachment blocks must not make an otherwise identical
   // authoritative message look different from the pending optimistic row.
@@ -136,6 +152,11 @@ function mergeOptimisticMessages(
     (current.isIdle === false || incoming.isIdle === false) &&
     current.messages.some((message) => typeof message._optimisticKey === "string");
   if (!sameSession || (!sameGeneration && !activeOptimisticSend)) {
+    return incoming;
+  }
+
+  // Fast path: nothing optimistic to protect — skip the per-message pass.
+  if (!current.messages.some((message) => typeof message._optimisticKey === "string")) {
     return incoming;
   }
 

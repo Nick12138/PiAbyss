@@ -77,6 +77,68 @@ afterEach(() => {
   cleanup();
 });
 
+describe("MarkdownMessage frozen-prefix streaming", () => {
+  const paragraph = (label: string) => `${label}${" content".repeat(120)}`;
+
+  it("renders the settled prefix as static blocks and keeps only the tail live", () => {
+    const content = [
+      paragraph("First"),
+      paragraph("Second"),
+      paragraph("Third"),
+      paragraph("Fourth"),
+    ].join("\n\n");
+    const view = render(<MarkdownMessage content={content} mode="streaming" showCaret />);
+
+    // All four paragraphs render; the two frozen segments plus the live tail
+    // (which itself holds the last two segments) are three markdown blocks.
+    const body = view.container.textContent ?? "";
+    for (const label of ["First", "Second", "Third", "Fourth"]) {
+      expect(body).toContain(`${label} content`);
+    }
+    expect(view.container.querySelectorAll(".chat-markdown")).toHaveLength(3);
+    // The streaming caret sits only on the live tail.
+    expect(view.container.querySelectorAll(".chat-markdown-caret")).toHaveLength(1);
+
+    view.rerender(
+      <MarkdownMessage
+        content={`${content}\n\n${paragraph("Fifth")}`}
+        mode="streaming"
+        showCaret
+      />,
+    );
+    expect(view.container.textContent ?? "").toContain("Fifth content");
+    expect(view.container.querySelectorAll(".chat-markdown")).toHaveLength(4);
+    expect(view.container.querySelectorAll(".chat-markdown-caret")).toHaveLength(1);
+  });
+
+  it("keeps a fenced code block spanning blank lines in one segment", () => {
+    const fence = ["```ts", "const a = 1;", "", "const b = 2;", "```"].join("\n");
+    const content = [
+      paragraph("Intro"),
+      fence,
+      paragraph("Outro"),
+      paragraph("Tail"),
+    ].join("\n\n");
+    const { container } = render(<MarkdownMessage content={content} mode="streaming" />);
+
+    const codeBlocks = container.querySelectorAll('[data-streamdown="code-block"]');
+    expect(codeBlocks).toHaveLength(1);
+    expect(codeBlocks[0]?.textContent).toContain("const a = 1;");
+    expect(codeBlocks[0]?.textContent).toContain("const b = 2;");
+  });
+
+  it("renders the whole message through one parse once settled", () => {
+    const content = [paragraph("Alpha"), paragraph("Beta"), paragraph("Gamma")].join("\n\n");
+    const view = render(<MarkdownMessage content={content} mode="streaming" />);
+    expect(view.container.querySelectorAll(".chat-markdown")).toHaveLength(2);
+
+    view.rerender(<MarkdownMessage content={content} mode="static" />);
+    expect(view.container.querySelectorAll(".chat-markdown")).toHaveLength(1);
+    expect(view.container.textContent ?? "").toContain("Alpha content");
+    expect(view.container.textContent ?? "").toContain("Gamma content");
+  });
+});
+
 describe("MarkdownMessage math rendering", () => {
   it("renders dollar, display-dollar, escaped-inline, and escaped-display math", async () => {
     const content = String.raw`Inline $a+b$.
@@ -100,21 +162,26 @@ Inline \(x+y\).
     expect(container.textContent).toContain("(a+b)");
   });
 
-  it("uses the same Markdown renderer for an open Thought process block", async () => {
+  it("renders an open Thought process block as plain text", () => {
     const block: TranscriptBlock = {
       kind: "thinking",
-      text: String.raw`\[
-(a+b)^n = \sum_{k=0}^{n} \binom{n}{k}a^{n-k}b^k
-\]`,
+      text: String.raw`Thinking with **bold** and
+more lines`,
     };
 
     const { container } = render(
       <AssistantOrderedContent blocks={[block]} mode="streaming" showCaret={false} turnActive />,
     );
 
-    await waitFor(() =>
-      expect(container.querySelector(".thinking-markdown .katex")).toBeInTheDocument(),
-    );
+    const toggle = screen.getByRole("button", { name: /Thought process|Thinking/ });
+    fireEvent.click(toggle);
+    const body = document.querySelector("[data-thinking-content]");
+    expect(body).toBeInTheDocument();
+    // Plain text body: markdown source stays literal, and nothing parses it.
+    expect(body?.textContent).toContain("**bold**");
+    expect(body?.textContent).toContain("more lines");
+    expect(container.querySelector(".katex")).not.toBeInTheDocument();
+    expect(container.querySelector(".chat-markdown")).not.toBeInTheDocument();
   });
 });
 

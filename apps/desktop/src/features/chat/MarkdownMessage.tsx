@@ -45,6 +45,8 @@ import {
   mermaidFenceSignature,
   sanitizeAgentText,
   sanitizeMermaidSvg,
+  updateStreamingSplit,
+  type StreamingMarkdownSplit,
 } from "./markdown-utils";
 import { openChatLink, type ChatLinkActivation } from "./chat-link";
 import { useT, type Translate } from "../../lib/i18n/use-t";
@@ -411,8 +413,50 @@ export const MarkdownMessage = memo(function MarkdownMessage({
     },
     [],
   );
-  const normalized = useMemo(() => deferIncompleteMermaid(sanitizeAgentText(content)), [content]);
-  const mermaidKey = useMemo(() => `mermaid-${mermaidFenceSignature(normalized)}`, [normalized]);
+  // Streaming split state lives in a ref so append-only updates reuse the
+  // frozen segment strings by reference. Writing during render is safe: the
+  // value is idempotent for the same (prev, content) pair.
+  const splitRef = useRef<StreamingMarkdownSplit | null>(null);
+  const split = useMemo(
+    () => (mode === "streaming" ? updateStreamingSplit(splitRef.current, content) : null),
+    [content, mode],
+  );
+  if (split !== null) splitRef.current = split;
+  const splitActive = split !== null && split.frozen.length > 0;
+  const normalized = useMemo(
+    () => (splitActive ? null : deferIncompleteMermaid(sanitizeAgentText(content))),
+    [content, splitActive],
+  );
+  const mermaidKey = useMemo(
+    () => (normalized === null ? "none" : `mermaid-${mermaidFenceSignature(normalized)}`),
+    [normalized],
+  );
+
+  // Frozen-prefix streaming (DSH-style): everything except the trailing two
+  // blank-line segments renders as memoized static blocks — parsed once, kept
+  // out of the per-chunk path — and only the live tail re-parses per update.
+  // The settled render (mode="static") parses the whole message once and
+  // self-heals any cross-segment syntax the split could not see.
+  if (splitActive) {
+    return (
+      <>
+        {split!.frozen.map((segment, index) => (
+          <MarkdownMessage
+            key={`frozen:${index}`}
+            content={segment}
+            mode="static"
+            className={className}
+          />
+        ))}
+        <MarkdownMessage
+          content={split!.tail}
+          mode="streaming"
+          showCaret={showCaret}
+          className={className}
+        />
+      </>
+    );
+  }
 
   return (
     <div
@@ -438,7 +482,7 @@ export const MarkdownMessage = memo(function MarkdownMessage({
         key={mermaidKey}
         fallback={
           <div className={`chat-markdown whitespace-pre-wrap break-words ${className}`}>
-            {normalized}
+            {normalized ?? content}
           </div>
         }
       >
@@ -476,7 +520,7 @@ export const MarkdownMessage = memo(function MarkdownMessage({
           lineNumbers={false}
           urlTransform={urlTransform}
         >
-          {normalized}
+          {normalized ?? content}
         </Streamdown>
       </MarkdownRenderBoundary>
     </div>

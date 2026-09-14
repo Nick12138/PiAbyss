@@ -367,7 +367,18 @@ function contentBlocksForValue(value: unknown): TranscriptContentBlock[] {
   });
 }
 
+const toolResultCache = new WeakMap<SerializableAgentMessage, ToolResultRecord>();
+
 function toolResultForMessage(message: SerializableAgentMessage): ToolResultRecord | null {
+  if (message.role !== "toolResult") return null;
+  const cached = toolResultCache.get(message);
+  if (cached) return cached;
+  const record = projectToolResultForMessage(message);
+  if (record) toolResultCache.set(message, record);
+  return record;
+}
+
+function projectToolResultForMessage(message: SerializableAgentMessage): ToolResultRecord | null {
   if (message.role !== "toolResult") return null;
   const record = asRecord(message);
   const id = typeof record.toolCallId === "string" ? record.toolCallId : "";
@@ -451,7 +462,31 @@ function splitLiteralThinkingBlocks(blocks: TranscriptBlock[]): TranscriptBlock[
   return result;
 }
 
+/**
+ * Per-message projection caches. Messages are immutable between snapshots
+ * (the reducer replaces objects instead of mutating them), so a WeakMap keyed
+ * by the message object turns the per-flush transcript rebuild from
+ * O(session content) into O(changed tail): settled messages reuse their
+ * previously projected blocks/rows by reference.
+ *
+ * Cached arrays and their blocks are treated as immutable everywhere below —
+ * trace updates clone-and-replace instead of mutating (see
+ * `mergeToolTrace`/`replaceTraceInRow`).
+ */
+const blocksForMessageCache = new WeakMap<SerializableAgentMessage, TranscriptBlock[]>();
+
 function blocksForMessage(
+  message: SerializableAgentMessage,
+  sourceIndex: number,
+): TranscriptBlock[] {
+  const cached = blocksForMessageCache.get(message);
+  if (cached) return cached;
+  const blocks = projectBlocksForMessage(message, sourceIndex);
+  blocksForMessageCache.set(message, blocks);
+  return blocks;
+}
+
+function projectBlocksForMessage(
   message: SerializableAgentMessage,
   sourceIndex: number,
 ): TranscriptBlock[] {
@@ -471,14 +506,60 @@ function blocksForMessage(
   return splitLiteralThinkingBlocks(blocks);
 }
 
-function applyToolResult(trace: ToolTrace, result: ToolResultRecord): void {
-  trace.status = result.aborted ? "aborted" : result.isError ? "error" : "done";
-  if (trace.name === "tool") trace.name = result.name;
-  if ((trace.result === undefined || trace.result === null) && result.result !== undefined) {
-    trace.result = result.result;
+/**
+ * Merge one trace update onto its current projection, non-mutating: the
+ * current trace may live inside a cached block array, so the merged value
+ * replaces it in the row instead of being written in place. Spread semantics
+ * mirror the previous `Object.assign(pending, block.tool)` exactly.
+ */
+function mergeToolTrace(current: ToolTrace, update: ToolTrace): ToolTrace {
+  return { ...current, ...update };
+}
+
+/**
+ * Apply one durable tool result onto its pending trace, non-mutating:
+ * returns the settled trace for the caller to substitute into the row.
+ */
+function applyToolResult(trace: ToolTrace, result: ToolResultRecord): ToolTrace {
+  return {
+    ...trace,
+    status: result.aborted ? "aborted" : result.isError ? "error" : "done",
+    ...(trace.name === "tool" ? { name: result.name } : {}),
+    ...((trace.result === undefined || trace.result === null) && result.result !== undefined
+      ? { result: result.result }
+      : {}),
+    ...(result.resultBlocks.length > 0 ? { resultBlocks: result.resultBlocks } : {}),
+    ...(trace.details === undefined && result.details !== undefined ? { details: result.details } : {}),
+  };
+}
+
+/**
+ * Substitute one tool trace inside the row under construction. The row's own
+ * blocks/rounds arrays are fresh per build, but the block objects may be
+ * cached projections — replace them instead of mutating.
+ */
+function replaceTraceInRow(
+  row: WorkingTranscriptRow | null,
+  current: ToolTrace,
+  next: ToolTrace,
+): void {
+  if (!row || current === next) return;
+  const blockIndex = row.blocks.findIndex(
+    (block) => block.kind === "tool" && block.tool === current,
+  );
+  if (blockIndex !== -1) {
+    const block = row.blocks[blockIndex] as Extract<TranscriptBlock, { kind: "tool" }>;
+    row.blocks[blockIndex] = { ...block, tool: next };
   }
-  if (result.resultBlocks.length > 0) trace.resultBlocks = result.resultBlocks;
-  if (trace.details === undefined && result.details !== undefined) trace.details = result.details;
+  for (const round of row.rounds ?? []) {
+    const roundIndex = round.findIndex(
+      (block) => block.kind === "tool" && block.tool === current,
+    );
+    if (roundIndex !== -1) {
+      const block = round[roundIndex] as Extract<TranscriptBlock, { kind: "tool" }>;
+      round[roundIndex] = { ...block, tool: next };
+    }
+  }
 }
 
 function extendRowTiming(row: WorkingTranscriptRow, startedAt?: number, endedAt?: number) {
@@ -721,7 +802,56 @@ function summaryFromMessage(message: SerializableAgentMessage): TranscriptSummar
   };
 }
 
+type NonAssistantRowCacheEntry = {
+  sourceKey: string;
+  sourceIndex: number;
+  sourceId: string | undefined;
+  timestamp: number | undefined;
+  render: ExtensionMessageRenderSnapshot | undefined;
+  row: TranscriptRow | null;
+};
+
+const nonAssistantRowCache = new WeakMap<SerializableAgentMessage, NonAssistantRowCacheEntry>();
+
 function rowForNonAssistantMessage(
+  message: SerializableAgentMessage,
+  sourceKey: string,
+  sourceId: string | undefined,
+  timestamp: number | undefined,
+  sourceIndex: number,
+  extensionMessageRender?: ExtensionMessageRenderSnapshot,
+): TranscriptRow | null {
+  const cached = nonAssistantRowCache.get(message);
+  if (
+    cached &&
+    cached.sourceKey === sourceKey &&
+    cached.sourceIndex === sourceIndex &&
+    cached.sourceId === sourceId &&
+    cached.timestamp === timestamp &&
+    cached.render === extensionMessageRender
+  ) {
+    return cached.row;
+  }
+  const row = projectNonAssistantRow(
+    message,
+    sourceKey,
+    sourceId,
+    timestamp,
+    sourceIndex,
+    extensionMessageRender,
+  );
+  nonAssistantRowCache.set(message, {
+    sourceKey,
+    sourceIndex,
+    sourceId,
+    timestamp,
+    render: extensionMessageRender,
+    row,
+  });
+  return row;
+}
+
+function projectNonAssistantRow(
   message: SerializableAgentMessage,
   sourceKey: string,
   sourceId: string | undefined,
@@ -813,6 +943,27 @@ function rowForNonAssistantMessage(
   };
 }
 
+/**
+ * Entry→message projection cache. Entry objects are immutable and keep their
+ * identity across per-flush rebuilds (the reducer only appends), but
+ * `asAgentMessage` and the synthesized entry messages (custom/compaction/
+ * branch-summary) would otherwise allocate a fresh message object per build —
+ * defeating the per-message WeakMap projection caches above. Keying by the
+ * entry keeps the projected message identity stable too.
+ */
+const entryMessageCache = new WeakMap<object, SerializableAgentMessage | null>();
+
+function entryProjectedMessage(
+  entry: Record<string, unknown>,
+  project: () => SerializableAgentMessage | null,
+): SerializableAgentMessage | null {
+  const cached = entryMessageCache.get(entry);
+  if (cached !== undefined) return cached;
+  const message = project();
+  entryMessageCache.set(entry, message);
+  return message;
+}
+
 function sourceMessages(
   messages: readonly SerializableAgentMessage[],
   options: BuildTranscriptOptions | undefined,
@@ -846,7 +997,7 @@ function sourceMessages(
     const sourceKey = sourceId ?? `${type}:${sources.length}`;
     const timestamp = timestampField(record);
     if (type === "message") {
-      const message = asAgentMessage(record.message);
+      const message = entryProjectedMessage(record, () => asAgentMessage(record.message));
       // Only a projected message consumes a position in `session.messages`.
       // An entry whose payload cannot be projected (missing/non-string role)
       // yields no message, so counting it here would desynchronize the
@@ -870,14 +1021,16 @@ function sourceMessages(
     }
     if (type === "custom_message") {
       projectedMessageCount += 1;
-      const message = {
-        role: "custom",
-        customType: typeof record.customType === "string" ? record.customType : "custom",
-        content: (record.content as SerializableAgentContent[] | string) ?? "",
-        display: record.display === true,
-        ...(record.details !== undefined ? { details: record.details } : {}),
-        ...(record.presentation !== undefined ? { presentation: record.presentation } : {}),
-      } as SerializableAgentMessage;
+      const message = entryProjectedMessage(record, () =>
+        ({
+          role: "custom",
+          customType: typeof record.customType === "string" ? record.customType : "custom",
+          content: (record.content as SerializableAgentContent[] | string) ?? "",
+          display: record.display === true,
+          ...(record.details !== undefined ? { details: record.details } : {}),
+          ...(record.presentation !== undefined ? { presentation: record.presentation } : {}),
+        }) as SerializableAgentMessage,
+      ) as SerializableAgentMessage;
       sources.push({
         kind: "message",
         message,
@@ -892,16 +1045,19 @@ function sourceMessages(
     }
     if (type === "compaction") {
       projectedMessageCount += 1;
-      sources.push({
-        kind: "message",
-        message: {
+      const message = entryProjectedMessage(record, () =>
+        ({
           role: "compactionSummary",
           content: "",
           summary: typeof record.summary === "string" ? record.summary : "",
           tokensBefore: record.tokensBefore as number | undefined,
           details: record.details,
           fromHook: record.fromHook,
-        } as SerializableAgentMessage,
+        }) as SerializableAgentMessage,
+      ) as SerializableAgentMessage;
+      sources.push({
+        kind: "message",
+        message,
         key: sourceKey,
         sourceId,
         timestamp,
@@ -913,16 +1069,19 @@ function sourceMessages(
       // Match Pi's sessionEntryToContextMessages(): an empty branch summary
       // remains an entry but does not consume a position in session.messages.
       if (summary) projectedMessageCount += 1;
-      sources.push({
-        kind: "message",
-        message: {
+      const message = entryProjectedMessage(record, () =>
+        ({
           role: "branchSummary",
           content: "",
           summary,
           fromId: record.fromId as string | undefined,
           details: record.details,
           fromHook: record.fromHook,
-        } as SerializableAgentMessage,
+        }) as SerializableAgentMessage,
+      ) as SerializableAgentMessage;
+      sources.push({
+        kind: "message",
+        message,
         key: sourceKey,
         sourceId,
         timestamp,
@@ -1048,6 +1207,14 @@ export function buildTranscriptRows(
     if (pending?.length === 0) pendingToolTraces.delete(id);
     return trace;
   };
+  /** Swap a merged trace into the registry so later matches in this build
+   *  continue from the latest projection (registry is build-local). */
+  const replaceRegisteredTrace = (id: string, current: ToolTrace, next: ToolTrace): void => {
+    const pending = pendingToolTraces.get(id);
+    if (!pending) return;
+    const index = pending.indexOf(current);
+    if (index !== -1) pending[index] = next;
+  };
   const resetAssistant = () => {
     activeAssistant = null;
     pendingToolTraces.clear();
@@ -1066,7 +1233,8 @@ export function buildTranscriptRows(
       if (!result) return;
       const linkedTrace = takePendingToolTrace(result.id);
       if (linkedTrace) {
-        applyToolResult(linkedTrace, result);
+        const settled = applyToolResult(linkedTrace, result);
+        replaceTraceInRow(activeAssistant, linkedTrace, settled);
         return;
       }
       const block: TranscriptBlock = {
@@ -1102,7 +1270,9 @@ export function buildTranscriptRows(
         for (const block of toolBlocks) {
           const pending = firstPendingToolTrace(block.tool.id);
           if (pending) {
-            Object.assign(pending, block.tool);
+            const merged = mergeToolTrace(pending, block.tool);
+            replaceTraceInRow(activeAssistant, pending, merged);
+            replaceRegisteredTrace(block.tool.id, pending, merged);
           } else {
             activeAssistant.blocks.push(block);
             const lastRound = activeAssistant.rounds?.[activeAssistant.rounds.length - 1];
@@ -1141,7 +1311,10 @@ export function buildTranscriptRows(
       if (activeAssistant?.role === "assistant") {
         activeAssistant.blocks.push(...blocks);
         activeAssistant.copyText = copyTextForBlocks(activeAssistant.blocks);
-        activeAssistant.rounds = [...(activeAssistant.rounds ?? []), blocks];
+        // Copy the block list: rounds must stay row-owned arrays (cached
+        // per-message block arrays must never be stored where later passes
+        // could mutate them).
+        activeAssistant.rounds = [...(activeAssistant.rounds ?? []), [...blocks]];
         activeAssistant.usage = mergeUsage(activeAssistant.usage, message.usage);
         if (sourceId) activeAssistant.sourceEndId = sourceId;
         if (outcome) activeAssistant.outcome = outcome;
@@ -1216,31 +1389,50 @@ export function buildTranscriptRows(
     resetAssistant();
   });
 
-  if (input.turnActive === false) {
-    for (const row of rows) {
-      for (const block of row.blocks) {
-        if (
-          block.kind !== "tool" ||
-          (block.tool.status !== "waiting" && block.tool.status !== "running")
-        ) {
-          continue;
+  // Settle open tools when the turn is inactive. Non-mutating: the aborted
+  // clone replaces the cached block so per-message WeakMap projections stay
+  // immutable.
+  const settleOpenToolBlock = (block: TranscriptBlock): TranscriptBlock =>
+    block.kind === "tool" &&
+    (block.tool.status === "waiting" || block.tool.status === "running")
+      ? {
+          ...block,
+          tool: {
+            ...block.tool,
+            status: "aborted",
+            ...(block.tool.result === undefined ? { result: "Operation aborted" } : {}),
+          },
         }
-        block.tool = {
-          ...block.tool,
-          status: "aborted",
-          ...(block.tool.result === undefined ? { result: "Operation aborted" } : {}),
+      : block;
+
+  return rows.map(({ rounds, ...row }) => {
+    if (input.turnActive === false) {
+      const hasOpenTool = row.blocks.some(
+        (block) =>
+          block.kind === "tool" &&
+          (block.tool.status === "waiting" || block.tool.status === "running"),
+      );
+      if (hasOpenTool) {
+        const blocks = row.blocks.map(settleOpenToolBlock);
+        const settledRounds = (rounds ?? [row.blocks]).map((round) =>
+          round.map(settleOpenToolBlock),
+        );
+        return {
+          ...row,
+          blocks,
+          ...(row.role === "assistant" ? { sections: assistantSections(settledRounds) } : {}),
         };
       }
     }
-  }
-
-  return rows.map(({ rounds, ...row }) => ({
-    ...row,
-    ...(row.role === "assistant" ? { sections: assistantSections(rounds ?? [row.blocks]) } : {}),
-  }));
+    return {
+      ...row,
+      ...(row.role === "assistant" ? { sections: assistantSections(rounds ?? [row.blocks]) } : {}),
+    };
+  });
 }
 
 function blockEquivalent(a: TranscriptBlock, b: TranscriptBlock): boolean {
+  if (a === b) return true;
   if (a.kind !== b.kind) return false;
   if (a.kind === "text" && b.kind === "text") return a.text === b.text;
   if (a.kind === "image" && b.kind === "image") {

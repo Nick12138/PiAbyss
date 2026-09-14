@@ -2606,13 +2606,42 @@ svg[data-piabyss-mermaid-theme="neutral"] {
   margin-bottom: 0;
 }
 
-.chat-markdown.thinking-markdown,
-.chat-markdown.thinking-markdown p,
-.thinking-markdown .chat-markdown,
-.thinking-markdown .chat-markdown p {
+.thinking-plain {
   color: var(--color-muted);
   font-size: max(11px, calc(var(--conversation-font-size) - 2px));
   line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.thinking-summary {
+  min-width: 0;
+  flex: auto;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--color-muted);
+  font-size: max(11px, calc(var(--conversation-font-size) - 2px));
+}
+
+.thinking-summary-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* While the thought streams, keep the newest line in view: right-aligned, no
+   ellipsis, and clipped on the left so the live tail stays visible. */
+.thinking-summary[data-follow-end] {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.thinking-summary[data-follow-end] .thinking-summary-text {
+  flex: none;
+  width: max-content;
+  min-width: 100%;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .thinking-scroll-region {

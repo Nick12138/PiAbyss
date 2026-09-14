@@ -116,7 +116,7 @@ describe("ThinkingBlock scrolling", () => {
 
   it("caps long streaming content and follows its tail until the reader scrolls upward", async () => {
     const user = userEvent.setup();
-    const { rerender } = render(<ThinkingBlock content="Initial thought" defaultOpen streaming />);
+    const { rerender } = render(<ThinkingBlock content="Initial thought" defaultOpen running />);
     const scroll = await waitFor(() => {
       const element = document.querySelector<HTMLElement>("[data-thinking-scroll]");
       expect(element).toBeInTheDocument();
@@ -142,7 +142,7 @@ describe("ThinkingBlock scrolling", () => {
     // once the reasoning ends (see the auto-collapse suite below).
     metrics.setScrollHeight(1_000);
     rerender(
-      <ThinkingBlock content="Initial thought with more streamed text" defaultOpen streaming />,
+      <ThinkingBlock content="Initial thought with more streamed text" defaultOpen running />,
     );
     triggerThoughtResize();
     expect(metrics.scrollTop).toBe(120);
@@ -157,7 +157,7 @@ describe("ThinkingBlock scrolling", () => {
       <ThinkingBlock
         content="Initial thought with more streamed text"
         defaultOpen={false}
-        streaming={false}
+        running={false}
       />,
     );
     expect(document.querySelector("[data-thinking-scroll]")).toBeInTheDocument();
@@ -174,7 +174,7 @@ describe("ThinkingBlock scrolling", () => {
     expect(scroll).toHaveAttribute("data-following", "true");
 
     metrics.setScrollHeight(1_200);
-    rerender(<ThinkingBlock content="A later streaming update" defaultOpen streaming />);
+    rerender(<ThinkingBlock content="A later streaming update" defaultOpen running />);
     triggerThoughtResize();
     expect(metrics.scrollTop).toBe(880);
   });
@@ -193,7 +193,7 @@ describe("ThinkingBlock scrolling", () => {
   });
 
   it("does not treat wheel handoff over short content as reading older thoughts", async () => {
-    const { rerender } = render(<ThinkingBlock content="Short thought" defaultOpen streaming />);
+    const { rerender } = render(<ThinkingBlock content="Short thought" defaultOpen running />);
     const scroll = await waitFor(() =>
       document.querySelector<HTMLElement>("[data-thinking-scroll]"),
     );
@@ -204,7 +204,7 @@ describe("ThinkingBlock scrolling", () => {
     expect(scroll).not.toHaveAttribute("role");
     expect(fireEvent.wheel(scroll!, { deltaY: -24 })).toBe(true);
 
-    rerender(<ThinkingBlock content="Short thought" defaultOpen={false} streaming={false} />);
+    rerender(<ThinkingBlock content="Short thought" defaultOpen={false} running={false} />);
     const region = scroll!.closest<HTMLElement>("[data-collapsible-region]");
     expect(region).toHaveAttribute("data-state", "closed");
     expect(document.querySelector("[data-thinking-scroll]")).toBeInTheDocument();
@@ -358,29 +358,53 @@ describe("ThinkingBlock auto-collapse when reasoning ends", () => {
     return screen.getByRole("button", { name: /Thought process|Thinking/ });
   }
 
-  it("folds as soon as the thought reports its end, while the turn still streams", () => {
-    const thought = { kind: "thinking" as const, text: "Reasoning", endedAt: undefined };
+  it("renders a live thought collapsed with its latest line as the preview", () => {
+    const thought = { kind: "thinking" as const, text: "Reasoning\nline two\nlatest line", endedAt: undefined };
     const { rerender } = render(
       <AssistantOrderedContent blocks={[thought]} mode="streaming" showCaret turnActive />,
     );
-    expect(thinkingToggle()).toHaveAttribute("aria-expanded", "true");
+    const toggle = thinkingToggle();
+    // Live reasoning stays folded by default (DSH parity): the collapsed row
+    // previews the newest line instead of mounting the whole thought.
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    const summary = toggle.querySelector(".thinking-summary");
+    expect(summary).toBeInTheDocument();
+    expect(summary).toHaveAttribute("data-follow-end", "true");
+    expect(summary?.textContent).toBe("latest line");
+    expect(document.querySelector("[data-thinking-scroll]")).not.toBeInTheDocument();
 
-    // Same streaming render path — only the thought itself has ended.
+    // Same streaming render path — only the thought itself has ended. The
+    // preview falls back to the first line and stays folded.
     rerender(
       <AssistantOrderedContent
-        blocks={[{ kind: "thinking", text: "Reasoning", endedAt: 1_000 }]}
+        blocks={[{ kind: "thinking", text: "Reasoning\nline two\nlatest line", endedAt: 1_000 }]}
         mode="streaming"
         showCaret
         turnActive
       />,
     );
-    const toggle = thinkingToggle();
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    const region = document.getElementById(toggle.getAttribute("aria-controls")!);
-    expect(region).toHaveAttribute("data-state", "closed");
+    expect(thinkingToggle()).toHaveAttribute("aria-expanded", "false");
+    const settledSummary = thinkingToggle().querySelector(".thinking-summary");
+    expect(settledSummary?.textContent).toBe("Reasoning");
+    expect(settledSummary).not.toHaveAttribute("data-follow-end");
+
+    // Expanding by hand mounts the plain-text body; it stays open on rerender.
+    fireEvent.click(thinkingToggle());
+    rerender(
+      <AssistantOrderedContent
+        blocks={[{ kind: "thinking", text: "Reasoning\nline two\nlatest line", endedAt: 1_000 }]}
+        mode="streaming"
+        showCaret
+        turnActive
+      />,
+    );
+    expect(thinkingToggle()).toHaveAttribute("aria-expanded", "true");
+    expect(document.querySelector("[data-thinking-content]")?.textContent).toContain(
+      "latest line",
+    );
   });
 
-  it("folds a finished thought even while a tool call keeps the trace running", () => {
+  it("keeps a live thought inside a running trace folded until expanded", () => {
     const tool = {
       kind: "tool" as const,
       tool: { id: "t1", name: "bash", status: "running" as const },
@@ -394,7 +418,14 @@ describe("ThinkingBlock auto-collapse when reasoning ends", () => {
         turnActive
       />,
     );
-    expect(thinkingToggle()).toHaveAttribute("aria-expanded", "true");
+    // The trace itself is active and auto-expanded…
+    expect(screen.getByRole("button", { name: "Running 1 action" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    // …but the reasoning inside it starts folded with its preview line.
+    expect(thinkingToggle()).toHaveAttribute("aria-expanded", "false");
+    expect(thinkingToggle().querySelector(".thinking-summary")?.textContent).toBe("Reasoning");
 
     rerender(
       <ExecutionTrace
@@ -405,17 +436,11 @@ describe("ThinkingBlock auto-collapse when reasoning ends", () => {
         turnActive
       />,
     );
-    // The trace itself is still active (its tool is running)…
-    expect(screen.getByRole("button", { name: "Running 1 action" })).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
-    // …but the reasoning inside it has already folded.
     expect(thinkingToggle()).toHaveAttribute("aria-expanded", "false");
   });
 
   it("does not let reading the thought body pin it open", async () => {
-    const { rerender } = render(<ThinkingBlock content="Long reasoning" defaultOpen streaming />);
+    const { rerender } = render(<ThinkingBlock content="Long reasoning" defaultOpen running />);
     const scroll = await waitFor(() => {
       const element = document.querySelector<HTMLElement>("[data-thinking-scroll]");
       expect(element).toBeInTheDocument();
@@ -431,14 +456,14 @@ describe("ThinkingBlock auto-collapse when reasoning ends", () => {
     expect(scroll).toHaveAttribute("data-following", "false");
 
     // Reasoning ends: the block still folds rather than staying pinned open.
-    rerender(<ThinkingBlock content="Long reasoning" defaultOpen streaming ended />);
+    rerender(<ThinkingBlock content="Long reasoning" defaultOpen running ended />);
     const toggle = screen.getByRole("button", { name: "Thinking" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 
   it("still honours a deliberate click on the header", async () => {
     const user = userEvent.setup();
-    const { rerender } = render(<ThinkingBlock content="Reasoning" defaultOpen streaming />);
+    const { rerender } = render(<ThinkingBlock content="Reasoning" defaultOpen running />);
     const toggle = screen.getByRole("button", { name: "Thinking" });
     await user.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -447,7 +472,7 @@ describe("ThinkingBlock auto-collapse when reasoning ends", () => {
     await user.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "true");
 
-    rerender(<ThinkingBlock content="Reasoning" defaultOpen streaming ended />);
+    rerender(<ThinkingBlock content="Reasoning" defaultOpen running ended />);
     expect(screen.getByRole("button", { name: "Thinking" })).toHaveAttribute(
       "aria-expanded",
       "true",
