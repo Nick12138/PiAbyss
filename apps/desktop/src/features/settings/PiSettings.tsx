@@ -255,7 +255,6 @@ export function PiSettings() {
             ]}
           />
         </SettingRow>
-
       </div>
     </section>
   );

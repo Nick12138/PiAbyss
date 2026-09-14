@@ -7,8 +7,7 @@ import { useT } from "../../lib/i18n/use-t";
 const MARKDOWN_PATTERN = /\.(?:md|markdown|mdx)$/i;
 
 type SkillContent =
-  | { kind: "text"; text: string }
-  | { kind: "image"; data: string; mediaType: string };
+  { kind: "text"; text: string } | { kind: "image"; data: string; mediaType: string };
 
 type PreviewStatus = "loading" | "ready" | "error";
 

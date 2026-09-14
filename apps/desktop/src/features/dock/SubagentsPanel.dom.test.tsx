@@ -405,12 +405,16 @@ describe("SubagentsPanel", () => {
     expect(resultState().expanded).toBe(false);
     expect(resultState().summaryClamp).toBe(true);
 
-    fireEvent.click(resultRow().querySelector('button[aria-label="Expand message"]') as HTMLElement);
+    fireEvent.click(
+      resultRow().querySelector('button[aria-label="Expand message"]') as HTMLElement,
+    );
     await waitFor(() => expect(resultState().expanded).toBe(true));
     expect(resultState().collapsed).toBe(false);
     expect(resultState().summaryClamp).toBe(false);
 
-    fireEvent.click(resultRow().querySelector('button[aria-label="Collapse message"]') as HTMLElement);
+    fireEvent.click(
+      resultRow().querySelector('button[aria-label="Collapse message"]') as HTMLElement,
+    );
     await waitFor(() => expect(resultState().collapsed).toBe(true));
     expect(resultState().summaryClamp).toBe(true);
 

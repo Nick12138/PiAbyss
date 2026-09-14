@@ -359,7 +359,11 @@ describe("ThinkingBlock auto-collapse when reasoning ends", () => {
   }
 
   it("renders a live thought collapsed with its latest line as the preview", () => {
-    const thought = { kind: "thinking" as const, text: "Reasoning\nline two\nlatest line", endedAt: undefined };
+    const thought = {
+      kind: "thinking" as const,
+      text: "Reasoning\nline two\nlatest line",
+      endedAt: undefined,
+    };
     const { rerender } = render(
       <AssistantOrderedContent blocks={[thought]} mode="streaming" showCaret turnActive />,
     );
@@ -399,9 +403,7 @@ describe("ThinkingBlock auto-collapse when reasoning ends", () => {
       />,
     );
     expect(thinkingToggle()).toHaveAttribute("aria-expanded", "true");
-    expect(document.querySelector("[data-thinking-content]")?.textContent).toContain(
-      "latest line",
-    );
+    expect(document.querySelector("[data-thinking-content]")?.textContent).toContain("latest line");
   });
 
   it("keeps a live thought inside a running trace folded until expanded", () => {

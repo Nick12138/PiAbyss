@@ -114,10 +114,7 @@ export function ShortcutsSettings() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <SettingsTopBarActions
-        title={t("shortcutsTitle")}
-        subtitle={t("shortcutsSubtitle")}
-      >
+      <SettingsTopBarActions title={t("shortcutsTitle")} subtitle={t("shortcutsSubtitle")}>
         <button
           type="button"
           className={secondaryButton}

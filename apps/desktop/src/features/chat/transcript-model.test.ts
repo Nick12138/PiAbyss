@@ -445,8 +445,7 @@ describe("buildTranscriptRows", () => {
         content: [
           {
             type: "text",
-            text:
-              "<thinking>先检查入口</thinking>## 概览\n\n正文内容",
+            text: "<thinking>先检查入口</thinking>## 概览\n\n正文内容",
           },
         ],
       },

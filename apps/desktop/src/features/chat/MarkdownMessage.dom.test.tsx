@@ -113,12 +113,7 @@ describe("MarkdownMessage frozen-prefix streaming", () => {
 
   it("keeps a fenced code block spanning blank lines in one segment", () => {
     const fence = ["```ts", "const a = 1;", "", "const b = 2;", "```"].join("\n");
-    const content = [
-      paragraph("Intro"),
-      fence,
-      paragraph("Outro"),
-      paragraph("Tail"),
-    ].join("\n\n");
+    const content = [paragraph("Intro"), fence, paragraph("Outro"), paragraph("Tail")].join("\n\n");
     const { container } = render(<MarkdownMessage content={content} mode="streaming" />);
 
     const codeBlocks = container.querySelectorAll('[data-streamdown="code-block"]');

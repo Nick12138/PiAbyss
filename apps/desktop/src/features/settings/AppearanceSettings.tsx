@@ -94,11 +94,7 @@ function ColorModePreview({ mode }: { mode: "light" | "dark" | "system" }) {
           {pane("color-mode-preview__pane--dark")}
         </>
       ) : (
-        pane(
-          mode === "dark"
-            ? "color-mode-preview__pane--dark"
-            : "color-mode-preview__pane--light",
-        )
+        pane(mode === "dark" ? "color-mode-preview__pane--dark" : "color-mode-preview__pane--light")
       )}
     </span>
   );

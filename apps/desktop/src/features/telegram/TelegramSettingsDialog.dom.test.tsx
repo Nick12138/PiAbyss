@@ -33,7 +33,12 @@ describe("TelegramSettingsDialog", () => {
   beforeEach(() => {
     readyHostState();
     useTelegramViewStore.setState({
-      profile: { profile: "default", botUsername: "liu_worker_bot", botName: "Worker", configured: true },
+      profile: {
+        profile: "default",
+        botUsername: "liu_worker_bot",
+        botName: "Worker",
+        configured: true,
+      },
       assistant: { rendering: "rich", activity: "verbose", proactivePush: true },
       voice: { replyMode: "mirror" },
       threads: { automaticCleanup: true },
@@ -80,12 +85,7 @@ describe("TelegramSettingsDialog", () => {
     await user.click(screen.getByRole("button", { name: /delete bot/i }));
     expect(screen.getByText(/This permanently removes telegram.json/i)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Delete" }));
-    expect(spy).toHaveBeenCalledWith(
-      "telegram.reset",
-      expect.anything(),
-      null,
-      expect.any(Number),
-    );
+    expect(spy).toHaveBeenCalledWith("telegram.reset", expect.anything(), null, expect.any(Number));
     expect(onCancel).toHaveBeenCalled();
   });
 });

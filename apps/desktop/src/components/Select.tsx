@@ -130,29 +130,29 @@ export function Select({
             }}
           >
             {options.map((option) => {
-            const isSelected = option.value === value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                className={`flex h-8 w-full items-center gap-1.5 whitespace-nowrap px-2.5 text-left text-xs transition-colors hover:bg-surface-overlay ${
-                  isSelected ? "font-medium text-foreground" : "text-muted"
-                }`}
-                onClick={() => {
-                  setOpen(false);
-                  onChange(option.value);
-                }}
-              >
-                <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                {isSelected && (
-                  <span className="flex shrink-0 items-center justify-center">
-                    <Check size={16} strokeWidth={2.5} />
-                  </span>
-                )}
-              </button>
-            );
+              const isSelected = option.value === value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  className={`flex h-8 w-full items-center gap-1.5 whitespace-nowrap px-2.5 text-left text-xs transition-colors hover:bg-surface-overlay ${
+                    isSelected ? "font-medium text-foreground" : "text-muted"
+                  }`}
+                  onClick={() => {
+                    setOpen(false);
+                    onChange(option.value);
+                  }}
+                >
+                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                  {isSelected && (
+                    <span className="flex shrink-0 items-center justify-center">
+                      <Check size={16} strokeWidth={2.5} />
+                    </span>
+                  )}
+                </button>
+              );
             })}
           </div>,
           document.body,

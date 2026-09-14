@@ -35,9 +35,7 @@ describe("TurnJumpRail", () => {
   it("renders one tick per user turn with indexed labels", () => {
     render(<Harness stops={STOPS} onJump={vi.fn()} />);
 
-    expect(
-      screen.getByRole("navigation", { name: "Quick jump to a message" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Quick jump to a message" })).toBeInTheDocument();
     expect(screen.getByLabelText("#1/3 first ask")).toBeInTheDocument();
     expect(screen.getByLabelText("#2/3 second ask")).toBeInTheDocument();
     expect(screen.getByLabelText("#3/3 third ask")).toBeInTheDocument();

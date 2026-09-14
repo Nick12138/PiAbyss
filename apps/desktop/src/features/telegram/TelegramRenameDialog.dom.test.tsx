@@ -15,11 +15,7 @@ describe("TelegramRenameDialog", () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
     render(
-      <TelegramRenameDialog
-        currentName="我的 Bot"
-        onCancel={vi.fn()}
-        onConfirm={onConfirm}
-      />,
+      <TelegramRenameDialog currentName="我的 Bot" onCancel={vi.fn()} onConfirm={onConfirm} />,
     );
     const input = screen.getByRole("textbox");
     expect(input).toHaveValue("我的 Bot");

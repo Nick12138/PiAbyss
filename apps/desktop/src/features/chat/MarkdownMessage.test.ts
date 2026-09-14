@@ -19,9 +19,7 @@ describe("updateStreamingSplit", () => {
   });
 
   it("freezes all but the trailing two segments", () => {
-    const text = [long("one"), long("two"), long("three"), long("four"), long("five")].join(
-      "\n\n",
-    );
+    const text = [long("one"), long("two"), long("three"), long("four"), long("five")].join("\n\n");
     const split = updateStreamingSplit(null, text);
     expect(split.frozen).toEqual([long("one"), long("two"), long("three")]);
     expect(split.tail).toBe(`${long("four")}\n\n${long("five")}`);
@@ -43,17 +41,13 @@ describe("updateStreamingSplit", () => {
 
   it("never splits inside a fenced code block", () => {
     const fence = ["```ts", long("code"), "", long("more code"), "```"].join("\n");
-    const text = [long("intro"), fence, long("outro"), long("outro2"), long("outro3")].join(
-      "\n\n",
-    );
+    const text = [long("intro"), fence, long("outro"), long("outro2"), long("outro3")].join("\n\n");
     const split = updateStreamingSplit(null, text);
     // The whole fence stays inside one segment.
     const joined = [...split.frozen, split.tail].join("\n\n");
     expect(joined).toContain("```ts");
     expect(joined.match(/```ts/g)?.length).toBe(1);
-    const fenceSegment = [...split.frozen, split.tail].find((segment) =>
-      segment.includes("```ts"),
-    );
+    const fenceSegment = [...split.frozen, split.tail].find((segment) => segment.includes("```ts"));
     expect(fenceSegment).toContain(long("code"));
     expect(fenceSegment).toContain(long("more code"));
   });

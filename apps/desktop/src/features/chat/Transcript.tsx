@@ -540,6 +540,15 @@ export function Transcript() {
     messages,
     session?.isStreaming === true,
   );
+  // 修复问题1：防止在rows和messages不同步时错误判断streaming
+  // 如果messages最后是assistant但rows最后不是，说明rows还没更新，
+  // 此时streamingAssistantKey应该是undefined，避免旧row显示光标
+  const lastMessageRole = messages[messages.length - 1]?.role;
+  const lastRowRole = rows[rows.length - 1]?.role;
+  const safeStreamingKey =
+    lastMessageRole === "assistant" && lastRowRole !== "assistant"
+      ? undefined // rows未同步，不标记任何row为streaming
+      : streamingAssistantKey;
   const hasRunningTool = lastAssistantRow?.blocks.some(
     (block) =>
       block.kind === "tool" && (block.tool.status === "running" || block.tool.status === "waiting"),
@@ -572,6 +581,25 @@ export function Transcript() {
   useLayoutEffect(() => {
     if (followingRef.current) scheduleBottomAlignment();
   }, [messages, scheduleBottomAlignment]);
+
+  // 问题1修复：当用户发送新消息时，自动设置 following=true 并滚动到底部
+  // 检测最后一条消息是否为用户消息（包括乐观消息）
+  const lastMessageRef = useRef<(typeof messages)[0] | null>(null);
+  useLayoutEffect(() => {
+    if (messages.length === 0) {
+      lastMessageRef.current = null;
+      return;
+    }
+    const lastMessage = messages[messages.length - 1];
+    const isNewUserMessage = lastMessage?.role === "user" && lastMessage !== lastMessageRef.current;
+
+    if (isNewUserMessage) {
+      // 用户刚发送了新消息，强制滚动到底部
+      updateFollowing(true);
+      scheduleBottomAlignment();
+    }
+    lastMessageRef.current = lastMessage ?? null;
+  }, [messages, updateFollowing, scheduleBottomAlignment]);
 
   useLayoutEffect(() => {
     const content = contentRef.current;
@@ -667,7 +695,7 @@ export function Transcript() {
             </button>
           )}
           {visibleRows.map((row) => {
-            const streaming = row.key === streamingAssistantKey;
+            const streaming = row.key === safeStreamingKey;
             const retryableTurn = retryableTurns.get(row.key);
             const retryVisible = Boolean(
               retryableTurn && !suppressedKeys.has(retryableTurn.assistantKey),
@@ -779,7 +807,7 @@ export function Transcript() {
           {session &&
             !session.isIdle &&
             !workingHeaderKey &&
-            !streamingAssistantKey &&
+            !safeStreamingKey &&
             !hasRunningTool && (
               <div className="flex items-center gap-3">
                 <AssistantAvatar />
@@ -1205,8 +1233,11 @@ export const TranscriptRowView = memo(function TranscriptRowView({
   const finalBlocks: TranscriptBlock[] = sections.final.filter(
     (block) => block.kind !== "thinking",
   );
+  // 修复问题2：只有当回合真正结束时才折叠（检查endedAt），而不是只看working状态
+  // working只表示是否显示"Pi is working"标签，不代表回合是否完成
+  const turnEnded = row.endedAt !== undefined;
   const canFold =
-    turnFold && !working && sections.stepCount > 0 && sections.ordered.length > finalBlocks.length;
+    turnFold && turnEnded && sections.stepCount > 0 && sections.ordered.length > finalBlocks.length;
   const foldBlocks = canFold
     ? sections.ordered.filter((block) => !finalBlocks.includes(block))
     : [];
@@ -1507,10 +1538,26 @@ export function ExecutionTrace({
   // the region by hand.
   const [open, setOpen] = useState(active);
   const userToggled = useRef(false);
+  const wasActiveRef = useRef(active);
+
   useEffect(() => {
     if (userToggled.current) return;
-    setOpen(active);
-  }, [active]);
+
+    // 问题2修复：防止在回合进行中因短暂的 turnActive=false 导致自动折叠
+    // 核心策略：只在"从活跃变为不活跃"时折叠，而不是每次 turnActive=false 时都折叠
+
+    if (active) {
+      // 当前 trace 有工具在运行 → 展开
+      setOpen(true);
+      wasActiveRef.current = true;
+    } else if (!turnActive && wasActiveRef.current) {
+      // 只有在"曾经活跃过，现在整个回合结束"时才折叠
+      // 这样可以避免因 turnActive 的短暂波动导致误折叠
+      setOpen(false);
+      wasActiveRef.current = false;
+    }
+    // 其他情况：保持当前状态不变
+  }, [active, turnActive]);
   const failed =
     tools.filter((block) => block.tool.status === "error").length +
     extensions.filter((block) => block.row.extensionPresentation?.status === "failed").length;
@@ -2340,9 +2387,7 @@ export function ThinkingBlock({
   const returningToLatestRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const summary = sanitizeAgentText(
-    running ? latestLine(content) : firstLine(content),
-  ).trim();
+  const summary = sanitizeAgentText(running ? latestLine(content) : firstLine(content)).trim();
 
   const updateFollowing = useCallback((next: boolean) => {
     followingRef.current = next;
