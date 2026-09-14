@@ -490,7 +490,6 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
       const next = response.result.snapshot;
       if (next) acceptSnapshot(next);
       if (response.result.warning) pushNotification(response.result.warning, "warning");
-      if (hunkOperation === "discard") pushNotification(t("gitDiscardHunkSuccess"), "success");
       if (next?.state !== "ready" || !isSelectionPresent(next, selection)) {
         setSelection(null);
         setDiff(null);
@@ -701,7 +700,6 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
       if (response.result.snapshot) acceptSnapshot(response.result.snapshot);
       else void refresh();
       if (response.result.warning) pushNotification(response.result.warning, "warning");
-      pushNotification(t("gitDiscardSuccess", { path: file.path }), "success");
     } catch (requestError) {
       if (requestGeneration === generation.current) {
         setError(requestError instanceof Error ? requestError.message : t("gitOperationFailed"));
