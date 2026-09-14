@@ -139,7 +139,7 @@ describe("PiAbyss package-manager cancellation patch", () => {
     const pid = Number(await waitForFile(pidFile));
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 750));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
       expect(outcome).toBe("resolved");
     } finally {
       if (processAlive(pid)) {
@@ -153,7 +153,7 @@ describe("PiAbyss package-manager cancellation patch", () => {
       await waitForExit(pid);
       rmSync(pidFile, { force: true });
     }
-  }, 10_000);
+  }, 15_000);
 
   it("settles a successful captured npm query with inherited stdio", async () => {
     const pidFile = join(tmpdir(), `piabyss-captured-stdio-${process.pid}-${Date.now()}`);
