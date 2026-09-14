@@ -69,14 +69,25 @@ export function TurnJumpRail({
   const t = useT();
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
+  const lastHoveredRef = useRef<number | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
   const hoveredRowRef = useRef<HTMLButtonElement | null>(null);
+
+  // Track the last hovered item even when pointer moves to gaps
+  useEffect(() => {
+    if (hovered !== null) {
+      lastHoveredRef.current = hovered;
+    }
+  }, [hovered]);
 
   // Dismiss the popup on Escape or a pointerdown outside the rail.
   useEffect(() => {
     if (hovered === null) return;
     const onPointerDown = (event: PointerEvent) => {
+      // If clicking on the rail itself, let the button handle it
       if (railRef.current?.contains(event.target as Node)) return;
+      // Otherwise, jump to the hovered item and dismiss
+      onJump(stops[hovered]!.sourceId);
       setHovered(null);
     };
     const onKeyDown = (event: KeyboardEvent) => {
@@ -89,7 +100,7 @@ export function TurnJumpRail({
       window.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [hovered]);
+  }, [hovered, onJump, stops]);
 
   // Keep the hovered popup row in view when the list is taller than the clamp.
   useEffect(() => {
@@ -176,25 +187,60 @@ export function TurnJumpRail({
       // the measured centering offset lands.
       className="absolute right-5 top-1/2 z-10 flex -translate-y-1/2"
     >
-      <div className="flex max-h-[50vh] flex-col items-end justify-center gap-2">
-        {hovered !== null && (
+      <div 
+        ref={hoveredRowRef as any}
+        className="flex max-h-[50vh] w-7 flex-col items-end justify-center gap-2"
+        onPointerMove={(e) => {
+          // Find the closest button element
+          const buttons = e.currentTarget.querySelectorAll('button');
+          let closestIndex = -1;
+          let minDistance = Infinity;
+          
+          buttons.forEach((btn, index) => {
+            const rect = btn.getBoundingClientRect();
+            const centerY = rect.top + rect.height / 2;
+            const distance = Math.abs(e.clientY - centerY);
+            if (distance < minDistance) {
+              minDistance = distance;
+              closestIndex = index;
+            }
+          });
+          
+          if (closestIndex >= 0 && closestIndex < stops.length) {
+            setHovered(closestIndex);
+          }
+        }}
+        onPointerLeave={() => {
+          setHovered(null);
+          lastHoveredRef.current = null;
+        }}
+        onClick={(e) => {
+          // If clicking anywhere, use the last hovered item
+          if (lastHoveredRef.current !== null) {
+            onJump(stops[lastHoveredRef.current]!.sourceId);
+            setHovered(null);
+            lastHoveredRef.current = null;
+          }
+        }}
+      >
+        {lastHoveredRef.current !== null && (
           <div
             data-turn-rail-popup
             className="theme-floating-surface absolute right-full top-0 z-20 mr-2 w-80 rounded-lg border border-border bg-surface-raised p-3 shadow-xl"
             style={{
-              transform: `translateY(${hovered * 16 - 8}px)`,
+              transform: `translateY(${lastHoveredRef.current * 16 - 8}px)`,
             }}
           >
             {/* User message with # prefix */}
-            <div className="mb-2 text-sm text-foreground">
+            <div className="mb-2 text-sm leading-relaxed text-foreground">
               <div className="line-clamp-1">
-                <span className="font-medium">#{hovered + 1}</span>{" "}
-                {stops[hovered]?.excerpt || "(empty message)"}
+                <span className="font-medium">#{lastHoveredRef.current + 1}</span>{" "}
+                {stops[lastHoveredRef.current]?.excerpt || "(empty message)"}
               </div>
             </div>
             {/* Agent response */}
-            <div className="text-sm text-muted">
-              {stops[hovered]?.agentPending ? (
+            <div className="text-sm leading-relaxed text-muted">
+              {stops[lastHoveredRef.current]?.agentPending ? (
                 <div className="flex items-center gap-2">
                   <svg
                     className="size-3 animate-spin text-accent"
@@ -219,7 +265,7 @@ export function TurnJumpRail({
                   <span className="text-xs">处理中...</span>
                 </div>
               ) : (
-                <div className="line-clamp-3">{stops[hovered]?.agentExcerpt || "无回复"}</div>
+                <div className="line-clamp-3">{stops[lastHoveredRef.current]?.agentExcerpt || "无回复"}</div>
               )}
             </div>
           </div>
@@ -229,15 +275,18 @@ export function TurnJumpRail({
           const active = index === activeIndex;
           const isHovered = index === hovered;
 
+          // When hovering, focus effect follows mouse; otherwise show active
+          const shouldHighlight = hovered !== null ? isHovered : active;
+
           // Calculate mountain peak effect: only on hover, not on active
           let lineWidth = 8; // default: shortest (8px)
           if (isHovered) {
-            lineWidth = 24; // hovered: longest (24px)
+            lineWidth = 28; // hovered: longest (28px)
           } else if (hovered !== null) {
             const distance = Math.abs(index - hovered);
             if (distance === 1)
-              lineWidth = 16; // adjacent: medium (16px)
-            else if (distance === 2) lineWidth = 12; // near: short (12px)
+              lineWidth = 20; // adjacent: medium (20px)
+            else if (distance === 2) lineWidth = 14; // near: short (14px)
           }
 
           return (
@@ -246,24 +295,23 @@ export function TurnJumpRail({
               type="button"
               aria-label={tooltip}
               data-active={active ? "true" : undefined}
-              className="relative h-0.5 w-6 shrink-0"
+              className="relative h-2 w-full shrink-0 flex items-center -my-0.5"
               onPointerEnter={() => setHovered(index)}
               onFocus={() => setHovered(index)}
               onBlur={() => setHovered((current) => (current === index ? null : current))}
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 setHovered(null);
                 onJump(stop.sourceId);
               }}
             >
               <span
-                className={`absolute right-0 top-0 h-full rounded-full transition-all duration-200 ${
-                  active
-                    ? "bg-accent" // active: accent color
-                    : isHovered
-                      ? "bg-accent"
-                      : "bg-border/60 group-hover:bg-accent/60"
+                className={`absolute right-0 h-0.5 rounded-full transition-all duration-200 ${
+                  shouldHighlight
+                    ? "bg-accent" // highlight follows hover, or shows active when not hovering
+                    : "bg-border/60 group-hover:bg-accent/60"
                 }`}
-                style={{ width: active && !isHovered ? 8 : lineWidth }}
+                style={{ width: shouldHighlight && !isHovered ? 8 : lineWidth }}
               />
               <span className="sr-only">{tooltip}</span>
             </button>
