@@ -201,6 +201,118 @@ describe("applyKnownThinkingProfiles", () => {
     }
   });
 
+  it("re-reads a models.json provider after the config changes on disk", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "piabyss-thinking-"));
+    const modelsPath = join(agentDir, "models.json");
+    const modelsStorePath = join(agentDir, "models-store.json");
+    const writeProvider = (baseUrl: string, modelId: string) =>
+      writeFileSync(
+        modelsPath,
+        JSON.stringify({
+          providers: {
+            agn: {
+              name: "agn",
+              baseUrl,
+              apiKey: "test",
+              api: "openai-completions",
+              models: [
+                {
+                  id: modelId,
+                  name: modelId,
+                  reasoning: true,
+                  input: ["text"],
+                  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                  contextWindow: 128000,
+                  maxTokens: 16384,
+                },
+              ],
+            },
+          },
+        }),
+      );
+    try {
+      writeProvider("https://old.example.com/v1", "agn-old");
+      const runtime = await ModelRuntime.create({
+        credentials: new InMemoryCredentialStore(),
+        modelsPath,
+        modelsStorePath,
+        allowModelNetwork: false,
+      });
+      const registry = new ModelRegistry(runtime);
+
+      // First pass pins the extension overlay from the config as loaded.
+      expect(await applyKnownThinkingProfiles(registry, runtime, modelsPath)).toBe(1);
+      expect(runtime.getModel("agn", "agn-old")?.baseUrl).toBe("https://old.example.com/v1");
+
+      // The provider.save mutation path: rewrite models.json, then a local
+      // refresh (recompose against the new file).
+      writeProvider("https://new.example.com/v1", "agn-new");
+      await runtime.refresh({ allowNetwork: false });
+
+      // The pass must follow the on-disk edit: a stale overlay keeps serving
+      // the old model list — and each model's pinned old baseUrl — otherwise.
+      await applyKnownThinkingProfiles(registry, runtime, modelsPath);
+      expect(runtime.getModel("agn", "agn-old")).toBeUndefined();
+      expect(runtime.getModel("agn", "agn-new")?.baseUrl).toBe("https://new.example.com/v1");
+
+      // Steady state: a third pass over an unchanged config must not
+      // churn (re-registering on every refresh would fork model objects).
+      expect(await applyKnownThinkingProfiles(registry, runtime, modelsPath)).toBe(0);
+    } finally {
+      rmSync(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("drops a models.json overlay after the provider is removed from the config", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "piabyss-thinking-"));
+    const modelsPath = join(agentDir, "models.json");
+    const modelsStorePath = join(agentDir, "models-store.json");
+    const writeProviders = (providers: Record<string, unknown>) =>
+      writeFileSync(modelsPath, JSON.stringify({ providers }));
+    try {
+      writeProviders({
+        agn: {
+          name: "agn",
+          baseUrl: "https://apihub.agnes-ai.com/v1",
+          apiKey: "test",
+          api: "openai-completions",
+          models: [
+            {
+              id: "agnes-2.5-flash",
+              name: "agnes-2.5-flash",
+              reasoning: true,
+              input: ["text"],
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              contextWindow: 128000,
+              maxTokens: 16384,
+            },
+          ],
+        },
+      });
+      const runtime = await ModelRuntime.create({
+        credentials: new InMemoryCredentialStore(),
+        modelsPath,
+        modelsStorePath,
+        allowModelNetwork: false,
+      });
+      const registry = new ModelRegistry(runtime);
+
+      expect(await applyKnownThinkingProfiles(registry, runtime, modelsPath)).toBe(1);
+      expect(registry.getRegisteredProviderConfig("agn")).toBeDefined();
+
+      // provider.remove committed: the provider is gone from models.json.
+      writeProviders({});
+      await runtime.refresh({ allowNetwork: false });
+      await applyKnownThinkingProfiles(registry, runtime, modelsPath);
+
+      // The overlay must not keep the deleted provider and its models alive.
+      expect(registry.getRegisteredProviderConfig("agn")).toBeUndefined();
+      expect(runtime.getModel("agn", "agnes-2.5-flash")).toBeUndefined();
+    } finally {
+      rmSync(agentDir, { recursive: true, force: true });
+    }
+  });
+
   it("leaves unknown non-OpenAI reasoning models without a fallback map", async () => {
     const registry = new ModelRegistry(
       await ModelRuntime.create({
