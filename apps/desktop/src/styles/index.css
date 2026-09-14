@@ -2025,6 +2025,79 @@ textarea:focus-visible {
   }
 }
 
+/* Working-status label ("瞎想中 …"): a highlight comet sweeps across the text
+   from left to right on a loop so the row reads as continuously running. The
+   band is a background gradient clipped to the glyphs, with the label painted
+   `transparent` underneath it.
+   Two things make the sweep read as motion rather than as a flash:
+   - The gradient is asymmetric: a long dim tail climbs to a sharp, narrow head.
+     The eye picks direction out of an asymmetric shape far sooner than out of a
+     symmetric blob of the same brightness.
+   - It is oversized (240%) so the comet covers roughly two characters at a
+     time. A wider band reads as "the whole line flickers", not "something is
+     running".
+   Both ends of the gradient are the same at-rest colour, so each sweep begins
+   and ends with the label plain. */
+.pi-working-shimmer {
+  /* Dark theme: dim the resting text so the head has somewhere to travel to, but
+     only to 80% — below that the label drops under 4.5:1 against the surface.
+     The peak is pure white, matching the Pi mark, whose ink is pure white here.
+     (Dimmed base -> white head is 3.9:1, up from 2.4:1 for the plain muted ->
+     foreground pair it replaces.) */
+  --pi-working-base: color-mix(in srgb, var(--color-muted) 80%, transparent);
+  --pi-working-tail: color-mix(in srgb, var(--color-muted) 92%, transparent);
+  --pi-working-peak: #ffffff;
+
+  background-image: linear-gradient(
+    90deg,
+    var(--pi-working-base) 0%,
+    var(--pi-working-base) 22%,
+    var(--pi-working-tail) 42%,
+    var(--pi-working-peak) 50%,
+    var(--pi-working-base) 58%,
+    var(--pi-working-base) 100%
+  );
+  background-position: 100% 0;
+  background-repeat: no-repeat;
+  background-size: 240% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: pi-working-shimmer-sweep 1.9s linear infinite;
+}
+
+/* Light theme inverts: the Pi mark is pure black on white, so the comet peaks at
+   black there. The tail must be overridden too — the dark theme's tail is
+   `muted` mixed with *transparent*, which lightens on a white surface, so the
+   tail would come out fainter than the base and the comet would read backwards.
+   Mixing with white would do the same; mixing with black darkens instead. */
+html.light .pi-working-shimmer {
+  --pi-working-base: var(--color-muted);
+  --pi-working-tail: color-mix(in srgb, var(--color-muted) 86%, #000000);
+  --pi-working-peak: #000000;
+}
+
+/* Left-to-right: a percentage background-position of 100% parks the oversized
+   gradient's comet off the left edge, and 0% carries it off the right. */
+@keyframes pi-working-shimmer-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Without the sweep the clipped gradient never moves, and a `transparent`
+     colour would erase the label outright — fall back to the at-rest colour. */
+  .pi-working-shimmer {
+    animation: none;
+    background-image: none;
+    color: var(--pi-working-base);
+  }
+}
+
 /* Conversation markdown */
 .chat-markdown {
   min-width: 0;

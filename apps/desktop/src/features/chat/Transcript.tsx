@@ -782,9 +782,9 @@ export function Transcript() {
             !workingHeaderKey &&
             !streamingAssistantKey &&
             !hasRunningTool && (
-              <div className="flex items-center gap-3 text-xs text-muted">
+              <div className="flex items-center gap-3">
                 <AssistantAvatar />
-                <span>{workingLabel}</span>
+                <span className="pi-working-shimmer text-[12px] font-medium">{workingLabel}</span>
               </div>
             )}
           <div ref={tailAnchorRef} className="h-1" aria-hidden="true" />
@@ -807,7 +807,10 @@ export function Transcript() {
 }
 
 function AssistantAvatar() {
-  return <PiMark className="mt-0.5 size-7" />;
+  // No vertical nudge: PiMark's artwork is already centered inside its square
+  // box, so `items-center` on the row lines its ink up with the label's. The
+  // old `mt-0.5` corrected a text badge glyph and only pushed the image down.
+  return <PiMark className="size-7" />;
 }
 
 export function DurationLabel({
@@ -1181,7 +1184,9 @@ export const TranscriptRowView = memo(function TranscriptRowView({
       <div className="flex h-7 items-center gap-2">
         <AssistantAvatar />
         {working && (
-          <span className="text-[11px] text-muted">{workingLabel ?? t("transcriptPiWorking")}</span>
+          <span className="pi-working-shimmer text-[12px] font-medium">
+            {workingLabel ?? t("transcriptPiWorking")}
+          </span>
         )}
       </div>
       <div className="mt-2 min-w-0 space-y-3">
