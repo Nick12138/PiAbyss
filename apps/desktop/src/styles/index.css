@@ -2025,76 +2025,79 @@ textarea:focus-visible {
   }
 }
 
-/* Working-status label ("瞎想中 …"): a highlight comet sweeps across the text
-   from left to right on a loop so the row reads as continuously running. The
-   band is a background gradient clipped to the glyphs, with the label painted
-   `transparent` underneath it.
-   Two things make the sweep read as motion rather than as a flash:
-   - The gradient is asymmetric: a long dim tail climbs to a sharp, narrow head.
-     The eye picks direction out of an asymmetric shape far sooner than out of a
-     symmetric blob of the same brightness.
-   - It is oversized (240%) so the comet covers roughly two characters at a
-     time. A wider band reads as "the whole line flickers", not "something is
-     running".
-   Both ends of the gradient are the same at-rest colour, so each sweep begins
-   and ends with the label plain. */
-.pi-working-shimmer {
-  /* Dark theme: dim the resting text so the head has somewhere to travel to, but
-     only to 80% — below that the label drops under 4.5:1 against the surface.
-     The peak is pure white, matching the Pi mark, whose ink is pure white here.
-     (Dimmed base -> white head is 3.9:1, up from 2.4:1 for the plain muted ->
-     foreground pair it replaces.) */
-  --pi-working-base: color-mix(in srgb, var(--color-muted) 80%, transparent);
-  --pi-working-tail: color-mix(in srgb, var(--color-muted) 92%, transparent);
-  --pi-working-peak: #ffffff;
-
-  background-image: linear-gradient(
-    90deg,
-    var(--pi-working-base) 0%,
-    var(--pi-working-base) 22%,
-    var(--pi-working-tail) 42%,
-    var(--pi-working-peak) 50%,
-    var(--pi-working-base) 58%,
-    var(--pi-working-base) 100%
-  );
-  background-position: 100% 0;
-  background-repeat: no-repeat;
-  background-size: 240% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: pi-working-shimmer-sweep 1.9s linear infinite;
+/* Working-status label ("瞎想中 …"): every character lights up in turn, left to
+   right, on a loop. Each grapheme is its own inline-block so it can carry an
+   independent animation-delay; Transcript sets that delay per character.
+   Timings are the ones the requested reference used and are deliberately NOT
+   derived from the label length: a 0.13s step over a 3.4s period lights ~5-6
+   characters at a time whatever the status is, so a long English status reads as
+   the same wave train as a short Chinese one rather than a slow crawl. Labels
+   longer than ~26 characters simply fit a second wave on screen at once, which
+   reads as a continuous stream.
+   The resting colour is the dimmed `muted` from before, so unlit characters stay
+   readable against the surface (~4.6:1). */
+.pi-working-marquee {
+  --pi-working-dim: color-mix(in srgb, var(--color-muted) 80%, transparent);
+  --pi-working-lit: var(--color-foreground);
+  --pi-working-glow: color-mix(in srgb, var(--color-accent) 70%, transparent);
+  /* One inline-block per grapheme means the browser may break *between* any two
+     characters, which would split English statuses mid-word ("Diggin / g
+     through"). Both rows that show this label are a fixed 1.75rem tall, so a
+     wrapped label would burst the row anyway — keeping it on one line is the
+     behaviour that actually holds up. */
+  white-space: nowrap;
 }
 
-/* Light theme inverts: the Pi mark is pure black on white, so the comet peaks at
-   black there. The tail must be overridden too — the dark theme's tail is
-   `muted` mixed with *transparent*, which lightens on a white surface, so the
-   tail would come out fainter than the base and the comet would read backwards.
-   Mixing with white would do the same; mixing with black darkens instead. */
-html.light .pi-working-shimmer {
-  --pi-working-base: var(--color-muted);
-  --pi-working-tail: color-mix(in srgb, var(--color-muted) 86%, #000000);
-  --pi-working-peak: #000000;
+.pi-working-marquee > span {
+  display: inline-block;
+  /* Every status ends with a space before its emoticon. An inline-block made of a
+     lone space collapses to zero width, which would jam the words together; `pre`
+     keeps the real space character (unlike a nbsp substitute, it leaves the
+     label's textContent identical for the tests that match on it). */
+  white-space: pre;
+  color: var(--pi-working-dim);
+  /* Must match WORKING_MARQUEE_PERIOD_S in Transcript.tsx. */
+  animation: pi-working-marquee-lit 3.4s ease-in-out infinite;
 }
 
-/* Left-to-right: a percentage background-position of 100% parks the oversized
-   gradient's comet off the left edge, and 0% carries it off the right. */
-@keyframes pi-working-shimmer-sweep {
-  from {
-    background-position: 100% 0;
+/* Lit frame: brighten the glyph and throw a soft glow. Two shadow layers rather
+   than the reference's three — text-shadow is repainted every frame, and the
+   label runs up to 37 characters, so each extra layer is paid for continuously
+   while a turn is running. */
+@keyframes pi-working-marquee-lit {
+  0% {
+    color: var(--pi-working-dim);
+    text-shadow: none;
   }
-  to {
-    background-position: 0% 0;
+  8%,
+  30% {
+    color: var(--pi-working-lit);
+    text-shadow:
+      0 0 6px var(--pi-working-glow),
+      0 0 14px var(--pi-working-glow);
   }
+  55%,
+  100% {
+    color: var(--pi-working-dim);
+    text-shadow: none;
+  }
+}
+
+/* Light theme inverts: the Pi mark is black on white, so the lit frame darkens
+   instead of brightening. The resting colour is left at full `muted` — mixing it
+   toward `transparent` would *lighten* it on a white surface. */
+html.light .pi-working-marquee {
+  --pi-working-dim: var(--color-muted);
+  --pi-working-lit: #000000;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* Without the sweep the clipped gradient never moves, and a `transparent`
-     colour would erase the label outright — fall back to the at-rest colour. */
-  .pi-working-shimmer {
+  /* Without the animation no character ever reaches the lit frame, so drop the
+     glow and leave every glyph at the resting colour. */
+  .pi-working-marquee > span {
     animation: none;
-    background-image: none;
-    color: var(--pi-working-base);
+    color: var(--pi-working-dim);
+    text-shadow: none;
   }
 }
 

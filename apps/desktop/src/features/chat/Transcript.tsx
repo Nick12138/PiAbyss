@@ -783,7 +783,7 @@ export function Transcript() {
             !hasRunningTool && (
               <div className="flex items-center gap-3">
                 <AssistantAvatar />
-                <span className="pi-working-shimmer text-[12px] font-medium">{workingLabel}</span>
+                <WorkingStatusLabel label={workingLabel} className="text-[12px] font-medium" />
               </div>
             )}
           <div ref={tailAnchorRef} className="h-1" aria-hidden="true" />
@@ -810,6 +810,43 @@ function AssistantAvatar() {
   // box, so `items-center` on the row lines its ink up with the label's. The
   // old `mt-0.5` corrected a text badge glyph and only pushed the image down.
   return <PiMark className="size-7" />;
+}
+
+/** Grapheme splitter for the working-status marquee. Splitting per code point
+ *  would tear combining marks off their base glyph — several statuses end in
+ *  emoticons like `•́` (two code points, one visible character). */
+const workingGlyphSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/** Per-character stagger for the working-status marquee, in seconds. Chosen to
+ *  match the reference effect at 0.13s; the period it pairs with lives in the
+ *  `pi-working-marquee-lit` keyframes (3.4s). Both are fixed rather than derived
+ *  from the label length so every status lights the same number of characters at
+ *  once (the 8%-30% lit plateau over a 3.4s period spans ~0.75s, i.e. ~5-6
+ *  characters), whether the status is 9 characters or 37. */
+const WORKING_MARQUEE_STEP_S = 0.13;
+
+/** The status label lit character by character, left to right, on a loop. */
+function WorkingStatusLabel({ label, className = "" }: { label: string; className?: string }) {
+  const glyphs = useMemo(
+    () => Array.from(workingGlyphSegmenter.segment(label), (part) => part.segment),
+    [label],
+  );
+  return (
+    <span className={`pi-working-marquee ${className}`}>
+      {glyphs.map((glyph, index) => (
+        <span
+          // Glyphs repeat within a label, so index is the only stable key.
+          key={`${index}:${glyph}`}
+          // A positive delay makes each character start later than the one before
+          // it, so the lit frame travels left to right. A negative one would run
+          // the wave backwards.
+          style={{ animationDelay: `${(index * WORKING_MARQUEE_STEP_S).toFixed(3)}s` }}
+        >
+          {glyph}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 export function DurationLabel({
@@ -1183,9 +1220,10 @@ export const TranscriptRowView = memo(function TranscriptRowView({
       <div className="flex h-7 items-center gap-2">
         <AssistantAvatar />
         {working && (
-          <span className="pi-working-shimmer text-[12px] font-medium">
-            {workingLabel ?? t("transcriptPiWorking")}
-          </span>
+          <WorkingStatusLabel
+            label={workingLabel ?? t("transcriptPiWorking")}
+            className="text-[12px] font-medium"
+          />
         )}
       </div>
       <div className="mt-2 min-w-0 space-y-3">
