@@ -214,7 +214,7 @@ export function TurnJumpRail({
           setHovered(null);
           lastHoveredRef.current = null;
         }}
-        onClick={(e) => {
+        onClick={() => {
           // If clicking anywhere, use the last hovered item
           if (lastHoveredRef.current !== null) {
             onJump(stops[lastHoveredRef.current]!.sourceId);
