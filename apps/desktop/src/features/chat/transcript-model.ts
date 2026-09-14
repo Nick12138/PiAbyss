@@ -491,7 +491,9 @@ function projectBlocksForMessage(
   sourceIndex: number,
 ): TranscriptBlock[] {
   if (typeof message.content === "string") {
-    return message.content ? splitLiteralThinkingBlocks([{ kind: "text", text: message.content }]) : [];
+    return message.content
+      ? splitLiteralThinkingBlocks([{ kind: "text", text: message.content }])
+      : [];
   }
   const blocks: TranscriptBlock[] = [];
   for (const [partIndex, part] of contentParts(message).entries()) {
@@ -529,7 +531,9 @@ function applyToolResult(trace: ToolTrace, result: ToolResultRecord): ToolTrace 
       ? { result: result.result }
       : {}),
     ...(result.resultBlocks.length > 0 ? { resultBlocks: result.resultBlocks } : {}),
-    ...(trace.details === undefined && result.details !== undefined ? { details: result.details } : {}),
+    ...(trace.details === undefined && result.details !== undefined
+      ? { details: result.details }
+      : {}),
   };
 }
 
@@ -552,9 +556,7 @@ function replaceTraceInRow(
     row.blocks[blockIndex] = { ...block, tool: next };
   }
   for (const round of row.rounds ?? []) {
-    const roundIndex = round.findIndex(
-      (block) => block.kind === "tool" && block.tool === current,
-    );
+    const roundIndex = round.findIndex((block) => block.kind === "tool" && block.tool === current);
     if (roundIndex !== -1) {
       const block = round[roundIndex] as Extract<TranscriptBlock, { kind: "tool" }>;
       round[roundIndex] = { ...block, tool: next };
@@ -1020,17 +1022,25 @@ function sourceMessages(
       continue;
     }
     if (type === "custom_message") {
-      projectedMessageCount += 1;
-      const message = entryProjectedMessage(record, () =>
-        ({
-          role: "custom",
-          customType: typeof record.customType === "string" ? record.customType : "custom",
-          content: (record.content as SerializableAgentContent[] | string) ?? "",
-          display: record.display === true,
-          ...(record.details !== undefined ? { details: record.details } : {}),
-          ...(record.presentation !== undefined ? { presentation: record.presentation } : {}),
-        }) as SerializableAgentMessage,
+      const message = entryProjectedMessage(
+        record,
+        () =>
+          ({
+            role: "custom",
+            customType: typeof record.customType === "string" ? record.customType : "custom",
+            content: (record.content as SerializableAgentContent[] | string) ?? "",
+            display: record.display === true,
+            ...(record.details !== undefined ? { details: record.details } : {}),
+            ...(record.presentation !== undefined ? { presentation: record.presentation } : {}),
+          }) as SerializableAgentMessage,
       ) as SerializableAgentMessage;
+      // Only custom_message with display:true consumes a position in session.messages.
+      // A custom_message with display:false remains an entry but does not appear in
+      // session.messages, so counting it here would desynchronize the length-based
+      // tail alignment and silently swallow live rows off the end of the transcript.
+      if (record.display === true) {
+        projectedMessageCount += 1;
+      }
       sources.push({
         kind: "message",
         message,
@@ -1045,15 +1055,17 @@ function sourceMessages(
     }
     if (type === "compaction") {
       projectedMessageCount += 1;
-      const message = entryProjectedMessage(record, () =>
-        ({
-          role: "compactionSummary",
-          content: "",
-          summary: typeof record.summary === "string" ? record.summary : "",
-          tokensBefore: record.tokensBefore as number | undefined,
-          details: record.details,
-          fromHook: record.fromHook,
-        }) as SerializableAgentMessage,
+      const message = entryProjectedMessage(
+        record,
+        () =>
+          ({
+            role: "compactionSummary",
+            content: "",
+            summary: typeof record.summary === "string" ? record.summary : "",
+            tokensBefore: record.tokensBefore as number | undefined,
+            details: record.details,
+            fromHook: record.fromHook,
+          }) as SerializableAgentMessage,
       ) as SerializableAgentMessage;
       sources.push({
         kind: "message",
@@ -1069,15 +1081,17 @@ function sourceMessages(
       // Match Pi's sessionEntryToContextMessages(): an empty branch summary
       // remains an entry but does not consume a position in session.messages.
       if (summary) projectedMessageCount += 1;
-      const message = entryProjectedMessage(record, () =>
-        ({
-          role: "branchSummary",
-          content: "",
-          summary,
-          fromId: record.fromId as string | undefined,
-          details: record.details,
-          fromHook: record.fromHook,
-        }) as SerializableAgentMessage,
+      const message = entryProjectedMessage(
+        record,
+        () =>
+          ({
+            role: "branchSummary",
+            content: "",
+            summary,
+            fromId: record.fromId as string | undefined,
+            details: record.details,
+            fromHook: record.fromHook,
+          }) as SerializableAgentMessage,
       ) as SerializableAgentMessage;
       sources.push({
         kind: "message",
@@ -1393,8 +1407,7 @@ export function buildTranscriptRows(
   // clone replaces the cached block so per-message WeakMap projections stay
   // immutable.
   const settleOpenToolBlock = (block: TranscriptBlock): TranscriptBlock =>
-    block.kind === "tool" &&
-    (block.tool.status === "waiting" || block.tool.status === "running")
+    block.kind === "tool" && (block.tool.status === "waiting" || block.tool.status === "running")
       ? {
           ...block,
           tool: {

@@ -10,13 +10,14 @@ export type TurnRailStop = {
   rowKey: string;
   /** First line of the message, for the hover tooltip. */
   excerpt: string;
+  /** Agent response excerpt (first few lines). */
+  agentExcerpt?: string;
+  /** Whether agent is still processing this turn. */
+  agentPending?: boolean;
 };
 
 /** Viewport-clamped tooltip text budget (characters). */
 const TOOLTIP_LIMIT = 96;
-
-/** Popup row excerpt budget before CSS truncation takes over. */
-const POPUP_EXCERPT_LIMIT = 240;
 
 /** Row tops at or above this fraction of the viewport count as "passed". */
 const ACTIVE_LINE = 0.25;
@@ -154,9 +155,7 @@ export function TurnJumpRail({
       const base = (element ? activeStopIndex(stops, element) : null) ?? -1;
       const anchor = base < 0 ? 0 : base;
       const next =
-        event.key === "ArrowUp"
-          ? Math.max(0, anchor - 1)
-          : Math.min(stops.length - 1, anchor + 1);
+        event.key === "ArrowUp" ? Math.max(0, anchor - 1) : Math.min(stops.length - 1, anchor + 1);
       onJump(stops[next]!.sourceId);
     };
     document.addEventListener("keydown", onKeyDown);
@@ -175,74 +174,79 @@ export function TurnJumpRail({
       style={right !== null ? { right } : undefined}
       // right-5 fallback clears the native scrollbar (~17px on Windows) until
       // the measured centering offset lands.
-      className="absolute right-5 top-1/2 z-10 flex -translate-y-1/2 rounded-full p-1.5 transition-colors hover:bg-surface-overlay/40"
+      className="absolute right-5 top-1/2 z-10 flex -translate-y-1/2"
     >
-      <div className="flex max-h-[50vh] flex-col items-center justify-center gap-2">
+      <div className="flex max-h-[50vh] flex-col items-end justify-center gap-2">
         {hovered !== null && (
           <div
             data-turn-rail-popup
-            className="theme-floating-surface absolute right-full top-1/2 z-20 mr-1.5 max-h-[60vh] w-64 -translate-y-1/2 overflow-y-auto rounded-lg border border-border bg-surface-raised py-1 shadow-xl"
+            className="theme-floating-surface absolute right-full top-0 z-20 mr-2 w-80 rounded-lg border border-border bg-surface-raised p-3 shadow-xl"
+            style={{
+              transform: `translateY(${hovered * 16 - 8}px)`,
+            }}
           >
-            {stops.map((stop, index) => {
-              const excerpt =
-                stop.excerpt.length > POPUP_EXCERPT_LIMIT
-                  ? `${stop.excerpt.slice(0, POPUP_EXCERPT_LIMIT - 1)}…`
-                  : stop.excerpt;
-              const isHovered = index === hovered;
-              const isReading = index === activeIndex;
-              return (
-                <button
-                  key={stop.sourceId}
-                  type="button"
-                  ref={isHovered ? hoveredRowRef : undefined}
-                  aria-label={turnRailTooltip(stop, index, total)}
-                  data-hovered={isHovered ? "true" : undefined}
-                  className={`relative flex w-full items-baseline gap-1 px-3 py-1.5 text-left text-xs transition-colors ${
-                    isHovered
-                      ? "bg-accent/15 text-accent"
-                      : "text-muted hover:bg-surface-overlay hover:text-foreground"
-                  }`}
-                  onPointerEnter={() => setHovered(index)}
-                  onClick={() => {
-                    setHovered(null);
-                    onJump(stop.sourceId);
-                  }}
-                >
-                  {/* The reading mark lives in the reserved left inset and is
-                      absolutely positioned, so it never shifts the numbers:
-                      every row indents its index uniformly. */}
-                  {isReading && (
-                    <span
-                      className="absolute left-[9px] top-1/2 size-1.5 -translate-y-1/2 rounded-full bg-accent/60"
-                      aria-label={t("turnRailReadingMark")}
+            {/* User message with # prefix */}
+            <div className="mb-2 text-sm text-foreground">
+              <div className="line-clamp-1">
+                <span className="font-medium">#{hovered + 1}</span>{" "}
+                {stops[hovered]?.excerpt || "(empty message)"}
+              </div>
+            </div>
+            {/* Agent response */}
+            <div className="text-sm text-muted">
+              {stops[hovered]?.agentPending ? (
+                <div className="flex items-center gap-2">
+                  <svg
+                    className="size-3 animate-spin text-accent"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
                     />
-                  )}
-                  <span className="ml-3 shrink-0 text-[10px] tabular-nums opacity-70">
-                    #{index + 1}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate">
-                    {excerpt || "(empty message)"}
-                  </span>
-                </button>
-              );
-            })}
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                  <span className="text-xs">处理中...</span>
+                </div>
+              ) : (
+                <div className="line-clamp-3">{stops[hovered]?.agentExcerpt || "无回复"}</div>
+              )}
+            </div>
           </div>
         )}
         {stops.map((stop, index) => {
           const tooltip = turnRailTooltip(stop, index, total);
           const active = index === activeIndex;
           const isHovered = index === hovered;
+
+          // Calculate mountain peak effect: only on hover, not on active
+          let lineWidth = 8; // default: shortest (8px)
+          if (isHovered) {
+            lineWidth = 24; // hovered: longest (24px)
+          } else if (hovered !== null) {
+            const distance = Math.abs(index - hovered);
+            if (distance === 1)
+              lineWidth = 16; // adjacent: medium (16px)
+            else if (distance === 2) lineWidth = 12; // near: short (12px)
+          }
+
           return (
             <button
               key={stop.sourceId}
               type="button"
               aria-label={tooltip}
               data-active={active ? "true" : undefined}
-              className={`size-2.5 shrink-0 rounded-full border transition-colors ${
-                active || isHovered
-                  ? "border-accent/70 bg-accent/40"
-                  : "border-border bg-transparent hover:border-accent/50 hover:bg-accent/20"
-              }`}
+              className="relative h-0.5 w-6 shrink-0"
               onPointerEnter={() => setHovered(index)}
               onFocus={() => setHovered(index)}
               onBlur={() => setHovered((current) => (current === index ? null : current))}
@@ -251,6 +255,16 @@ export function TurnJumpRail({
                 onJump(stop.sourceId);
               }}
             >
+              <span
+                className={`absolute right-0 top-0 h-full rounded-full transition-all duration-200 ${
+                  active
+                    ? "bg-accent" // active: accent color
+                    : isHovered
+                      ? "bg-accent"
+                      : "bg-border/60 group-hover:bg-accent/60"
+                }`}
+                style={{ width: active && !isHovered ? 8 : lineWidth }}
+              />
               <span className="sr-only">{tooltip}</span>
             </button>
           );
@@ -262,13 +276,53 @@ export function TurnJumpRail({
 
 /** Extract rail stops (user message turns) from transcript rows, in order. */
 export function turnRailStops(
-  rows: readonly { role: string; key: string; sourceId?: string; copyText: string }[],
+  rows: readonly {
+    role: string;
+    key: string;
+    sourceId?: string;
+    copyText: string;
+    status?: string;
+  }[],
 ): TurnRailStop[] {
   const stops: TurnRailStop[] = [];
-  for (const row of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
     if (row.role !== "user" || !row.sourceId) continue;
-    const line = row.copyText.split("\n").find((candidate) => candidate.trim().length > 0) ?? "";
-    stops.push({ sourceId: row.sourceId, rowKey: row.key, excerpt: line.trim() });
+
+    // Extract user message excerpt
+    const userLine =
+      row.copyText.split("\n").find((candidate) => candidate.trim().length > 0) ?? "";
+
+    // Find the next assistant message(s) to extract agent response
+    let agentExcerpt = "";
+    let agentPending = false;
+    const agentLines: string[] = [];
+
+    for (let j = i + 1; j < rows.length && j < i + 10; j++) {
+      const nextRow = rows[j]!;
+      if (nextRow.role === "user") break; // Stop at next user message
+      if (nextRow.role === "assistant") {
+        // Check if agent is still processing
+        if (nextRow.status === "pending" || nextRow.status === "streaming") {
+          agentPending = true;
+          break;
+        }
+        // Collect first few non-empty lines
+        const lines = nextRow.copyText.split("\n").filter((line) => line.trim().length > 0);
+        agentLines.push(...lines.slice(0, 4 - agentLines.length));
+        if (agentLines.length >= 4) break;
+      }
+    }
+
+    agentExcerpt = agentLines.join("\n").trim();
+
+    stops.push({
+      sourceId: row.sourceId,
+      rowKey: row.key,
+      excerpt: userLine.trim(),
+      agentExcerpt: agentExcerpt || undefined,
+      agentPending,
+    });
   }
   return stops;
 }
