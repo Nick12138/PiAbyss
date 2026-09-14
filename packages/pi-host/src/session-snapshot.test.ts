@@ -340,6 +340,83 @@ describe("buildSessionSnapshot entry projection", () => {
     expect(validateSuccessResult("session.getSnapshot", snapshot)).toMatchObject({ ok: true });
   });
 
+  it("keeps an image-free message boundary via the memoized byte accounting", () => {
+    const assistant = { role: "assistant", content: [{ type: "text", text: "kept" }] };
+    const withImage = {
+      role: "user",
+      content: [{ type: "image", mimeType: "image/png", data: "x".repeat(100) }],
+    };
+    const omitted = {
+      role: "user",
+      content: [
+        { type: "text", text: "[Image omitted from desktop snapshot: size limit]" },
+      ],
+    };
+    // The snapshot the omission branch should produce, measured independently:
+    // image-free messages must reuse their memoized lengths (no double count).
+    const budget = Buffer.byteLength(
+      JSON.stringify(snapshotFixture([omitted, assistant])),
+      "utf8",
+    );
+
+    const snapshot = buildSessionSnapshot({
+      session: sessionFixture([withImage, assistant]),
+      sessionManager: {} as SessionManager,
+      cwd: "C:/workspace",
+      sessionId: SESSION_ID,
+      revision: 1,
+      workspaceId: WORKSPACE_ID,
+      toolRevision: 1,
+      maxSnapshotBytes: budget,
+    });
+
+    expect(snapshot.messages).toEqual([omitted, assistant]);
+    expect(Buffer.byteLength(JSON.stringify(snapshot), "utf8")).toBe(budget);
+    expect(validateSuccessResult("session.getSnapshot", snapshot)).toMatchObject({ ok: true });
+  });
+
+  it("accounts for the array separator exactly at the recent-suffix boundary", () => {
+    const first = { role: "user", content: "a".repeat(10) };
+    const second = { role: "assistant", content: "b".repeat(10) };
+    const messages = [
+      { role: "user", content: "old".repeat(200) },
+      first,
+      second,
+    ];
+    const emptyBytes = Buffer.byteLength(JSON.stringify(snapshotFixture([])), "utf8");
+    // recentMessageSuffix starts from the empty-snapshot size including the
+    // `[]` placeholder brackets (emptyBytes), then adds item bytes + separators.
+    const bothBytes =
+      emptyBytes +
+      Buffer.byteLength(JSON.stringify(first), "utf8") +
+      1 +
+      Buffer.byteLength(JSON.stringify(second), "utf8");
+    const common = {
+      sessionManager: {} as SessionManager,
+      cwd: "C:/workspace",
+      sessionId: SESSION_ID,
+      revision: 1,
+      workspaceId: WORKSPACE_ID,
+      toolRevision: 1,
+    };
+
+    const keepsBoth = buildSessionSnapshot({
+      ...common,
+      session: sessionFixture(messages),
+      maxSnapshotBytes: bothBytes,
+    });
+    expect(keepsBoth.messages).toEqual([first, second]);
+    expect(validateSuccessResult("session.getSnapshot", keepsBoth)).toMatchObject({ ok: true });
+
+    const keepsLast = buildSessionSnapshot({
+      ...common,
+      session: sessionFixture(messages),
+      maxSnapshotBytes: bothBytes - 1,
+    });
+    expect(keepsLast.messages).toEqual([second]);
+    expect(validateSuccessResult("session.getSnapshot", keepsLast)).toMatchObject({ ok: true });
+  });
+
   it("falls back to minimal queue and tool projections when metadata exceeds the budget", () => {
     const queuedText = "q".repeat(2_000);
     const toolDescription = "d".repeat(2_000);

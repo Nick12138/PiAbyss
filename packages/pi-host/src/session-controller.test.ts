@@ -198,6 +198,46 @@ describe("session.list runtime metadata", () => {
 });
 
 describe("session.getTree", () => {
+  function treeFixture() {
+    const identity = new IdentityState();
+    identity.workspaceId = WORKSPACE_ID;
+    identity.workspaceRevision = 1;
+    identity.sessionId = ACTIVE_SESSION_ID;
+    identity.sessionRevision = 5;
+    const serviceGraphLock = new TryMutex();
+    const tree = [
+      {
+        entry: { id: "u1", type: "message", parentId: null },
+        children: [],
+        label: undefined,
+      },
+    ];
+    const sessionManager = {
+      getTree: vi.fn(() => tree),
+      getLeafId: vi.fn(() => "u1"),
+    };
+    const graph: {
+      sessionManager: unknown;
+      sessionTreeCache?: unknown;
+    } = { sessionManager };
+    const factory = {
+      getServer: () => ({ identity, serviceGraphLock }),
+      checkIdentity: () => null,
+      getGraph: () => graph,
+    } as unknown as WorkspaceGraphFactory;
+    return { identity, serviceGraphLock, factory, graph, sessionManager };
+  }
+
+  function treeContext(identity: IdentityState): Record<string, unknown> {
+    return {
+      expectedHostInstanceId: identity.hostInstanceId,
+      expectedWorkspaceId: identity.workspaceId,
+      expectedWorkspaceRevision: identity.workspaceRevision,
+      expectedSessionId: identity.sessionId,
+      expectedSessionRevision: identity.sessionRevision,
+    };
+  }
+
   it("emits wire-valid nodes even when SDK labels are undefined-keyed", async () => {
     const identity = new IdentityState();
     identity.workspaceId = WORKSPACE_ID;
@@ -260,6 +300,90 @@ describe("session.getTree", () => {
     expect("label" in tree[0]!).toBe(false);
     expect("labelTimestamp" in tree[0]!).toBe(false);
     expect((tree[0]!.children as Record<string, unknown>[])[0]!.label).toBe("experiment");
+  });
+
+  it("serves a valid cached tree without the service graph lock", async () => {
+    const { identity, serviceGraphLock, factory, graph, sessionManager } = treeFixture();
+    graph.sessionTreeCache = {
+      sessionId: ACTIVE_SESSION_ID,
+      sessionRevision: identity.sessionRevision,
+      leafId: "u1",
+      tree: [{ entry: { id: "cached" }, children: [] }],
+    };
+    // Hold the graph lock as a session switch would: the locked path would
+    // answer SERVICE_GRAPH_BUSY, so a result proves the cache was used.
+    expect(
+      serviceGraphLock.tryAcquire({ operationKind: "session.open", requestId: "switch" }),
+    ).toBe(true);
+    const handler = createSessionHandlers(factory)["session.getTree"]!;
+
+    const response = await handler({
+      id: "55555555-5555-4555-8555-555555555555",
+      method: "session.getTree",
+      params: null,
+      context: treeContext(identity),
+    } as HandlerContext);
+
+    expect(response).toHaveProperty("result");
+    if (!("result" in response)) return;
+    expect(response.result).toEqual({
+      tree: [{ entry: { id: "cached" }, children: [] }],
+      leafId: "u1",
+    });
+    expect(sessionManager.getTree).not.toHaveBeenCalled();
+    serviceGraphLock.release("switch");
+  });
+
+  it("falls back to the locked path when the cache belongs to another session", async () => {
+    const { identity, serviceGraphLock, factory, graph } = treeFixture();
+    graph.sessionTreeCache = {
+      sessionId: BACKGROUND_SESSION_ID,
+      sessionRevision: identity.sessionRevision,
+      leafId: "u1",
+      tree: [{ entry: { id: "other-session" }, children: [] }],
+    };
+    expect(
+      serviceGraphLock.tryAcquire({ operationKind: "session.open", requestId: "switch" }),
+    ).toBe(true);
+    const handler = createSessionHandlers(factory)["session.getTree"]!;
+
+    const response = await handler({
+      id: "55555555-5555-4555-8555-555555555555",
+      method: "session.getTree",
+      params: null,
+      context: treeContext(identity),
+    } as HandlerContext);
+
+    // Another session's tree is never served — the read goes to the locked
+    // path, which answers busy while the switch holds the lock.
+    expect(response).toMatchObject({
+      error: { code: "SERVICE_GRAPH_BUSY" },
+    });
+    serviceGraphLock.release("switch");
+  });
+
+  it("revalidates the cache against the live leaf before serving it", async () => {
+    const { identity, serviceGraphLock, factory, graph } = treeFixture();
+    graph.sessionTreeCache = {
+      sessionId: ACTIVE_SESSION_ID,
+      sessionRevision: identity.sessionRevision,
+      leafId: "stale-leaf",
+      tree: [{ entry: { id: "stale" }, children: [] }],
+    };
+    expect(
+      serviceGraphLock.tryAcquire({ operationKind: "session.open", requestId: "switch" }),
+    ).toBe(true);
+    const handler = createSessionHandlers(factory)["session.getTree"]!;
+
+    const response = await handler({
+      id: "55555555-5555-4555-8555-555555555555",
+      method: "session.getTree",
+      params: null,
+      context: treeContext(identity),
+    } as HandlerContext);
+
+    expect(response).toMatchObject({ error: { code: "SERVICE_GRAPH_BUSY" } });
+    serviceGraphLock.release("switch");
   });
 });
 

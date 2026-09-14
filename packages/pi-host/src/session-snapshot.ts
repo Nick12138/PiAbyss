@@ -37,64 +37,105 @@ function jsonByteLength(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value), "utf8");
 }
 
-function jsonArrayByteLength(values: readonly unknown[]): number {
+/**
+ * Serialize each item once and return its JSON byte length. Downstream size
+ * accounting (candidate snapshots, image omission, recent-suffix truncation)
+ * must derive every total from this memo instead of re-stringifying items.
+ */
+function measureJsonByteLengths(values: readonly unknown[]): number[] {
+  return values.map((value) => jsonByteLength(value));
+}
+
+/** JSON byte length of an array whose items' lengths are already known. */
+function jsonArrayByteLengthFromMemo(itemBytes: readonly number[]): number {
   let bytes = 2;
-  for (let index = 0; index < values.length; index += 1) {
-    bytes += jsonByteLength(values[index]);
+  for (let index = 0; index < itemBytes.length; index += 1) {
     if (index > 0) bytes += 1;
+    bytes += itemBytes[index]!;
   }
   return bytes;
 }
 
-function snapshotByteLength(snapshot: SessionSnapshot): number {
-  const withoutMessages = { ...snapshot, messages: [] };
-  return jsonByteLength(withoutMessages) - 2 + jsonArrayByteLength(snapshot.messages);
+/**
+ * Snapshot size accounting: serialize the snapshot once with an empty
+ * messages array, then combine that base with memoized per-message lengths.
+ */
+function snapshotBaseByteLength(snapshot: SessionSnapshot): number {
+  return jsonByteLength({ ...snapshot, messages: [] });
 }
 
-function entriesByteLength(
-  entries: readonly SerializableSessionEntry[],
+function snapshotByteLengthFromMemo(
+  baseBytes: number,
+  messageBytes: readonly number[],
+): number {
+  // The base includes the empty `[]` placeholder; replace it with real items.
+  return baseBytes - 2 + jsonArrayByteLengthFromMemo(messageBytes);
+}
+
+function entriesByteLengthFromMemo(
+  entryBytes: readonly number[],
   leafId: string | null,
 ): number {
   return (
     Buffer.byteLength(',"entries":', "utf8") +
-    jsonArrayByteLength(entries) +
+    jsonArrayByteLengthFromMemo(entryBytes) +
     Buffer.byteLength(',"leafId":', "utf8") +
     jsonByteLength(leafId)
   );
 }
 
-function omitImages(messages: readonly SerializableAgentMessage[]): SerializableAgentMessage[] {
-  return messages.map((message) => {
-    if (!Array.isArray(message.content)) return message;
+function omitImages(
+  messages: readonly SerializableAgentMessage[],
+  messageBytes: readonly number[],
+): { messages: SerializableAgentMessage[]; messageBytes: number[] } {
+  const result: SerializableAgentMessage[] = [];
+  const resultBytes: number[] = [];
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index]!;
+    if (!Array.isArray(message.content)) {
+      result.push(message);
+      resultBytes.push(messageBytes[index]!);
+      continue;
+    }
     let changed = false;
     const content = message.content.map((block) => {
       if (block.type !== "image" || typeof block.data !== "string") return block;
       changed = true;
       return { type: "text", text: OMITTED_IMAGE_TEXT };
     });
-    return changed ? { ...message, content } : message;
-  });
+    if (changed) {
+      const next = { ...message, content };
+      result.push(next);
+      // Only image-bearing messages change; measure just those once.
+      resultBytes.push(jsonByteLength(next));
+    } else {
+      result.push(message);
+      resultBytes.push(messageBytes[index]!);
+    }
+  }
+  return { messages: result, messageBytes: resultBytes };
 }
 
 function recentMessageSuffix(
-  snapshot: SessionSnapshot,
+  messages: readonly SerializableAgentMessage[],
+  messageBytes: readonly number[],
+  baseBytes: number,
   maxSnapshotBytes: number,
 ): SerializableAgentMessage[] {
-  const emptySnapshotBytes = snapshotByteLength({ ...snapshot, messages: [] });
+  const emptySnapshotBytes = snapshotByteLengthFromMemo(baseBytes, []);
   if (emptySnapshotBytes > maxSnapshotBytes) return [];
 
-  let suffixStart = snapshot.messages.length;
+  let suffixStart = messages.length;
   let suffixLength = 0;
   let bytes = emptySnapshotBytes;
-  for (let index = snapshot.messages.length - 1; index >= 0; index -= 1) {
-    const message = snapshot.messages[index]!;
-    const nextBytes = bytes + jsonByteLength(message) + (suffixLength > 0 ? 1 : 0);
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const nextBytes = bytes + messageBytes[index]! + (suffixLength > 0 ? 1 : 0);
     if (nextBytes > maxSnapshotBytes) break;
     suffixStart = index;
     suffixLength += 1;
     bytes = nextBytes;
   }
-  return snapshot.messages.slice(suffixStart);
+  return messages.slice(suffixStart);
 }
 
 function minimalSessionSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
@@ -240,7 +281,12 @@ export function buildSessionSnapshot(args: {
   };
 
   const maxSnapshotBytes = args.maxSnapshotBytes ?? MAX_SESSION_SNAPSHOT_BYTES;
-  const snapshotBytes = snapshotByteLength(snapshot);
+  // Measure every message once; all candidate size checks derive from this
+  // memo instead of re-serializing the full message array (multiple full
+  // JSON.stringify passes over a 12MB snapshot are pure waste).
+  const baseBytes = snapshotBaseByteLength(snapshot);
+  const messageBytes = measureJsonByteLengths(snapshot.messages);
+  const snapshotBytes = snapshotByteLengthFromMemo(baseBytes, messageBytes);
 
   // Session messages can include an in-flight projection that is not persisted
   // yet. Preserve the compaction-aware entry path only when the entire desktop
@@ -253,7 +299,8 @@ export function buildSessionSnapshot(args: {
     const rawEntries = args.sessionManager.buildContextEntries();
     const entries = rawEntries.map((entry) => toJsonValue(entry) as SerializableSessionEntry);
     const leafId = args.sessionManager.getLeafId() ?? null;
-    if (snapshotBytes + entriesByteLength(entries, leafId) <= maxSnapshotBytes) {
+    const entryBytes = measureJsonByteLengths(entries);
+    if (snapshotBytes + entriesByteLengthFromMemo(entryBytes, leafId) <= maxSnapshotBytes) {
       const extensionMessageRenders = renderExtensionMessageEntries(
         session,
         rawEntries,
@@ -271,21 +318,37 @@ export function buildSessionSnapshot(args: {
         leafId,
         ...(Object.keys(extensionMessageRenders).length > 0 ? { extensionMessageRenders } : {}),
       };
-      if (snapshotByteLength(candidate) <= maxSnapshotBytes) return candidate;
+      // Messages are untouched in the candidate, so the memo still applies.
+      if (
+        snapshotByteLengthFromMemo(snapshotBaseByteLength(candidate), messageBytes) <=
+        maxSnapshotBytes
+      ) {
+        return candidate;
+      }
       return { ...snapshot, entries, leafId };
     }
   }
 
   if (snapshotBytes <= maxSnapshotBytes) return snapshot;
 
-  const withoutImages = { ...snapshot, messages: omitImages(snapshot.messages) };
-  if (snapshotByteLength(withoutImages) <= maxSnapshotBytes) return withoutImages;
+  const imageOmission = omitImages(snapshot.messages, messageBytes);
+  const withoutImages = { ...snapshot, messages: imageOmission.messages };
+  const withoutImagesBytes = snapshotByteLengthFromMemo(baseBytes, imageOmission.messageBytes);
+  if (withoutImagesBytes <= maxSnapshotBytes) return withoutImages;
 
   const recentMessages = {
     ...withoutImages,
-    messages: recentMessageSuffix(withoutImages, maxSnapshotBytes),
+    messages: recentMessageSuffix(
+      imageOmission.messages,
+      imageOmission.messageBytes,
+      baseBytes,
+      maxSnapshotBytes,
+    ),
   };
-  if (snapshotByteLength(recentMessages) <= maxSnapshotBytes) return recentMessages;
+  const recentMessageBytes = measureJsonByteLengths(recentMessages.messages);
+  if (snapshotByteLengthFromMemo(baseBytes, recentMessageBytes) <= maxSnapshotBytes) {
+    return recentMessages;
+  }
 
   return minimalSessionSnapshot(recentMessages);
 }

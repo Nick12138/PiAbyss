@@ -1,11 +1,10 @@
-import type { SessionSnapshot } from "@piabyss/protocol";
+import type { HostIdentity, SessionSnapshot } from "@piabyss/protocol";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   captureActiveSessionState,
   commitActiveSessionState,
   IDLE_SESSION_CACHE_TTL_MS,
-  MAX_IDLE_SESSION_CACHE,
   SESSION_DISPOSAL_STEP_TIMEOUT_MS,
   SessionRuntimeCache,
   type ActiveSessionState,
@@ -78,6 +77,7 @@ function disposalSession(
 }
 
 afterEach(() => {
+  delete process.env.PIABYSS_IDLE_SESSION_CACHE_LIMIT;
   vi.useRealTimers();
 });
 
@@ -146,19 +146,33 @@ describe("idle Session cache", () => {
     expect(graph.idleSessionCache?.get("idle")).toBe(runtime);
   });
 
-  it("keeps the five most recently active idle Sessions and evicts the oldest runtime", () => {
-    const cache = disposalCache();
+  it("keeps the five most recently active idle Sessions and evicts the oldest runtime", async () => {
+    // The module reads its cache limit from the environment at import time;
+    // pin it and re-import so the test is deterministic on machines where
+    // PIABYSS_IDLE_SESSION_CACHE_LIMIT is set to a different value.
+    process.env.PIABYSS_IDLE_SESSION_CACHE_LIMIT = "5";
+    vi.resetModules();
+    const {
+      MAX_IDLE_SESSION_CACHE: pinnedCacheLimit,
+      SessionRuntimeCache: pinnedCache,
+    } = await import("./session-runtime-cache.js");
+    const runtimeCache = new pinnedCache({
+      getGraph: () => null,
+      getServer: () => null,
+      getCurrentRunId: () => null,
+      sessionPathsEqual: () => false,
+    });
     const graph = { backgroundSessions: new Map() } as unknown as WorkspaceGraph;
     const states = ["A", "B", "C", "D", "E"].map((sessionId) => {
       const state = activeSlots(sessionId);
       Reflect.set(state.agentSession!, "isIdle", true);
-      cache.retainSessionRuntime(graph, state);
+      runtimeCache.retainSessionRuntime(graph, state);
       return state;
     });
 
-    cache.touchIdleSession(graph, "F");
+    runtimeCache.touchIdleSession(graph, "F");
 
-    expect(MAX_IDLE_SESSION_CACHE).toBe(5);
+    expect(pinnedCacheLimit).toBe(5);
     expect([...(graph.idleSessionRecency?.keys() ?? [])]).toEqual(["B", "C", "D", "E", "F"]);
     expect([...(graph.idleSessionCache?.keys() ?? [])]).toEqual(["B", "C", "D", "E"]);
     expect(graph.idleSessionCache?.has("A")).toBe(false);
@@ -233,6 +247,103 @@ describe("active Session state", () => {
     });
     expect(graph.backgroundSessions.has("background")).toBe(true);
     expect(identity).toMatchObject({ workspaceRevision: 11, packageRevision: 13 });
+  });
+
+  it("refreshes the lock-free getTree cache for the incoming session on commit", () => {
+    const current = activeSlots("current");
+    const next = activeSlots("next");
+    const nextManager = next.sessionManager as unknown as {
+      getTree: () => unknown[];
+      getLeafId: () => string | null;
+    };
+    nextManager.getTree = () => [
+      { entry: { id: "n1", type: "message" }, children: [] },
+    ];
+    nextManager.getLeafId = () => "n1";
+    const graph = {
+      ...graphFrom(current),
+      backgroundSessions: new Map(),
+      // A leftover cache from the outgoing session must not survive the commit.
+      sessionTreeCache: {
+        sessionId: "current",
+        sessionRevision: 2,
+        leafId: "old",
+        tree: [],
+      },
+    } as unknown as WorkspaceGraph;
+    const identity = {
+      sessionId: current.sessionId,
+      sessionRevision: current.sessionRevision,
+    };
+
+    commitActiveSessionState(graph, identity, next);
+
+    expect(graph.sessionTreeCache).toEqual({
+      sessionId: "next",
+      sessionRevision: next.sessionRevision,
+      leafId: "n1",
+      tree: [{ entry: { id: "n1", type: "message" }, children: [] }],
+    });
+  });
+
+  it("invalidates the getTree cache when a tree-changing agent event arrives", () => {
+    const identity: HostIdentity = {
+      hostInstanceId: "host-1",
+      workspaceId: "ws-1",
+      workspaceRevision: 1,
+      sessionId: "current",
+      sessionRevision: 2,
+      packageRevision: 1,
+    };
+    const server = {
+      identity,
+      getIdentity: () => identity,
+      emitForIdentity: vi.fn(),
+      emitForBoundIdentity: vi.fn(),
+      getPhase: () => "ready",
+    } as unknown as PiHostServer;
+    const session = {
+      sessionId: "current",
+      isIdle: true,
+      isCompacting: false,
+      isRetrying: false,
+      model: undefined,
+      messages: [],
+      thinkingLevel: "off",
+      autoCompactionEnabled: true,
+      autoRetryEnabled: true,
+      steeringMode: "all",
+      followUpMode: "all",
+      getSteeringMessages: () => [],
+      getFollowUpMessages: () => [],
+      getAllTools: () => [],
+      getActiveToolNames: () => [],
+    } as unknown as AgentSession;
+    const graph = {
+      ...graphFrom(activeSlots("current")),
+      canonicalCwd: "C:/workspace",
+      workspaceId: "ws-1",
+      backgroundSessions: new Map(),
+      sessionTreeCache: {
+        sessionId: "current",
+        sessionRevision: 2,
+        leafId: "leaf",
+        tree: [],
+      },
+    } as unknown as WorkspaceGraph;
+    // handleAgentEvent only processes events from the graph's own sessions.
+    graph.agentSession = session;
+    const cache = new SessionRuntimeCache({
+      getGraph: () => graph,
+      getServer: () => server,
+      getCurrentRunId: () => null,
+      sessionPathsEqual: () => false,
+    });
+
+    expect(graph.sessionTreeCache).toBeDefined();
+    cache.handleAgentEvent(graph, session, { type: "message_end", message: { role: "user" } });
+
+    expect(graph.sessionTreeCache).toBeUndefined();
   });
 });
 

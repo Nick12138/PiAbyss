@@ -22,6 +22,7 @@ import type {
   SessionSnapshot,
 } from "@piabyss/protocol";
 import type { ResourceIdMap } from "./package-snapshot.js";
+import type { SessionTreeCacheEntry } from "./session-tree-cache.js";
 import type { AttachmentStore } from "./attachment-store.js";
 import type { SubagentStatusBridge } from "./subagent-status-extension.js";
 
@@ -72,6 +73,12 @@ export type WorkspaceGraph = {
   suspendedProviders?: SuspendedProviders;
   /** Optional PiAbyss inline bridge for pi-subagents status projection. */
   subagentStatusBridge?: SubagentStatusBridge;
+  /**
+   * Cached session.getTree projection of the CURRENT active Session. Valid
+   * only while sessionId/sessionRevision/leafId all match; invalidated on
+   * session switches and tree-changing agent events (see session-tree-cache).
+   */
+  sessionTreeCache?: SessionTreeCacheEntry;
 };
 
 export type BackgroundSessionRuntime = {

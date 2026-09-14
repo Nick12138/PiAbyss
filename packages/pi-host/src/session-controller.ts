@@ -22,26 +22,7 @@ import {
   resolveSubagentRunId,
   subagentRunExists,
 } from "./subagent-runs.js";
-
-type SdkSessionTreeNode = {
-  entry: unknown;
-  children: SdkSessionTreeNode[];
-  label?: string;
-  labelTimestamp?: string;
-};
-
-/**
- * SDK tree nodes carry `label: undefined` keys; toJsonValue would turn those
- * into nulls, which the wire contract rejects — optional keys must be absent.
- */
-function toWireTreeNode(node: SdkSessionTreeNode): JsonValue {
-  return {
-    entry: toJsonValue(node.entry),
-    children: node.children.map(toWireTreeNode),
-    ...(node.label !== undefined ? { label: node.label } : {}),
-    ...(node.labelTimestamp !== undefined ? { labelTimestamp: node.labelTimestamp } : {}),
-  };
-}
+import { toWireTree, type SdkSessionTreeNode } from "./session-tree-cache.js";
 
 /** Timestamp of one session message entry: the message's own epoch time when
  * numeric, else the parsed ISO entry timestamp, else null. */
@@ -491,6 +472,34 @@ export function createSessionHandlers(
       if (!server) {
         return { error: createHostError("HOST_NOT_READY", "Server not bound") };
       }
+      // Fast path: serve the cached tree for the exact current identity without
+      // the service graph lock. The renderer refetches the tree immediately
+      // after a session switch, while the switch still holds the lock — taking
+      // it here would answer SERVICE_GRAPH_BUSY and push the renderer down its
+      // retry ladder (visible as a spinner after every switch). The cache is
+      // invalidated on session switches and tree-changing agent events, and is
+      // additionally revalidated against the live leafId, so it can never
+      // serve another session's (or another branch state's) tree.
+      const stale = factory.checkIdentity(ctx.context, {
+        requireWorkspace: true,
+        requireSession: true,
+      });
+      const graph = factory.getGraph();
+      if (!stale && graph?.sessionManager) {
+        const cached = graph.sessionTreeCache;
+        const currentLeafId = graph.sessionManager.getLeafId() ?? null;
+        if (
+          cached &&
+          cached.sessionId === server.identity.sessionId &&
+          cached.sessionRevision === server.identity.sessionRevision &&
+          cached.leafId === currentLeafId
+        ) {
+          return {
+            result: { tree: cached.tree, leafId: cached.leafId },
+            identity: server.identity.snapshot(),
+          };
+        }
+      }
       const { withStableGraphRead } = await import("./stable-graph-read.js");
       const out = await withStableGraphRead({
         requestId: ctx.id,
@@ -505,12 +514,35 @@ export function createSessionHandlers(
           const g = factory.getGraph();
           if (!g?.sessionManager) throw new Error("No active session");
           return {
-            tree: (g.sessionManager.getTree() as SdkSessionTreeNode[]).map(toWireTreeNode),
+            tree: toWireTree(g.sessionManager.getTree() as SdkSessionTreeNode[]),
             leafId: g.sessionManager.getLeafId(),
           };
         },
       });
       if (!out.ok) return { error: out.error, identity: out.identity };
+      // Warm the cache so the next read can skip the lock. The stable read
+      // guarantees the identity did not move during the read, but the write
+      // happens after the lock is released: a concurrent switch may have
+      // committed a fresher entry in between. Re-validate against the live
+      // identity first — a stale write would only cost a perf regression
+      // (next getTree falls back to the lock path), never correctness, but
+      // re-checking keeps the cache always describing the active session.
+      const liveIdentity = factory.getServer()?.identity;
+      if (
+        graph &&
+        graph === factory.getGraph() &&
+        liveIdentity &&
+        out.identity.sessionId === liveIdentity.sessionId &&
+        out.identity.sessionRevision === liveIdentity.sessionRevision &&
+        typeof out.identity.sessionId === "string"
+      ) {
+        graph.sessionTreeCache = {
+          sessionId: out.identity.sessionId,
+          sessionRevision: out.identity.sessionRevision,
+          leafId: out.result.leafId,
+          tree: out.result.tree,
+        };
+      }
       return { result: out.result, identity: out.identity };
     },
 

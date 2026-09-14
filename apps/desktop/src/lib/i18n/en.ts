@@ -226,12 +226,6 @@ export const en = {
   generalSystemNotifications: "System notifications",
   generalSystemNotificationsDesc:
     "Show OS notifications for background completions, failures, input requests and host crashes, with click-to-session.",
-  generalIdleSessionCacheLimit: "Idle session queue capacity",
-  generalIdleSessionCacheLimitDesc:
-    "Keeps the most recently used idle sessions ready in memory. Applies when Pi Host next starts.",
-  generalIdleSessionTimeout: "Idle session timeout",
-  generalIdleSessionTimeoutDesc:
-    "Disposes an untouched idle session after this many minutes. Applies when Pi Host next starts.",
   generalBusySendGroup: "While the agent is running",
   generalBusySend: "Send while running",
   generalBusySendDesc: "What happens when you send another message during a turn.",

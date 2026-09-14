@@ -535,9 +535,6 @@ pub struct PiHostManager {
     /// into the Host process environment at spawn time. Snapshot taken from
     /// desktop settings; applied on the next Host start.
     plugin_env: BTreeMap<String, BTreeMap<String, String>>,
-    /// Idle Session hot-queue policy, applied to the next spawned Host.
-    idle_session_cache_limit: u32,
-    idle_session_timeout_minutes: u32,
     /// Shared-host mode: when true the next spawned Host is told (via
     /// `PIABYSS_MAX_BOUND_WORKSPACES`) to keep every workspace graph bound so
     /// in-place switches return instantly.
@@ -1114,10 +1111,6 @@ impl PiHostPool {
             manager.set_agent_dir(settings.resolved_agent_dir());
             manager.set_auto_restart_once(settings.settings.auto_restart_host_once);
             manager.set_plugin_env(settings.settings.plugin_env.clone());
-            manager.set_idle_session_policy(
-                settings.settings.idle_session_cache_limit,
-                settings.settings.idle_session_timeout_minutes,
-            );
             manager.set_shared_host_mode(settings.settings.shared_host_mode);
         }
     }
@@ -1312,6 +1305,16 @@ fn observe_host_status_changed(
 }
 
 pub(crate) fn observe_host_activity(activity: &StdMutex<HostActivity>, line: &str) -> bool {
+    // Cheap pre-check: only these two event kinds do any work. Skip the full
+    // parse for everything else — session snapshot lines can reach ~12MB and
+    // would otherwise be fully deserialized just to be discarded.
+    let interesting = line.contains("\"event\":\"host.statusChanged\"")
+        || line.contains("\"event\": \"host.statusChanged\"")
+        || line.contains("\"event\":\"session.runtimeChanged\"")
+        || line.contains("\"event\": \"session.runtimeChanged\"");
+    if !interesting {
+        return false;
+    }
     let Ok(message) = serde_json::from_str::<serde_json::Value>(line) else {
         return false;
     };
@@ -1636,6 +1639,286 @@ mod host_activity_tests {
         assert!(!should_activate_workspace_host(false, false));
         assert!(should_activate_workspace_host(true, false));
         assert!(should_activate_workspace_host(false, true));
+    }
+
+    #[test]
+    fn status_changed_still_updates_workspace_bindings() {
+        let activity = StdMutex::new(HostActivity::default());
+        let line = serde_json::json!({
+            "event": "host.statusChanged",
+            "payload": {
+                "boundWorkspaces": [{"workspaceId": "w1", "cwd": "/tmp/w1"}]
+            }
+        })
+        .to_string();
+        assert!(observe_host_activity(&activity, &line));
+        assert_eq!(
+            activity
+                .lock()
+                .expect("activity lock")
+                .workspace_cwds
+                .get("w1"),
+            Some(&"/tmp/w1".to_string())
+        );
+    }
+
+    #[test]
+    fn spaced_event_spacing_is_still_processed() {
+        // Non-compact JSON spacing (`"event": "..."`) must not be dropped by
+        // the cheap pre-check.
+        let activity = StdMutex::new(HostActivity::default());
+        assert!(observe_host_activity(
+            &activity,
+            r#"{"event": "session.runtimeChanged", "payload": {"sessionId": "a", "state": "running"}}"#
+        ));
+    }
+
+    #[test]
+    fn unrelated_events_short_circuit_without_parsing() {
+        let activity = StdMutex::new(HostActivity::default());
+        // A big synthetic snapshot line without either interesting event name.
+        let mut line = String::from("{\"event\":\"session.snapshot\",\"payload\":{\"entries\":[");
+        for i in 0..1000 {
+            if i > 0 {
+                line.push(',');
+            }
+            line.push_str(&format!("{{\"id\":\"entry-{i}\"}}"));
+        }
+        line.push_str("]}}");
+        assert!(!observe_host_activity(&activity, &line));
+        // Also a plain non-JSON line and an unrelated event.
+        assert!(!observe_host_activity(&activity, "not json at all"));
+        assert!(!observe_host_activity(
+            &activity,
+            r#"{"event":"session.updated"}"#
+        ));
+        // Activity untouched by all of the above.
+        assert!(!host_activity_busy(&activity));
+    }
+}
+
+#[cfg(test)]
+mod extract_field_tests {
+    use super::*;
+
+    /// Where the top-level `id` sits in the synthetic snapshot line.
+    enum IdPosition {
+        None,
+        First,
+        Last,
+    }
+
+    /// Build a ~12MB synthetic session-snapshot line whose `payload.entries`
+    /// carries `id` keys nested deep inside (exactly the shape that used to be
+    /// fully parsed twice per line).
+    fn big_snapshot_line(id_position: IdPosition) -> String {
+        let mut entries = String::with_capacity(13 * 1024 * 1024);
+        entries.push('[');
+        for i in 0..40_000usize {
+            if i > 0 {
+                entries.push(',');
+            }
+            entries.push_str(&format!(
+                "{{\"id\":\"entry-{i}\",\"text\":\"{}\",\"nested\":{{\"id\":\"deep-{i}\"}}}}",
+                "x".repeat(300)
+            ));
+        }
+        entries.push(']');
+        let payload = format!("{{\"entries\":{entries}}}");
+        match id_position {
+            IdPosition::None => {
+                format!("{{\"event\":\"session.snapshot\",\"payload\":{payload}}}")
+            }
+            IdPosition::First => {
+                format!("{{\"id\":\"top\",\"event\":\"session.snapshot\",\"payload\":{payload}}}")
+            }
+            IdPosition::Last => {
+                format!("{{\"event\":\"session.snapshot\",\"payload\":{payload},\"id\":\"top\"}}")
+            }
+        }
+    }
+
+    #[test]
+    fn extracts_top_level_id() {
+        assert_eq!(
+            extract_top_level_string_field(
+                "{\"id\":\"req-1\",\"event\":\"host.ready\",\"payload\":{}}",
+                "id"
+            ),
+            Some("req-1".to_string())
+        );
+    }
+
+    #[test]
+    fn tolerates_whitespace_variants() {
+        assert_eq!(
+            extract_top_level_string_field("{ \"id\" : \"a\" , \"event\" : \"x\" }", "id"),
+            Some("a".to_string())
+        );
+        assert_eq!(
+            extract_top_level_string_field("{\"id\": \"spaced\"}", "id"),
+            Some("spaced".to_string())
+        );
+    }
+
+    #[test]
+    fn missing_id_returns_none() {
+        assert_eq!(
+            extract_top_level_string_field("{\"event\":\"host.ready\",\"payload\":{}}", "id"),
+            None
+        );
+        assert_eq!(extract_top_level_string_field("{}", "id"), None);
+    }
+
+    #[test]
+    fn nested_id_is_ignored() {
+        assert_eq!(
+            extract_top_level_string_field(
+                "{\"event\":\"x\",\"entries\":[{\"id\":\"inner\"}],\"payload\":{\"id\":\"deep\"}}",
+                "id"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn non_string_id_returns_none() {
+        assert_eq!(extract_top_level_string_field("{\"id\":123}", "id"), None);
+        assert_eq!(extract_top_level_string_field("{\"id\":null}", "id"), None);
+        assert_eq!(extract_top_level_string_field("{\"id\":true}", "id"), None);
+        assert_eq!(
+            extract_top_level_string_field("{\"id\":[\"a\"]}", "id"),
+            None
+        );
+        assert_eq!(
+            extract_top_level_string_field("{\"id\":{\"a\":1}}", "id"),
+            None
+        );
+    }
+
+    #[test]
+    fn keys_that_merely_contain_id_do_not_match() {
+        assert_eq!(
+            extract_top_level_string_field("{\"idx\":1,\"ide\":\"x\",\"identity\":\"y\"}", "id"),
+            None
+        );
+    }
+
+    #[test]
+    fn string_values_mentioning_id_and_escapes_do_not_confuse_the_scan() {
+        // A *value* containing `"id"` as text is not a key.
+        assert_eq!(
+            extract_top_level_string_field("{\"note\":\"contains \\\"id\\\" inside\"}", "id"),
+            None
+        );
+        // Escaped quotes and backslashes inside the matched value unescape correctly.
+        assert_eq!(
+            extract_top_level_string_field("{\"id\":\"he said \\\"hi\\\"\"}", "id"),
+            Some("he said \"hi\"".to_string())
+        );
+        assert_eq!(
+            extract_top_level_string_field("{\"id\":\"a\\\\b\"}", "id"),
+            Some("a\\b".to_string())
+        );
+        // Escaped quote inside a key.
+        assert_eq!(
+            extract_top_level_string_field("{\"i\\\"d\":\"x\",\"id\":\"real\"}", "id"),
+            Some("real".to_string())
+        );
+        // Unicode in the value.
+        assert_eq!(
+            extract_top_level_string_field("{\"id\":\"héllo🎉\"}", "id"),
+            Some("héllo🎉".to_string())
+        );
+    }
+
+    #[test]
+    fn malformed_lines_return_none() {
+        assert_eq!(extract_top_level_string_field("", "id"), None);
+        assert_eq!(extract_top_level_string_field("   ", "id"), None);
+        assert_eq!(extract_top_level_string_field("not json", "id"), None);
+        assert_eq!(extract_top_level_string_field("[\"id\",\"a\"]", "id"), None);
+        assert_eq!(extract_top_level_string_field("\"id\"", "id"), None);
+        assert_eq!(
+            extract_top_level_string_field("{\"id\":\"trunc", "id"),
+            None
+        );
+        assert_eq!(extract_top_level_string_field("{\"id\" \"a\"}", "id"), None);
+        assert_eq!(
+            extract_top_level_string_field("{\"id\":\"a\"} garbage", "id"),
+            None
+        );
+        assert_eq!(extract_top_level_string_field("{\"id\":\"a\"", "id"), None);
+    }
+
+    #[test]
+    fn duplicate_keys_take_the_last_value_like_serde() {
+        assert_eq!(
+            extract_top_level_string_field("{\"id\":\"first\",\"id\":\"second\"}", "id"),
+            Some("second".to_string())
+        );
+    }
+
+    #[test]
+    fn duplicate_keys_mixed_types_follow_serde_last_wins() {
+        // A later non-string value for the field erases the earlier string
+        // match, exactly like serde_json's Value::get would.
+        assert_eq!(
+            extract_top_level_string_field("{\"id\":\"first\",\"id\":123}", "id"),
+            None
+        );
+        assert_eq!(
+            extract_top_level_string_field("{\"id\":\"a\",\"id\":null}", "id"),
+            None
+        );
+        assert_eq!(
+            extract_top_level_string_field("{\"id\":\"a\",\"id\":{\"x\":1}}", "id"),
+            None
+        );
+        assert_eq!(
+            extract_top_level_string_field("{\"id\":\"a\",\"id\":[1]}", "id"),
+            None
+        );
+        // ...and a later string value restores the match.
+        assert_eq!(
+            extract_top_level_string_field("{\"id\":123,\"id\":\"late\"}", "id"),
+            Some("late".to_string())
+        );
+    }
+
+    #[test]
+    fn non_object_fields_are_also_found() {
+        assert_eq!(
+            extract_top_level_string_field(
+                "{\"method\":\"system.hello\",\"id\":\"abc\",\"result\":{}}",
+                "method"
+            ),
+            Some("system.hello".to_string())
+        );
+    }
+
+    #[test]
+    fn twelve_mb_lines_are_handled_quickly() {
+        for (position, expected) in [
+            (IdPosition::None, None),
+            (IdPosition::First, Some("top".to_string())),
+            (IdPosition::Last, Some("top".to_string())),
+        ] {
+            let line = big_snapshot_line(position);
+            assert!(
+                line.len() > 12 * 1024 * 1024,
+                "line is {} bytes",
+                line.len()
+            );
+            let start = Instant::now();
+            let got = extract_top_level_string_field(&line, "id");
+            let elapsed = start.elapsed();
+            assert_eq!(got, expected);
+            assert!(
+                elapsed < Duration::from_secs(2),
+                "scan took {elapsed:?} — not cheap"
+            );
+        }
     }
 }
 
@@ -1991,8 +2274,6 @@ impl PiHostManager {
             agent_dir: settings.resolved_agent_dir(),
             initial_workspace: initial_workspace.or_else(|| Self::initial_workspace_from(settings)),
             plugin_env: settings.settings.plugin_env.clone(),
-            idle_session_cache_limit: settings.settings.idle_session_cache_limit,
-            idle_session_timeout_minutes: settings.settings.idle_session_timeout_minutes,
             shared_host_mode: settings.settings.shared_host_mode,
             restart_count: Arc::new(AtomicU32::new(0)),
             auto_restart_once: settings.settings.auto_restart_host_once,
@@ -2040,11 +2321,6 @@ impl PiHostManager {
 
     pub fn set_plugin_env(&mut self, plugin_env: BTreeMap<String, BTreeMap<String, String>>) {
         self.plugin_env = plugin_env;
-    }
-
-    pub fn set_idle_session_policy(&mut self, limit: u32, timeout_minutes: u32) {
-        self.idle_session_cache_limit = limit;
-        self.idle_session_timeout_minutes = timeout_minutes;
     }
 
     pub fn set_shared_host_mode(&mut self, shared: bool) {
@@ -2330,14 +2606,9 @@ impl PiHostManager {
         // Persist structured pi-host logs (deferred step timings) next to the
         // host cache: stderr is a bounded ring buffer and never reaches disk.
         cmd.env("PI_HOST_LOG_FILE", host_cache_dir.join("pi-host.log"));
-        cmd.env(
-            "PIABYSS_IDLE_SESSION_CACHE_LIMIT",
-            self.idle_session_cache_limit.to_string(),
-        );
-        cmd.env(
-            "PIABYSS_IDLE_SESSION_TIMEOUT_MINUTES",
-            self.idle_session_timeout_minutes.to_string(),
-        );
+        // Idle Session queue policy (PIABYSS_IDLE_SESSION_CACHE_LIMIT /
+        // _TIMEOUT_MINUTES) is owned by the Host's own defaults now; ambient
+        // environment overrides are inherited by the child untouched.
         if self.shared_host_mode && std::env::var_os("PIABYSS_MAX_BOUND_WORKSPACES").is_none() {
             // Shared-host mode keeps every workspace graph bound for instant
             // in-place return (the Host clamps to 1..20). An explicit env set
@@ -2551,12 +2822,11 @@ impl PiHostManager {
                             let payload = line.trim_end_matches(['\r', '\n']).to_string();
                             // Resolve any in-flight Rust-side request awaiting this id
                             // (background workspace bootstrap), independent of renderer
-                            // active-route filtering.
-                            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&payload) {
-                                if let Some(id) = value.get("id").and_then(|x| x.as_str()) {
-                                    if let Some(tx) = pending_requests.lock().await.remove(id) {
-                                        let _ = tx.send(payload.clone());
-                                    }
+                            // active-route filtering. Cheap byte scan: avoids fully
+                            // parsing multi-megabyte snapshot lines just for the id.
+                            if let Some(id) = extract_top_level_string_field(&payload, "id") {
+                                if let Some(tx) = pending_requests.lock().await.remove(&id) {
+                                    let _ = tx.send(payload.clone());
                                 }
                             }
                             if observe_host_activity(&activity, &payload) {
@@ -3157,24 +3427,206 @@ pub(crate) fn build_host_path(
         .map_err(|e| format!("build Host PATH: {e}"))
 }
 
+/// Cheap byte-level scan for a top-level string field in a JSON object line.
+///
+/// Tracks in-string/escape state and `{}`/`[]` depth and only matches `field`
+/// when it appears as a key of the root object (depth 0). The matched value
+/// must itself be a JSON string (unescaped via `serde_json::from_str::<String>`),
+/// and duplicate keys follow serde's last-wins rule (a later non-string value
+/// for `field` erases an earlier string match).
+/// The scanner is a deliberate superset of the JSON grammar: it may return
+/// `Some` for lines a full `serde_json::from_str::<Value>` would reject
+/// (e.g. trailing commas, malformed numbers), but whenever serde *accepts* a
+/// line, the extraction matches `value.get(field).and_then(as_str)` exactly —
+/// including duplicate-key and nested-key rejection semantics. Lines come from
+/// the trusted local Pi Host process, so the tolerant direction is safe.
+fn extract_top_level_string_field(line: &str, field: &str) -> Option<String> {
+    let bytes = line.as_bytes();
+    let len = bytes.len();
+    let is_ws = |b: u8| matches!(b, b' ' | b'\t' | b'\n' | b'\r');
+
+    // The root must be a JSON object; any other root shape cannot carry a
+    // top-level named field.
+    let mut i = 0;
+    while i < len && is_ws(bytes[i]) {
+        i += 1;
+    }
+    if i >= len || bytes[i] != b'{' {
+        return None;
+    }
+    i += 1;
+
+    /// Index just past the closing quote of the string starting at `start`
+    /// (which must point at `"`). `None` if the string is unterminated.
+    fn string_end(bytes: &[u8], start: usize) -> Option<usize> {
+        let mut j = start + 1;
+        let mut escaped = false;
+        while j < bytes.len() {
+            match bytes[j] {
+                b'\\' => escaped = !escaped,
+                b'"' if !escaped => return Some(j + 1),
+                _ => escaped = false,
+            }
+            j += 1;
+        }
+        None
+    }
+
+    let mut depth = 0usize; // nesting inside the root object
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut found: Option<String> = None;
+
+    while i < len {
+        let b = bytes[i];
+        if in_string {
+            match b {
+                b'\\' => escaped = !escaped,
+                b'"' if !escaped => in_string = false,
+                _ => escaped = false,
+            }
+            i += 1;
+            continue;
+        }
+        match b {
+            b'{' | b'[' => {
+                depth += 1;
+                i += 1;
+            }
+            b'}' | b']' => {
+                if depth == 0 {
+                    // Root object closed. Only trailing whitespace may follow.
+                    if bytes[i + 1..].iter().all(|&c| is_ws(c)) {
+                        return found;
+                    }
+                    return None;
+                }
+                depth -= 1;
+                i += 1;
+            }
+            b',' | b' ' | b'\t' | b'\n' | b'\r' => {
+                i += 1;
+            }
+            b'"' if depth == 0 => {
+                // A string at depth 0 can only be a key of the root object.
+                let key_end = string_end(bytes, i)?;
+                let mut j = key_end;
+                while j < len && is_ws(bytes[j]) {
+                    j += 1;
+                }
+                if j >= len || bytes[j] != b':' {
+                    return None; // not a key/value separator: ambiguous
+                }
+                j += 1;
+                while j < len && is_ws(bytes[j]) {
+                    j += 1;
+                }
+                if j >= len {
+                    return None;
+                }
+                let key = &line[i + 1..key_end - 1];
+                let matched = if key.contains('\\') {
+                    serde_json::from_str::<String>(key).ok().as_deref() == Some(field)
+                } else {
+                    key == field
+                };
+                match bytes[j] {
+                    b'"' => {
+                        let value_end = string_end(bytes, j)?;
+                        if matched {
+                            // Escaped content: let serde do the unescaping.
+                            // A malformed string means malformed JSON overall.
+                            found = Some(serde_json::from_str::<String>(&line[j..value_end]).ok()?);
+                        }
+                        i = value_end;
+                    }
+                    b'{' | b'[' => {
+                        // Nested container value: hand it to the depth tracker.
+                        // serde's last-wins rule: a later non-string value for
+                        // the matched field erases an earlier string match.
+                        if matched {
+                            found = None;
+                        }
+                        i = j;
+                    }
+                    _ => {
+                        // Primitive value (number / true / false / null).
+                        let value_start = j;
+                        while j < len && !matches!(bytes[j], b',' | b'}' | b']') && !is_ws(bytes[j])
+                        {
+                            j += 1;
+                        }
+                        let primitive = &bytes[value_start..j];
+                        let valid = matches!(primitive, b"true" | b"false" | b"null")
+                            || (!primitive.is_empty()
+                                && primitive.iter().all(|&c| {
+                                    c.is_ascii_digit()
+                                        || matches!(c, b'-' | b'+' | b'.' | b'e' | b'E')
+                                }));
+                        if !valid {
+                            return None;
+                        }
+                        // serde's last-wins rule: a later non-string value for
+                        // the matched field erases an earlier string match.
+                        if matched {
+                            found = None;
+                        }
+                        i = j;
+                    }
+                }
+            }
+            b'"' => {
+                // String inside a nested container: skip it.
+                in_string = true;
+                escaped = false;
+                i += 1;
+            }
+            b':' if depth > 0 => {
+                // Key/value separator inside a nested object: irrelevant to
+                // top-level matching, just skip it.
+                i += 1;
+            }
+            _ if depth > 0 => {
+                // Primitive literal (number / true / false / null) inside a
+                // nested container: consume and validate it so malformed
+                // lines are still rejected.
+                let start = i;
+                while i < len
+                    && !matches!(bytes[i], b',' | b'}' | b']' | b'"' | b'{' | b'[' | b':')
+                    && !is_ws(bytes[i])
+                {
+                    i += 1;
+                }
+                let primitive = &bytes[start..i];
+                let valid = matches!(primitive, b"true" | b"false" | b"null")
+                    || (!primitive.is_empty()
+                        && primitive.iter().all(|&c| {
+                            c.is_ascii_digit() || matches!(c, b'-' | b'+' | b'.' | b'e' | b'E')
+                        }));
+                if !valid {
+                    return None;
+                }
+            }
+            _ => return None, // unexpected byte at a structural position
+        }
+    }
+    None // unterminated document
+}
+
 /// Extract the `id` field from a JSONL request line (best-effort).
 fn extract_request_id(line: &str) -> Option<String> {
-    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
-    v.get("id").and_then(|x| x.as_str()).map(|s| s.to_string())
+    extract_top_level_string_field(line.trim(), "id")
 }
 
 /// Extract hostInstanceId from a host.ready JSON line (best-effort).
 pub fn extract_host_instance_id(line: &str) -> Option<String> {
-    let v: serde_json::Value = serde_json::from_str(line).ok()?;
-    v.get("hostInstanceId")
-        .and_then(|x| x.as_str())
-        .map(|s| s.to_string())
-        .or_else(|| {
-            v.get("payload")
-                .and_then(|p| p.get("hostInstanceId"))
-                .and_then(|x| x.as_str())
-                .map(|s| s.to_string())
-        })
+    extract_top_level_string_field(line, "hostInstanceId").or_else(|| {
+        let v: serde_json::Value = serde_json::from_str(line).ok()?;
+        v.get("payload")
+            .and_then(|p| p.get("hostInstanceId"))
+            .and_then(|x| x.as_str())
+            .map(|s| s.to_string())
+    })
 }
 
 fn staged_host_is_runnable(main_js: &Path) -> bool {
@@ -3254,4 +3706,50 @@ fn chrono_like_now() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod serde_equivalence_tests {
+    use super::*;
+
+    #[test]
+    fn matches_full_serde_parse_on_representative_lines() {
+        // Differential check: the byte scanner must agree with a full
+        // `serde_json::from_str::<Value>` + top-level `get` on every line,
+        // including malformed ones.
+        let lines = [
+            "{}",
+            "[]",
+            "null",
+            "id",
+            "not json",
+            "",
+            "  {\"id\":\"a\"}  ",
+            "{\"id\":\"a\"}garbage",
+            "{\"id\":\"trunc",
+            "{\"id\" \"a\"}",
+            "{\"id\":\"a\"",
+            "{\"id\":123,\"x\":1}",
+            "{\"id\":null}",
+            "{\"id\":true,\"id\":\"late\"}",
+            "{\"id\":\"first\",\"id\":\"second\"}",
+            "{\"entries\":[{\"id\":\"inner\"}],\"payload\":{\"id\":\"deep\"}}",
+            "{\"idx\":\"nope\",\"id\":\"yes\"}",
+            "{\"note\":\"mentions id and quote:\\\"id\\\",\"id\":\"real\"}",
+            "{\"id\":\"a\\\\b\"}",
+            "{\"id\":\"a\\u00e9\\ud83c\\udf89\"}",
+            "{\"nested\":{\"arr\":[1,2.5e3,-7,true,null,\"s\"]},\"id\":\"ok\"}",
+            "{ \"id\" : \"ws\" , \"event\" : \"x\" }",
+        ];
+        for line in lines {
+            let expected = serde_json::from_str::<serde_json::Value>(line)
+                .ok()
+                .and_then(|v| v.get("id").and_then(|x| x.as_str()).map(|s| s.to_string()));
+            assert_eq!(
+                extract_top_level_string_field(line, "id"),
+                expected,
+                "mismatch for line: {line}"
+            );
+        }
+    }
 }

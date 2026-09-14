@@ -212,11 +212,6 @@ export const zh: Record<MessageKey, string> = {
   generalSystemNotifications: "系统通知",
   generalSystemNotificationsDesc:
     "窗口不在前台时，通过系统通知提醒后台会话完成、失败、需要输入或主机崩溃，点击可直达会话。",
-  generalIdleSessionCacheLimit: "空闲会话队列容量",
-  generalIdleSessionCacheLimitDesc: "将最近使用的空闲会话保留在内存中。下次启动 Pi Host 时生效。",
-  generalIdleSessionTimeout: "空闲会话销毁时间",
-  generalIdleSessionTimeoutDesc:
-    "空闲会话未被切回时，经过该分钟数自动销毁。下次启动 Pi Host 时生效。",
   generalBusySendGroup: "智能体运行中",
   generalBusySend: "运行中发送",
   generalBusySendDesc: "当前轮次还在进行时，再发送一条消息会怎么处理。",

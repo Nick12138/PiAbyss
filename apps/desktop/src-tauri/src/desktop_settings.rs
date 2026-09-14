@@ -123,8 +123,6 @@ pub struct DesktopSettings {
     pub conversation_max_width: u32,
     pub conversation_font_size: u32,
     pub code_font_size: u32,
-    pub idle_session_cache_limit: u32,
-    pub idle_session_timeout_minutes: u32,
     /// Opt-in RSS-aware idle retirement for background Hosts (MiB working
     /// set). `0` disables the probe and keeps the time-based rule only.
     pub host_idle_rss_retire_mb: u32,
@@ -164,8 +162,6 @@ impl Default for DesktopSettings {
             conversation_max_width: DEFAULT_CONVERSATION_MAX_WIDTH,
             conversation_font_size: DEFAULT_CONVERSATION_FONT_SIZE,
             code_font_size: DEFAULT_CODE_FONT_SIZE,
-            idle_session_cache_limit: 5,
-            idle_session_timeout_minutes: 30,
             host_idle_rss_retire_mb: 0,
             shared_host_mode: true,
             known_workspaces: Vec::new(),
@@ -376,12 +372,6 @@ impl DesktopSettingsStore {
                 "codeFontSize must be between {MIN_CODE_FONT_SIZE} and {MAX_CODE_FONT_SIZE}"
             ));
         }
-        if !(1..=20).contains(&settings.idle_session_cache_limit) {
-            return Err("idleSessionCacheLimit must be between 1 and 20".to_string());
-        }
-        if !(1..=24 * 60).contains(&settings.idle_session_timeout_minutes) {
-            return Err("idleSessionTimeoutMinutes must be between 1 and 1440".to_string());
-        }
         if settings.host_idle_rss_retire_mb > 8192 {
             return Err("hostIdleRssRetireMb must be between 0 and 8192".to_string());
         }
@@ -532,8 +522,6 @@ impl DesktopSettingsStore {
                     | "conversationMaxWidth"
                     | "conversationFontSize"
                     | "codeFontSize"
-                    | "idleSessionCacheLimit"
-                    | "idleSessionTimeoutMinutes"
                     | "hostIdleRssRetireMb"
                     | "sharedHostMode"
                     | "knownWorkspaces"

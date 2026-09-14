@@ -57,8 +57,6 @@ const DESKTOP_SETTINGS_KEYS = new Set([
   "conversationMaxWidth",
   "conversationFontSize",
   "codeFontSize",
-  "idleSessionCacheLimit",
-  "idleSessionTimeoutMinutes",
   "sharedHostMode",
   "knownWorkspaces",
   "shortcutOverrides",
@@ -145,18 +143,6 @@ function assertDesktopSettingsUpdate(patch: DesktopSettingsUpdate): void {
   for (const [key, min, max] of [
     ["conversationFontSize", MIN_CONVERSATION_FONT_SIZE, MAX_CONVERSATION_FONT_SIZE],
     ["codeFontSize", MIN_CODE_FONT_SIZE, MAX_CODE_FONT_SIZE],
-  ] as const) {
-    const value = values[key];
-    if (
-      value !== undefined &&
-      (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max)
-    ) {
-      throw new Error(`${key} must be an integer between ${min} and ${max}`);
-    }
-  }
-  for (const [key, min, max] of [
-    ["idleSessionCacheLimit", 1, 20],
-    ["idleSessionTimeoutMinutes", 1, 24 * 60],
   ] as const) {
     const value = values[key];
     if (

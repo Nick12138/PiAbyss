@@ -1409,10 +1409,6 @@ export type DesktopSettings = {
    *  single active Host in place instead of spawning a dedicated one, which
    *  saves memory but weakens isolation from unstable extensions. */
   sharedHostMode?: boolean;
-  /** Maximum number of recently active or idle Session runtimes to retain. */
-  idleSessionCacheLimit?: number;
-  /** Minutes an idle cached Session may remain untouched before disposal. */
-  idleSessionTimeoutMinutes?: number;
   /** Persistent list of workspace folders shown in the sidebar. */
   knownWorkspaces?: string[];
   /** Per-command shortcut overrides. null explicitly disables a command binding. */

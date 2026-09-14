@@ -21,6 +21,10 @@ import {
   observeQueueUpdate,
 } from "./queue-state.js";
 import { buildSessionSnapshot, buildToolSnapshot } from "./session-snapshot.js";
+import {
+  buildSessionTreeCacheEntry,
+  invalidateSessionTreeCache,
+} from "./session-tree-cache.js";
 import type { PiHostServer } from "./server.js";
 import { toolResultNeedsToolsRefresh } from "./tools-refresh.js";
 import type { BackgroundSessionRuntime, WorkspaceGraph } from "./workspace-graph-types.js";
@@ -40,10 +44,15 @@ function integerFromEnv(name: string, fallback: number, min: number, max: number
   return Number.isInteger(value) && value >= min && value <= max ? value : fallback;
 }
 
-/** Number of hot Sessions (the active Session plus idle cached Sessions). */
-export const MAX_IDLE_SESSION_CACHE = integerFromEnv("PIABYSS_IDLE_SESSION_CACHE_LIMIT", 5, 1, 20);
+/**
+ * Number of hot Sessions (the active Session plus idle cached Sessions).
+ * The default should cover the typical multi-workspace × multi-session usage
+ * without eviction: cold rebuilds (full Session re-open) only happen when the
+ * limit is exceeded or a cached runtime's TTL expires.
+ */
+export const MAX_IDLE_SESSION_CACHE = integerFromEnv("PIABYSS_IDLE_SESSION_CACHE_LIMIT", 20, 1, 32);
 export const IDLE_SESSION_CACHE_TTL_MS =
-  integerFromEnv("PIABYSS_IDLE_SESSION_TIMEOUT_MINUTES", 30, 1, 24 * 60) * 60 * 1000;
+  integerFromEnv("PIABYSS_IDLE_SESSION_TIMEOUT_MINUTES", 120, 1, 24 * 60) * 60 * 1000;
 
 type DisposalStepResult =
   { status: "completed" } | { status: "failed"; error: unknown } | { status: "timed_out" };
@@ -152,6 +161,21 @@ export function commitActiveSessionState(
   graph.subagentStatusBridge = state.subagentStatusBridge;
   identity.sessionId = state.sessionId;
   identity.sessionRevision = state.sessionRevision;
+
+  // Refresh the lock-free session.getTree cache for the incoming Session:
+  // the renderer fetches the tree immediately after a switch, while the
+  // switch still holds the service graph lock, so the cache must already
+  // describe the NEW session here (a stale entry would either serve another
+  // session's tree or push the read onto the contended lock path).
+  invalidateSessionTreeCache(graph);
+  if (state.sessionId && state.sessionManager) {
+    const entry = buildSessionTreeCacheEntry(
+      state.sessionManager,
+      state.sessionId,
+      state.sessionRevision,
+    );
+    if (entry) graph.sessionTreeCache = entry;
+  }
 }
 
 export type SessionRuntimeCacheContext = {
@@ -687,6 +711,20 @@ export class SessionRuntimeCache {
       typeof event === "object" && event !== null && "type" in event
         ? String((event as { type?: unknown }).type ?? "")
         : "";
+    // Tree-changing agent events: message_end persists a new entry into the
+    // session tree; agent_end/agent_settled settle a run (and can compact).
+    // Per-token events (message_update, …) never touch the tree, so they must
+    // NOT pay the invalidation cost. The cache only describes the ACTIVE
+    // session, so events from background/idle sessions never invalidate it —
+    // their leaf drift is tracked in their own runtime, not here. The getTree
+    // cache also revalidates its leafId on every read, so this invalidation
+    // is belt-and-suspenders.
+    if (
+      active &&
+      (eventType === "message_end" || eventType === "agent_end" || eventType === "agent_settled")
+    ) {
+      invalidateSessionTreeCache(graph);
+    }
     if (this.isSessionBusy(sourceSession)) {
       this.dropIdleSessionRecency(graph, currentSnapshot.sessionId);
     }
