@@ -1899,6 +1899,9 @@ textarea:focus-visible {
 .new-conversation-copy {
   font-family: var(--font-mono);
   letter-spacing: 0;
+  /* Decorative welcome block (mark + greeting): never selectable by drag. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

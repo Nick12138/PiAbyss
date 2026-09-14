@@ -147,6 +147,7 @@ export function SessionList({
   const refreshRequest = useRef(0);
   const mutationRequest = useRef(0);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const renameFormRef = useRef<HTMLFormElement>(null);
   const itemsWorkspaceId = useRef<string | null>(null);
   const mounted = useRef(true);
   const performSessionOpenRef = useRef(performSessionOpen);
@@ -439,6 +440,27 @@ export function SessionList({
     if (!editingSessionId || !input) return;
     input.focus();
     input.select();
+  }, [editingSessionId]);
+
+  // Click outside to cancel rename
+  useEffect(() => {
+    if (!editingSessionId) return;
+
+    function handleClickOutside(event: MouseEvent) {
+      if (renameFormRef.current && !renameFormRef.current.contains(event.target as Node)) {
+        cancelRename();
+      }
+    }
+
+    // Add listener on next tick to avoid canceling immediately
+    const timerId = setTimeout(() => {
+      document.addEventListener("mousedown", handleClickOutside);
+    }, 0);
+
+    return () => {
+      clearTimeout(timerId);
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
   }, [editingSessionId]);
 
   function cancelRename() {
@@ -953,6 +975,7 @@ export function SessionList({
                           >
                             {editing ? (
                               <form
+                                ref={renameFormRef}
                                 className="flex min-w-0 flex-1 items-center gap-1 px-1.5 py-1"
                                 onSubmit={(event) => {
                                   event.preventDefault();
