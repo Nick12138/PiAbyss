@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
+import { watch as fsWatch, type FSWatcher } from "node:fs";
 import { realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep, win32 } from "node:path";
 import { bundledGitExecutable } from "./internal-runtime.js";
@@ -31,6 +32,12 @@ const GIT_COMMIT_TIMEOUT_MS = 60_000;
 const GIT_STDERR_LIMIT_BYTES = 256 * 1024;
 const GIT_MUTATION_OUTPUT_LIMIT_BYTES = 1024 * 1024;
 const GIT_WATCH_INTERVAL_MS = 2_000;
+// fs-watch events are bursty (editor save storms, our own mutations);
+// coalesce them and run one status per quiet window.
+const GIT_WATCH_DEBOUNCE_MS = 300;
+// When a trigger lands while a status is already running, run the next one
+// shortly after instead of waiting for the full interval.
+const GIT_WATCH_TRIGGER_DELAY_MS = 150;
 
 type GitCommandResult = {
   exitCode: number | null;
@@ -493,10 +500,14 @@ export class GitService {
   private cacheKey: string | null = null;
   private cachedSnapshot: GitStatusSnapshot | null = null;
   private cachedFingerprint: string | null = null;
-  private watchTimer: ReturnType<typeof setInterval> | null = null;
+  private watchTimer: ReturnType<typeof setTimeout> | null = null;
   private watchPolling = false;
   private watchGeneration = 0;
   private watchAbortController: AbortController | null = null;
+  private watchers: FSWatcher[] = [];
+  private watchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private watchTriggered = false;
+  private runWatchStatus: (() => void) | null = null;
 
   constructor(private readonly executable = bundledGitExecutable() ?? "git") {}
 
@@ -1275,7 +1286,7 @@ export class GitService {
       return { watching: false, snapshot: null };
     }
     let lastRevision = snapshot.revision;
-    this.watchTimer = setInterval(() => {
+    const runStatus = () => {
       if (generation !== this.watchGeneration || this.watchPolling) return;
       this.watchPolling = true;
       void this.getStatus(workspace, controller.signal)
@@ -1299,19 +1310,108 @@ export class GitService {
         })
         .finally(() => {
           this.watchPolling = false;
+          // Adaptive cadence: schedule the next status when this one finishes,
+          // so slow repositories no longer skip ticks. An fs-watch trigger that
+          // arrived mid-run shortens the wait.
+          if (generation !== this.watchGeneration) return;
+          this.scheduleWatchPoll(runStatus, generation);
         });
-    }, GIT_WATCH_INTERVAL_MS);
-    this.watchTimer.unref?.();
+    };
+    this.scheduleWatchPoll(runStatus, generation);
+    this.startRepositoryWatcher(snapshot, runStatus);
     return { watching: true, snapshot };
+  }
+
+  private scheduleWatchPoll(runStatus: () => void, generation: number): void {
+    if (generation !== this.watchGeneration) return;
+    if (this.watchTimer) clearTimeout(this.watchTimer);
+    const delay = this.watchTriggered ? GIT_WATCH_TRIGGER_DELAY_MS : GIT_WATCH_INTERVAL_MS;
+    this.watchTriggered = false;
+    this.watchTimer = setTimeout(() => {
+      this.watchTimer = null;
+      runStatus();
+    }, delay);
+    this.watchTimer.unref?.();
+  }
+
+  private triggerWatchStatus(): void {
+    if (this.watchDebounceTimer) return;
+    this.watchDebounceTimer = setTimeout(() => {
+      this.watchDebounceTimer = null;
+      if (this.watchPolling) {
+        this.watchTriggered = true;
+        return;
+      }
+      if (this.watchTimer) clearTimeout(this.watchTimer);
+      this.watchTimer = null;
+      this.runWatchStatus?.();
+    }, GIT_WATCH_DEBOUNCE_MS);
+    this.watchDebounceTimer.unref?.();
+  }
+
+  private startRepositoryWatcher(snapshot: GitStatusSnapshot, runStatus: () => void): void {
+    if (snapshot.state !== "ready") return;
+    this.runWatchStatus = runStatus;
+    const repositoryRoot = snapshot.repositoryRoot;
+    try {
+      // Recursive watching covers working-tree edits (including agent tool
+      // writes) as well as .git metadata. Supported on Windows and macOS.
+      this.trackWatcher(
+        fsWatch(repositoryRoot, { persistent: false, recursive: true }, () =>
+          this.triggerWatchStatus(),
+        ),
+      );
+      return;
+    } catch {
+      // Recursive watching is unsupported on this platform (Linux).
+    }
+    try {
+      // Narrower fallback: index/HEAD updates still accelerate stage, unstage,
+      // commit, and branch switches; worktree edits keep the polling cadence.
+      this.trackWatcher(
+        fsWatch(resolve(repositoryRoot, ".git"), { persistent: false }, () =>
+          this.triggerWatchStatus(),
+        ),
+      );
+    } catch {
+      // No fs watching available; the adaptive interval still refreshes.
+    }
+  }
+
+  private trackWatcher(watcher: FSWatcher): void {
+    watcher.unref?.();
+    watcher.on("error", () => {
+      // Watcher died (e.g. the directory was removed): degrade to polling only.
+      this.watchers = this.watchers.filter((candidate) => candidate !== watcher);
+    });
+    this.watchers.push(watcher);
+  }
+
+  private closeWatchers(): void {
+    const watchers = this.watchers;
+    this.watchers = [];
+    for (const watcher of watchers) {
+      watcher.removeAllListeners();
+      try {
+        watcher.close();
+      } catch {
+        // already closed
+      }
+    }
   }
 
   stopWatching(): void {
     this.watchGeneration += 1;
     this.watchAbortController?.abort();
     this.watchAbortController = null;
-    if (this.watchTimer) clearInterval(this.watchTimer);
+    if (this.watchTimer) clearTimeout(this.watchTimer);
     this.watchTimer = null;
+    if (this.watchDebounceTimer) clearTimeout(this.watchDebounceTimer);
+    this.watchDebounceTimer = null;
+    this.watchTriggered = false;
+    this.runWatchStatus = null;
     this.watchPolling = false;
+    this.closeWatchers();
   }
 
   dispose(): void {

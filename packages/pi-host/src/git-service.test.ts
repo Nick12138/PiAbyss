@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitService, parseGitStatusPorcelain, parseUnifiedGitDiffHunks } from "./git-service.js";
 
 const temporaryDirectories: string[] = [];
@@ -520,5 +520,44 @@ describe("GitService", () => {
     if (latest.state !== "ready") throw new Error("expected ready status");
     const switched = await service.switchBranch(workspace, initial.branch!, latest.revision);
     expect(switched.snapshot).toMatchObject({ state: "ready", branch: initial.branch });
+  });
+
+  it("emits a refreshed snapshot shortly after a worktree change", async () => {
+    const { workspace } = await createRepository();
+    const service = new GitService();
+    const updates: Awaited<ReturnType<GitService["getStatus"]>>[] = [];
+    try {
+      const watching = await service.setWatching(true, workspace, (snapshot) =>
+        updates.push(snapshot),
+      );
+      expect(watching.watching).toBe(true);
+      expect(watching.snapshot?.state).toBe("ready");
+
+      await writeFile(join(workspace, "tracked.txt"), "second\n", "utf8");
+      // The fs watcher (or, on platforms without recursive watching, the
+      // adaptive poll) should push an updated snapshot well within seconds.
+      await vi.waitFor(() => expect(updates.length).toBeGreaterThan(0), { timeout: 5_000 });
+      const latest = updates.at(-1);
+      expect(latest?.state).toBe("ready");
+      if (latest?.state !== "ready") return;
+      expect(latest.files).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ path: "packages/app/tracked.txt", unstaged: "modified" }),
+        ]),
+      );
+    } finally {
+      service.stopWatching();
+    }
+  });
+
+  it("stops emitting after stopWatching", async () => {
+    const { workspace } = await createRepository();
+    const service = new GitService();
+    const updates: Awaited<ReturnType<GitService["getStatus"]>>[] = [];
+    await service.setWatching(true, workspace, (snapshot) => updates.push(snapshot));
+    service.stopWatching();
+    await writeFile(join(workspace, "tracked.txt"), "second\n", "utf8");
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    expect(updates).toHaveLength(0);
   });
 });

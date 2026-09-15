@@ -166,6 +166,62 @@ describe("ChangesPanel", () => {
     expect(screen.getByText("Staged Changes")).toBeVisible();
   });
 
+  it("reloads the open diff when a git.changed event brings a newer revision", async () => {
+    const initialDiff = {
+      path: "src/app.ts",
+      area: "unstaged",
+      patch: "@@ -1 +1 @@\n-old\n+new",
+      additions: 1,
+      deletions: 1,
+      binary: false,
+      truncated: false,
+      contentGeneration: "c".repeat(64),
+    };
+    const reloadedDiff = {
+      ...initialDiff,
+      patch: "@@ -1 +1 @@\n-old\n+fresher",
+      contentGeneration: "e".repeat(64),
+    };
+    let diffRequests = 0;
+    request.mockImplementation(async (method) => {
+      if (method === "git.setWatching")
+        return success(method, { watching: true, snapshot: status() }) as never;
+      if (method === "git.getDiff")
+        return success(method, diffRequests++ === 0 ? initialDiff : reloadedDiff) as never;
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+    render(<ChangesPanel visible />);
+
+    await user.click(await screen.findByRole("button", { name: "Changes: src/app.ts" }));
+    expect(await screen.findByText("+new")).toBeVisible();
+
+    const publishChange = (revision: number, sequence: number) =>
+      act(() =>
+        publishValidatedHostEvent({
+          protocolVersion: 1,
+          event: "git.changed",
+          sequence,
+          timestamp: sequence,
+          hostInstanceId: host.hostInstanceId,
+          workspaceId: workspace.id,
+          workspaceRevision: workspace.revision,
+          sessionId: null,
+          sessionRevision: 0,
+          packageRevision: 0,
+          payload: { snapshot: status({ revision }) },
+        }),
+      );
+
+    publishChange(8, 2);
+    expect(await screen.findByText("+fresher")).toBeVisible();
+
+    // A snapshot we already applied must not trigger another reload.
+    publishChange(8, 3);
+    await Promise.resolve();
+    expect(request.mock.calls.filter(([method]) => method === "git.getDiff")).toHaveLength(2);
+  });
+
   it("stages a file and commits staged content with Ctrl+Enter", async () => {
     const stagedOnly = status({
       revision: 8,

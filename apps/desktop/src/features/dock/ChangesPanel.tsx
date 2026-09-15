@@ -230,6 +230,10 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   const [commitDiff, setCommitDiff] = useState<GitCommitDiffSnapshot | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const generation = useRef(0);
+  // Latest snapshot revision applied by any path (watch response, mutation
+  // result, manual refresh, git.changed event). Used to skip diff reloads for
+  // snapshots we already applied ourselves.
+  const appliedRevisionRef = useRef(0);
   const workspaceKey =
     host && workspace ? `${host.hostInstanceId}:${workspace.id}:${workspace.revision}` : "none";
   // workspaceContext() reads only hostInstanceId/workspaceId/workspaceRevision
@@ -249,6 +253,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
 
   const acceptSnapshot = useCallback((next: GitStatusSnapshot) => {
     setSnapshot((current) => (current && current.revision > next.revision ? current : next));
+    appliedRevisionRef.current = Math.max(appliedRevisionRef.current, next.revision);
     setError(null);
   }, []);
 
@@ -262,6 +267,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
 
   useEffect(() => {
     generation.current += 1;
+    appliedRevisionRef.current = 0;
     setSnapshot(null);
     setView("changes");
     setLoading(false);
@@ -349,14 +355,55 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
     };
   }, [visible, gitWatchContext, acceptSnapshot, t]);
 
+  // Quietly reload the open diff after a git.changed event so the detail view
+  // stays in sync with disk without unmounting or flashing a spinner.
+  const reloadDiffQuietly = useCallback(
+    async (current: DiffSelection, status: ReadyStatus) => {
+      if (!host || !workspace) return;
+      const requestGeneration = generation.current;
+      try {
+        const response = await hostClient.request(
+          "git.getDiff",
+          workspaceContext(host, workspace),
+          { ...current, expectedRevision: status.revision },
+          12_000,
+        );
+        if (requestGeneration !== generation.current) return;
+        if (!response.ok) return;
+        setDiff((currentDiff) =>
+          currentDiff && currentDiff.contentGeneration === response.result.contentGeneration
+            ? currentDiff
+            : response.result,
+        );
+      } catch {
+        // Transient failure: the watcher will emit again on the next change.
+      }
+    },
+    [host, workspace],
+  );
+
   useEffect(
     () =>
       gitWatchContext
         ? subscribeValidatedHostEvent("git.changed", gitWatchContext, (event) => {
-            if (visible) acceptSnapshot(event.payload.snapshot);
+            if (!visible) return;
+            const next = event.payload.snapshot;
+            const knownRevision = appliedRevisionRef.current;
+            acceptSnapshot(next);
+            // A mutation or manual refresh already applied this snapshot and
+            // reloads the diff itself; only react to genuinely new revisions.
+            if (next.revision <= knownRevision) return;
+            if (
+              next.state === "ready" &&
+              selection &&
+              diff &&
+              isSelectionPresent(next, selection)
+            ) {
+              void reloadDiffQuietly(selection, next);
+            }
           })
         : undefined,
-    [acceptSnapshot, gitWatchContext, visible],
+    [acceptSnapshot, gitWatchContext, visible, selection, diff, reloadDiffQuietly],
   );
 
   const ready = snapshot?.state === "ready" ? snapshot : null;
