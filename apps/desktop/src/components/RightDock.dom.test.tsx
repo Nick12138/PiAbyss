@@ -6,7 +6,6 @@ import userEvent from "@testing-library/user-event";
 import type { DesktopSettings, SessionSnapshot, WorkspaceSnapshot } from "@piabyss/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../lib/stores/app-store";
-import { requestDockBrowser } from "../lib/dock-browser";
 import { clearPendingChangesPanelForTest, requestChangesPanel } from "../lib/dock-changes";
 
 vi.mock("../features/dock/ShellTerminal", () => ({
@@ -20,12 +19,6 @@ vi.mock("../features/dock/ExtensionTerminal", () => ({
   ExtensionTerminal: () => null,
   cancelExtensionTerminal: vi.fn(async () => null),
   forceCloseExtensionTerminal: vi.fn(async () => null),
-}));
-
-vi.mock("../features/dock/BrowserPanel", () => ({
-  BrowserPanel: ({ initialUrl }: { initialUrl?: string }) => (
-    <div data-testid="browser-panel" data-initial-url={initialUrl} />
-  ),
 }));
 
 vi.mock("../features/dock/ChangesPanel", () => ({
@@ -106,7 +99,6 @@ describe("RightDock pages", () => {
     expect(screen.queryByRole("tab")).toBeNull();
     expect(screen.getByRole("button", { name: "Open Files" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Open Changes" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Open Browser" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Open Terminal" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Open Subagents" })).toBeVisible();
   });
@@ -127,20 +119,15 @@ describe("RightDock pages", () => {
     );
     expect(screen.getByRole("button", { name: "打开：文件" })).toBeVisible();
     expect(screen.getByRole("button", { name: "打开：改动" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "打开：浏览器" })).toBeVisible();
     expect(screen.getByRole("button", { name: "打开：终端" })).toBeVisible();
     expect(screen.getByRole("button", { name: "打开：子代理" })).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "新建 Dock 页面" }));
     expect(screen.getByRole("menuitem", { name: "文件" })).toBeVisible();
     expect(screen.getByRole("menuitem", { name: "改动" })).toBeVisible();
-    expect(screen.getByRole("menuitem", { name: "浏览器" })).toBeVisible();
     expect(screen.getByRole("menuitem", { name: "终端" })).toBeVisible();
     expect(screen.getByRole("menuitem", { name: "子代理" })).toBeVisible();
 
-    await user.click(screen.getByRole("menuitem", { name: "浏览器" }));
-    expect(screen.getByRole("tab", { name: "浏览器" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("button", { name: "关闭：浏览器" })).toBeVisible();
   });
 
   it("does not auto-open the dock when a session has active subagents", async () => {
@@ -222,10 +209,6 @@ describe("RightDock pages", () => {
     expect(screen.getByRole("tab", { name: "Changes" })).toHaveAttribute("aria-selected", "true");
     await user.click(screen.getByRole("button", { name: "Close Changes" }));
 
-    await user.click(screen.getByRole("button", { name: "Open Browser" }));
-    expect(screen.getByRole("tab", { name: "Browser" })).toHaveAttribute("aria-selected", "true");
-    await user.click(screen.getByRole("button", { name: "Close Browser" }));
-
     await user.click(screen.getByRole("button", { name: "Open Subagents" }));
     expect(screen.getByRole("tab", { name: "Subagents" })).toHaveAttribute("aria-selected", "true");
     await user.click(screen.getByRole("button", { name: "Close Subagents" }));
@@ -277,41 +260,6 @@ describe("RightDock pages", () => {
     expect(screen.queryByRole("tab", { name: "Files" })).toBeNull();
   });
 
-  it("limits Browser pages to eight", async () => {
-    const user = userEvent.setup();
-    render(<RightDock />);
-
-    for (let index = 0; index < 8; index += 1) {
-      await openAddMenu(user);
-      await user.click(screen.getByRole("menuitem", { name: "Browser" }));
-    }
-
-    await user.click(screen.getByTitle("More tabs"));
-    expect(screen.getAllByRole("button", { name: "Close Browser" })).toHaveLength(8);
-
-    await openAddMenu(user);
-    expect(screen.getByRole("menuitem", { name: "Browser" })).toBeDisabled();
-    expect(requestDockBrowser({ url: "https://example.com/ninth" })).toBe(false);
-  });
-
-  it("opens consecutive URL requests in new active Browser pages", async () => {
-    useAppStore.setState({ dockOpen: false });
-    render(<RightDock />);
-
-    act(() => {
-      expect(requestDockBrowser({ url: "https://one.example/path" })).toBe(true);
-      expect(requestDockBrowser({ url: "https://two.example/path" })).toBe(true);
-    });
-
-    await waitFor(() => expect(screen.getAllByTestId("browser-panel")).toHaveLength(2));
-    expect(screen.getAllByTestId("browser-panel").map((panel) => panel.dataset.initialUrl)).toEqual(
-      ["https://one.example/path", "https://two.example/path"],
-    );
-    const tabs = screen.getAllByRole("tab", { name: "Browser" });
-    expect(tabs.at(-1)).toHaveAttribute("aria-selected", "true");
-    expect(useAppStore.getState().dockOpen).toBe(true);
-  });
-
   it("activates the adjacent page after closing the current page", async () => {
     const user = userEvent.setup();
     render(<RightDock />);
@@ -319,10 +267,10 @@ describe("RightDock pages", () => {
     await openAddMenu(user);
     await user.click(screen.getByRole("menuitem", { name: "Files" }));
     await openAddMenu(user);
-    await user.click(screen.getByRole("menuitem", { name: "Browser" }));
-    expect(screen.getByRole("tab", { name: "Browser" })).toHaveAttribute("aria-selected", "true");
+    await user.click(screen.getByRole("menuitem", { name: "Changes" }));
+    expect(screen.getByRole("tab", { name: "Changes" })).toHaveAttribute("aria-selected", "true");
 
-    await user.click(screen.getByRole("button", { name: "Close Browser" }));
+    await user.click(screen.getByRole("button", { name: "Close Changes" }));
     expect(screen.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
   });
 
@@ -354,7 +302,7 @@ describe("RightDock pages", () => {
     await user.keyboard("{ArrowDown}");
     expect(screen.getByRole("menuitem", { name: "Changes" })).toHaveFocus();
     await user.keyboard("{ArrowDown}");
-    expect(screen.getByRole("menuitem", { name: "Browser" })).toHaveFocus();
+    expect(screen.getByRole("menuitem", { name: "Terminal" })).toHaveFocus();
     await user.keyboard("{End}");
     expect(screen.getByRole("menuitem", { name: "Subagents" })).toHaveFocus();
     await user.keyboard("{Escape}");

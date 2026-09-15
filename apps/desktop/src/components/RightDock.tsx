@@ -4,7 +4,6 @@ import {
   ChevronDown,
   FolderTree,
   GitCompareArrows,
-  Globe2,
   LoaderCircle,
   Users,
   Plus,
@@ -28,10 +27,8 @@ import {
 } from "../features/dock/ShellTerminal";
 import { WorkspaceFiles } from "../features/dock/WorkspaceFiles";
 import { clearFileSession, ensureFileCanLeave } from "../features/dock/file-session";
-import { BrowserPanel } from "../features/dock/BrowserPanel";
 import { ChangesPanel } from "../features/dock/ChangesPanel";
 import { SubagentsPanel } from "../features/dock/SubagentsPanel";
-import { subscribeDockBrowser } from "../lib/dock-browser";
 import { subscribeChangesPanel } from "../lib/dock-changes";
 import { useT } from "../lib/i18n/use-t";
 import { subscribeDockCommands } from "../lib/commands/events";
@@ -40,7 +37,6 @@ export type DockTabId =
   | "files"
   | "changes"
   | "subagents"
-  | `browser:${number}`
   | `shell:${number}`
   | `extension:${string}`;
 
@@ -52,27 +48,16 @@ type ShellDockTab = {
   status: ShellTerminalStatus | null;
 };
 
-type BrowserDockTab = {
-  id: number;
-  title: string;
-  initialUrl: string;
-};
-
 const DOCK_WIDTH_KEY = "piabyss.dock.width.v1";
 const DEFAULT_DOCK_WIDTH = 460;
 const MIN_DOCK_WIDTH = 350;
 const MAX_DOCK_WIDTH = 720;
-const MAX_BROWSER_TABS = 8;
 const MIN_TAB_WIDTH = 96;
 const TAB_GAP = 4;
 const TAB_CONTROL_WIDTH = 28;
 
 function shellTabId(id: number): DockTabId {
   return `shell:${id}`;
-}
-
-function browserTabId(id: number): DockTabId {
-  return `browser:${id}`;
 }
 
 function extensionTabId(requestId: string): DockTabId {
@@ -160,7 +145,6 @@ export function RightDock() {
     initialExtensionTab ? [initialExtensionTab] : [],
   );
   const [shellTabs, setShellTabs] = useState<ShellDockTab[]>([]);
-  const [browserTabs, setBrowserTabs] = useState<BrowserDockTab[]>([]);
   const [extensionClosing, setExtensionClosing] = useState<string | null>(null);
   const [dockWidth, setDockWidth] = useState(initialDockWidth);
   const [resizing, setResizing] = useState(false);
@@ -170,8 +154,6 @@ export function RightDock() {
   const [mainOverflows, setMainOverflows] = useState(false);
   const nextShellId = useRef(1);
   const nextShellGeneration = useRef(1);
-  const nextBrowserId = useRef(1);
-  const browserTabsRef = useRef<BrowserDockTab[]>([]);
   const resizeStart = useRef<{ pointerId: number; x: number; width: number } | null>(null);
   const tabBarRef = useRef<HTMLDivElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
@@ -188,14 +170,6 @@ export function RightDock() {
   const dockWidthRef = useRef(dockWidth);
   const visibleTabIdsRef = useRef<DockTabId[]>([]);
   dockWidthRef.current = dockWidth;
-  browserTabsRef.current = browserTabs;
-
-  const updateBrowserTabs = (updater: (current: BrowserDockTab[]) => BrowserDockTab[]) => {
-    const next = updater(browserTabsRef.current);
-    browserTabsRef.current = next;
-    setBrowserTabs(next);
-    return next;
-  };
 
   const closeOrderTab = (tabId: DockTabId) => {
     const closesLastTab = tabOrder.length === 1 && tabOrder[0] === tabId;
@@ -393,37 +367,6 @@ export function RightDock() {
     [],
   );
 
-  const createBrowserTab = (initialUrl = "about:blank"): boolean => {
-    if (browserTabsRef.current.length >= MAX_BROWSER_TABS) return false;
-    const id = nextBrowserId.current++;
-    updateBrowserTabs((current) => [...current, { id, title: "", initialUrl }]);
-    const tabId = browserTabId(id);
-    setTabOrder((current) => [...current, tabId]);
-    setActiveTab(tabId);
-    setAddMenuOpen(false);
-    return true;
-  };
-
-  const createBrowser = () => {
-    createBrowserTab();
-  };
-
-  useEffect(
-    () =>
-      subscribeDockBrowser(({ url }) => {
-        if (!createBrowserTab(url)) return false;
-        if (!useAppStore.getState().dockOpen) {
-          setDockOpen(true);
-          setSidebarPref("piabyss.dock.open", true);
-        }
-        return true;
-      }),
-    // The handler reads browser state through browserTabsRef so rapid requests
-    // stay bounded without resubscribing between renders.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-
   const createShell = () => {
     if (!workspaceCwd) return;
     const id = nextShellId.current++;
@@ -442,11 +385,6 @@ export function RightDock() {
     const tabId = shellTabId(id);
     setShellTabs((current) => current.filter((tab) => tab.id !== id));
     closeOrderTab(tabId);
-  };
-
-  const closeBrowser = (id: number) => {
-    updateBrowserTabs((current) => current.filter((tab) => tab.id !== id));
-    closeOrderTab(browserTabId(id));
   };
 
   const restartShell = (id: number) => {
@@ -498,10 +436,6 @@ export function RightDock() {
       closeOrderTab(tabId);
       return;
     }
-    if (tabId.startsWith("browser:")) {
-      closeBrowser(Number(tabId.slice("browser:".length)));
-      return;
-    }
     if (tabId.startsWith("shell:")) {
       closeShell(Number(tabId.slice("shell:".length)));
       return;
@@ -513,13 +447,6 @@ export function RightDock() {
     if (tabId === "files") return { label: t("dockFiles"), Icon: FolderTree };
     if (tabId === "changes") return { label: t("gitChanges"), Icon: GitCompareArrows };
     if (tabId === "subagents") return { label: t("dockSubagents"), Icon: Users };
-    if (tabId.startsWith("browser:")) {
-      const id = Number(tabId.slice("browser:".length));
-      return {
-        label: browserTabs.find((tab) => tab.id === id)?.title || t("dockBrowser"),
-        Icon: Globe2,
-      };
-    }
     if (tabId.startsWith("shell:")) {
       const id = Number(tabId.slice("shell:".length));
       const shell = shellTabs.find((tab) => tab.id === id);
@@ -825,16 +752,6 @@ export function RightDock() {
                   <button
                     type="button"
                     role="menuitem"
-                    disabled={browserTabs.length >= MAX_BROWSER_TABS}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay disabled:opacity-40"
-                    onClick={createBrowser}
-                  >
-                    <Globe2 size={14} />
-                    {t("dockBrowser")}
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
                     disabled={!workspaceCwd}
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay disabled:opacity-40"
                     onClick={createShell}
@@ -889,29 +806,6 @@ export function RightDock() {
             <SubagentsPanel />
           </div>
         )}
-        {browserTabs.map((tab) => (
-          <div
-            key={tab.id}
-            role="tabpanel"
-            id={`dock-panel-${browserTabId(tab.id)}`}
-            aria-labelledby={`dock-tab-${browserTabId(tab.id)}`}
-            className={`min-h-0 min-w-0 flex-1 ${activeTab === browserTabId(tab.id) ? "flex" : "hidden"}`}
-          >
-            <BrowserPanel
-              id={tab.id}
-              initialUrl={tab.initialUrl}
-              visible={activeTab === browserTabId(tab.id) && dockOpen}
-              blocked={addMenuOpen || overflowMenuOpen}
-              onTitle={(title) =>
-                updateBrowserTabs((current) =>
-                  current.map((candidate) =>
-                    candidate.id === tab.id ? { ...candidate, title } : candidate,
-                  ),
-                )
-              }
-            />
-          </div>
-        ))}
         {shellTabs.map((tab) => (
           <ShellTerminal
             key={`${tab.id}:${tab.generation}`}
@@ -965,16 +859,6 @@ export function RightDock() {
                 >
                   <Users size={17} className="shrink-0" />
                   <span>{t("dockSubagents")}</span>
-                </button>
-                <button
-                  type="button"
-                  aria-label={t("dockOpenNamed", { label: t("dockBrowser") })}
-                  disabled={browserTabs.length >= MAX_BROWSER_TABS}
-                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus disabled:opacity-40"
-                  onClick={createBrowser}
-                >
-                  <Globe2 size={17} className="shrink-0" />
-                  <span>{t("dockBrowser")}</span>
                 </button>
                 <button
                   type="button"

@@ -1,7 +1,7 @@
 /**
  * Imperative row-level navigation into the active transcript.
  *
- * Follows the dock-browser request/subscribe pattern: the mounted Transcript
+ * Follows the request/subscribe pattern: the mounted Transcript
  * registers a handler, and any feature (outline, find, global search) can ask
  * it to bring a row into view without holding a component reference.
  */

@@ -23,7 +23,7 @@ Chat with your coding agent, watch its tools work, manage sessions, models, and 
 - **Sessions & workspaces** — browse, search, create, and reopen sessions across projects; conversation history is restored exactly where you left off.
 - **Models & providers** — switch providers, models, and thinking levels from the UI, with usage visibility per conversation.
 - **Git built in** — review changes, stage or unstage individual hunks, and browse branch history without leaving the app.
-- **Workspace Dock** — inspect the project file tree, reference files in a prompt, open conversation links in embedded browser tabs, and keep terminals beside the chat.
+- **Workspace Dock** — inspect the project file tree, reference files in a prompt, open conversation links in the system browser, and keep terminals beside the chat.
 - **Packages** — install and manage Pi Extensions, Skills, Prompts, and Themes, including project-local packages.
 - **Extension UI & terminal** — extensions render their own interactive panels, and an integrated workspace terminal is one shortcut away.
 - **Make it yours** — customizable keyboard shortcuts, context menus, and an interface available in English and 简体中文.

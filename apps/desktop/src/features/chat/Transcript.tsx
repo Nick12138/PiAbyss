@@ -33,7 +33,6 @@ import {
   ListTree,
   LoaderCircle,
   MessageCircleQuestion,
-  PanelRightOpen,
   Play,
   Puzzle,
   RotateCcw,
@@ -41,7 +40,6 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { requestFork } from "../../lib/fork-actions";
-import { requestDockBrowser } from "../../lib/dock-browser";
 import { openSystemUrl } from "../../lib/open-system-url";
 import { isSafeExternalUrl, sanitizeAgentText } from "./markdown-utils";
 import { ToolView } from "./ToolView";
@@ -733,14 +731,6 @@ export function Transcript() {
                     items: [
                       ...(linkUrl
                         ? [
-                            {
-                              id: "transcript.openLinkInDock",
-                              label: t("menuOpenLinkInDock"),
-                              icon: PanelRightOpen,
-                              onSelect: () => {
-                                requestDockBrowser({ url: linkUrl });
-                              },
-                            },
                             {
                               id: "transcript.openLinkExternal",
                               label: t("menuOpenLinkExternal"),

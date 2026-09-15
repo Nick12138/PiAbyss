@@ -27,8 +27,6 @@ export const en = {
   fileSystemOpen: "Show in file manager",
   fileBackToTree: "Back to file tree",
   fileToggleTree: "Toggle file tree",
-  fileRestore: "Restore panel",
-  fileMaximize: "Expand file panel",
   fileConflict: "This file changed on disk. Your unsaved changes are retained.",
   fileSource: "Source",
   fileCompare: "Compare changes",
@@ -94,7 +92,6 @@ export const en = {
   menuSelectAll: "Select all",
   menuCopySelection: "Copy selection",
   menuCopyMessage: "Copy message",
-  menuOpenLinkInDock: "Open in Dock",
   menuOpenLinkExternal: "Open in external browser",
   menuCopyLink: "Copy link",
   menuPasteAsAttachment: "Paste as attachment",
@@ -1367,7 +1364,6 @@ export const en = {
   todoStatusPending: "Pending",
   todoStatusInProgress: "In progress",
   todoStatusCompleted: "Completed",
-  dockBrowser: "Browser",
   dockTerminal: "Terminal",
   dockShell: "Shell",
   dockExtension: "Extension",
@@ -1389,13 +1385,6 @@ export const en = {
     "Extension panel could not be closed; use the panel's own exit shortcut",
 
   // Browser controls
-  dockBrowserNativeOnly: "Native browser surfaces are available in the desktop app",
-  dockBrowserBack: "Back",
-  dockBrowserForward: "Forward",
-  dockBrowserStopLoading: "Stop loading",
-  dockBrowserReload: "Reload",
-  dockBrowserAddress: "Browser address",
-  dockBrowserAddressPlaceholder: "Search or enter address",
   browserRetry: "Retry",
   browserOpenSystem: "Open in system browser",
 

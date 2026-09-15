@@ -15,12 +15,7 @@ import { clearTranscriptScrollPositions } from "./transcript-scroll-memory";
 import { buildTranscriptRows } from "./transcript-model";
 
 const linkMocks = vi.hoisted(() => ({
-  requestDockBrowser: vi.fn(),
   openSystemUrl: vi.fn(),
-}));
-
-vi.mock("../../lib/dock-browser", () => ({
-  requestDockBrowser: linkMocks.requestDockBrowser,
 }));
 
 vi.mock("../../lib/open-system-url", () => ({
@@ -159,7 +154,6 @@ describe("Transcript Session-open scrolling", () => {
         terminalProfile: "auto",
       },
     });
-    linkMocks.requestDockBrowser.mockReset().mockReturnValue(true);
     linkMocks.openSystemUrl.mockReset().mockResolvedValue(undefined);
     clearTranscriptScrollPositions();
   });
@@ -305,7 +299,7 @@ describe("Transcript Session-open scrolling", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("First Session"));
   });
 
-  it("adds Dock, external-browser, and copy actions when right-clicking a link", async () => {
+  it("adds external-browser and copy actions when right-clicking a link", async () => {
     const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
@@ -325,17 +319,10 @@ describe("Transcript Session-open scrolling", () => {
     row.append(link);
 
     fireEvent.contextMenu(link, { clientX: 24, clientY: 32 });
-    expect(await screen.findByRole("menuitem", { name: "Open in Dock" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Open in external browser" })).toBeInTheDocument();
+    expect(await screen.findByRole("menuitem", { name: "Open in external browser" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Copy link" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Copy message" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("menuitem", { name: "Open in Dock" }));
-    expect(linkMocks.requestDockBrowser).toHaveBeenCalledWith({
-      url: "https://example.com/docs",
-    });
-
-    fireEvent.contextMenu(link, { clientX: 24, clientY: 32 });
     await user.click(await screen.findByRole("menuitem", { name: "Open in external browser" }));
     expect(linkMocks.openSystemUrl).toHaveBeenCalledWith("https://example.com/docs");
 

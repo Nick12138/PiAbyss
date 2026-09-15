@@ -25,8 +25,6 @@ export const zh: Record<MessageKey, string> = {
   fileSystemOpen: "在文件管理器中显示",
   fileBackToTree: "返回文件树",
   fileToggleTree: "显示或隐藏文件树",
-  fileRestore: "还原面板",
-  fileMaximize: "放大文件面板",
   fileConflict: "磁盘文件已被修改，尚未保存的本地修改已保留。",
   fileSource: "源码",
   fileCompare: "比较修改",
@@ -90,7 +88,6 @@ export const zh: Record<MessageKey, string> = {
   menuSelectAll: "全选",
   menuCopySelection: "复制所选内容",
   menuCopyMessage: "复制消息",
-  menuOpenLinkInDock: "在 Dock 中打开",
   menuOpenLinkExternal: "使用外部浏览器打开",
   menuCopyLink: "复制链接",
   menuPasteAsAttachment: "粘贴为附件",
@@ -1303,7 +1300,6 @@ export const zh: Record<MessageKey, string> = {
   todoStatusPending: "待处理",
   todoStatusInProgress: "进行中",
   todoStatusCompleted: "已完成",
-  dockBrowser: "浏览器",
   dockTerminal: "终端",
   dockShell: "终端",
   dockExtension: "扩展",
@@ -1324,13 +1320,6 @@ export const zh: Record<MessageKey, string> = {
   dockExtensionCloseTimeout: "扩展面板无法关闭，请使用面板自身的退出快捷键",
 
   // Browser controls
-  dockBrowserNativeOnly: "Dock 浏览器仅在桌面应用中可用",
-  dockBrowserBack: "后退",
-  dockBrowserForward: "前进",
-  dockBrowserStopLoading: "停止加载",
-  dockBrowserReload: "重新加载",
-  dockBrowserAddress: "浏览器地址",
-  dockBrowserAddressPlaceholder: "搜索或输入网址",
   browserRetry: "重试",
   browserOpenSystem: "在系统浏览器中打开",
 

@@ -1,4 +1,3 @@
-use crate::browser_surface::{BrowserSurfaceBounds, BrowserSurfaceSnapshot};
 use crate::desktop_settings::{DesktopSettings, DesktopSettingsSnapshot};
 use crate::draft_store::{DraftApplyResult, DraftMutation, DraftWorkspaceSnapshot};
 use crate::shell_terminal::{
@@ -10,7 +9,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use tauri::{ipc::Channel, AppHandle, State};
+use tauri::{ipc::Channel, State};
 
 #[tauri::command]
 pub async fn desktop_settings_get(
@@ -565,77 +564,6 @@ pub async fn shell_terminal_close(
 ) -> Result<bool, String> {
     let mut terminals = state.terminals.lock().await;
     Ok(terminals.close(&terminal_id))
-}
-
-#[tauri::command]
-pub async fn browser_surface_create(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    surface_id: String,
-    url: String,
-    bounds: BrowserSurfaceBounds,
-    visible: bool,
-) -> Result<BrowserSurfaceSnapshot, String> {
-    let mut browsers = state.browsers.lock().await;
-    browsers.create(&app, &surface_id, &url, bounds, visible)
-}
-
-#[tauri::command]
-pub async fn browser_surface_navigate(
-    state: State<'_, AppState>,
-    surface_id: String,
-    url: String,
-) -> Result<String, String> {
-    let browsers = state.browsers.lock().await;
-    browsers.navigate(&surface_id, &url)
-}
-
-#[tauri::command]
-pub async fn browser_surface_control(
-    state: State<'_, AppState>,
-    surface_id: String,
-    action: String,
-) -> Result<(), String> {
-    let browsers = state.browsers.lock().await;
-    browsers.control(&surface_id, &action)
-}
-
-#[tauri::command]
-pub async fn browser_surface_set_bounds(
-    state: State<'_, AppState>,
-    surface_id: String,
-    bounds: BrowserSurfaceBounds,
-) -> Result<(), String> {
-    let browsers = state.browsers.lock().await;
-    browsers.set_bounds(&surface_id, bounds)
-}
-
-#[tauri::command]
-pub async fn browser_surface_set_visible(
-    state: State<'_, AppState>,
-    surface_id: String,
-    visible: bool,
-) -> Result<(), String> {
-    let browsers = state.browsers.lock().await;
-    browsers.set_visible(&surface_id, visible)
-}
-
-#[tauri::command]
-pub async fn browser_surface_focus(
-    state: State<'_, AppState>,
-    surface_id: String,
-) -> Result<(), String> {
-    let browsers = state.browsers.lock().await;
-    browsers.focus(&surface_id)
-}
-
-#[tauri::command]
-pub async fn browser_surface_close(
-    state: State<'_, AppState>,
-    surface_id: String,
-) -> Result<bool, String> {
-    let mut browsers = state.browsers.lock().await;
-    browsers.close(&surface_id)
 }
 
 /// What the file manager should do with a validated local path.

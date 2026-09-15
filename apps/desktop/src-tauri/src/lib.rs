@@ -1,6 +1,5 @@
 #![allow(linker_messages)]
 
-mod browser_surface;
 mod commands;
 mod desktop_settings;
 mod draft_store;
@@ -26,7 +25,6 @@ pub struct AppState {
     pub drafts: Mutex<DraftStore>,
     pub hosts: Mutex<PiHostPool>,
     pub terminals: Mutex<ShellTerminalManager>,
-    pub browsers: Mutex<BrowserSurfaceManager>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -59,7 +57,6 @@ pub fn run() {
                 drafts: Mutex::new(drafts),
                 hosts: Mutex::new(hosts),
                 terminals: Mutex::new(ShellTerminalManager::new()),
-                browsers: Mutex::new(BrowserSurfaceManager::new()),
             });
 
             let handle = app.handle().clone();
@@ -196,13 +193,6 @@ pub fn run() {
             commands::shell_terminal_write,
             commands::shell_terminal_resize,
             commands::shell_terminal_close,
-            commands::browser_surface_create,
-            commands::browser_surface_navigate,
-            commands::browser_surface_control,
-            commands::browser_surface_set_bounds,
-            commands::browser_surface_set_visible,
-            commands::browser_surface_focus,
-            commands::browser_surface_close,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -234,9 +224,6 @@ pub fn run() {
                 let handle = app_handle.clone();
                 tauri::async_runtime::block_on(async move {
                     let state = handle.state::<AppState>();
-                    let mut browsers = state.browsers.lock().await;
-                    browsers.shutdown_all();
-                    drop(browsers);
                     let mut terminals = state.terminals.lock().await;
                     terminals.shutdown_all();
                     drop(terminals);
@@ -247,4 +234,3 @@ pub fn run() {
             _ => {}
         });
 }
-use browser_surface::BrowserSurfaceManager;
