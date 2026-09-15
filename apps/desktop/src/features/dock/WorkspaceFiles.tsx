@@ -8,8 +8,6 @@ import {
   FolderOpen,
   FolderTree,
   LoaderCircle,
-  Maximize2,
-  Minimize2,
   RefreshCw,
   Save,
 } from "lucide-react";
@@ -59,8 +57,6 @@ export function WorkspaceFiles({ visible }: { visible: boolean }) {
   const connecting = useAppStore((s) => s.connecting || s.rehydrating);
   const pushNotification = useAppStore((s) => s.pushNotification);
   const [width, setWidth] = useState(460);
-  const [maximized, setMaximized] = useState(false);
-  const [left, setLeft] = useState(0);
   const [showTree, setShowTree] = useState(true);
   const [showContent, setShowContent] = useState(false);
   const [markdownMode, setMarkdownMode] = useState<"live" | "source" | "preview">("live");
@@ -84,20 +80,6 @@ export function WorkspaceFiles({ visible }: { visible: boolean }) {
     observer.observe(container.current);
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => {
-    if (!maximized) return;
-    const main = document.querySelector("[data-piabyss-app] main");
-    const update = () => setLeft(main?.getBoundingClientRect().left ?? 0);
-    update();
-    const observer = new ResizeObserver(update);
-    if (main) observer.observe(main);
-    window.addEventListener("resize", update);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", update);
-    };
-  }, [maximized]);
 
   useEffect(() => {
     if (!visible || !host || !workspace || connecting) return;
@@ -181,27 +163,18 @@ export function WorkspaceFiles({ visible }: { visible: boolean }) {
       ref={container}
       data-file-workspace
       className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface"
-      style={
-        maximized && visible
-          ? { position: "fixed", top: 40, bottom: 0, right: 0, left, zIndex: 40 }
-          : undefined
-      }
       onKeyDown={(event) => {
         if (event.defaultPrevented) return;
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
           event.preventDefault();
           void saveOpenFile();
         }
-        if (event.key === "Escape" && maximized && !confirmAction && !session.leavePrompt) {
-          event.preventDefault();
-          setMaximized(false);
-        }
       }}
     >
       <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-1 border-b border-border px-2 py-1">
         {!wide && showContent && (
           <FileToolButton label={t("fileBackToTree")} onClick={() => setShowContent(false)}>
-            <ArrowLeft size={15} />
+            <ArrowLeft size={14} />
           </FileToolButton>
         )}
         <div className="min-w-0 flex-1 basis-24 py-1" title={path ?? t("dockFiles")}>
@@ -254,12 +227,6 @@ export function WorkspaceFiles({ visible }: { visible: boolean }) {
               <FolderTree size={14} />
             </FileToolButton>
           )}
-          <FileToolButton
-            label={t(maximized ? "fileRestore" : "fileMaximize")}
-            onClick={() => setMaximized(!maximized)}
-          >
-            {maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-          </FileToolButton>
         </div>
       </div>
       <div className="flex min-h-0 flex-1">

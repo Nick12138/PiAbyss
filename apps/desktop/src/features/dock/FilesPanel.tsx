@@ -339,8 +339,8 @@ export function FilesPanel({
       aria-label={t("dockFilesRegion")}
       data-dock-panel
     >
-      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2">
-        <div className="relative min-w-0 flex-1">
+      <div className="flex h-[31px] shrink-0 items-center gap-1 border-b border-border px-2 py-[3px]">
+        <div className="relative min-h-0 min-w-0 flex-1 self-stretch">
           <Search
             size={13}
             className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted"
@@ -350,7 +350,8 @@ export function FilesPanel({
             aria-label={t("dockFilesSearch")}
             value={query}
             placeholder={t("dockFilesSearchPlaceholder")}
-            className="h-7 w-full rounded border border-border bg-surface-raised pl-7 pr-7 text-xs outline-none focus:border-focus"
+            data-interface-height-auto="true"
+            className="h-[24px] w-full rounded border border-border bg-surface-raised pl-7 pr-7 text-xs outline-none focus:border-focus"
             onChange={(event) => setQuery(event.target.value)}
           />
           {query && (
@@ -369,7 +370,7 @@ export function FilesPanel({
           type="button"
           title={t("dockFilesRefresh")}
           aria-label={t("dockFilesRefresh")}
-          className="flex size-7 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
+          className="flex size-6 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
           onClick={refresh}
         >
           <RefreshCw size={14} />
@@ -379,7 +380,7 @@ export function FilesPanel({
           title={t("dockFilesCollapseAll")}
           aria-label={t("dockFilesCollapseAll")}
           disabled={expanded.size === 0}
-          className="flex size-7 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-35"
+          className="flex size-6 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-35"
           onClick={() => setExpanded(new Set())}
         >
           <ChevronsUp size={14} />
@@ -437,7 +438,7 @@ export function FilesPanel({
                     aria-level={row.depth + 1}
                     aria-selected={isSelected}
                     aria-expanded={isDirectory ? isExpanded : undefined}
-                    className={`group absolute left-0 top-0 flex h-7 w-full items-center pr-1 text-xs ${
+                    className={`group absolute left-0 top-0 flex h-7 w-full select-none items-center pr-1 text-xs ${
                       isSelected
                         ? "bg-surface-overlay text-foreground"
                         : "text-foreground/85 hover:bg-surface-overlay/60"

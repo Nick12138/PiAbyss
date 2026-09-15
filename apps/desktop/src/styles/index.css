@@ -304,7 +304,7 @@ body,
   :where(
     input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not(
         [type="hidden"]
-      ),
+      ):not([data-interface-height-auto]),
     select
   ) {
   height: var(--interface-control-height);

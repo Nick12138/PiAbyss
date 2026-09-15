@@ -21,7 +21,7 @@ export function FileToolButton({
       aria-pressed={pressed}
       disabled={disabled}
       onClick={onClick}
-      className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline focus-visible:outline-focus disabled:opacity-35"
+      className="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline focus-visible:outline-focus disabled:opacity-35"
     >
       {children}
     </button>
