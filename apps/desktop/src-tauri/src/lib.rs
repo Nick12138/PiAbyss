@@ -38,6 +38,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             system_tray::install(app)?;
+            system_notification::ensure_toast_aumid_registered(app.handle());
 
             let mut settings = DesktopSettingsStore::load(app.handle())?;
             settings.ensure_default_project_workspace()?;

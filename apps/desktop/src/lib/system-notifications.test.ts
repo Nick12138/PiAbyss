@@ -245,6 +245,10 @@ describe("SystemNotificationController", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Node's navigator.platform reports the host OS ("Win32" on Windows CI/dev
+    // machines); pin a non-Windows platform so permission-flow tests exercise
+    // the web Notification shim. The Windows-bypass test overrides this.
+    vi.stubGlobal("navigator", { platform: "MacIntel" });
     notifyMocks.permission = "granted";
     notifyMocks.permissionGate = null;
     notifyMocks.onActionShouldReject = false;
@@ -257,15 +261,18 @@ describe("SystemNotificationController", () => {
 
   afterEach(() => {
     controller.dispose();
+    vi.unstubAllGlobals();
   });
 
   it("delivers a background completion through the OS command", async () => {
     controller.observe(agentEndEvent("run-1"));
     await vi.waitFor(() => expect(notifyMocks.invoke).toHaveBeenCalled());
     expect(notifyMocks.invoke).toHaveBeenCalledWith("system_notify", {
-      title: "PiAbyss",
-      body: "A response is ready",
-      extra: { kind: "response-ready", target },
+      options: {
+        title: "PiAbyss",
+        body: "A response is ready",
+        extra: { kind: "response-ready", target },
+      },
     });
   });
 
@@ -317,9 +324,31 @@ describe("SystemNotificationController", () => {
     await vi.waitFor(() =>
       expect(notifyMocks.invoke).toHaveBeenCalledWith(
         "system_notify",
-        expect.objectContaining({ extra: { kind: "response-ready", target } }),
+        expect.objectContaining({
+          options: expect.objectContaining({ extra: { kind: "response-ready", target } }),
+        }),
       ),
     );
+  });
+
+  it("bypasses the web Notification shim on Windows (WebView2 always reports denied)", async () => {
+    vi.stubGlobal("navigator", { platform: "Win32" });
+    // Even a full web-level denial must not block delivery on Windows:
+    // the shim is never consulted, mirroring the Rust command's answer.
+    notifyMocks.permission = "denied";
+    controller.observe(agentEndEvent("run-windows"));
+    await vi.waitFor(() =>
+      expect(notifyMocks.invoke).toHaveBeenCalledWith(
+        "system_notify",
+        expect.objectContaining({
+          options: expect.objectContaining({ extra: { kind: "response-ready", target } }),
+        }),
+      ),
+    );
+    const { isPermissionGranted, requestPermission } =
+      await import("@tauri-apps/plugin-notification");
+    expect(isPermissionGranted).not.toHaveBeenCalled();
+    expect(requestPermission).not.toHaveBeenCalled();
   });
 
   it("drops a queued alert when focus returns before permission settles", async () => {
@@ -374,7 +403,9 @@ describe("SystemNotificationController", () => {
     await vi.waitFor(() => expect(notifyMocks.invoke).toHaveBeenCalled());
     expect(notifyMocks.invoke).toHaveBeenCalledWith(
       "system_notify",
-      expect.objectContaining({ extra: { kind: "response-ready", target } }),
+      expect.objectContaining({
+        options: expect.objectContaining({ extra: { kind: "response-ready", target } }),
+      }),
     );
   });
 });

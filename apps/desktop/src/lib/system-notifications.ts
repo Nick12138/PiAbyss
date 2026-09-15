@@ -32,6 +32,17 @@ export type SystemNotificationObservationContext = {
 
 type RunState = { failed: boolean; deliveredFailure: boolean };
 
+/**
+ * Windows desktop has no notification permission model (the plugin's Rust
+ * `is_permission_granted` always returns true there), but WebView2 reports
+ * `window.Notification.permission === "denied"` unconditionally and its
+ * `requestPermission()` resolves `"denied"` too — the plugin's JS wrapper
+ * short-circuits on that and can never report granted (upstream bug,
+ * tauri-apps/plugins-workspace#3512). The web Notification shim must be
+ * bypassed entirely on Windows or every send is silently dropped.
+ */
+const IS_WINDOWS_DESKTOP = () => /^win/i.test(navigator.platform);
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -291,6 +302,27 @@ export class SystemNotificationController {
 
   observe(event: HostEventEnvelope): void {
     if (this.disposed || !isTauri()) return;
+    // Diagnostic trail for "why did no toast appear": log every terminal agent
+    // event with the attention state it was classified under, plus the tracker
+    // verdict. Console.debug keeps it out of production consoles' default
+    // filter while remaining available in DevTools.
+    if (event.event === "agent.event" && event.sessionId) {
+      const agentEvent = event.payload.event;
+      if (agentEvent.type === "agent_end" || agentEvent.type === "error") {
+        const attention = this.options.attention();
+        const candidate = this.tracker.observe(event, {
+          attention,
+          targetForSession: this.options.targetForSession,
+        });
+        console.debug("[notify] terminal agent event", {
+          type: agentEvent.type,
+          attention,
+          candidate: candidate?.kind ?? null,
+        });
+        if (candidate) this.deliver(candidate);
+        return;
+      }
+    }
     const candidate = this.tracker.observe(event, {
       attention: this.options.attention(),
       targetForSession: this.options.targetForSession,
@@ -306,27 +338,46 @@ export class SystemNotificationController {
    */
   deliver(candidate: SystemNotificationCandidate): void {
     if (this.disposed || !isTauri()) return;
-    if (!this.options.enabled()) return;
+    if (!this.options.enabled()) {
+      console.debug("[notify] skipped: setting disabled", candidate.kind);
+      return;
+    }
+    console.debug("[notify] queued", candidate.kind);
     this.sendQueue = this.sendQueue.then(() => this.send(candidate));
   }
 
   private async send(candidate: SystemNotificationCandidate): Promise<void> {
-    if (this.disposed || this.options.attention() !== "background" || !this.options.enabled())
+    const attention = this.options.attention();
+    if (this.disposed || attention !== "background" || !this.options.enabled()) {
+      console.debug("[notify] send aborted", {
+        kind: candidate.kind,
+        attention,
+        disposed: this.disposed,
+      });
       return;
+    }
     try {
       const api = await import("@tauri-apps/plugin-notification");
-      let granted = await api.isPermissionGranted();
-      if (!granted) {
-        // A hard denial must not turn every later alert into another
-        // permission prompt, but the sticky flag must also not outlive the OS
-        // setting: when the user re-enables notifications system-wide,
-        // isPermissionGranted flips to granted and clears the flag here.
-        if (this.permissionDenied) return;
-        const permission = await api.requestPermission();
-        granted = permission === "granted";
-        this.permissionDenied = permission === "denied";
-      } else {
+      let granted: boolean;
+      if (IS_WINDOWS_DESKTOP()) {
+        // No permission prompt exists on Windows desktop; treating this as
+        // always-granted is what the plugin's Rust command reports anyway.
+        granted = true;
         this.permissionDenied = false;
+      } else {
+        granted = await api.isPermissionGranted();
+        if (!granted) {
+          // A hard denial must not turn every later alert into another
+          // permission prompt, but the sticky flag must also not outlive the OS
+          // setting: when the user re-enables notifications system-wide,
+          // isPermissionGranted flips to granted and clears the flag here.
+          if (this.permissionDenied) return;
+          const permission = await api.requestPermission();
+          granted = permission === "granted";
+          this.permissionDenied = permission === "denied";
+        } else {
+          this.permissionDenied = false;
+        }
       }
       // Permission checks may finish after focus changes or the controller is
       // disposed. Do not deliver a queued background alert in that case.
@@ -341,17 +392,24 @@ export class SystemNotificationController {
       // platforms fall back to the plugin's builder internally. The command
       // may still be accepted by the OS while the toast is later suppressed
       // by Focus Assist / Do Not Disturb — that part is not observable.
+      // The command takes a single `options` argument (see
+      // `system_notification::SystemNotificationOptions`): the payload must be
+      // nested under that key, Tauri matches invoke args by parameter name.
       await invoke("system_notify", {
-        title: copy.title,
-        body: copy.body,
-        extra: {
-          kind: candidate.kind,
-          ...(candidate.target ? { target: candidate.target } : {}),
+        options: {
+          title: copy.title,
+          body: copy.body,
+          extra: {
+            kind: candidate.kind,
+            ...(candidate.target ? { target: candidate.target } : {}),
+          },
         },
       });
-    } catch {
+      console.debug("[notify] delivered", candidate.kind);
+    } catch (error) {
       // A transient native delivery error is not a permission denial. Keep the
       // queue usable so a later response can still notify the user.
+      console.error("[notify] delivery failed", candidate.kind, error);
     }
   }
 }
