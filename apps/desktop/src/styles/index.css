@@ -49,7 +49,7 @@
   --color-surface-overlay: #27272d;
   --color-sidebar: #121216;
   --color-border: #2a2a2f;
-  --color-foreground: #edeef0;
+  --color-foreground: #e2e3e6;
   --color-muted: #9a9ba3;
   --color-accent: #df6b35;
   --color-accent-hover: #c85b29;
@@ -732,7 +732,7 @@ html[data-theme-family="apple"].dark {
   --color-border: rgb(255 255 255 / 14%);
   --color-border-subtle: rgb(255 255 255 / 9%);
   --color-border-strong: rgb(255 255 255 / 24%);
-  --color-foreground: #f5f5f7;
+  --color-foreground: #e9eaec;
   --color-muted: #a1a1a6;
   --color-accent: #0068d9;
   --color-accent-hover: #005fc7;
@@ -845,7 +845,7 @@ html[data-theme-family="transparent"].dark {
   --color-border: rgb(255 255 255 / 14%);
   --color-border-subtle: rgb(255 255 255 / 9%);
   --color-border-strong: rgb(255 255 255 / 24%);
-  --color-foreground: #f5f5f7;
+  --color-foreground: #e9eaec;
   --color-muted: #a1a1a6;
   --color-accent: #0068d9;
   --color-accent-hover: #005fc7;
@@ -1200,7 +1200,7 @@ html[data-theme-family="vercel"].dark {
   --color-border: oklch(1 0 0 / 16%);
   --color-border-subtle: oklch(1 0 0 / 10%);
   --color-border-strong: oklch(1 0 0 / 28%);
-  --color-foreground: oklch(0.946 0 0);
+  --color-foreground: oklch(0.915 0 0);
   --color-muted: oklch(0.706 0 0);
   --color-accent: oklch(0.946 0 0);
   --color-accent-hover: oklch(0.836 0 0);
