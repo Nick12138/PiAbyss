@@ -1271,7 +1271,9 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
     // Startup check is best-effort: offline or a bad feed stays silent, and
-    // the manual check in Settings → Host surfaces errors instead.
+    // the manual check in Settings → Host surfaces errors instead. An update
+    // found here keeps the top bar's "download and update" button visible
+    // (AppUpdateButton) until it is downloaded and applied.
     void checkForAppUpdate()
       .then((update) => {
         if (update && !cancelled) {

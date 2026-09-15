@@ -4,6 +4,7 @@ import { useT } from "../lib/i18n/use-t";
 import { requestGlobalSearchOpen } from "../lib/commands/events";
 import { NotificationCenter } from "./NotificationCenter";
 import { DockToggleButton } from "./DockToggleButton";
+import { AppUpdateButton } from "./AppUpdateButton";
 import { WindowControls, resolveWindowControlsPlatform } from "./WindowControls";
 import { SidebarBrandToggle } from "./Sidebar";
 import { SETTINGS_SECTION_META } from "../features/settings/settings-top-bar";
@@ -161,9 +162,10 @@ export function AppTopBar({
         ref={actionsSlotRef}
       />
 
-      {/* Right segment: right-panel toggle (chat only) + native window
-          controls. */}
+      {/* Right segment: download-and-update (while an update is available) +
+          right-panel toggle (chat only) + native window controls. */}
       <div className="flex shrink-0 items-center gap-1" data-app-topbar-right>
+        <AppUpdateButton />
         {page === "chat" && <DockToggleButton />}
         {platform === "windows" && <WindowControls platform="windows" />}
       </div>

@@ -8,6 +8,10 @@
 
 export type AppUpdate = {
   version: string;
+  /** Downloads and stages the update without restarting the app. */
+  download: (onProgress?: (progress: AppUpdateInstallProgress) => void) => Promise<void>;
+  /** Restarts the app to apply a previously downloaded update. */
+  restart: () => Promise<void>;
   /** Downloads, installs and relaunches the app. Resolves only on failure paths. */
   install: (onProgress?: (progress: AppUpdateInstallProgress) => void) => Promise<void>;
 };
@@ -27,17 +31,17 @@ async function runCheck(): Promise<AppUpdate | null> {
   if (!isTauri()) return null;
 
   const { check } = await import("@tauri-apps/plugin-updater");
-  const update = await check();
-  if (!update) return null;
+  const pluginUpdate = await check();
+  if (!pluginUpdate) return null;
 
-  return {
-    version: update.version,
-    install: async (onProgress) => {
+  const appUpdate: AppUpdate = {
+    version: pluginUpdate.version,
+    download: async (onProgress) => {
       const { ensureFileCanLeave } = await import("../features/dock/file-session");
       if (!(await ensureFileCanLeave())) throw new Error("Update cancelled");
       let downloadedBytes = 0;
       let totalBytes: number | null = null;
-      await update.downloadAndInstall((event) => {
+      await pluginUpdate.downloadAndInstall((event) => {
         if (event.event === "Started") {
           downloadedBytes = 0;
           totalBytes = event.data.contentLength ?? null;
@@ -51,8 +55,11 @@ async function runCheck(): Promise<AppUpdate | null> {
         }
         onProgress?.({ phase: "installing" });
       });
-      const { relaunch } = await import("@tauri-apps/plugin-process");
+    },
+    restart: async () => {
+      const { ensureFileCanLeave } = await import("../features/dock/file-session");
       if (!(await ensureFileCanLeave())) throw new Error("Restart cancelled");
+      const { relaunch } = await import("@tauri-apps/plugin-process");
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("desktop_allow_exit", { approved: true });
       try {
@@ -61,7 +68,13 @@ async function runCheck(): Promise<AppUpdate | null> {
         await invoke("desktop_allow_exit", { approved: false });
       }
     },
+    install: async (onProgress) => {
+      // Download then relaunch in one step.
+      await appUpdate.download(onProgress);
+      await appUpdate.restart();
+    },
   };
+  return appUpdate;
 }
 
 /** Checks the release feed; concurrent callers share one in-flight request. */

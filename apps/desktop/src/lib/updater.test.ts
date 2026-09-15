@@ -111,6 +111,48 @@ describe("checkForAppUpdate", () => {
     });
   });
 
+  it("stages the update via download without relaunching", async () => {
+    const downloadAndInstall = vi.fn(async (onEvent?: (event: DownloadEvent) => void) => {
+      onEvent?.({ event: "Started", data: { contentLength: 10 } });
+      onEvent?.({ event: "Finished" });
+    });
+    mocks.check.mockResolvedValue({ version: "0.2.0", downloadAndInstall });
+
+    const update = await checkForAppUpdate();
+    await update!.download();
+
+    expect(downloadAndInstall).toHaveBeenCalledTimes(1);
+    expect(mocks.relaunch).not.toHaveBeenCalled();
+  });
+
+  it("restart applies a staged update without downloading again", async () => {
+    mocks.check.mockResolvedValue({ version: "0.2.0", downloadAndInstall: vi.fn() });
+
+    const update = await checkForAppUpdate();
+    await update!.restart();
+
+    expect(mocks.relaunch).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke.mock.calls).toEqual([
+      ["desktop_allow_exit", { approved: true }],
+      ["desktop_allow_exit", { approved: false }],
+    ]);
+  });
+
+  it("install downloads then restarts in order", async () => {
+    const order: string[] = [];
+    const downloadAndInstall = vi.fn(async () => {
+      order.push("download");
+    });
+    mocks.relaunch.mockImplementation(async () => {
+      order.push("relaunch");
+    });
+    mocks.check.mockResolvedValue({ version: "0.2.0", downloadAndInstall });
+
+    const update = await checkForAppUpdate();
+    await update!.install();
+    expect(order).toEqual(["download", "relaunch"]);
+  });
+
   it("shares one in-flight plugin request across concurrent checks, then re-checks", async () => {
     let release!: (value: null) => void;
     mocks.check.mockReturnValue(
