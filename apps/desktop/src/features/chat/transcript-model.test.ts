@@ -973,6 +973,104 @@ describe("Pi extension and session entry messages", () => {
     }
   });
 
+  // Regression: d305598 counted only display:true custom_message entries,
+  // but pi's session.messages includes ALL custom messages (runtime
+  // state.messages and the restore path both project every custom_message
+  // entry). Under-counting made the tail loop re-add the last persisted
+  // messages: a duplicate user row, or duplicated text silently merged
+  // into the trailing assistant row.
+  it("keeps tail alignment when persisted display:false custom_message entries exist", () => {
+    const user1: SerializableAgentMessage = {
+      role: "user",
+      content: "first question",
+      timestamp: 1,
+    };
+    const user2: SerializableAgentMessage = {
+      role: "user",
+      content: "second question",
+      timestamp: 3,
+    };
+    const hiddenCustom: SerializableAgentMessage = {
+      role: "custom",
+      customType: "subagent-notify",
+      display: false,
+      content: [{ type: "text", text: "internal state" }],
+    };
+    const entries = [
+      { id: "e1", parentId: null, type: "message", message: user1 },
+      {
+        id: "e2",
+        parentId: "e1",
+        type: "custom_message",
+        customType: "subagent-notify",
+        display: false,
+        content: [{ type: "text", text: "internal state" }],
+      },
+      { id: "e3", parentId: "e2", type: "message", message: user2 },
+    ] as never;
+    // Host snapshots mirror agent.state.messages: the hidden custom message
+    // occupies its position between the two user messages.
+    const messages = [user1, hiddenCustom, user2];
+
+    const rows = buildTranscriptRows({ messages, entries, leafId: "e3", turnActive: false });
+    const userRows = rows.filter((row) => row.role === "user");
+    expect(userRows.map((row) => row.copyText)).toEqual(["first question", "second question"]);
+  });
+
+  it("does not duplicate the trailing assistant answer after a hidden custom entry", () => {
+    const answer = {
+      role: "assistant" as const,
+      content: [{ type: "text" as const, text: "answer two" }],
+      stopReason: "stop",
+      timestamp: 5,
+    };
+    const messages = [
+      { role: "user", content: "q1", timestamp: 1 },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "answer one" }],
+        stopReason: "stop",
+        timestamp: 2,
+      },
+      {
+        role: "custom",
+        customType: "subagent-notify",
+        display: false,
+        content: [{ type: "text", text: "internal state" }],
+      },
+      { role: "user", content: "q2", timestamp: 4 },
+      answer,
+      // Live optimistic bubble not yet persisted as an entry.
+      { role: "user", content: "optimistic!", timestamp: 6 },
+    ] as SerializableAgentMessage[];
+    const entries = [
+      { id: "e1", parentId: null, type: "message", message: messages[0] },
+      { id: "e2", parentId: "e1", type: "message", message: messages[1] },
+      {
+        id: "e3",
+        parentId: "e2",
+        type: "custom_message",
+        customType: "subagent-notify",
+        display: false,
+        content: [{ type: "text", text: "internal state" }],
+      },
+      { id: "e4", parentId: "e3", type: "message", message: messages[3] },
+      { id: "e5", parentId: "e4", type: "message", message: messages[4] },
+    ] as never;
+
+    const rows = buildTranscriptRows({ messages, entries, leafId: "e5", turnActive: false });
+    const answerRows = rows.filter((row) => row.role === "assistant");
+    const answerTexts = answerRows.flatMap((row) =>
+      row.blocks
+        .filter((block) => block.kind === "text")
+        .map((block) => (block.kind === "text" ? block.text : "")),
+    );
+    expect(answerTexts).toEqual(["answer one", "answer two"]);
+    // The optimistic bubble stays visible as the live tail.
+    expect(rows[rows.length - 1]?.role).toBe("user");
+    expect(rows[rows.length - 1]?.copyText).toBe("optimistic!");
+  });
+
   it("parses declarative Extension presentation from top-level and details metadata", () => {
     const basePresentation = {
       version: 1,

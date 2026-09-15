@@ -1022,6 +1022,16 @@ function sourceMessages(
       continue;
     }
     if (type === "custom_message") {
+      // Every custom_message entry consumes one position in `session.messages`,
+      // regardless of `display`. Pi's runtime pushes all custom messages into
+      // `agent.state.messages` (pi-agent-core processEvents on message_end) and
+      // its restore path `sessionEntryToContextMessages()` projects every
+      // custom_message entry unconditionally — `display` only controls whether
+      // the desktop renders a visible row for it below (hidden customs still
+      // project a source to keep the assistant-turn boundary). Counting only
+      // display:true entries would under-count here and make the tail loop
+      // re-add the last already-persisted messages as duplicated rows.
+      projectedMessageCount += 1;
       const message = entryProjectedMessage(
         record,
         () =>
@@ -1034,13 +1044,6 @@ function sourceMessages(
             ...(record.presentation !== undefined ? { presentation: record.presentation } : {}),
           }) as SerializableAgentMessage,
       ) as SerializableAgentMessage;
-      // Only custom_message with display:true consumes a position in session.messages.
-      // A custom_message with display:false remains an entry but does not appear in
-      // session.messages, so counting it here would desynchronize the length-based
-      // tail alignment and silently swallow live rows off the end of the transcript.
-      if (record.display === true) {
-        projectedMessageCount += 1;
-      }
       sources.push({
         kind: "message",
         message,
