@@ -44,6 +44,36 @@ const id: HostIdentity = {
 const COMMAND_RUN_ID = "00000000-0000-4000-8000-000000000006";
 const NEXT_COMMAND_RUN_ID = "00000000-0000-4000-8000-000000000007";
 
+type RecordedUiEvent = { e: HostEventName; p: unknown };
+
+function widgetChangedEvents(events: RecordedUiEvent[]): unknown[] {
+  return events.filter((event) => event.e === "extensionUi.widgetChanged").map((event) => event.p);
+}
+
+function widgetAttentionEvents(events: RecordedUiEvent[]): unknown[] {
+  return events
+    .filter((event) => event.e === "extensionUi.widgetAttentionRequested")
+    .map((event) => event.p);
+}
+
+/**
+ * The virtual widget TUI publishes frames on a throttled real timer. Wait for
+ * the expected frame instead of assuming one fixed sleep covers it: on a loaded
+ * runner a 30 ms sleep can expire before the frame lands, which made the widget
+ * tests flake. Negative expectations use `settleWidgetFrames` below, which
+ * gives an already-scheduled frame time to land.
+ */
+async function waitForWidgetFrames(events: RecordedUiEvent[], expected: number): Promise<void> {
+  await vi.waitFor(() => expect(widgetChangedEvents(events)).toHaveLength(expected), {
+    timeout: 5_000,
+    interval: 10,
+  });
+}
+
+async function settleWidgetFrames(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 80));
+}
+
 function commandInvocation(invocation: string): ResolvedExtensionCommandInvocation {
   return {
     invocation,
@@ -1631,7 +1661,7 @@ describe("extension-ui-bridge", () => {
         },
       };
     });
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await waitForWidgetFrames(events, 1);
 
     let widget = events.filter((x) => x.e === "extensionUi.widgetChanged").at(-1)?.p as {
       key: string;
@@ -1643,7 +1673,7 @@ describe("extension-ui-bridge", () => {
     text = "updated";
     requestRender?.();
     requestRender?.();
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await waitForWidgetFrames(events, 2);
     const updates = events.filter((x) => x.e === "extensionUi.widgetChanged");
     expect(updates).toHaveLength(2);
     expect(updates[0]?.p).toEqual({
@@ -1661,7 +1691,7 @@ describe("extension-ui-bridge", () => {
     });
 
     requestRender?.();
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await settleWidgetFrames();
     expect(events.filter((x) => x.e === "extensionUi.widgetChanged")).toHaveLength(3);
 
     ui.setWidget("tasks", undefined);
@@ -1687,7 +1717,7 @@ describe("extension-ui-bridge", () => {
         disposed = true;
       },
     }));
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await waitForWidgetFrames(events, 1);
 
     ui.setWidget("nano-context", () => ({
       render: () => ["new context"],
@@ -1695,7 +1725,7 @@ describe("extension-ui-bridge", () => {
     }));
     expect(disposed).toBe(true);
     expect(events.filter((event) => event.e === "extensionUi.widgetChanged")).toHaveLength(1);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await waitForWidgetFrames(events, 2);
 
     expect(
       events.filter((event) => event.e === "extensionUi.widgetChanged").map((event) => event.p),
@@ -1719,7 +1749,7 @@ describe("extension-ui-bridge", () => {
       },
       invalidate: () => {},
     }));
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await waitForWidgetFrames(events, 2);
 
     expect(
       events.filter((event) => event.e === "extensionUi.widgetChanged").map((event) => event.p),
@@ -1762,16 +1792,17 @@ describe("extension-ui-bridge", () => {
             invalidate: () => {},
           };
         });
-        await new Promise((resolve) => setTimeout(resolve, 30));
+        await settleWidgetFrames();
       },
     );
-    expect(
-      events.filter((event) => event.e === "extensionUi.widgetAttentionRequested"),
-    ).toHaveLength(0);
+    expect(widgetAttentionEvents(events)).toHaveLength(0);
 
     failRender = false;
     requestRender?.();
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await vi.waitFor(() => expect(widgetAttentionEvents(events)).toHaveLength(1), {
+      timeout: 5_000,
+      interval: 10,
+    });
     expect(events.filter((event) => event.e === "extensionUi.widgetAttentionRequested")).toEqual([
       {
         e: "extensionUi.widgetAttentionRequested",
@@ -1786,7 +1817,7 @@ describe("extension-ui-bridge", () => {
     text = "refreshed";
     requestRender?.();
     requestRender?.();
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await waitForWidgetFrames(events, 2);
     expect(
       events.filter((event) => event.e === "extensionUi.widgetAttentionRequested"),
     ).toHaveLength(1);
@@ -1817,10 +1848,8 @@ describe("extension-ui-bridge", () => {
         invalidate: () => {},
       };
     });
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(
-      events.filter((event) => event.e === "extensionUi.widgetAttentionRequested"),
-    ).toHaveLength(0);
+    await settleWidgetFrames();
+    expect(widgetAttentionEvents(events)).toHaveLength(0);
 
     await withExtensionCommandOrigin(
       session as never,
@@ -1829,11 +1858,14 @@ describe("extension-ui-bridge", () => {
       async () => {
         text = "command update";
         requestRender?.();
-        await new Promise((resolve) => setTimeout(resolve, 30));
+        await vi.waitFor(() => expect(widgetAttentionEvents(events)).toHaveLength(1), {
+          timeout: 5_000,
+          interval: 10,
+        });
 
         text = "same command update";
         requestRender?.();
-        await new Promise((resolve) => setTimeout(resolve, 30));
+        await waitForWidgetFrames(events, 3);
       },
     );
     expect(events.filter((event) => event.e === "extensionUi.widgetAttentionRequested")).toEqual([
@@ -1854,7 +1886,7 @@ describe("extension-ui-bridge", () => {
       async () => {
         text = "next command update";
         requestRender?.();
-        await new Promise((resolve) => setTimeout(resolve, 30));
+        await waitForWidgetFrames(events, 4);
       },
     );
     expect(events.filter((event) => event.e === "extensionUi.widgetAttentionRequested")).toEqual([
@@ -1878,7 +1910,7 @@ describe("extension-ui-bridge", () => {
 
     text = "background refresh";
     requestRender?.();
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await waitForWidgetFrames(events, 5);
     expect(
       events.filter((event) => event.e === "extensionUi.widgetAttentionRequested"),
     ).toHaveLength(2);
