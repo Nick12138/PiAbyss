@@ -1533,7 +1533,7 @@ export function ExecutionTrace({
 
   useEffect(() => {
     if (userToggled.current) return;
-    
+
     // 只在 active 状态真正改变时响应
     if (active !== prevActiveRef.current) {
       setOpen(active);
@@ -1662,10 +1662,10 @@ function TurnProcessFold({
   const t = useT();
   const contentId = useId();
   const [open, setOpen] = useState(false);
-  
+
   const hasTools = toolCount > 0;
   const hasMessages = messageCount > 0;
-  
+
   let summary = "";
   if (hasTools && hasMessages) {
     summary = t("transcriptTurnFoldSummary", { tools: toolCount, messages: messageCount });

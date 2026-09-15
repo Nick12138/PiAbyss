@@ -72,10 +72,12 @@ export async function runAttachmentParserWorker(
 
     worker.on(
       "message",
-      (message:
-        | { type: "progress"; progress: AttachmentParseProgress }
-        | { type: "result"; result: AttachmentParseResult }
-        | { type: "error"; message: string }) => {
+      (
+        message:
+          | { type: "progress"; progress: AttachmentParseProgress }
+          | { type: "result"; result: AttachmentParseResult }
+          | { type: "error"; message: string },
+      ) => {
         if (message.type === "progress") args.onProgress?.(message.progress);
         else if (message.type === "result") finish(() => resolve(message.result));
         else finish(() => reject(new Error(message.message)));
