@@ -1,6 +1,10 @@
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
-import type { DesktopInterfaceDensity, DesktopThemeFamily } from "@piabyss/protocol";
+import type {
+  DesktopInterfaceDensity,
+  DesktopInterfaceFont,
+  DesktopThemeFamily,
+} from "@piabyss/protocol";
 import { Minus, Plus } from "lucide-react";
 import { Select } from "../../components/Select";
 import {
@@ -12,6 +16,7 @@ import {
   resolveCodeFontSize,
   resolveConversationFontSize,
   resolveInterfaceDensity,
+  resolveInterfaceFont,
 } from "../../lib/appearance-preferences";
 import {
   notifyDesktopSettingsSaveFailure,
@@ -106,6 +111,7 @@ export function AppearanceSettings() {
   const themeFamily = desktopSettings?.themeFamily ?? "piabyss";
   const themeMode = desktopSettings?.theme ?? "system";
   const interfaceDensity = resolveInterfaceDensity(desktopSettings?.interfaceDensity);
+  const interfaceFont = resolveInterfaceFont(desktopSettings?.interfaceFont) ?? "default";
   const conversationMinWidth = resolveConversationMinWidth(desktopSettings?.conversationMinWidth);
   const conversationMaxWidth = resolveConversationMaxWidth(desktopSettings?.conversationMaxWidth);
   const conversationFontSize = resolveConversationFontSize(desktopSettings?.conversationFontSize);
@@ -202,7 +208,7 @@ export function AppearanceSettings() {
                 </span>
                 <div
                   data-ui="theme-family-selector"
-                  className="grid grid-cols-3 gap-2"
+                  className="grid grid-cols-4 gap-2"
                   role="group"
                   aria-label={t("appearanceThemeFamily")}
                 >
@@ -324,6 +330,25 @@ export function AppearanceSettings() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <span className="min-w-0">
+                  <span className="block text-sm">{t("appearanceFont")}</span>
+                  <span className="block text-xs text-muted">{t("appearanceFontDesc")}</span>
+                </span>
+                <Select
+                  className="w-32"
+                  ariaLabel={t("appearanceFont")}
+                  value={interfaceFont}
+                  onChange={(next) =>
+                    void patchDesktop({ interfaceFont: next as DesktopInterfaceFont })
+                  }
+                  options={[
+                    { value: "default", label: t("appearanceFontDefault") },
+                    { value: "system", label: t("appearanceFontSystem") },
+                  ]}
+                />
               </div>
             </div>
           </section>

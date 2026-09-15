@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { PiSettingsPatch, PiSettingsSnapshot, ThinkingLevel } from "@piabyss/protocol";
 import { Select } from "../../components/Select";
 import { useT } from "../../lib/i18n/use-t";
-import type { MessageKey } from "../../lib/i18n";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -18,14 +17,15 @@ const THINKING_LEVELS: ThinkingLevel[] = [
   "max",
 ];
 
-const THINKING_LABELS: Record<ThinkingLevel, MessageKey> = {
-  off: "thinkingLevelOff",
-  minimal: "thinkingLevelMinimal",
-  low: "thinkingLevelLow",
-  medium: "thinkingLevelMedium",
-  high: "thinkingLevelHigh",
-  xhigh: "thinkingLevelXhigh",
-  max: "thinkingLevelMax",
+// Always shown in English regardless of UI language.
+const THINKING_LABELS: Record<ThinkingLevel, string> = {
+  off: "Off",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "XHigh",
+  max: "Max",
 };
 
 const DEFAULT_SETTINGS: PiSettingsSnapshot = {
@@ -167,7 +167,7 @@ export function PiSettings() {
             }
             options={THINKING_LEVELS.map((level) => ({
               value: level,
-              label: t(THINKING_LABELS[level]),
+              label: THINKING_LABELS[level],
             }))}
           />
         </SettingRow>

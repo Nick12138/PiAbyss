@@ -70,7 +70,7 @@ const API_OPTIONS: Array<{ value: ProviderDraft["api"]; label: string }> = [
 ];
 
 const CONTEXT_WINDOW_PRESETS = [128_000, 200_000, 372_000, 1_000_000];
-const MAX_TOKENS_PRESETS = [32_000, 64_000, 128_000];
+const MAX_TOKENS_PRESETS = [32_000, 64_000, 128_000, 384_000];
 
 function TokenCountField({
   label,

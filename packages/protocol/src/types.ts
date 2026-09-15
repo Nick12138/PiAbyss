@@ -1355,6 +1355,9 @@ export type DesktopLanguage = (typeof DESKTOP_LANGUAGES)[number];
 export const DESKTOP_INTERFACE_DENSITIES = ["compact", "standard", "comfortable"] as const;
 export type DesktopInterfaceDensity = (typeof DESKTOP_INTERFACE_DENSITIES)[number];
 
+export const DESKTOP_INTERFACE_FONTS = ["default", "system"] as const;
+export type DesktopInterfaceFont = (typeof DESKTOP_INTERFACE_FONTS)[number];
+
 export const BUSY_SEND_BEHAVIORS = ["followUp", "steer"] as const;
 export type BusySendBehavior = (typeof BUSY_SEND_BEHAVIORS)[number];
 
@@ -1397,6 +1400,8 @@ export type DesktopSettings = {
   pluginEnv?: Record<string, Record<string, string>>;
   /** Spacing density for frequently used interface controls and rows. */
   interfaceDensity?: DesktopInterfaceDensity;
+  /** Sans font family used across the interface; absent values use the theme default. */
+  interfaceFont?: DesktopInterfaceFont;
   /** Minimum width of the aligned conversation surfaces, in CSS pixels. */
   conversationMinWidth?: number;
   /** Maximum width of the aligned conversation surfaces, in CSS pixels. */

@@ -59,6 +59,21 @@ pub enum DesktopInterfaceDensity {
     Comfortable,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesktopInterfaceFont {
+    /// Theme default stack (Inter + bundled PingFang). Aliases keep older
+    /// settings files (which stored the removed "pingfang"/"inter" entries)
+    /// loading instead of failing to parse.
+    #[serde(alias = "pingfang")]
+    #[serde(alias = "inter")]
+    Default,
+    /// OS UI font stack (Segoe UI / Microsoft YaHei). Alias maps the removed
+    /// explicit "yahei" entry here.
+    #[serde(alias = "yahei")]
+    System,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TerminalProfileId {
@@ -119,6 +134,8 @@ pub struct DesktopSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<DesktopLanguage>,
     pub interface_density: DesktopInterfaceDensity,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interface_font: Option<DesktopInterfaceFont>,
     pub conversation_min_width: u32,
     pub conversation_max_width: u32,
     pub conversation_font_size: u32,
@@ -158,6 +175,7 @@ impl Default for DesktopSettings {
             terminal_profile: TerminalProfileId::Auto,
             language: None,
             interface_density: DesktopInterfaceDensity::Standard,
+            interface_font: None,
             conversation_min_width: DEFAULT_CONVERSATION_MIN_WIDTH,
             conversation_max_width: DEFAULT_CONVERSATION_MAX_WIDTH,
             conversation_font_size: DEFAULT_CONVERSATION_FONT_SIZE,
@@ -518,6 +536,7 @@ impl DesktopSettingsStore {
                     | "terminalProfile"
                     | "language"
                     | "interfaceDensity"
+                    | "interfaceFont"
                     | "conversationMinWidth"
                     | "conversationMaxWidth"
                     | "conversationFontSize"

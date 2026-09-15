@@ -1,6 +1,7 @@
 import {
   BUSY_SEND_BEHAVIORS,
   DESKTOP_INTERFACE_DENSITIES,
+  DESKTOP_INTERFACE_FONTS,
   DESKTOP_LANGUAGES,
   DESKTOP_THEME_FAMILIES,
   DESKTOP_THEMES,
@@ -53,6 +54,7 @@ const DESKTOP_SETTINGS_KEYS = new Set([
   "terminalProfile",
   "language",
   "interfaceDensity",
+  "interfaceFont",
   "conversationMinWidth",
   "conversationMaxWidth",
   "conversationFontSize",
@@ -117,6 +119,12 @@ function assertDesktopSettingsUpdate(patch: DesktopSettingsUpdate): void {
     !isOneOf(values.interfaceDensity, DESKTOP_INTERFACE_DENSITIES)
   ) {
     throw new Error("Invalid interface density");
+  }
+  if (
+    values.interfaceFont !== undefined &&
+    !isOneOf(values.interfaceFont, DESKTOP_INTERFACE_FONTS)
+  ) {
+    throw new Error("Invalid interface font");
   }
   const conversationMinWidth = values.conversationMinWidth;
   if (

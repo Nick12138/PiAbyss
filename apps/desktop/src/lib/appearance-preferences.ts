@@ -1,6 +1,8 @@
 import {
   DESKTOP_INTERFACE_DENSITIES,
+  DESKTOP_INTERFACE_FONTS,
   type DesktopInterfaceDensity,
+  type DesktopInterfaceFont,
   type DesktopSettings,
 } from "@piabyss/protocol";
 
@@ -24,6 +26,24 @@ export function resolveInterfaceDensity(value: unknown): DesktopInterfaceDensity
     : DEFAULT_INTERFACE_DENSITY;
 }
 
+export function resolveInterfaceFont(value: unknown): DesktopInterfaceFont | undefined {
+  return typeof value === "string" &&
+    DESKTOP_INTERFACE_FONTS.includes(value as DesktopInterfaceFont)
+    ? (value as DesktopInterfaceFont)
+    : undefined;
+}
+
+/** Stacks for each selectable interface font; "default" clears the override
+ *  so the active theme's own stack applies. */
+const INTERFACE_FONT_STACKS: Record<Exclude<DesktopInterfaceFont, "default">, string> = {
+  system: 'system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif',
+};
+
+function applyFontOverride(style: CSSStyleDeclaration, stack: string | null): void {
+  if (stack === null) style.removeProperty("--font-sans");
+  else style.setProperty("--font-sans", stack);
+}
+
 export function resolveConversationFontSize(value: unknown): number {
   return clampInteger(
     value,
@@ -41,6 +61,11 @@ export function applyAppearancePreferences(settings: DesktopSettings | null | un
   if (typeof document === "undefined") return;
   const root = document.documentElement;
   root.dataset.interfaceDensity = resolveInterfaceDensity(settings?.interfaceDensity);
+  const font = resolveInterfaceFont(settings?.interfaceFont);
+  applyFontOverride(
+    root.style,
+    font === undefined || font === "default" ? null : INTERFACE_FONT_STACKS[font],
+  );
   root.style.setProperty(
     "--conversation-font-size",
     `${resolveConversationFontSize(settings?.conversationFontSize)}px`,
