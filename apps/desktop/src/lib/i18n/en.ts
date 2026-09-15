@@ -1106,6 +1106,8 @@ export const en = {
   transcriptTraceImageOne: "{count} image",
   transcriptTraceImageMany: "{count} images",
   transcriptTurnFoldSummary: "{tools} tool calls · {messages} messages",
+  transcriptTurnFoldSummaryToolsOnly: "{tools} tool calls",
+  transcriptTurnFoldSummaryMessagesOnly: "{messages} messages",
   transcriptThoughtProcess: "Thought process",
   transcriptThinking: "Thinking",
   transcriptUnsupportedContent: "Unsupported content",

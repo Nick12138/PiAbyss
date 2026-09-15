@@ -1047,6 +1047,8 @@ export const zh: Record<MessageKey, string> = {
   transcriptTraceImageOne: "{count} 张图片",
   transcriptTraceImageMany: "{count} 张图片",
   transcriptTurnFoldSummary: "{tools}次工具调用 · {messages}条消息",
+  transcriptTurnFoldSummaryToolsOnly: "{tools}次工具调用",
+  transcriptTurnFoldSummaryMessagesOnly: "{messages}条消息",
   transcriptThoughtProcess: "💡 灵光一闪",
   transcriptThinking: "🧠 顿悟",
   transcriptUnsupportedContent: "🤷 看不懂的内容",
