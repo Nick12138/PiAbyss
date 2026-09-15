@@ -19,8 +19,8 @@ function createParserWorker(args: AttachmentParseArgs): Worker {
   const options = {
     workerData,
     resourceLimits: {
-      maxOldGenerationSizeMb: 256,
-      maxYoungGenerationSizeMb: 32,
+      maxOldGenerationSizeMb: 768,
+      maxYoungGenerationSizeMb: 128,
       stackSizeMb: 8,
     },
   };
