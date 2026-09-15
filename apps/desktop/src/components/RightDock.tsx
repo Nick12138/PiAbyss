@@ -34,11 +34,7 @@ import { useT } from "../lib/i18n/use-t";
 import { subscribeDockCommands } from "../lib/commands/events";
 
 export type DockTabId =
-  | "files"
-  | "changes"
-  | "subagents"
-  | `shell:${number}`
-  | `extension:${string}`;
+  "files" | "changes" | "subagents" | `shell:${number}` | `extension:${string}`;
 
 type ShellDockTab = {
   id: number;

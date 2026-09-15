@@ -78,12 +78,7 @@ describe("AgentMessageTimingTracker", () => {
 
   it("falls back to the message_end request start when message_start carried none", () => {
     const tracker = new AgentMessageTimingTracker();
-    tracker.observe(
-      session,
-      "message_start",
-      messageStart({ timestamp: undefined }),
-      1_000,
-    );
+    tracker.observe(session, "message_start", messageStart({ timestamp: undefined }), 1_000);
     tracker.observe(session, "message_update", delta("x"), 1_500);
     const timing = tracker.observe(session, "message_end", messageEnd({ timestamp: 900 }), 2_500);
     expect(timing).toMatchObject({ firstTokenMs: 600 });

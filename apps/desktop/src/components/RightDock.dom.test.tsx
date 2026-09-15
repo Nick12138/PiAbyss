@@ -127,7 +127,6 @@ describe("RightDock pages", () => {
     expect(screen.getByRole("menuitem", { name: "改动" })).toBeVisible();
     expect(screen.getByRole("menuitem", { name: "终端" })).toBeVisible();
     expect(screen.getByRole("menuitem", { name: "子代理" })).toBeVisible();
-
   });
 
   it("does not auto-open the dock when a session has active subagents", async () => {

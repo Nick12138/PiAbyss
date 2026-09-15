@@ -319,7 +319,9 @@ describe("Transcript Session-open scrolling", () => {
     row.append(link);
 
     fireEvent.contextMenu(link, { clientX: 24, clientY: 32 });
-    expect(await screen.findByRole("menuitem", { name: "Open in external browser" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("menuitem", { name: "Open in external browser" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Copy link" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Copy message" })).toBeInTheDocument();
 

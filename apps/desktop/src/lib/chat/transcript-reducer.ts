@@ -197,9 +197,7 @@ function applyAgentEventToDraft(
                   // which some relays hold until the first content chunk —
                   // using the observation time would collapse TTFT to ~0.
                   startedAt:
-                    numericField(msg, "timestamp") ??
-                    numericField(msg, "startedAt") ??
-                    eventTime,
+                    numericField(msg, "timestamp") ?? numericField(msg, "startedAt") ?? eventTime,
                   ...(payload.runId ? { _streamRunId: payload.runId } : {}),
                 }
               : msg,
