@@ -162,8 +162,7 @@ export const en = {
   appearanceDensityStandard: "Standard",
   appearanceDensityComfortable: "Comfortable",
   appearanceFont: "Interface font",
-  appearanceFontDesc:
-    "Default uses Inter + PingFang; System follows the Windows/macOS UI font.",
+  appearanceFontDesc: "Default uses Inter + PingFang; System follows the Windows/macOS UI font.",
   appearanceFontDefault: "Default",
   appearanceFontSystem: "System",
   appearanceConversationGroup: "Conversation",
