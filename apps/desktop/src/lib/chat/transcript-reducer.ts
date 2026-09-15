@@ -191,7 +191,15 @@ function applyAgentEventToDraft(
             msg.role === "assistant"
               ? {
                   ...msg,
-                  startedAt: numericField(msg, "startedAt") ?? eventTime,
+                  // The message's own `timestamp` is the LLM request start
+                  // (pi-ai stamps it before the HTTP request); message_start
+                  // itself only fires after the provider's response headers,
+                  // which some relays hold until the first content chunk —
+                  // using the observation time would collapse TTFT to ~0.
+                  startedAt:
+                    numericField(msg, "timestamp") ??
+                    numericField(msg, "startedAt") ??
+                    eventTime,
                   ...(payload.runId ? { _streamRunId: payload.runId } : {}),
                 }
               : msg,

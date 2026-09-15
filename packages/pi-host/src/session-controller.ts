@@ -23,15 +23,22 @@ import {
 } from "./subagent-runs.js";
 import { toWireTree, type SdkSessionTreeNode } from "./session-tree-cache.js";
 
-/** Timestamp of one session message entry: the message's own epoch time when
- * numeric, else the parsed ISO entry timestamp, else null. */
+/** Timestamp of one session message entry for wall-time folding. Assistant
+ * messages use the entry's persist timestamp (written at message_end, so it
+ * marks the request's END — their own `message.timestamp` marks the request
+ * START and would collapse every LLM window to the inter-step gap). All other
+ * roles prefer the message's own epoch time (toolResult: tool completion),
+ * falling back to the entry timestamp. */
 function sessionEntryTimestamp(
   entry: Record<string, unknown>,
   message: Record<string, unknown>,
+  role: string,
 ): number | null {
-  const messageTime = message.timestamp;
-  if (typeof messageTime === "number" && Number.isFinite(messageTime) && messageTime >= 0) {
-    return messageTime;
+  if (role !== "assistant") {
+    const messageTime = message.timestamp;
+    if (typeof messageTime === "number" && Number.isFinite(messageTime) && messageTime >= 0) {
+      return messageTime;
+    }
   }
   const entryTime = entry.timestamp;
   if (typeof entryTime === "string") {
@@ -48,9 +55,10 @@ function sessionEntryTimestamp(
  *
  * Each assistant step's request wall time runs from the triggering message
  * entry (the user prompt or the preceding tool result) to the assistant
- * message completion; each tool batch's wall time runs from the assistant
- * message carrying its calls to the appended tool result. Only positive
- * deltas count, so clock skew between entries contributes nothing.
+ * message's persist timestamp (message_end); each tool batch's wall time runs
+ * from the assistant message carrying its calls to the appended tool result.
+ * Only positive deltas count, so clock skew between entries contributes
+ * nothing.
  *
  * First-token and decode timing ride the persisted `piabyss.timing` custom
  * entries the runtime cache writes when a message settles; only timings whose
@@ -89,7 +97,7 @@ function deriveSessionTiming(entries: readonly unknown[]): {
     if (role === "assistant" && typeof record.id === "string") {
       assistantEntryIds.add(record.id);
     }
-    const time = role ? sessionEntryTimestamp(record, messageRecord) : null;
+    const time = role ? sessionEntryTimestamp(record, messageRecord, role) : null;
     if (
       time !== null &&
       prevTime !== null &&

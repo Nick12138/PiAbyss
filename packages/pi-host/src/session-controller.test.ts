@@ -571,6 +571,10 @@ describe("session.getStats", () => {
             {
               type: "message",
               id: "entry-assistant-1",
+              // The entry timestamp is the persist time (message_end) and is
+              // what the fold uses; the message's own `timestamp` is the
+              // REQUEST START and must not collapse the LLM window.
+              timestamp: "1970-01-01T00:00:05.500Z",
               message: { role: "assistant", timestamp: 5_500 },
             },
             {
@@ -582,7 +586,10 @@ describe("session.getStats", () => {
             {
               type: "message",
               id: "entry-assistant-2",
-              message: { role: "assistant", timestamp: 9_400 },
+              timestamp: "1970-01-01T00:00:09.400Z",
+              // A request-start ms from the entry timestamp would read 1ms
+              // (9_401 − 8_200) — the fold must use the entry timestamp.
+              message: { role: "assistant", timestamp: 9_401 },
             },
             // Backwards timestamps (clock skew) contribute nothing.
             {
@@ -657,8 +664,11 @@ describe("session.getStats", () => {
         cacheWrite: 900,
         total: 10400,
       },
-      // user(1000) → assistant(5500) = 4500; toolResult(8200) → assistant(9400)
-      // = 1200; assistant(5500) → toolResult(8200) = 2700. TTFT/decode fold
+      // user(1000) → assistant entry(5500) = 4500; toolResult(8200) →
+      // assistant entry(9400) = 1200; assistant(5500) → toolResult(8200) =
+      // 2700. Assistant steps are timed from their entry (persist) timestamp:
+      // the message's own `timestamp` is the request start and would read
+      // only the inter-step gap. TTFT/decode fold
       // from the piabyss.timing custom entries whose message is still on the
       // branch: 900ms TTFT over 2 messages (the degenerate burst window keeps
       // its TTFT), 3000ms decode over 542 tokens (the 6ms burst window is

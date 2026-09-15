@@ -1189,8 +1189,9 @@ export type SessionStatsTiming = {
   /** Summed tool wall time, derived from persisted entry timestamps
    * (assistant message completion → tool result). */
   toolMs: number;
-  /** First-token latency sum and message count from persisted `piabyss.timing`
-   * custom entries. Absent when no timing has been persisted yet. */
+  /** First-token latency (LLM request start → first content delta) sum and
+   * message count from persisted `piabyss.timing` custom entries. Absent
+   * when no timing has been persisted yet. */
   ttftMs?: number;
   ttftSteps?: number;
   /** Decode wall time and output tokens over the same persisted messages.

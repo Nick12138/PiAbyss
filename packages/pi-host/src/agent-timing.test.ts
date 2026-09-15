@@ -3,10 +3,20 @@ import { AgentMessageTimingTracker } from "./agent-timing.js";
 
 const session = {};
 
-function messageStart(): unknown {
+/** Request start epoch ms carried on the message payload (pi-ai stamps it
+ * before the HTTP request is issued). Defaults to the common test clock. */
+const REQUEST_START = 1_000;
+
+function messageStart(overrides: Record<string, unknown> = {}): unknown {
   return {
     type: "message_start",
-    message: { role: "assistant", content: [], stopReason: null },
+    message: {
+      role: "assistant",
+      content: [],
+      stopReason: null,
+      timestamp: REQUEST_START,
+      ...overrides,
+    },
   };
 }
 
@@ -56,6 +66,29 @@ describe("AgentMessageTimingTracker", () => {
     expect(timing).toMatchObject({ firstTokenMs: 300 });
   });
 
+  it("measures TTFT from the message-carried request start, not the start-event observation", () => {
+    // A provider that holds response HEADERS until the first content chunk:
+    // message_start is observed ~29s after the request actually went out.
+    const tracker = new AgentMessageTimingTracker();
+    tracker.observe(session, "message_start", messageStart({ timestamp: 100 }), 29_000);
+    tracker.observe(session, "message_update", delta("x"), 29_100);
+    const timing = tracker.observe(session, "message_end", messageEnd(), 40_000);
+    expect(timing).toEqual({ firstTokenMs: 29_000, decodeMs: 10_900, outputTokens: 271 });
+  });
+
+  it("falls back to the message_end request start when message_start carried none", () => {
+    const tracker = new AgentMessageTimingTracker();
+    tracker.observe(
+      session,
+      "message_start",
+      messageStart({ timestamp: undefined }),
+      1_000,
+    );
+    tracker.observe(session, "message_update", delta("x"), 1_500);
+    const timing = tracker.observe(session, "message_end", messageEnd({ timestamp: 900 }), 2_500);
+    expect(timing).toMatchObject({ firstTokenMs: 600 });
+  });
+
   it("yields no decode timing when the message reports no output tokens", () => {
     const tracker = new AgentMessageTimingTracker();
     tracker.observe(session, "message_start", messageStart(), 1_000);
@@ -100,9 +133,9 @@ describe("AgentMessageTimingTracker", () => {
     tracker.observe(session, "message_start", messageStart(), 1_000);
     tracker.observe(session, "message_update", delta("x"), 1_100);
     tracker.observe(session, "message_end", messageEnd(), 1_500);
-    tracker.observe(session, "message_start", messageStart(), 2_000);
+    tracker.observe(session, "message_start", messageStart({ timestamp: 2_000 }), 2_000);
     tracker.observe(session, "message_update", delta("y"), 2_600);
-    const timing = tracker.observe(session, "message_end", messageEnd(), 3_600);
+    const timing = tracker.observe(session, "message_end", messageEnd({ timestamp: 2_000 }), 3_600);
     expect(timing).toEqual({ firstTokenMs: 600, decodeMs: 1_000, outputTokens: 271 });
   });
 });
