@@ -899,6 +899,9 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
       setHistory([]);
       setHistoryCursor(null);
       setHistoryLoaded(false);
+      // 拉取会移动 HEAD，历史已清空；若正停在历史页必须立即重载，
+      // 否则页面空白直到手动切标签或点刷新。
+      if (view === "history") void loadHistory(false);
       pushNotification(t("gitPullSuccess"), "success");
     } catch (requestError) {
       if (requestGeneration === generation.current) {
