@@ -1,7 +1,7 @@
 let cached: string | null = null;
 
 /** Build-time injected app version (from src-tauri/tauri.conf.json via Vite `define`). */
-export const APP_VERSION: string = import.meta.env.VITE_APP_VERSION ?? "0.0.0";
+const APP_VERSION: string = import.meta.env.VITE_APP_VERSION ?? "0.0.0";
 
 /** PiAbyss's own version from the Tauri app config (falls back in browser mock). */
 export async function getAppVersion(): Promise<string> {
