@@ -9,8 +9,14 @@ const tauriDevHost = process.env.TAURI_DEV_HOST;
 const host = tauriDevHost || "127.0.0.1";
 const pdfRoot = dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json"));
 const pdfAssets = ["cmaps", "standard_fonts", "wasm"];
+const tauriVersion = JSON.parse(
+  readFileSync(new URL("./src-tauri/tauri.conf.json", import.meta.url), "utf8"),
+).version as string;
 
 export default defineConfig({
+  define: {
+    "import.meta.env.VITE_APP_VERSION": JSON.stringify(tauriVersion),
+  },
   plugins: [
     react(),
     tailwindcss(),

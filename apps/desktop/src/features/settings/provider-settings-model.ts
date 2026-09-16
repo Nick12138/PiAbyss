@@ -11,6 +11,7 @@ import {
   type ThinkingLevelMap,
 } from "@piabyss/protocol";
 import type { Translate } from "../../lib/i18n/use-t";
+import { DEFAULT_USER_AGENT } from "../../lib/app-version";
 
 export type ProviderDraftState = ProviderDraft & { originalId?: string };
 
@@ -68,7 +69,7 @@ export function emptyProviderDraft(): ProviderDraftState {
     baseUrl: "",
     modelsUrl: "",
     api: "openai-completions",
-    headers: { "User-Agent": "PiAbyss/0.3.2" },
+    headers: { "User-Agent": DEFAULT_USER_AGENT },
     compat: {
       supportsDeveloperRole: null,
       supportsReasoningEffort: null,
