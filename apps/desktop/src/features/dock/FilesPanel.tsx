@@ -449,9 +449,9 @@ export function FilesPanel({
                     }}
                     onClick={() => {
                       setSelectedPath(entry.path);
-                      if (!isDirectory) onOpenFile?.(entry);
+                      if (isDirectory) toggleDirectory(entry);
+                      else onOpenFile?.(entry);
                     }}
-                    onDoubleClick={() => (isDirectory ? toggleDirectory(entry) : undefined)}
                   >
                     <button
                       type="button"
