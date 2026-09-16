@@ -138,6 +138,84 @@ describe("SessionList actions", () => {
     expect(screen.getByRole("menuitem", { name: "Export JSONL" })).toBeEnabled();
   });
 
+  it("re-lists when the active workspace turns busy with no matching catalog entry", async () => {
+    const live: SessionSummary = {
+      sessionId: "session-live",
+      sessionPath: "/sessions/live.jsonl",
+      name: "Background run",
+      cwd: "/workspace",
+      updatedAt: 2,
+      messageCount: 3,
+      runtimeState: "running",
+    };
+    let phase: "initial" | "busy" = "initial";
+    vi.mocked(hostClient.request).mockImplementation((async (method: string) => {
+      if (method === "session.list") {
+        return { ok: true, result: { items: phase === "initial" ? [summary] : [live, summary] } };
+      }
+      return { ok: true, result: {} };
+    }) as never);
+
+    render(<SessionList />);
+    await waitFor(() => expect(useAppStore.getState().sessionCatalog.loaded).toBe(true));
+    expect(screen.queryByText("Background run")).not.toBeInTheDocument();
+
+    // A background run starts: the Host pool marks the workspace busy, and a
+    // fresh session.list is the only way the sidebar can learn about it.
+    phase = "busy";
+    useAppStore.getState().setWorkspaceActivities({
+      "/workspace": {
+        busy: true,
+        hasBeenBusy: true,
+        errorCount: 0,
+        doneCount: 0,
+        terminalSessions: {},
+      },
+    });
+
+    await waitFor(() => expect(screen.getByText("Background run")).toBeInTheDocument());
+    expect(screen.getByTitle("Running")).toBeInTheDocument();
+  });
+
+  it("re-lists when a settled background session is missing from the catalog", async () => {
+    const live: SessionSummary = {
+      sessionId: "session-live",
+      sessionPath: "/sessions/live.jsonl",
+      name: "Background run",
+      cwd: "/workspace",
+      updatedAt: 2,
+      messageCount: 3,
+      runtimeState: "idle",
+    };
+    let phase: "initial" | "busy" = "initial";
+    vi.mocked(hostClient.request).mockImplementation((async (method: string) => {
+      if (method === "session.list") {
+        return { ok: true, result: { items: phase === "initial" ? [summary] : [live, summary] } };
+      }
+      return { ok: true, result: {} };
+    }) as never);
+
+    render(<SessionList />);
+    await waitFor(() => expect(useAppStore.getState().sessionCatalog.loaded).toBe(true));
+    expect(screen.queryByText("Background run")).not.toBeInTheDocument();
+
+    // The run settled before the sidebar ever listed it: the busy flag is
+    // already false, but the done marker names a session still unknown to the
+    // catalog, so the list must be reconciled.
+    phase = "busy";
+    useAppStore.getState().setWorkspaceActivities({
+      "/workspace": {
+        busy: false,
+        hasBeenBusy: true,
+        errorCount: 0,
+        doneCount: 1,
+        terminalSessions: { "session-live": { state: "done", generation: 1 } },
+      },
+    });
+
+    await waitFor(() => expect(screen.getByText("Background run")).toBeInTheDocument());
+  });
+
   it("keeps a live session's green dot visible without hover", () => {
     useAppStore.getState().setSessionRuntimeState("session-1", "running", undefined, 10);
     render(<SessionList />);

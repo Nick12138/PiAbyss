@@ -26,6 +26,7 @@ import {
   type HostActivitySummary,
 } from "../../lib/bridge/tauri-transport";
 import type { WorkspaceActivity } from "../../lib/stores/app-store";
+import { normalizedActivityKey } from "../../lib/workspace-activity";
 import type { SessionTerminalSnapshot } from "../../lib/session-terminal-states";
 import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
@@ -56,15 +57,6 @@ export function workspaceDisplayName(path: string): string {
 /** Renderer path identity uses only Host-canonical strings. */
 function samePath(a: string, b: string): boolean {
   return a === b;
-}
-
-/**
- * The Rust Host pool lowercases workspace keys on Windows, and the activity
- * snapshot returns each entry's Rust-canonicalized cwd — which can differ from
- * the renderer's casing. Normalize both sides the same way for lookups.
- */
-function normalizedActivityKey(path: string): string {
-  return /^win/i.test(navigator.platform) ? path.toLowerCase() : path;
 }
 
 /**

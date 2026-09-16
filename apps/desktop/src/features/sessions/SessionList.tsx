@@ -43,6 +43,7 @@ import {
 } from "../../lib/bridge/session-open-request";
 import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import { sessionCatalogItems, type SessionCatalogEntry } from "../../lib/stores/session-catalog";
+import { workspaceActivityFor } from "../../lib/workspace-activity";
 import { useImeComposition } from "../../lib/use-ime-composition";
 import { createNewSession } from "../../lib/commands/actions";
 import { sidebarJsonPref, setSidebarJsonPref } from "../../lib/sidebar-prefs";
@@ -117,6 +118,7 @@ export function SessionList({
   const desynchronized = useAppStore((s) => s.desynchronized);
   const hostFatal = useAppStore((s) => s.hostFatal);
   const sessionCatalog = useAppStore((s) => s.sessionCatalog);
+  const workspaceActivities = useAppStore((s) => s.workspaceActivities);
   const extensionUiRequest = useAppStore((s) => s.extensionUiRequest);
   const extensionUiQueue = useAppStore((s) => s.extensionUiQueue);
   const setSession = useAppStore((s) => s.applySessionSnapshot);
@@ -220,6 +222,37 @@ export function SessionList({
     workspace?.revision,
     workspace?.servicesReady,
   ]);
+
+  // The Host pool's activity snapshot drives the workspace row's green dot and
+  // is the authoritative "a session is running here" signal — background
+  // Hosts never route their session events to the renderer. The catalog is
+  // only filled by session.list and the focused session's snapshots, so a
+  // session started outside the sidebar (e.g. a plugin's background run, or a
+  // run whose runtimeChanged arrived for an entry the catalog does not have)
+  // can leave the workspace visibly busy with no row to show for it. Re-list
+  // whenever the active workspace's activity references a session the catalog
+  // is missing (busy, or a settled done/error marker). The effect keys off the
+  // activity snapshot identity, so a refresh cannot re-trigger itself.
+  const activeWorkspaceActivity = workspaceActivityFor(
+    workspaceActivities,
+    workspace?.canonicalCwd,
+  );
+  useEffect(() => {
+    if (!activeWorkspaceActivity) return;
+    const catalog = useAppStore.getState().sessionCatalog;
+    const unknownReferencedSession = Object.keys(activeWorkspaceActivity.terminalSessions).some(
+      (sessionId) => !catalog.entries[sessionId],
+    );
+    const busyWithoutEntry =
+      activeWorkspaceActivity.busy &&
+      !sessionCatalogItems(catalog).some(
+        (entry) =>
+          entry.runtimeState === "starting" ||
+          entry.runtimeState === "running" ||
+          entry.runtimeState === "queued",
+      );
+    if (unknownReferencedSession || busyWithoutEntry) void refresh();
+  }, [activeWorkspaceActivity, refresh]);
 
   useEffect(() => {
     mounted.current = true;
