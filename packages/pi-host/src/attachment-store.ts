@@ -345,6 +345,13 @@ export class AttachmentStore {
       this.startParse(metadata, args.onChange);
       return metadataSnapshot(metadata);
     } catch (error) {
+      // Forensics: copy/type-detection failures were previously invisible.
+      logger.error("Attachment add (file) failed before parse", {
+        sizeBytes: sourceStat.size,
+        sourcePath,
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? (error.stack ?? "(no stack)") : String(error),
+      });
       await rm(directory, { recursive: true, force: true });
       throw error;
     }
@@ -401,6 +408,12 @@ export class AttachmentStore {
       this.startParse(metadata, args.onChange);
       return metadataSnapshot(metadata);
     } catch (error) {
+      // Forensics: pasted-text failures were previously invisible.
+      logger.error("Attachment add (text) failed before parse", {
+        sizeBytes,
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? (error.stack ?? "(no stack)") : String(error),
+      });
       await rm(directory, { recursive: true, force: true });
       throw error;
     }
@@ -700,6 +713,17 @@ export class AttachmentStore {
       this.publishChange(metadata, onChange);
     } catch (error) {
       if (this.removedIds.has(metadata.id)) return;
+      // Forensics: the UI only ever sees a one-line normalized message; the
+      // full stack and input context must land in the persistent log.
+      logger.error("Attachment parse failed", {
+        attachmentId: metadata.id,
+        mediaType: metadata.mediaType,
+        name: metadata.name,
+        sizeBytes: metadata.sizeBytes,
+        sourcePath: join(this.attachmentDir(metadata.id), metadata.sourceFile),
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? (error.stack ?? "(no stack)") : String(error),
+      });
       metadata.status = "failed";
       metadata.error = normalizeParserError(error);
       try {
