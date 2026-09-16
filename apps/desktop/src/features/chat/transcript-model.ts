@@ -966,6 +966,81 @@ function entryProjectedMessage(
   return message;
 }
 
+/**
+ * Alignment key for matching a live state message against its persisted entry
+ * projection. Pi's live `agent.state.messages` and the session entry tree can
+ * legitimately diverge: on context-overflow compaction retries and
+ * auto-retries pi REMOVES the failed assistant message from agent state while
+ * deliberately keeping it in the session file ("It remains in session
+ * history"). A pure count-based tail alignment (entries-projected count vs
+ * messages.length) therefore desynchronizes permanently for any session that
+ * ever hit such a recovery, and the length-based tail loop silently swallows
+ * live rows off the end — including the optimistic user bubble and, once the
+ * gap reaches two, the whole next user turn.
+ *
+ * Instead of counting, the tail boundary is computed by walking both lists in
+ * order and skipping persisted projections that have no live counterpart.
+ * The key covers every shape both sides produce for the same message:
+ * plain user/assistant/toolResult text, custom messages (customType + text),
+ * and synthesized compaction/branch summaries (summary text).
+ */
+const messageAlignmentKeyCache = new WeakMap<SerializableAgentMessage, string>();
+
+/** Bound on consecutive unmatched persisted projections before the walk is
+ *  abandoned for the legacy count-based fallback, so a systematic key
+ *  mismatch can never explode the live tail into duplicated rows. */
+const MAX_ALIGNMENT_SKIPS = 64;
+
+function messageAlignmentKey(message: SerializableAgentMessage): string {
+  const cached = messageAlignmentKeyCache.get(message);
+  if (cached !== undefined) return cached;
+  const record = asRecord(message);
+  const role = typeof record.role === "string" ? record.role : "";
+  const customType =
+    role === "custom" && typeof record.customType === "string" ? record.customType : "";
+  const text =
+    role === "compactionSummary" || role === "branchSummary"
+      ? typeof record.summary === "string"
+        ? record.summary
+        : ""
+      : messageText(message);
+  const key = `${role}\u0001${customType}\u0001${text.length}\u0001${text.slice(0, 120)}\u0001${text.slice(-120)}`;
+  messageAlignmentKeyCache.set(message, key);
+  return key;
+}
+
+/**
+ * Number of leading state messages already represented by the entry tree.
+ * `persisted` is the in-order list of messages the entries project; state
+ * messages that match are consumed pairwise, persisted projections without a
+ * live counterpart (pi's removed-on-retry messages) are skipped. Messages past
+ * the returned boundary are the live tail — an in-flight assistant turn, an
+ * unacknowledged optimistic user bubble.
+ */
+function alignedPersistedMessageCount(
+  messages: readonly SerializableAgentMessage[],
+  persisted: readonly SerializableAgentMessage[],
+  fallback: number,
+): number {
+  let messageIndex = 0;
+  let persistedIndex = 0;
+  let skips = 0;
+  while (messageIndex < messages.length && persistedIndex < persisted.length) {
+    if (messageAlignmentKey(messages[messageIndex]!) === messageAlignmentKey(persisted[persistedIndex]!)) {
+      messageIndex += 1;
+      persistedIndex += 1;
+      skips = 0;
+    } else {
+      persistedIndex += 1;
+      skips += 1;
+      if (skips > MAX_ALIGNMENT_SKIPS) {
+        return Math.min(fallback, messages.length);
+      }
+    }
+  }
+  return messageIndex;
+}
+
 function sourceMessages(
   messages: readonly SerializableAgentMessage[],
   options: BuildTranscriptOptions | undefined,
@@ -991,6 +1066,7 @@ function sourceMessages(
   }
 
   const sources: TranscriptSource[] = [];
+  const persistedProjections: SerializableAgentMessage[] = [];
   let projectedMessageCount = 0;
   for (const entry of entries) {
     const record = asRecord(entry);
@@ -1008,6 +1084,7 @@ function sourceMessages(
       // optimistic user bubble. See the tail loop at the end of this function.
       if (message) {
         projectedMessageCount += 1;
+        persistedProjections.push(message);
         sources.push({
           kind: "message",
           message,
@@ -1044,6 +1121,7 @@ function sourceMessages(
             ...(record.presentation !== undefined ? { presentation: record.presentation } : {}),
           }) as SerializableAgentMessage,
       ) as SerializableAgentMessage;
+      persistedProjections.push(message);
       sources.push({
         kind: "message",
         message,
@@ -1070,6 +1148,7 @@ function sourceMessages(
             fromHook: record.fromHook,
           }) as SerializableAgentMessage,
       ) as SerializableAgentMessage;
+      persistedProjections.push(message);
       sources.push({
         kind: "message",
         message,
@@ -1083,7 +1162,6 @@ function sourceMessages(
       const summary = typeof record.summary === "string" ? record.summary : "";
       // Match Pi's sessionEntryToContextMessages(): an empty branch summary
       // remains an entry but does not consume a position in session.messages.
-      if (summary) projectedMessageCount += 1;
       const message = entryProjectedMessage(
         record,
         () =>
@@ -1096,6 +1174,10 @@ function sourceMessages(
             fromHook: record.fromHook,
           }) as SerializableAgentMessage,
       ) as SerializableAgentMessage;
+      if (summary) {
+        projectedMessageCount += 1;
+        persistedProjections.push(message);
+      }
       sources.push({
         kind: "message",
         message,
@@ -1149,13 +1231,18 @@ function sourceMessages(
     // rendered. Their data is for extension/session state, not conversation UI.
   }
 
-  // Length alignment: the first `projectedMessageCount` messages are the ones
-  // the entry path already projected; anything past that is a live row the
-  // desktop holds but the session file has not recorded yet (an in-flight
-  // assistant turn, an optimistic user bubble). Both sides must count only
-  // messages that actually reached the projection — see the `type === "message"`
-  // branch above.
-  const tailStart = Math.min(projectedMessageCount, messages.length);
+  // Length alignment, gap-aware: the entry tree projects every persisted
+  // message, but pi's live agent state can be missing some of them (removed
+  // from state yet kept in the session file by overflow-compaction retries
+  // and auto-retries). A pure count comparison would then desynchronize and
+  // swallow the live tail — including an unacknowledged optimistic user
+  // bubble, and once the gap reaches two, the whole next user turn. Walk both
+  // lists in order instead; see alignedPersistedMessageCount().
+  const tailStart = alignedPersistedMessageCount(
+    messages,
+    persistedProjections,
+    projectedMessageCount,
+  );
   for (let index = tailStart; index < messages.length; index += 1) {
     const message = messages[index];
     sources.push({

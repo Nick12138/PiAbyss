@@ -2076,3 +2076,160 @@ describe("per-message projection cache", () => {
     expect(secondTool).toStrictEqual(firstTool);
   });
 });
+
+describe("tail alignment with state/entry gaps (pi removed retried messages)", () => {
+  // Pi's overflow-compaction retry and auto-retry paths remove the failed
+  // assistant message from agent.state.messages while deliberately keeping it
+  // in the session file. The entry tree therefore projects more messages than
+  // the live state holds, and a count-based tail alignment swallowed the live
+  // tail — the optimistic user bubble and, for gap >= 2, the whole next turn.
+  const buildEntries = () => {
+    const user1 = { id: "e1", parentId: null, type: "message", message: { role: "user", content: "hello" } };
+    const answer1 = {
+      id: "e2",
+      parentId: "e1",
+      type: "message",
+      message: { role: "assistant", content: "hi there" },
+    };
+    const user2 = {
+      id: "e3",
+      parentId: "e2",
+      type: "message",
+      message: { role: "user", content: "commit it" },
+    };
+    const error1 = {
+      id: "e4",
+      parentId: "e3",
+      type: "message",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "provider overloaded" }],
+        stopReason: "error",
+        errorMessage: "overloaded",
+      },
+    };
+    const error2 = {
+      id: "e5",
+      parentId: "e4",
+      type: "message",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "still overloaded" }],
+        stopReason: "error",
+        errorMessage: "overloaded again",
+      },
+    };
+    const answer2 = {
+      id: "e6",
+      parentId: "e5",
+      type: "message",
+      message: { role: "assistant", content: [{ type: "text", text: "recovered" }] },
+    };
+    return { user1, answer1, user2, error1, error2, answer2 };
+  };
+
+  // State mirrors pi's post-retry agent.state.messages: both error messages
+  // were persisted then removed from state.
+  const stateMessages = (): SerializableAgentMessage[] => [
+    { role: "user", content: "hello" },
+    { role: "assistant", content: "hi there" },
+    { role: "user", content: "commit it" },
+    { role: "assistant", content: [{ type: "text", text: "recovered" }] },
+  ];
+
+  it("keeps the optimistic user bubble visible at rest despite a persisted-but-removed message", () => {
+    const { user1, answer1, user2, error1, error2, answer2 } = buildEntries();
+    const entries = [user1, answer1, user2, error1, error2, answer2] as never;
+    const messages = [
+      ...stateMessages(),
+      { role: "user", content: "go on", timestamp: 1, _optimisticKey: "opt-1" },
+    ] as SerializableAgentMessage[];
+
+    const rows = buildTranscriptRows(messages, { entries });
+    const userRows = rows.filter((row) => row.role === "user");
+
+    expect(userRows.map((row) => row.copyText)).toEqual(["hello", "commit it", "go on"]);
+  });
+
+  it("renders the whole next user turn live during the run despite a gap of two", () => {
+    const { user1, answer1, user2, error1, error2, answer2 } = buildEntries();
+    const entries = [user1, answer1, user2, error1, error2, answer2] as never;
+    const messages = [
+      ...stateMessages(),
+      { role: "user", content: "go on", timestamp: 1, _optimisticKey: "opt-1" },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "now committing" }],
+        startedAt: 2,
+      },
+    ] as SerializableAgentMessage[];
+
+    const rows = buildTranscriptRows(messages, { entries });
+    const userRows = rows.filter((row) => row.role === "user");
+
+    expect(userRows.map((row) => row.copyText)).toEqual(["hello", "commit it", "go on"]);
+    expect(rows.at(-1)?.role).toBe("assistant");
+    // Consecutive assistant sources merge into one row.
+    expect(rows.at(-1)?.copyText).toContain("now committing");
+    // Nothing re-renders as a duplicated live row.
+    expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length);
+    expect(rows.filter((row) => row.copyText.includes("hi there"))).toHaveLength(1);
+    expect(rows.filter((row) => row.copyText.includes("recovered"))).toHaveLength(1);
+  });
+
+  it("renders a settled run end-to-end without duplicated history rows", () => {
+    const { user1, answer1, user2, error1, error2, answer2 } = buildEntries();
+    const entries = [user1, answer1, user2, error1, error2, answer2] as never;
+    const messages = [
+      ...stateMessages(),
+      { role: "user", content: "go on" },
+      { role: "assistant", content: [{ type: "text", text: "done, committed" }] },
+    ] as SerializableAgentMessage[];
+
+    const rows = buildTranscriptRows(messages, { entries });
+    const userRows = rows.filter((row) => row.role === "user");
+
+    expect(userRows.map((row) => row.copyText)).toEqual(["hello", "commit it", "go on"]);
+    expect(rows.filter((row) => row.copyText.includes("hi there"))).toHaveLength(1);
+    expect(rows.filter((row) => row.copyText.includes("recovered"))).toHaveLength(1);
+  });
+
+  it("keeps a desktop-local error row in the live tail instead of swallowing it", () => {
+    const { user1, answer1, user2, error1, error2, answer2 } = buildEntries();
+    const entries = [user1, answer1, user2, error1, error2, answer2] as never;
+    const messages = [
+      ...stateMessages(),
+      { role: "error", content: "Connection lost" },
+    ] as SerializableAgentMessage[];
+
+    const rows = buildTranscriptRows(messages, { entries });
+    const errorRows = rows.filter((row) => row.role === "error");
+
+    expect(errorRows).toHaveLength(1);
+    expect(errorRows[0]?.copyText).toBe("Connection lost");
+  });
+
+  it("falls back to count-based alignment when too many projections fail to match", () => {
+    const entries: unknown[] = [];
+    let parentId: string | null = null;
+    for (let index = 0; index < 70; index += 1) {
+      const id = `odd-${index}`;
+      entries.push({
+        id,
+        parentId,
+        type: "message",
+        message: { role: "assistant", content: `unmatchable-${index}` },
+      });
+      parentId = id;
+    }
+    const messages: SerializableAgentMessage[] = [
+      { role: "assistant", content: "persisted answer" },
+      { role: "user", content: "next", _optimisticKey: "opt-x" },
+    ] as SerializableAgentMessage[];
+
+    const rows = buildTranscriptRows(messages, { entries: entries as never });
+    // The walk hits the skip cap and falls back to the count-based boundary;
+    // the tail is swallowed exactly as the legacy behavior would.
+    expect(rows.some((row) => row.role === "user")).toBe(false);
+  });
+});
