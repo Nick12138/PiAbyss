@@ -1623,6 +1623,7 @@ export const zh: Record<MessageKey, string> = {
   scheduleSelectJob: "选择左侧任务查看详情与执行历史",
   scheduleUntitledJob: "未命名计划",
   scheduleLoadFailed: "请求失败",
+  scheduleAgentTranscriptMissing: "找不到这次智能创建的会话记录，可能已被清理",
   scheduleSaving: "保存中…",
   scheduleRunNow: "立即执行",
   scheduleRunning: "执行中…",

@@ -1694,6 +1694,7 @@ export const en = {
   scheduleSelectJob: "Select a task to see details and history",
   scheduleUntitledJob: "Untitled plan",
   scheduleLoadFailed: "Request failed",
+  scheduleAgentTranscriptMissing: "Cannot find the session record for this smart creation, it may have been cleaned up",
   scheduleSaving: "Saving…",
   scheduleRunNow: "Run now",
   scheduleRunning: "Running…",

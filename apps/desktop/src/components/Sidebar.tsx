@@ -305,12 +305,12 @@ export function SidebarLayout({
         {sidebarCollapsed ? null : (
           <>
             {!telegramViewActive && (
-              <div className="px-2 pb-3 pt-[14px]">
+              <div className="px-2 pb-2 pt-[10px]">
                 <NewSessionButton />
               </div>
             )}
 
-            <div className="px-2 pb-3">
+            <div className="px-2 pb-2">
               <button
                 type="button"
                 onClick={() =>
@@ -340,7 +340,7 @@ export function SidebarLayout({
                   title={t("scheduleTitle")}
                   aria-label={t("scheduleTitle")}
                   aria-pressed={page === "schedule"}
-                  className={`mt-1 flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] transition-colors ${
+                  className={`flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] transition-colors ${
                     page === "schedule"
                       ? "theme-nav-active bg-nav-active text-nav-active-foreground"
                       : "text-foreground hover:bg-surface-overlay"

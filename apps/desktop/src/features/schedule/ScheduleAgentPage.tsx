@@ -100,28 +100,34 @@ export function ScheduleAgentPage() {
         { sessionId },
         AGENT_TIMEOUT_MS,
       );
-      if (state.ok) {
+      if (state.ok && state.result.found) {
         setResident(true);
         setRunning(state.result.running);
         setLoadError(null);
         setMessages(state.result.messages);
         return;
       }
-      // Non-resident (host restarted): fall back to the persisted transcript.
-      // If agentState failed for other reasons, still try the transcript as a fallback.
+      // Non-resident (host restarted, found: false) or state request failed:
+      // fall back to the persisted transcript.
       const transcript = await hostClient.request(
         "schedule.agentTranscript",
         hostContext(host),
         { sessionPath },
         AGENT_TIMEOUT_MS,
       );
-      if (transcript.ok) {
+      if (transcript.ok && transcript.result.found) {
         setResident(false);
         setRunning(false);
         setLoadError(null);
         setMessages(transcript.result.messages);
-      } else {
-        setLoadError(transcript.error?.message ?? t("scheduleLoadFailed"));
+      } else if (transcript.ok && !transcript.result.found) {
+        setLoadError(t("scheduleAgentTranscriptMissing"));
+      } else if (!transcript.ok) {
+        setLoadError(
+          state.ok
+            ? transcript.error?.message ?? t("scheduleLoadFailed")
+            : state.error?.message ?? t("scheduleLoadFailed"),
+        );
       }
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : t("scheduleLoadFailed"));
