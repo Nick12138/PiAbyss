@@ -127,6 +127,132 @@ function exactObject(
   return isPlainObject(value) && hasExactKeys(value, required, optional);
 }
 
+const SCHEDULE_PERMISSIONS = ["read_only", "write", "full"];
+const SCHEDULE_MISSED_WINDOWS = ["catch_up_one", "skip"];
+const SCHEDULE_NOTIFY_MODES = ["none", "system", "tg"];
+
+function isSchedulePermission(value: unknown): boolean {
+  return typeof value === "string" && (SCHEDULE_PERMISSIONS as readonly string[]).includes(value);
+}
+
+function isScheduleModelRef(value: unknown): boolean {
+  return exactObject(value, ["provider", "id"], ["thinkingLevel"]) &&
+    isNonEmptyString(value.provider) &&
+    value.provider.length <= 200 &&
+    isNonEmptyString(value.id) &&
+    value.id.length <= 200 &&
+    (value.thinkingLevel === undefined ||
+      (typeof value.thinkingLevel === "string" && value.thinkingLevel.length <= 16));
+}
+
+function isScheduleTrigger(value: unknown): boolean {
+  if (!isPlainObject(value)) return false;
+  switch (value.type) {
+    case "manual":
+      return hasExactKeys(value, ["type"]);
+    case "once":
+      return hasExactKeys(value, ["type", "at"]) &&
+        isNonEmptyString(value.at) &&
+        value.at.length <= 40;
+    case "interval":
+      return hasExactKeys(value, ["type", "every"]) &&
+        isNonEmptyString(value.every) &&
+        value.every.length <= 16;
+    case "cron":
+      return hasExactKeys(value, ["type", "cron"], ["timezone"]) &&
+        isNonEmptyString(value.cron) &&
+        value.cron.length <= 100 &&
+        (value.timezone === undefined ||
+          (typeof value.timezone === "string" && value.timezone.length <= 64));
+    default:
+      return false;
+  }
+}
+
+function isScheduleTagArray(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length <= 20 &&
+    value.every((tag) => isNonEmptyString(tag) && tag.length <= 100)
+  );
+}
+
+function isScheduleTimeoutMs(value: unknown): boolean {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 5_000 &&
+    value <= 6 * 60 * 60 * 1000
+  );
+}
+
+function isScheduleLimit(value: unknown): boolean {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= 200;
+}
+
+/** Shared field validators for schedule.createJob / schedule.updateJob. */
+function isScheduleJobFields(params: Record<string, unknown>): boolean {
+  return (
+    (params.name === undefined || (isNonEmptyString(params.name) && params.name.length <= 200)) &&
+    (params.prompt === undefined ||
+      (typeof params.prompt === "string" && params.prompt.length <= 20_000)) &&
+    (params.command === undefined ||
+      params.command === null ||
+      (typeof params.command === "string" && params.command.length <= 2_000)) &&
+    (params.cwd === undefined || (isNonEmptyString(params.cwd) && params.cwd.length <= 1_024)) &&
+    (params.trigger === undefined || isScheduleTrigger(params.trigger)) &&
+    (params.permission === undefined || isSchedulePermission(params.permission)) &&
+    (params.model === undefined || params.model === null || isScheduleModelRef(params.model)) &&
+    (params.missedWindow === undefined ||
+      (typeof params.missedWindow === "string" &&
+        (SCHEDULE_MISSED_WINDOWS as readonly string[]).includes(params.missedWindow))) &&
+    (params.timeoutMs === undefined || isScheduleTimeoutMs(params.timeoutMs)) &&
+    (params.maxRuns === undefined ||
+      params.maxRuns === null ||
+      (typeof params.maxRuns === "number" &&
+        Number.isSafeInteger(params.maxRuns) &&
+        params.maxRuns >= 1 &&
+        params.maxRuns <= 10_000)) &&
+    (params.loadExtensions === undefined || typeof params.loadExtensions === "boolean") &&
+    (params.tags === undefined || isScheduleTagArray(params.tags)) &&
+    (params.enabled === undefined || typeof params.enabled === "boolean") &&
+    (params.notify === undefined ||
+      (typeof params.notify === "string" &&
+        (SCHEDULE_NOTIFY_MODES as readonly string[]).includes(params.notify)))
+  );
+}
+
+const SCHEDULE_JOB_OPTIONAL_KEYS = [
+  "name",
+  "prompt",
+  "command",
+  "cwd",
+  "trigger",
+  "permission",
+  "model",
+  "missedWindow",
+  "timeoutMs",
+  "maxRuns",
+  "loadExtensions",
+  "tags",
+  "enabled",
+  "notify",
+] as const;
+
+/** Optional keys for create (name/prompt/cwd/trigger are required there). */
+const SCHEDULE_JOB_CREATE_OPTIONAL_KEYS = [
+  "command",
+  "permission",
+  "model",
+  "missedWindow",
+  "timeoutMs",
+  "maxRuns",
+  "loadExtensions",
+  "tags",
+  "enabled",
+  "notify",
+] as const;
+
 function requireRevision(
   obj: Record<string, unknown>,
   key: string,
@@ -926,6 +1052,135 @@ export function validateRequestParams<M extends HostMethod>(
       return exactObject(params, ["token"]) && isNonEmptyString(params.token)
         ? ok(params)
         : fail("invalid telegram.validateToken params", { method });
+    case "schedule.status":
+    case "schedule.listJobs":
+      return params === null ? ok(null) : fail("params must be null", { method });
+    case "schedule.createJob":
+      return exactObject(
+        params,
+        ["name", "prompt", "cwd", "trigger"],
+        SCHEDULE_JOB_CREATE_OPTIONAL_KEYS,
+      ) &&
+        isNonEmptyString(params.name) &&
+        params.name.length <= 200 &&
+        typeof params.prompt === "string" &&
+        params.prompt.length <= 20_000 &&
+        isNonEmptyString(params.cwd) &&
+        params.cwd.length <= 1_024 &&
+        isScheduleTrigger(params.trigger) &&
+        isScheduleJobFields(params)
+        ? ok(params)
+        : fail("invalid schedule.createJob params", { method });
+    case "schedule.updateJob":
+      return exactObject(params, ["id"], SCHEDULE_JOB_OPTIONAL_KEYS) &&
+        isNonEmptyString(params.id) &&
+        params.id.length <= 32 &&
+        isScheduleJobFields(params)
+        ? ok(params)
+        : fail("invalid schedule.updateJob params", { method });
+    case "schedule.deleteJob":
+      return exactObject(params, ["id"], ["purge"]) &&
+        isNonEmptyString(params.id) &&
+        params.id.length <= 32 &&
+        (params.purge === undefined || typeof params.purge === "boolean")
+        ? ok(params)
+        : fail("invalid schedule.deleteJob params", { method });
+    case "schedule.setJobEnabled":
+      return exactObject(params, ["id", "enabled"]) &&
+        isNonEmptyString(params.id) &&
+        params.id.length <= 32 &&
+        typeof params.enabled === "boolean"
+        ? ok(params)
+        : fail("invalid schedule.setJobEnabled params", { method });
+    case "schedule.runJobNow":
+      return exactObject(params, ["id"], ["permission", "timeoutMs"]) &&
+        isNonEmptyString(params.id) &&
+        params.id.length <= 32 &&
+        (params.permission === undefined || isSchedulePermission(params.permission)) &&
+        (params.timeoutMs === undefined || isScheduleTimeoutMs(params.timeoutMs))
+        ? ok(params)
+        : fail("invalid schedule.runJobNow params", { method });
+    case "schedule.listRuns":
+      return exactObject(params, [], ["jobId", "limit"]) &&
+        (params.jobId === undefined || params.jobId === null || isNonEmptyString(params.jobId)) &&
+        (params.limit === undefined || isScheduleLimit(params.limit))
+        ? ok(params)
+        : fail("invalid schedule.listRuns params", { method });
+    case "schedule.getRunTranscript":
+      return exactObject(params, ["runId"]) &&
+        isNonEmptyString(params.runId) &&
+        params.runId.length <= 64
+        ? ok(params)
+        : fail("invalid schedule.getRunTranscript params", { method });
+    case "schedule.replyToRun":
+      return exactObject(params, ["runId", "text"]) &&
+        isNonEmptyString(params.runId) &&
+        params.runId.length <= 64 &&
+        isNonEmptyString(params.text) &&
+        params.text.trim().length > 0 &&
+        params.text.length <= 20_000
+        ? ok(params)
+        : fail("invalid schedule.replyToRun params", { method });
+    case "schedule.validateCron":
+      return exactObject(params, ["cron"], ["timezone"]) &&
+        isNonEmptyString(params.cron) &&
+        params.cron.length <= 100 &&
+        (params.timezone === undefined ||
+          (typeof params.timezone === "string" && params.timezone.length <= 64))
+        ? ok(params)
+        : fail("invalid schedule.validateCron params", { method });
+    case "schedule.listNotifications":
+      return exactObject(params, [], ["limit"]) &&
+        (params.limit === undefined || isScheduleLimit(params.limit))
+        ? ok(params)
+        : fail("invalid schedule.listNotifications params", { method });
+    case "schedule.agentStart":
+      return exactObject(params, ["cwd", "requirement"]) &&
+        isNonEmptyString(params.cwd) &&
+        params.cwd.length <= 1_024 &&
+        isNonEmptyString(params.requirement) &&
+        params.requirement.trim().length > 0 &&
+        params.requirement.length <= 20_000
+        ? ok(params)
+        : fail("invalid schedule.agentStart params", { method });
+    case "schedule.agentSend":
+      return exactObject(params, ["sessionId", "text"]) &&
+        isNonEmptyString(params.sessionId) &&
+        params.sessionId.length <= 128 &&
+        isNonEmptyString(params.text) &&
+        params.text.trim().length > 0 &&
+        params.text.length <= 20_000
+        ? ok(params)
+        : fail("invalid schedule.agentSend params", { method });
+    case "schedule.agentContinue":
+      return exactObject(params, ["sessionPath", "cwd", "text"]) &&
+        isNonEmptyString(params.sessionPath) &&
+        params.sessionPath.length <= 1_024 &&
+        isNonEmptyString(params.cwd) &&
+        params.cwd.length <= 1_024 &&
+        isNonEmptyString(params.text) &&
+        params.text.trim().length > 0 &&
+        params.text.length <= 20_000
+        ? ok(params)
+        : fail("invalid schedule.agentContinue params", { method });
+    case "schedule.agentState":
+      return exactObject(params, ["sessionId"]) &&
+        isNonEmptyString(params.sessionId) &&
+        params.sessionId.length <= 128
+        ? ok(params)
+        : fail("invalid schedule.agentState params", { method });
+    case "schedule.agentTranscript":
+      return exactObject(params, ["sessionPath"]) &&
+        isNonEmptyString(params.sessionPath) &&
+        params.sessionPath.length <= 1_024
+        ? ok(params)
+        : fail("invalid schedule.agentTranscript params", { method });
+    case "schedule.agentAbort":
+      return exactObject(params, ["sessionId"]) &&
+        isNonEmptyString(params.sessionId) &&
+        params.sessionId.length <= 128
+        ? ok(params)
+        : fail("invalid schedule.agentAbort params", { method });
     default:
       // Exhaustiveness guard: adding a HostMethod without a params validator
       // is a compile error here, not a silently-undefined result at runtime.

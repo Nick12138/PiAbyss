@@ -463,6 +463,11 @@ export function createAgentHandlers(
             }),
           };
         }
+        logger.warn("agent.prompt rejected: service graph lock held", {
+          owner: kind ?? null,
+          activeOp: server.graphOperations.getActive()?.operationKind ?? null,
+          sessionId: g.agentSession?.sessionId ?? null,
+        });
         return {
           error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
             retryable: true,
@@ -482,6 +487,11 @@ export function createAgentHandlers(
       if (server.serviceGraphLock.isHeld()) {
         const kind = server.serviceGraphLock.getOwner()?.operationKind;
         operationLock.release(ctx.id);
+        logger.warn("agent.prompt rejected after lock handoff: service graph lock held", {
+          owner: kind ?? null,
+          activeOp: server.graphOperations.getActive()?.operationKind ?? null,
+          sessionId: g.agentSession?.sessionId ?? null,
+        });
         return {
           error: createHostError(
             kind?.startsWith("package") || kind?.startsWith("resource.setPreference")

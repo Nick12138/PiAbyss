@@ -524,6 +524,10 @@ export async function createSession(
     operationId: randomUUID(),
   });
   if (!operation) {
+    logger.warn("session.create rejected: graph operation active", {
+      activeOp: server.graphOperations.getActive()?.operationKind ?? null,
+      lockOwner: server.serviceGraphLock.getOwner()?.operationKind ?? null,
+    });
     return {
       error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
         retryable: true,
@@ -535,6 +539,10 @@ export async function createSession(
   }
   if (!server.serviceGraphLock.tryAcquire({ operationKind: "session.create", requestId })) {
     operation.finish();
+    logger.warn("session.create rejected: service graph lock held", {
+      lockOwner: server.serviceGraphLock.getOwner()?.operationKind ?? null,
+      activeOp: server.graphOperations.getActive()?.operationKind ?? null,
+    });
     return {
       error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
         retryable: true,

@@ -84,6 +84,17 @@ import type {
   PluginLibraryCatalog,
   PluginLibraryEnvUpdate,
   SubagentsStatusSnapshot,
+  ScheduleJob,
+  ScheduleJobInput,
+  ScheduleJobPatch,
+  SchedulePermission,
+  ScheduleRunSummary,
+  ScheduleStatus,
+  ScheduleTranscriptEntry,
+  ScheduleNotification,
+  ScheduleAgentMessage,
+  ScheduleAgentState,
+  ScheduleAgentTranscript,
 } from "./types.js";
 
 export type HostContextMap = {
@@ -210,6 +221,24 @@ export type HostContextMap = {
   "telegram.updateConfig": HostContext;
   "telegram.reset": HostContext;
   "telegram.status": HostContext;
+  "schedule.status": HostContext;
+  "schedule.listJobs": HostContext;
+  "schedule.createJob": HostContext;
+  "schedule.updateJob": HostContext;
+  "schedule.deleteJob": HostContext;
+  "schedule.setJobEnabled": HostContext;
+  "schedule.runJobNow": HostContext;
+  "schedule.listRuns": HostContext;
+  "schedule.getRunTranscript": HostContext;
+  "schedule.replyToRun": HostContext;
+  "schedule.validateCron": HostContext;
+  "schedule.listNotifications": HostContext;
+  "schedule.agentStart": HostContext;
+  "schedule.agentSend": HostContext;
+  "schedule.agentContinue": HostContext;
+  "schedule.agentState": HostContext;
+  "schedule.agentTranscript": HostContext;
+  "schedule.agentAbort": HostContext;
 };
 
 export type HostRequestParams = {
@@ -396,6 +425,24 @@ export type HostRequestParams = {
   };
   "telegram.reset": null;
   "telegram.status": null;
+  "schedule.status": null;
+  "schedule.listJobs": null;
+  "schedule.createJob": ScheduleJobInput;
+  "schedule.updateJob": ScheduleJobPatch;
+  "schedule.deleteJob": { id: string; purge?: boolean };
+  "schedule.setJobEnabled": { id: string; enabled: boolean };
+  "schedule.runJobNow": { id: string; permission?: SchedulePermission; timeoutMs?: number };
+  "schedule.listRuns": { jobId?: string | null; limit?: number };
+  "schedule.getRunTranscript": { runId: string };
+  "schedule.replyToRun": { runId: string; text: string };
+  "schedule.validateCron": { cron: string; timezone?: string };
+  "schedule.listNotifications": { limit?: number };
+  "schedule.agentStart": { cwd: string; requirement: string };
+  "schedule.agentSend": { sessionId: string; text: string };
+  "schedule.agentContinue": { sessionPath: string; cwd: string; text: string };
+  "schedule.agentState": { sessionId: string };
+  "schedule.agentTranscript": { sessionPath: string };
+  "schedule.agentAbort": { sessionId: string };
 };
 
 export type HostResultMap = {
@@ -583,6 +630,28 @@ export type HostResultMap = {
   "telegram.updateConfig": { saved: true };
   "telegram.reset": { reset: true };
   "telegram.status": TelegramBridgeStatus;
+  "schedule.status": ScheduleStatus;
+  "schedule.listJobs": { jobs: ScheduleJob[]; activeJobIds: string[]; root: string };
+  "schedule.createJob": { job: ScheduleJob };
+  "schedule.updateJob": { job: ScheduleJob };
+  "schedule.deleteJob": { removed: boolean; purged: boolean };
+  "schedule.setJobEnabled": { job: ScheduleJob };
+  "schedule.runJobNow": { run: ScheduleRunSummary };
+  "schedule.listRuns": { runs: ScheduleRunSummary[] };
+  "schedule.getRunTranscript": {
+    runId: string;
+    sessionPath: string | null;
+    entries: ScheduleTranscriptEntry[];
+  };
+  "schedule.replyToRun": { run: ScheduleRunSummary };
+  "schedule.validateCron": { valid: boolean; reason: string | null };
+  "schedule.listNotifications": { entries: ScheduleNotification[] };
+  "schedule.agentStart": { sessionId: string; sessionPath: string };
+  "schedule.agentSend": { sessionId: string };
+  "schedule.agentContinue": { sessionId: string };
+  "schedule.agentState": ScheduleAgentState;
+  "schedule.agentTranscript": ScheduleAgentTranscript;
+  "schedule.agentAbort": { ok: boolean };
 };
 
 export type HostEventPayloadMap = {

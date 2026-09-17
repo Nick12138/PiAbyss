@@ -123,6 +123,24 @@ export const HOST_METHODS = [
   "telegram.updateConfig",
   "telegram.reset",
   "telegram.status",
+  "schedule.status",
+  "schedule.listJobs",
+  "schedule.createJob",
+  "schedule.updateJob",
+  "schedule.deleteJob",
+  "schedule.setJobEnabled",
+  "schedule.runJobNow",
+  "schedule.listRuns",
+  "schedule.getRunTranscript",
+  "schedule.replyToRun",
+  "schedule.validateCron",
+  "schedule.listNotifications",
+  "schedule.agentStart",
+  "schedule.agentSend",
+  "schedule.agentContinue",
+  "schedule.agentState",
+  "schedule.agentTranscript",
+  "schedule.agentAbort",
 ] as const;
 
 export type HostMethod = (typeof HOST_METHODS)[number];
@@ -200,7 +218,25 @@ export type HostOnlyMethod =
   | "telegram.getConfig"
   | "telegram.updateConfig"
   | "telegram.reset"
-  | "telegram.status";
+  | "telegram.status"
+  | "schedule.status"
+  | "schedule.listJobs"
+  | "schedule.createJob"
+  | "schedule.updateJob"
+  | "schedule.deleteJob"
+  | "schedule.setJobEnabled"
+  | "schedule.runJobNow"
+  | "schedule.listRuns"
+  | "schedule.getRunTranscript"
+  | "schedule.replyToRun"
+  | "schedule.validateCron"
+  | "schedule.listNotifications"
+  | "schedule.agentStart"
+  | "schedule.agentSend"
+  | "schedule.agentContinue"
+  | "schedule.agentState"
+  | "schedule.agentTranscript"
+  | "schedule.agentAbort";
 export type WorkspaceOnlyMethod =
   | "workspace.setCurrent"
   | "workspace.getCurrent"
@@ -443,6 +479,24 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "telegram.updateConfig": "host",
   "telegram.reset": "host",
   "telegram.status": "host",
+  "schedule.status": "host",
+  "schedule.listJobs": "host",
+  "schedule.createJob": "host",
+  "schedule.updateJob": "host",
+  "schedule.deleteJob": "host",
+  "schedule.setJobEnabled": "host",
+  "schedule.runJobNow": "host",
+  "schedule.listRuns": "host",
+  "schedule.getRunTranscript": "host",
+  "schedule.replyToRun": "host",
+  "schedule.validateCron": "host",
+  "schedule.listNotifications": "host",
+  "schedule.agentStart": "host",
+  "schedule.agentSend": "host",
+  "schedule.agentContinue": "host",
+  "schedule.agentState": "host",
+  "schedule.agentTranscript": "host",
+  "schedule.agentAbort": "host",
   "extensionUi.respond": "sessionTarget",
   "extensionUi.customInput": "sessionTarget",
   "extensionUi.customResize": "sessionTarget",

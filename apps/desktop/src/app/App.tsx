@@ -15,6 +15,9 @@ import { fileWorkspaceForRecovery } from "../features/dock/file-session";
 import { resolveWindowControlsPlatform } from "../components/WindowControls";
 import { ChatPage } from "../features/chat/ChatPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
+import { SchedulePage } from "../features/schedule/SchedulePage";
+import { ScheduleAgentPage } from "../features/schedule/ScheduleAgentPage";
+import { startSchedulePushPolling } from "../features/schedule/schedule-push";
 import { SettingsTopBarActionsContext } from "../features/settings/settings-top-bar";
 import { ExtensionUiModal } from "../features/chat/ExtensionUiModal";
 import { GlobalSearchHost } from "../features/sessions/GlobalSearchModal";
@@ -1306,6 +1309,9 @@ export function App() {
   // sidebar.toggle command bus subscription that previously lived in Sidebar.
   useEffect(() => subscribeSidebarToggle(() => useAppStore.getState().toggleSidebar()), []);
 
+  // App-level schedule push: polls the plugin's notify-queue on every page.
+  useEffect(() => startSchedulePushPolling(), []);
+
   return (
     <div
       className="relative flex h-full flex-col overflow-hidden bg-surface text-foreground"
@@ -1340,6 +1346,10 @@ export function App() {
                 />
               ) : page === "packages" ? (
                 <SettingsPage initialSection="packages" onClose={() => setPage("chat")} />
+              ) : page === "schedule" ? (
+                <SchedulePage />
+              ) : page === "schedule-agent" ? (
+                <ScheduleAgentPage />
               ) : (
                 <WorkspaceSwitchTransition>
                   <ChatPage />

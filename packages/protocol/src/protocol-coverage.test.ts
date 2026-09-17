@@ -254,6 +254,29 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   },
   "telegram.reset": null,
   "telegram.status": null,
+  "schedule.status": null,
+  "schedule.listJobs": null,
+  "schedule.createJob": {
+    name: "demo",
+    prompt: "hello",
+    cwd: "C:/tmp",
+    trigger: { type: "cron", cron: "0 9 * * 1-5", timezone: "Asia/Shanghai" },
+  },
+  "schedule.updateJob": { id: "a1b2c3d4", name: "renamed" },
+  "schedule.deleteJob": { id: "a1b2c3d4" },
+  "schedule.setJobEnabled": { id: "a1b2c3d4", enabled: true },
+  "schedule.runJobNow": { id: "a1b2c3d4" },
+  "schedule.listRuns": { limit: 50 },
+  "schedule.getRunTranscript": { runId: "2fa6a8c56cc8" },
+  "schedule.replyToRun": { runId: "2fa6a8c56cc8", text: "继续" },
+  "schedule.validateCron": { cron: "0 9 * * 1-5" },
+  "schedule.listNotifications": { limit: 50 },
+  "schedule.agentStart": { cwd: "C:/tmp", requirement: "每天审查代码" },
+  "schedule.agentSend": { sessionId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150", text: "继续" },
+  "schedule.agentContinue": { sessionPath: "C:/s.jsonl", cwd: "C:/tmp", text: "继续" },
+  "schedule.agentState": { sessionId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150" },
+  "schedule.agentTranscript": { sessionPath: "C:/s.jsonl" },
+  "schedule.agentAbort": { sessionId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150" },
 };
 
 function contextFor(method: HostMethod): Record<string, unknown> {
@@ -486,6 +509,37 @@ function invalidParams(method: HostMethod): unknown {
       return { requestId: EXTENSION_REQUEST_ID, cols: 0, rows: 32 };
     case "telegram.validateToken":
       return { token: "" };
+    case "schedule.status":
+    case "schedule.listJobs":
+      return {}; // must be null
+    case "schedule.createJob":
+      return { name: "", prompt: "x", cwd: "C:/tmp", trigger: { type: "bogus" } };
+    case "schedule.updateJob":
+    case "schedule.deleteJob":
+      return { id: "" };
+    case "schedule.setJobEnabled":
+      return { id: "a1b2c3d4", enabled: "yes" };
+    case "schedule.runJobNow":
+      return { id: "a1b2c3d4", permission: "root" };
+    case "schedule.listRuns":
+    case "schedule.listNotifications":
+      return { limit: 0 };
+    case "schedule.getRunTranscript":
+    case "schedule.validateCron":
+      return { runId: "", cron: "" };
+    case "schedule.replyToRun":
+      return { runId: "2fa6a8c56cc8", text: "   " };
+    case "schedule.agentStart":
+      return { cwd: "", requirement: "" };
+    case "schedule.agentSend":
+      return { sessionId: "", text: "  " };
+    case "schedule.agentContinue":
+      return { sessionPath: "", cwd: "", text: "x" };
+    case "schedule.agentState":
+    case "schedule.agentAbort":
+      return { sessionId: "" };
+    case "schedule.agentTranscript":
+      return { sessionPath: "" };
     default:
       return { __invalid: true };
   }

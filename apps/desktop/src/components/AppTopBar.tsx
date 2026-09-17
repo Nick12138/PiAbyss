@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { Search, CalendarClock } from "lucide-react";
 import { useAppStore } from "../lib/stores/app-store";
 import { useT } from "../lib/i18n/use-t";
 import { requestGlobalSearchOpen } from "../lib/commands/events";
@@ -133,6 +133,22 @@ export function AppTopBar({
                   </span>
                 </>
               )}
+            </div>
+          </div>
+        ) : page === "schedule" || page === "schedule-agent" ? (
+          <div
+            className="pointer-events-none flex min-w-0 flex-1 items-center gap-2"
+            data-tauri-drag-region
+          >
+            <CalendarClock
+              size={16}
+              className="pointer-events-none shrink-0 text-muted"
+              aria-hidden="true"
+            />
+            <div className="min-w-0 flex-1 truncate">
+              <h1 className="truncate text-base font-semibold leading-5">
+                {page === "schedule" ? t("scheduleTitle") : t("scheduleAgentTitle")}
+              </h1>
             </div>
           </div>
         ) : page === "settings" || page === "packages" ? (

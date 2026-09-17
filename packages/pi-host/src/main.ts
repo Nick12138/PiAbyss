@@ -33,6 +33,7 @@ import { createProviderHandlers } from "./provider-controller.js";
 import { createExtensionUiHandlers } from "./extension-ui-bridge.js";
 import { createTelegramHandlers } from "./telegram-controller.js";
 import { createTelegramSessionHandlers } from "./telegram-sessions-controller.js";
+import { createScheduleHandlers } from "./schedule-controller.js";
 import { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { applyKnownThinkingProfiles } from "./model-thinking.js";
 import { FileCredentialStore } from "./credential-store.js";
@@ -340,6 +341,7 @@ async function main(): Promise<void> {
     ...createExtensionUiHandlers(graphFactory),
     ...createTelegramHandlers(agentDir),
     ...createTelegramSessionHandlers(agentDir),
+    ...createScheduleHandlers(agentDir),
     ...createPiSettingsHandlers(graphFactory, agentDir),
     ...createSkillHandlers(graphFactory),
     ...createPromptHandlers(graphFactory),

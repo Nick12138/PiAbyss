@@ -1424,3 +1424,163 @@ export type DesktopSettings = {
 };
 
 export type DesktopSettingsPatch = Partial<DesktopSettings>;
+
+/* ── Schedule（pi-schedule 插件控制面）────────────────────────── */
+
+export type SchedulePermission = "read_only" | "write" | "full";
+export type ScheduleMissedWindow = "catch_up_one" | "skip";
+export type ScheduleRunStatus = "running" | "ok" | "error" | "timeout" | "aborted";
+export type ScheduleRunTrigger = "manual" | "once" | "interval" | "cron" | "reply";
+export type ScheduleTermination = "once" | "maxRuns" | "missed";
+/** 按计划推送配置：none 关闭；system 系统通知；tg 为 Telegram 通道预留。 */
+export type ScheduleNotifyMode = "none" | "system" | "tg";
+
+/** 触发方式：manual = 仅手动，不进自动计划。 */
+export type ScheduleTrigger =
+  | { type: "manual" }
+  | { type: "once"; at: string }
+  | { type: "interval"; every: string }
+  | { type: "cron"; cron: string; timezone?: string };
+
+/** 模型引用；null = 用宿主默认模型。 */
+export type ScheduleModelRef = {
+  provider: string;
+  id: string;
+  thinkingLevel?: string;
+};
+
+/** 任务定义（对应插件 jobs.json 里的一条记录）。 */
+export type ScheduleJob = {
+  id: string;
+  name: string;
+  /** 任务内容（执行会话的任务书）；命令型任务为 ""。 */
+  prompt: string;
+  /** 命令型任务：非空时触发后直接执行 shell 命令，与 prompt 互斥。 */
+  command: string | null;
+  /** 工作区绝对路径（执行会话的 cwd）。 */
+  cwd: string;
+  enabled: boolean;
+  permission: SchedulePermission;
+  model: ScheduleModelRef | null;
+  trigger: ScheduleTrigger;
+  missedWindow: ScheduleMissedWindow;
+  timeoutMs: number;
+  maxRuns: number | null;
+  loadExtensions: boolean;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  lastRunId: string | null;
+  lastStatus: ScheduleRunStatus | null;
+  runCount: number;
+  terminated: ScheduleTermination | null;
+  /** Older plugin versions don't persist this field — treat as "none". */
+  notify?: ScheduleNotifyMode;
+};
+
+/** 创建任务的请求体。 */
+export type ScheduleJobInput = {
+  name: string;
+  prompt: string;
+  command?: string | null;
+  cwd: string;
+  trigger: ScheduleTrigger;
+  permission?: SchedulePermission;
+  model?: ScheduleModelRef | null;
+  missedWindow?: ScheduleMissedWindow;
+  timeoutMs?: number;
+  maxRuns?: number | null;
+  loadExtensions?: boolean;
+  tags?: string[];
+  enabled?: boolean;
+  notify?: ScheduleNotifyMode;
+};
+
+/** 修改任务：id 必带，其余字段可选（部分更新）。 */
+export type ScheduleJobPatch = Partial<ScheduleJobInput> & { id: string };
+
+export type ScheduleUsageSummary = {
+  input: number;
+  output: number;
+  total: number;
+  cost: number;
+};
+
+/** 执行记录的精简视图（对应插件 RunSummary）。 */
+export type ScheduleRunSummary = {
+  runId: string;
+  jobId: string;
+  jobName: string;
+  trigger: ScheduleRunTrigger;
+  status: ScheduleRunStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  model: ScheduleModelRef | null;
+  permission: SchedulePermission;
+  forkOf: string | null;
+  summary: string;
+  error: string | null;
+  usage: ScheduleUsageSummary | null;
+  toolCalls: number;
+};
+
+/** 会话转录条目（精简）。 */
+export type ScheduleTranscriptEntry = {
+  id: string;
+  role: string;
+  text: string;
+  at?: string;
+};
+
+/** 插件通知队列条目。 */
+export type ScheduleNotification = {
+  at: string;
+  jobId: string;
+  jobName: string;
+  runId: string;
+  status: ScheduleRunStatus;
+  level: "info" | "error";
+  title: string;
+  message: string;
+};
+
+/** `GET /api/health` 的响应。 */
+export type ScheduleHealth = {
+  ok: boolean;
+  root: string;
+  port: number | null;
+  activeJobs: string[];
+  tickMs: number;
+  maxConcurrent: number;
+};
+
+/** 智能创建对话的消息（精简转录）。 */
+export type ScheduleAgentMessage = {
+  role: string;
+  text: string;
+};
+
+/** schedule.agentState 结果：会话不在宿主内存时 found=false。 */
+export type ScheduleAgentState = {
+  found: boolean;
+  running: boolean;
+  error: string | null;
+  messages: ScheduleAgentMessage[];
+};
+
+/** schedule.agentTranscript 结果：从会话文件读取的历史。 */
+export type ScheduleAgentTranscript = {
+  found: boolean;
+  messages: ScheduleAgentMessage[];
+};
+
+/** schedule.status 结果：插件未启动时 available=false（不作为协议错误）。 */
+export type ScheduleStatus = {
+  available: boolean;
+  health: ScheduleHealth | null;
+  error: string | null;
+};

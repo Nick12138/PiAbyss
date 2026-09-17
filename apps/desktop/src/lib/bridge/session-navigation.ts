@@ -29,6 +29,20 @@ export type SessionNavigationTarget = {
   /** Present without sessionPath for cross-workspace system notifications. */
   sessionId?: string;
   archived?: boolean;
+  /**
+   * Optimistic switches hand the service-graph lock to a background build and
+   * return immediately (snappy picker UX). Callers that need to run graph
+   * operations right after the switch (e.g. session.create) must opt out so
+   * the switch blocks until the build settles and the lock is released.
+   * Defaults to true.
+   */
+  optimistic?: boolean;
+  /**
+   * Suppress the toast notifications this navigation normally surfaces on
+   * failure — for callers that retry the navigation on a longer window and
+   * report the final error themselves.
+   */
+  quiet?: boolean;
 };
 
 export type SessionNavigationOptions = {
@@ -102,7 +116,7 @@ export async function openSessionAcrossWorkspaces(
             hostClient.request(
               "workspace.setCurrent",
               workspaceContext(host, state.workspace),
-              { cwd: target.cwd, optimistic: true },
+              { cwd: target.cwd, optimistic: target.optimistic !== false },
               60_000,
             ),
           undefined,
@@ -123,12 +137,14 @@ export async function openSessionAcrossWorkspaces(
         ) {
           // The Host became busy after the initial decision; isolation completed.
         } else {
-          useAppStore
-            .getState()
-            .pushNotification(
-              localizeHostError(switched.error, tCurrent),
-              hostErrorLevel(switched.error),
-            );
+          if (!target.quiet) {
+            useAppStore
+              .getState()
+              .pushNotification(
+                localizeHostError(switched.error, tCurrent),
+                hostErrorLevel(switched.error),
+              );
+          }
           return { status: "failed" };
         }
       } else {
@@ -197,7 +213,9 @@ export async function openSessionAcrossWorkspaces(
       resolved = null;
     }
     if (!resolved) {
-      useAppStore.getState().pushNotification(tCurrent("notifOpenSessionFailed"), "error");
+      if (!target.quiet) {
+        useAppStore.getState().pushNotification(tCurrent("notifOpenSessionFailed"), "error");
+      }
       return { status: "failed" };
     }
     sessionPath = resolved.sessionPath;
@@ -227,9 +245,11 @@ export async function openSessionAcrossWorkspaces(
   });
   if (!res) return { status: "blocked" };
   if (!res.ok) {
-    useAppStore
-      .getState()
-      .pushNotification(localizeHostError(res.error, tCurrent), hostErrorLevel(res.error));
+    if (!target.quiet) {
+      useAppStore
+        .getState()
+        .pushNotification(localizeHostError(res.error, tCurrent), hostErrorLevel(res.error));
+    }
     return { status: "failed" };
   }
   const appliedSession = useAppStore.getState().session;

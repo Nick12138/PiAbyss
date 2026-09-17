@@ -647,6 +647,23 @@ input[type="checkbox"] {
   accent-color: var(--color-accent);
 }
 
+/* Native controls inside inputs (number spinners, datetime/time picker icons)
+   must follow the app theme, not the OS preference: WebView2 picks their
+   colors from color-scheme, which the portaled dialogs don't always inherit
+   reliably. Re-assert it per theme on the control elements themselves. */
+input[type="number"],
+input[type="datetime-local"],
+input[type="time"],
+input[type="date"] {
+  color-scheme: dark;
+}
+html.light input[type="number"],
+html.light input[type="datetime-local"],
+html.light input[type="time"],
+html.light input[type="date"] {
+  color-scheme: light;
+}
+
 /* Light theme */
 html.light {
   color-scheme: light;

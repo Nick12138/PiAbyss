@@ -1,4 +1,4 @@
-import { MessageCirclePlus, PanelLeftClose, PanelLeftOpen, Settings } from "lucide-react";
+import { MessageCirclePlus, CalendarClock, PanelLeftClose, PanelLeftOpen, Settings } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useAppStore, type NavPage } from "../lib/stores/app-store";
 import { SessionList } from "../features/sessions/SessionList";
@@ -8,6 +8,7 @@ import { TelegramSessionList } from "../features/telegram/TelegramSessionList";
 import { useTelegramWorkspaceActive } from "../features/telegram/telegram-view-store";
 import { PiMark } from "./PiMark";
 import { sidebarPref, setSidebarPref } from "../lib/sidebar-prefs";
+import { useSchedulePluginEnabled } from "../features/schedule/schedule-plugin-gate";
 import { resolveConversationMinWidth } from "../features/chat/conversation-layout";
 import {
   createNewSession,
@@ -121,6 +122,7 @@ export function SidebarLayout({
   setPage: (page: NavPage) => void;
 }) {
   const t = useT();
+  const scheduleEnabled = useSchedulePluginEnabled();
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const telegramViewActive = useTelegramWorkspaceActive();
   const [sessionsCollapsed, setSessionsCollapsed] = useState(() =>
@@ -311,14 +313,16 @@ export function SidebarLayout({
             <div className="px-2 pb-3">
               <button
                 type="button"
-                onClick={() => setPage(page === "chat" ? "settings" : "chat")}
+                onClick={() =>
+                  setPage(page === "settings" || page === "packages" ? "chat" : "settings")
+                }
                 data-ui="nav-item"
-                data-state={page !== "chat" ? "active" : "inactive"}
+                data-state={page === "settings" || page === "packages" ? "active" : "inactive"}
                 title={t("settingsTitle")}
                 aria-label={t("settingsTitle")}
-                aria-pressed={page !== "chat"}
+                aria-pressed={page === "settings" || page === "packages"}
                 className={`flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] transition-colors ${
-                  page !== "chat"
+                  page === "settings" || page === "packages"
                     ? "theme-nav-active bg-nav-active text-nav-active-foreground"
                     : "text-foreground hover:bg-surface-overlay"
                 }`}
@@ -326,6 +330,26 @@ export function SidebarLayout({
                 <Settings size={18} className="shrink-0" />
                 <span>{t("settingsTitle")}</span>
               </button>
+              {scheduleEnabled && (
+                <button
+                  type="button"
+                  onClick={() => setPage(page === "schedule" ? "chat" : "schedule")}
+                  data-ui="nav-item"
+                  data-testid="sidebar-schedule-entry"
+                  data-state={page === "schedule" ? "active" : "inactive"}
+                  title={t("scheduleTitle")}
+                  aria-label={t("scheduleTitle")}
+                  aria-pressed={page === "schedule"}
+                  className={`mt-1 flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] transition-colors ${
+                    page === "schedule"
+                      ? "theme-nav-active bg-nav-active text-nav-active-foreground"
+                      : "text-foreground hover:bg-surface-overlay"
+                  }`}
+                >
+                  <CalendarClock size={18} className="shrink-0" />
+                  <span>{t("scheduleTitle")}</span>
+                </button>
+              )}
             </div>
 
             <div className="border-t border-border px-2 py-3">

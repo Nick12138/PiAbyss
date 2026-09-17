@@ -105,16 +105,14 @@ export function Dialog({
         aria-labelledby="app-dialog-title"
         className={`theme-floating-surface max-h-[min(680px,90vh)] w-full overflow-auto rounded-xl border border-border bg-surface-raised p-5 shadow-2xl ${maxWidthClass}`}
       >
-        <div className="flex items-start gap-3">
-          <div className={`mt-0.5 rounded-md p-1.5 ${ICON_CHIP[tone]}`}>
+        {/* Header: icon + title share one row; close icon sits at the end. */}
+        <div className="flex items-center gap-3">
+          <div className={`rounded-md p-1.5 ${ICON_CHIP[tone]}`}>
             {tone === "default" ? <Icon size={18} /> : <AlertTriangle size={18} />}
           </div>
-          <div className="min-w-0 flex-1">
-            <h2 id="app-dialog-title" className="text-base font-semibold">
-              {title}
-            </h2>
-            <div className="mt-2 text-sm text-muted">{children}</div>
-          </div>
+          <h2 id="app-dialog-title" className="min-w-0 flex-1 truncate text-base font-semibold">
+            {title}
+          </h2>
           {showCloseIcon && (
             <button
               type="button"
@@ -127,6 +125,8 @@ export function Dialog({
             </button>
           )}
         </div>
+        {/* Body: full width below the header row. */}
+        <div className="mt-3 text-sm text-muted">{children}</div>
         {!hideActions && (
           <div className="mt-5 flex justify-end gap-2">
             {showCancel && (
