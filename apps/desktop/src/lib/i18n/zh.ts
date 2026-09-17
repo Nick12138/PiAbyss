@@ -1033,6 +1033,7 @@ export const zh: Record<MessageKey, string> = {
   // Transcript
   transcriptShowEarlier: "显示更早的消息（已隐藏 {count} 条）",
   transcriptPiWorking: "🤔 Pi 琢磨中...",
+  transcriptScrollToBottom: "跳到最新",
   transcriptJumpLatest: "⬇️ 跳到最新",
   turnRailLabel: "快速跳转到历史消息",
   turnRailReadingMark: "当前阅读位置",
@@ -1709,6 +1710,8 @@ export const zh: Record<MessageKey, string> = {
   scheduleIntervalWeeks: "周",
   scheduleIntervalMonths: "月",
   scheduleFormNotify: "完成推送",
+  scheduleFormLoadExtensions: "加载扩展",
+  scheduleFormTimeout: "超时",
   scheduleNotifyNone: "不推送",
   scheduleNotifySystem: "系统通知",
   scheduleFormTitleSmart: "智能创建周期计划",

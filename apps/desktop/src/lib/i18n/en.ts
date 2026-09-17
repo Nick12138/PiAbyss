@@ -1093,6 +1093,7 @@ export const en = {
   // Transcript
   transcriptShowEarlier: "Show earlier messages ({count} hidden)",
   transcriptPiWorking: "Pi is working...",
+  transcriptScrollToBottom: "Jump to latest",
   transcriptJumpLatest: "Jump to latest message",
   turnRailLabel: "Quick jump to a message",
   turnRailReadingMark: "Current reading position",
@@ -1780,6 +1781,8 @@ export const en = {
   scheduleIntervalWeeks: "Weeks",
   scheduleIntervalMonths: "Months",
   scheduleFormNotify: "Run push",
+  scheduleFormLoadExtensions: "Load extensions",
+  scheduleFormTimeout: "Timeout",
   scheduleNotifyNone: "Off",
   scheduleNotifySystem: "System notification",
   scheduleFormTitleSmart: "Smart plan creation",

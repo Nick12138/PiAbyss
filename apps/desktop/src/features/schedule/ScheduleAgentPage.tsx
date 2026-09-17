@@ -36,6 +36,7 @@ type SchedulePlanDraft = {
   maxRuns?: number | null;
   tags?: string[] | null;
   notify?: string | null;
+  loadExtensions?: boolean | null;
 };
 
 /** Latest ```schedule-plan JSON from the assistant messages. */
@@ -92,6 +93,7 @@ export function ScheduleAgentPage() {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
   const lastMessageCountRef = useRef(0);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!sessionId || !sessionPath) return;
@@ -178,6 +180,9 @@ export function ScheduleAgentPage() {
       // If user scrolls away from bottom, mark as manually scrolled
       if (!isNearBottom) {
         userScrolledRef.current = true;
+        setShowScrollToBottom(true);
+      } else {
+        setShowScrollToBottom(false);
       }
     };
 
@@ -208,6 +213,7 @@ export function ScheduleAgentPage() {
     setDraft("");
     // Reset user scroll flag when user sends a message - we want to auto-scroll to the new message
     userScrolledRef.current = false;
+    setShowScrollToBottom(false);
     try {
       const response = resident
         ? await hostClient.request(
@@ -242,6 +248,15 @@ export function ScheduleAgentPage() {
   async function handleBack() {
     leaveScheduleAgent();
     setPage("schedule");
+  }
+
+  function scrollToBottom() {
+    const el = transcriptRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+      userScrolledRef.current = false;
+      setShowScrollToBottom(false);
+    }
   }
 
   async function handleConfirm() {
@@ -287,18 +302,48 @@ export function ScheduleAgentPage() {
     }
   }
 
-  const previewRows: Array<{ label: MessageKeyOf; value: string | null }> = plan
+  const previewRows: Array<{ label: MessageKeyOf; value: string | null; fullText?: string }> = plan
     ? [
         { label: "scheduleFormName", value: plan.name ?? null },
+        { 
+          label: "scheduleFormKind", 
+          value: plan.kind === "prompt" ? "提示词计划" : plan.kind === "command" ? "命令计划" : null 
+        },
         { label: "scheduleFormCwd", value: plan.cwd ?? null },
-        { label: "scheduleFormPermission", value: plan.permission ?? null },
-        { label: "scheduleFormNotify", value: plan.notify === "system" ? "system" : null },
+        { 
+          label: "scheduleFormPermission", 
+          value: plan.permission === "read_only" ? "只读" : plan.permission === "write" ? "可写" : plan.permission === "full" ? "完整" : null 
+        },
         {
           label: "scheduleFormModel",
           value:
             plan.model && typeof plan.model === "object"
               ? `${plan.model.provider}/${plan.model.id}`
               : null,
+        },
+        { 
+          label: "scheduleFormMissedWindow", 
+          value: plan.missedWindow === "catch_up_one" ? "补执行一次" : plan.missedWindow === "skip" ? "跳过" : null 
+        },
+        { 
+          label: "scheduleFormTimeout", 
+          value: plan.timeoutMs ? `${Math.round(plan.timeoutMs / 1000)}s` : null 
+        },
+        { 
+          label: "scheduleFormMaxRuns", 
+          value: plan.maxRuns ? String(plan.maxRuns) : null 
+        },
+        { 
+          label: "scheduleFormTags", 
+          value: Array.isArray(plan.tags) && plan.tags.length > 0 ? plan.tags.join(", ") : null 
+        },
+        { 
+          label: "scheduleFormNotify", 
+          value: plan.notify === "system" ? "系统通知" : plan.notify === "tg" ? "Telegram" : plan.notify === "none" ? "无" : null 
+        },
+        {
+          label: "scheduleFormLoadExtensions",
+          value: plan.loadExtensions === true ? "是" : plan.loadExtensions === false ? "否" : null
         },
       ]
     : [];
@@ -318,7 +363,7 @@ export function ScheduleAgentPage() {
       </div>
       <div className="flex min-h-0 flex-1">
         {/* Conversation (70%) */}
-        <div className="flex min-w-0 flex-[7] flex-col">
+        <div className="flex min-w-0 flex-[7] flex-col relative">
           <div ref={transcriptRef} className="scrollbar-subtle flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-5">
             {messages.length === 0 && !loadError && (
               <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted">
@@ -355,6 +400,20 @@ export function ScheduleAgentPage() {
               </div>
             )}
           </div>
+          
+          {/* Scroll to bottom button */}
+          {showScrollToBottom && (
+            <button
+              type="button"
+              onClick={scrollToBottom}
+              className="absolute bottom-20 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-surface-raised border border-border shadow-lg hover:bg-surface-overlay transition-colors"
+              title={t("transcriptScrollToBottom")}
+              aria-label={t("transcriptScrollToBottom")}
+            >
+              <ArrowUp size={18} className="rotate-180" />
+            </button>
+          )}
+          
           <div className="shrink-0 px-3 pb-3 pt-2 sm:px-6 sm:pb-5">
             {loadError && <p className="mb-2 text-xs text-danger">{loadError}</p>}
             <div className="chat-composer-surface rounded-xl border-[1.5px] border-border bg-surface-raised p-2 shadow-sm">
@@ -436,6 +495,24 @@ export function ScheduleAgentPage() {
                   )}
                 </div>
               </div>
+              
+              {/* 提示词或命令预览 */}
+              {plan.kind === "prompt" && plan.prompt && typeof plan.prompt === "string" && plan.prompt.trim() ? (
+                <div className="flex flex-col gap-1.5 rounded-md border border-border p-2.5">
+                  <div className="text-xs font-medium text-foreground">{t("scheduleFormPrompt")}</div>
+                  <div className="max-h-48 overflow-y-auto rounded bg-surface p-2 text-xs leading-relaxed whitespace-pre-wrap break-words">
+                    {plan.prompt}
+                  </div>
+                </div>
+              ) : plan.kind === "command" && plan.command && typeof plan.command === "string" && plan.command.trim() ? (
+                <div className="flex flex-col gap-1.5 rounded-md border border-border p-2.5">
+                  <div className="text-xs font-medium text-foreground">{t("scheduleFormCommand")}</div>
+                  <div className="rounded bg-surface p-2 text-xs font-mono leading-relaxed whitespace-pre-wrap break-all">
+                    {plan.command}
+                  </div>
+                </div>
+              ) : null}
+              
               <button
                 type="button"
                 className="interface-density-control flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-xs text-accent-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
@@ -456,7 +533,15 @@ export function ScheduleAgentPage() {
 
 type MessageKeyOf =
   | "scheduleFormName"
+  | "scheduleFormKind"
   | "scheduleFormCwd"
   | "scheduleFormPermission"
   | "scheduleFormNotify"
-  | "scheduleFormModel";
+  | "scheduleFormModel"
+  | "scheduleFormMissedWindow"
+  | "scheduleFormTimeout"
+  | "scheduleFormMaxRuns"
+  | "scheduleFormTags"
+  | "scheduleFormLoadExtensions"
+  | "scheduleFormPrompt"
+  | "scheduleFormCommand";
