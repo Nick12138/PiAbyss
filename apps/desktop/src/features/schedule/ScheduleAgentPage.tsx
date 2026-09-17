@@ -345,10 +345,10 @@ export function ScheduleAgentPage() {
               </div>
             )}
           </div>
-          <div className="border-t border-border p-2.5">
-            {loadError && <p className="mb-1.5 text-xs text-danger">{loadError}</p>}
-            <div className="flex flex-col gap-2">
-              <div className="flex items-end gap-2">
+          <div className="shrink-0 border-t border-border p-3">
+            {loadError && <p className="mb-2 text-xs text-danger">{loadError}</p>}
+            <div className="chat-composer-surface rounded-xl border-[1.5px] border-border bg-surface-raised p-2 shadow-sm">
+              <div className="relative">
                 <textarea
                   data-testid="schedule-agent-input"
                   value={draft}
@@ -359,27 +359,29 @@ export function ScheduleAgentPage() {
                       void send();
                     }
                   }}
-                  rows={2}
+                  rows={3}
                   placeholder={t("scheduleAgentInputPlaceholder")}
-                  className="min-w-0 flex-1 rounded-md border border-border bg-surface px-2 py-1.5 text-[13px] resize-none"
+                  className="chat-composer-input min-h-[60px] max-h-[280px] w-full resize-none bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted"
                 />
-                <button
-                  type="button"
-                  className="theme-send-control flex size-9 items-center justify-center rounded-full bg-foreground text-surface transition-colors hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-30"
-                  disabled={sending || running || !draft.trim()}
-                  onClick={() => void send()}
-                  title={t("composerSend")}
-                  aria-label={t("composerSend")}
-                >
-                  {sending || running ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <ArrowUp size={18} strokeWidth={2.25} className="block shrink-0" />
-                  )}
-                </button>
               </div>
-              <div className="flex items-center justify-end">
-                <ModelControls />
+              <div className="composer-toolbar flex h-8 items-center gap-2.5 px-1">
+                <div className="ml-auto flex items-center gap-2.5">
+                  <ModelControls />
+                  <button
+                    type="button"
+                    title={t("composerSend")}
+                    aria-label={t("composerSend")}
+                    className="theme-send-control flex size-7 items-center justify-center rounded-full bg-foreground text-surface transition-colors hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-30"
+                    disabled={sending || running || !draft.trim()}
+                    onClick={() => void send()}
+                  >
+                    {sending || running ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <ArrowUp size={18} strokeWidth={2.25} className="block shrink-0" />
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
