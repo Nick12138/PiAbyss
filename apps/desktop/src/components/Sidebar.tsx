@@ -330,7 +330,10 @@ export function SidebarLayout({
                 <Settings size={18} className="shrink-0" />
                 <span>{t("settingsTitle")}</span>
               </button>
-              {scheduleEnabled && (
+            </div>
+
+            {scheduleEnabled && (
+              <div className="px-2 pb-2">
                 <button
                   type="button"
                   onClick={() => setPage(page === "schedule" ? "chat" : "schedule")}
@@ -349,8 +352,8 @@ export function SidebarLayout({
                   <CalendarClock size={18} className="shrink-0" />
                   <span>{t("scheduleTitle")}</span>
                 </button>
-              )}
-            </div>
+              </div>
+            )}
 
             <div className="border-t border-border px-2 py-3">
               <WorkspacePicker />
