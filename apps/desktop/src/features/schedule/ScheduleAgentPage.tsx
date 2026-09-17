@@ -314,8 +314,8 @@ export function ScheduleAgentPage() {
       </div>
       <div className="flex min-h-0 flex-1">
         {/* Conversation (70%) */}
-        <div className="flex min-w-0 flex-[7] flex-col border-r border-border">
-          <div ref={transcriptRef} className="scrollbar-subtle flex-1 overflow-y-auto p-3">
+        <div className="flex min-w-0 flex-[7] flex-col">
+          <div ref={transcriptRef} className="scrollbar-subtle flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-5">
             {messages.length === 0 && !loadError && (
               <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted">
                 <Loader2 size={13} className="animate-spin" />
@@ -345,7 +345,7 @@ export function ScheduleAgentPage() {
               </div>
             )}
           </div>
-          <div className="shrink-0 border-t border-border p-3">
+          <div className="shrink-0 px-3 pb-3 pt-2 sm:px-6 sm:pb-5">
             {loadError && <p className="mb-2 text-xs text-danger">{loadError}</p>}
             <div className="chat-composer-surface rounded-xl border-[1.5px] border-border bg-surface-raised p-2 shadow-sm">
               <div className="relative">
