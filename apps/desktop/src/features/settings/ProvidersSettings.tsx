@@ -189,6 +189,20 @@ export function ProvidersSettings() {
   const [apiKey, setApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [clearApiKey, setClearApiKey] = useState(false);
+  // Masked preview of the stored key for the selected provider.
+  const [storedKeyPreview, setStoredKeyPreview] = useState<{
+    providerId: string;
+    masked: string;
+  } | null>(null);
+  // Fully revealed stored key (fetched on demand when the eye is clicked).
+  const [revealedKey, setRevealedKey] = useState<{ providerId: string; value: string } | null>(
+    null,
+  );
+  const [revealingKey, setRevealingKey] = useState(false);
+  // True while the user is typing a replacement key (stored display hidden).
+  const [keyFieldEditing, setKeyFieldEditing] = useState(false);
+  // Bumped after saves/removals so the preview refetches for the same provider.
+  const [keyPreviewNonce, setKeyPreviewNonce] = useState(0);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -214,6 +228,14 @@ export function ProvidersSettings() {
   const draftEpochRef = useRef(0);
 
   const selectedProvider = providers.find((provider) => provider.id === selectedId);
+  const storedMaskedKey =
+    storedKeyPreview && storedKeyPreview.providerId === selectedId ? storedKeyPreview.masked : null;
+  const revealedKeyValue =
+    revealedKey && revealedKey.providerId === selectedId ? revealedKey.value : null;
+  // True while the input displays the stored key (masked or revealed) instead
+  // of a manually typed value.
+  const showingStoredKey =
+    apiKey === "" && !keyFieldEditing && (storedMaskedKey !== null || revealedKeyValue !== null);
   const setProvidersDirty = useAppStore((state) => state.setProvidersDirty);
   const dirty = useMemo(
     () =>
@@ -226,6 +248,39 @@ export function ProvidersSettings() {
     setProvidersDirty(dirty);
   }, [dirty, setProvidersDirty]);
   useEffect(() => () => setProvidersDirty(false), [setProvidersDirty]);
+
+  // Load the masked preview of the stored key whenever the selected provider
+  // changes or its stored credential may have changed (nonce bumped on save).
+  const selectedConfigured = selectedProvider?.auth.configured ?? false;
+  useEffect(() => {
+    setStoredKeyPreview(null);
+    setRevealedKey(null);
+    setKeyFieldEditing(false);
+    if (!hostInstanceId || !selectedId || !selectedConfigured) return;
+    let cancelled = false;
+    const requestHost = useAppStore.getState().host;
+    if (!requestHost || requestHost.hostInstanceId !== hostInstanceId) return;
+    void requestWithRetry(() =>
+      hostClient.request("provider.getApiKey", hostContext(requestHost), {
+        providerId: selectedId,
+      }),
+    )
+      .then((response) => {
+        if (cancelled || !response?.ok) return;
+        if (selectedIdRef.current !== selectedId) return;
+        setStoredKeyPreview(
+          response.result.masked
+            ? { providerId: selectedId, masked: response.result.masked }
+            : null,
+        );
+      })
+      .catch(() => {
+        /* Preview is cosmetic; leave the placeholder-based fallback in place. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hostInstanceId, selectedId, selectedConfigured, keyPreviewNonce]);
 
   useEffect(() => {
     if (!hostInstanceId) {
@@ -324,6 +379,7 @@ export function ProvidersSettings() {
     setCatalog(enabledCatalog(nextDraft.models));
     setApiKey("");
     setClearApiKey(false);
+    setKeyFieldEditing(false);
     setEditingModelId(null);
     setManualOpen(false);
     setFieldErrors({});
@@ -426,6 +482,39 @@ export function ProvidersSettings() {
     updateDraft({ models: nextCatalog.filter((model) => model.enabled).map(stripEnabled) });
   }
 
+  /** Eye button: reveal/hide the stored key while it is displayed; otherwise
+   *  toggle masking of a manually typed key. */
+  async function toggleKeyVisibility() {
+    const providerId = selectedIdRef.current;
+    if (providerId && apiKey === "") {
+      if (revealedKey?.providerId === providerId) {
+        setRevealedKey(null);
+        return;
+      }
+      if (storedKeyPreview?.providerId === providerId) {
+        const currentHost = useAppStore.getState().host;
+        if (!currentHost || revealingKey) return;
+        setRevealingKey(true);
+        try {
+          const response = await hostClient.request(
+            "provider.getApiKey",
+            hostContext(currentHost),
+            { providerId, reveal: true },
+          );
+          if (response.ok && response.result.apiKey && selectedIdRef.current === providerId) {
+            setRevealedKey({ providerId, value: response.result.apiKey });
+          }
+        } catch {
+          /* Leave the masked preview in place on failure. */
+        } finally {
+          setRevealingKey(false);
+        }
+        return;
+      }
+    }
+    setShowApiKey((current) => !current);
+  }
+
   async function persistDraft(
     options: {
       notify?: boolean;
@@ -492,6 +581,9 @@ export function ProvidersSettings() {
           }));
         });
         setApiKey("");
+        setKeyFieldEditing(false);
+        setRevealedKey(null);
+        setKeyPreviewNonce((current) => current + 1);
         if (removeStoredKey) setClearApiKey(false);
       }
       if (notify) pushNotification(t("notifProviderSaved"));
@@ -1066,27 +1158,48 @@ export function ProvidersSettings() {
                 </div>
                 <div className="relative">
                   <input
-                    type={showApiKey ? "text" : "password"}
+                    type={showingStoredKey || showApiKey ? "text" : "password"}
                     className="h-8 w-full rounded-md border border-border bg-surface px-3 pr-10 font-mono text-xs outline-none focus:border-focus"
                     placeholder={
                       selectedProvider?.auth.configured
                         ? t("providersKeyPlaceholderKeep")
                         : t("providersKeyPlaceholderEnter")
                     }
-                    value={apiKey}
+                    value={showingStoredKey ? (revealedKeyValue ?? storedMaskedKey ?? "") : apiKey}
                     onChange={(event) => {
                       setApiKey(event.target.value);
                       if (event.target.value) setClearApiKey(false);
+                    }}
+                    onFocus={() => {
+                      // Start a fresh entry when the user clicks into the
+                      // stored-key display; blur without typing restores it.
+                      if (showingStoredKey) setKeyFieldEditing(true);
+                    }}
+                    onBlur={(event) => {
+                      if (!event.target.value) setKeyFieldEditing(false);
                     }}
                     autoComplete="off"
                   />
                   <button
                     type="button"
                     className="absolute right-1 top-1 flex size-7 items-center justify-center text-muted hover:text-foreground"
-                    title={showApiKey ? t("providersKeyHide") : t("providersKeyShow")}
-                    onClick={() => setShowApiKey((current) => !current)}
+                    title={
+                      showingStoredKey && !revealedKeyValue
+                        ? t("providersKeyShow")
+                        : showingStoredKey
+                          ? t("providersKeyHide")
+                          : showApiKey
+                            ? t("providersKeyHide")
+                            : t("providersKeyShow")
+                    }
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => void toggleKeyVisibility()}
                   >
-                    {showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                    {showingStoredKey && !revealedKeyValue ? (
+                      <Eye size={15} />
+                    ) : (
+                      <EyeOff size={15} />
+                    )}
                   </button>
                 </div>
               </section>

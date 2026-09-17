@@ -167,6 +167,7 @@ export type HostContextMap = {
   "provider.save": HostContext;
   "provider.remove": HostContext;
   "provider.fetchModels": HostContext;
+  "provider.getApiKey": HostContext;
   "provider.checkConnection": HostContext;
   "provider.authStatus": HostContext;
   "provider.loginStart": HostContext;
@@ -331,6 +332,7 @@ export type HostRequestParams = {
   };
   "provider.remove": { providerId: string };
   "provider.fetchModels": { providerId: string };
+  "provider.getApiKey": { providerId: string; reveal?: boolean };
   "provider.checkConnection": { providerId: string; modelId?: string };
   "provider.authStatus": null;
   "provider.loginStart": { providerId: string; authType: "oauth" | "api_key" };
@@ -515,6 +517,7 @@ export type HostResultMap = {
     providerId: string;
     models: DiscoveredProviderModel[];
   };
+  "provider.getApiKey": { masked: string | null; apiKey: string | null };
   "provider.checkConnection": ProviderConnectionResult;
   "provider.authStatus": { providers: BuiltinProviderAuthStatus[] };
   "provider.loginStart": { loginId: string; providerId: string };

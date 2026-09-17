@@ -573,10 +573,11 @@ function isProviderAuthStatus(value: unknown): boolean {
   ];
   return (
     isPlainObject(value) &&
-    hasExactKeys(value, ["configured"], ["source", "label"]) &&
+    hasExactKeys(value, ["configured"], ["source", "label", "maskedKey"]) &&
     isBoolean(value.configured) &&
     (value.source === undefined || sources.includes(String(value.source))) &&
-    isOptionalString(value.label)
+    isOptionalString(value.label) &&
+    isOptionalString(value.maskedKey)
   );
 }
 
@@ -2535,6 +2536,13 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         result.models.every(isDiscoveredProviderModel)
         ? null
         : "invalid provider.fetchModels result";
+    case "provider.getApiKey":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["masked", "apiKey"]) &&
+        (result.masked === null || isString(result.masked)) &&
+        (result.apiKey === null || isString(result.apiKey))
+        ? null
+        : "invalid provider.getApiKey result";
     case "provider.checkConnection":
       return isPlainObject(result) &&
         hasExactKeys(

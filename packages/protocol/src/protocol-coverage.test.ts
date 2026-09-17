@@ -191,6 +191,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   },
   "provider.remove": { providerId: "local" },
   "provider.fetchModels": { providerId: "local" },
+  "provider.getApiKey": { providerId: "local" },
   "provider.checkConnection": { providerId: "local", modelId: "model-1" },
   "provider.authStatus": null,
   "provider.loginStart": { providerId: "anthropic", authType: "oauth" },
@@ -439,6 +440,8 @@ function invalidParams(method: HostMethod): unknown {
     case "provider.logout":
     case "provider.builtinModels":
       return { providerId: "" };
+    case "provider.getApiKey":
+      return { providerId: "local", reveal: "yes" };
     case "provider.setBuiltinModels":
       return { providerId: "anthropic", modelIds: "all" };
     case "provider.loginStart":

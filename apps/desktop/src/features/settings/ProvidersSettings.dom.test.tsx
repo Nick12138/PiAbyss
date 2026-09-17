@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HostStatusSnapshot, ProviderModelConfig, ProviderSnapshot } from "@piabyss/protocol";
@@ -135,6 +135,13 @@ function mockRequests(overrides: Record<string, RequestHandler> = {}) {
         message: "Generation succeeded",
       });
     }
+    if (method === "provider.getApiKey") {
+      const { reveal } = (params ?? {}) as { reveal?: boolean };
+      return envelope(method, {
+        masked: "sk-a*********-000",
+        apiKey: reveal === true ? "sk-ant-secret-000" : null,
+      });
+    }
     throw new Error(`Unexpected request: ${method}`);
   }) as never);
   return spy;
@@ -170,6 +177,25 @@ describe("ProvidersSettings loading", () => {
     expect(screen.queryByText("OpenAI compatibility")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("System instruction role")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Reasoning effort field")).not.toBeInTheDocument();
+  });
+
+  it("shows the stored key masked in the input and reveals it via the eye toggle", async () => {
+    await renderLoaded();
+
+    const keyInput = screen.getByPlaceholderText("Leave blank to keep current key");
+    await waitFor(() => expect(keyInput).toHaveValue("sk-a*********-000"));
+
+    // Clicking into the field starts a fresh entry instead of editing the mask.
+    fireEvent.focus(keyInput);
+    expect(keyInput).toHaveValue("");
+    fireEvent.blur(keyInput);
+    await waitFor(() => expect(keyInput).toHaveValue("sk-a*********-000"));
+
+    // The eye reveals the full stored key, then hides it again.
+    fireEvent.click(screen.getByTitle("Show API key"));
+    await waitFor(() => expect(keyInput).toHaveValue("sk-ant-secret-000"));
+    fireEvent.click(screen.getByTitle("Hide API key"));
+    expect(keyInput).toHaveValue("sk-a*********-000");
   });
 
   it("retries transient graph contention before showing Providers", async () => {

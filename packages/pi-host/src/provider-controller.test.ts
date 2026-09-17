@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ModelConfigHealth, ProviderDraft } from "@piabyss/protocol";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
-import { createProviderHandlers } from "./provider-controller.js";
+import { createProviderHandlers, maskApiKey } from "./provider-controller.js";
 import { getEnabledProviderIds, getProviderModelAllowLists } from "./provider-models-config.js";
 import { PiHostServer } from "./server.js";
 import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp-agent.js";
@@ -191,6 +191,13 @@ function writeAnthropicSuccess(response: import("node:http").ServerResponse): vo
 }
 
 describe("Provider controller", () => {
+  it("masks stored API keys with one star per hidden character", () => {
+    // 33-char key: first 4 + 25 stars + last 4.
+    expect(maskApiKey("sk-ant-api03-abcdefghij0000000000")).toBe(`sk-a${"*".repeat(25)}0000`);
+    expect(maskApiKey("short")).toBe("*****");
+    expect(maskApiKey("12345678")).toBe("********");
+  });
+
   it("migrates the active Provider and enables multiple Providers without clearing models", async () => {
     const { layout, handlers } = await setup({
       piabyssActiveProvider: "other",

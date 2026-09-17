@@ -80,6 +80,7 @@ export const HOST_METHODS = [
   "provider.save",
   "provider.remove",
   "provider.fetchModels",
+  "provider.getApiKey",
   "provider.checkConnection",
   "provider.authStatus",
   "provider.loginStart",
@@ -177,6 +178,7 @@ export type HostOnlyMethod =
   | "provider.save"
   | "provider.remove"
   | "provider.fetchModels"
+  | "provider.getApiKey"
   | "provider.checkConnection"
   | "provider.authStatus"
   | "provider.loginStart"
@@ -401,6 +403,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "provider.save": "host",
   "provider.remove": "host",
   "provider.fetchModels": "host",
+  "provider.getApiKey": "host",
   "provider.checkConnection": "host",
   "provider.authStatus": "host",
   "provider.loginStart": "host",

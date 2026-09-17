@@ -704,6 +704,12 @@ export function validateRequestParams<M extends HostMethod>(
       return exactObject(params, ["providerId"]) && isNonEmptyString(params.providerId)
         ? ok(params)
         : fail(`invalid ${method} params`, { method });
+    case "provider.getApiKey":
+      return exactObject(params, ["providerId"], ["reveal"]) &&
+        isNonEmptyString(params.providerId) &&
+        (params.reveal === undefined || isBoolean(params.reveal))
+        ? ok(params)
+        : fail("invalid provider.getApiKey params", { method });
     case "provider.setBuiltinModels":
       return exactObject(params, ["providerId", "modelIds"]) &&
         isNonEmptyString(params.providerId) &&

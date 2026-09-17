@@ -237,6 +237,13 @@ function runtimeProviderIds(factory: WorkspaceGraphFactory): string[] {
   return factory.deps.modelRuntime.getProviders().map((provider) => provider.id);
 }
 
+/** Mask a stored API key for display, e.g. "sk-a**********wxyz". */
+export function maskApiKey(key: string): string {
+  const trimmed = key.trim();
+  if (trimmed.length <= 8) return "*".repeat(Math.max(trimmed.length, 4));
+  return `${trimmed.slice(0, 4)}${"*".repeat(trimmed.length - 8)}${trimmed.slice(-4)}`;
+}
+
 function providerSnapshot(
   id: string,
   raw: JsonObject,
@@ -1190,6 +1197,7 @@ export function createProviderHandlers(
     | "provider.save"
     | "provider.remove"
     | "provider.fetchModels"
+    | "provider.getApiKey"
     | "provider.checkConnection"
     | "provider.authStatus"
     | "provider.loginStart"
@@ -1655,6 +1663,35 @@ export function createProviderHandlers(
           }
         },
       });
+    },
+
+    "provider.getApiKey": async (ctx) => {
+      const { providerId, reveal } = ctx.params as { providerId: string; reveal?: boolean };
+      const server = factory.getServer();
+      if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
+      const out = await withStableGraphRead({
+        requestId: ctx.id,
+        identity: server.identity,
+        serviceGraphLock: server.serviceGraphLock,
+        run: async () => {
+          await refreshRegistry(factory);
+          const apiKey = await factory.deps.modelRegistry.getApiKeyForProvider(providerId);
+          return {
+            masked: apiKey ? maskApiKey(apiKey) : null,
+            ...(reveal === true && apiKey ? { apiKey } : { apiKey: null }),
+          };
+        },
+      });
+      if (!out.ok) {
+        if (out.error.code === "INTERNAL_ERROR") {
+          return {
+            error: createHostError("SETTINGS_READ_FAILED", out.error.message),
+            identity: out.identity,
+          };
+        }
+        return { error: out.error, identity: out.identity };
+      }
+      return { result: out.result, identity: out.identity };
     },
 
     "provider.fetchModels": async (ctx) => {

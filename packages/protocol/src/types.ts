@@ -451,6 +451,8 @@ export type ProviderAuthStatus = {
   source?:
     "stored" | "runtime" | "environment" | "fallback" | "models_json_key" | "models_json_command";
   label?: string;
+  /** Masked preview of the stored key, e.g. "sk-a.......wxyz"; absent when unavailable. */
+  maskedKey?: string;
 };
 
 export type ProviderCompatibility = {
