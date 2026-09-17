@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, CircleDashed, Loader2, Send } from "lucide-react";
+import { ArrowLeft, ArrowUp, Check, CircleDashed, Loader2 } from "lucide-react";
 import type { ScheduleJobInput } from "@piabyss/protocol";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -7,6 +7,7 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { useScheduleAgentStore } from "./schedule-agent-store";
 import { leaveScheduleAgent } from "./schedule-agent-flow";
+import { ModelControls } from "../chat/ModelControls";
 
 const AGENT_TIMEOUT_MS = 60_000;
 const SEND_TIMEOUT_MS = 30_000;
@@ -85,6 +86,8 @@ export function ScheduleAgentPage() {
   const [creating, setCreating] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const userScrolledRef = useRef(false);
+  const lastMessageCountRef = useRef(0);
 
   const refresh = useCallback(async () => {
     if (!sessionId || !sessionPath) return;
@@ -130,11 +133,43 @@ export function ScheduleAgentPage() {
     return () => clearInterval(timer);
   }, [refresh, running]);
 
-  // Keep the transcript scrolled to the newest message.
+  // Auto-scroll to bottom only when: 1) new messages arrive from assistant, 2) user sends a message, or 3) user hasn't manually scrolled
   useEffect(() => {
     const el = transcriptRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+
+    // Check if user has scrolled away from bottom
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    
+    // Only auto-scroll if:
+    // 1. User hasn't manually scrolled away (userScrolledRef is false)
+    // 2. OR user is already near the bottom
+    // 3. OR this is a new message (not just a status update)
+    const messageCountIncreased = messages.length > lastMessageCountRef.current;
+    lastMessageCountRef.current = messages.length;
+
+    if (!userScrolledRef.current || isNearBottom || messageCountIncreased) {
+      el.scrollTop = el.scrollHeight;
+      userScrolledRef.current = false;
+    }
   }, [messages]);
+
+  // Track user's manual scroll
+  useEffect(() => {
+    const el = transcriptRef.current;
+    if (!el) return;
+
+    const handleScroll = () => {
+      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+      // If user scrolls away from bottom, mark as manually scrolled
+      if (!isNearBottom) {
+        userScrolledRef.current = true;
+      }
+    };
+
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const plan = useMemo(() => extractPlanDraft(messages), [messages]);
   const planReady = Boolean(
@@ -157,6 +192,8 @@ export function ScheduleAgentPage() {
     setLoadError(null);
     setMessages((current) => [...current, { role: "user", text }]);
     setDraft("");
+    // Reset user scroll flag when user sends a message - we want to auto-scroll to the new message
+    userScrolledRef.current = false;
     try {
       const response = resident
         ? await hostClient.request(
@@ -300,34 +337,40 @@ export function ScheduleAgentPage() {
           </div>
           <div className="border-t border-border p-2.5">
             {loadError && <p className="mb-1.5 text-xs text-danger">{loadError}</p>}
-            <div className="flex items-end gap-2">
-              <textarea
-                data-testid="schedule-agent-input"
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                    event.preventDefault();
-                    void send();
-                  }
-                }}
-                rows={2}
-                placeholder={t("scheduleAgentInputPlaceholder")}
-                className="min-w-0 flex-1 rounded-md border border-border bg-surface px-2 py-1.5 text-[13px]"
-              />
-              <button
-                type="button"
-                className="theme-primary-control inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-xs text-accent-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
-                disabled={sending || running || !draft.trim()}
-                onClick={() => void send()}
-              >
-                {sending || running ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : (
-                  <Send size={13} />
-                )}
-                {t("scheduleAgentSend")}
-              </button>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-end gap-2">
+                <textarea
+                  data-testid="schedule-agent-input"
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                      event.preventDefault();
+                      void send();
+                    }
+                  }}
+                  rows={2}
+                  placeholder={t("scheduleAgentInputPlaceholder")}
+                  className="min-w-0 flex-1 rounded-md border border-border bg-surface px-2 py-1.5 text-[13px] resize-none"
+                />
+                <button
+                  type="button"
+                  className="theme-send-control flex size-9 items-center justify-center rounded-full bg-foreground text-surface transition-colors hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-30"
+                  disabled={sending || running || !draft.trim()}
+                  onClick={() => void send()}
+                  title={t("composerSend")}
+                  aria-label={t("composerSend")}
+                >
+                  {sending || running ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <ArrowUp size={18} strokeWidth={2.25} className="block shrink-0" />
+                  )}
+                </button>
+              </div>
+              <div className="flex items-center justify-end">
+                <ModelControls />
+              </div>
             </div>
           </div>
         </div>
