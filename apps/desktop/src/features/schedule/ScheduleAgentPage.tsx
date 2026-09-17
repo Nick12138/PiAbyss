@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { ArrowLeft, ArrowUp, Check, CircleDashed, Loader2 } from "lucide-react";
 import type { ScheduleJobInput } from "@piabyss/protocol";
 import { useT } from "../../lib/i18n/use-t";
@@ -8,6 +8,10 @@ import { hostContext } from "../../lib/bridge/host-context";
 import { useScheduleAgentStore } from "./schedule-agent-store";
 import { leaveScheduleAgent } from "./schedule-agent-flow";
 import { ModelControls } from "../chat/ModelControls";
+
+const MarkdownMessage = lazy(() =>
+  import("../chat/MarkdownMessage").then((module) => ({ default: module.MarkdownMessage })),
+);
 
 const AGENT_TIMEOUT_MS = 60_000;
 const SEND_TIMEOUT_MS = 30_000;
@@ -327,15 +331,21 @@ export function ScheduleAgentPage() {
                 key={index}
                 className={`mb-2.5 flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                <div
-                  className={`max-w-[85%] whitespace-pre-wrap break-words rounded-lg px-3 py-2 text-[13px] ${
-                    message.role === "user"
-                      ? "bg-accent/15 text-foreground"
-                      : "bg-surface-overlay text-foreground"
-                  }`}
-                >
-                  {message.text}
-                </div>
+                {message.role === "user" ? (
+                  <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg bg-accent/15 px-3 py-2 text-sm leading-6 text-foreground">
+                    {message.text}
+                  </div>
+                ) : (
+                  <div className="max-w-[85%] text-sm leading-6">
+                    <Suspense
+                      fallback={
+                        <div className="whitespace-pre-wrap break-words">{message.text}</div>
+                      }
+                    >
+                      <MarkdownMessage content={message.text} mode="static" />
+                    </Suspense>
+                  </div>
+                )}
               </div>
             ))}
             {running && (
