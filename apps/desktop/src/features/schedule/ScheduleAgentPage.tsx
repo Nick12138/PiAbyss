@@ -342,7 +342,7 @@ export function ScheduleAgentPage() {
                         <div className="whitespace-pre-wrap break-words">{message.text}</div>
                       }
                     >
-                      <MarkdownMessage content={message.text} mode="static" />
+                      <MarkdownMessage content={message.text} mode={running && index === messages.length - 1 ? "streaming" : "static"} showCaret={running && index === messages.length - 1} />
                     </Suspense>
                   </div>
                 )}
