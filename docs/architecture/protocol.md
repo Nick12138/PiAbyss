@@ -91,6 +91,36 @@ See `HOST_EVENT_NAMES` in `packages/protocol/src/events.ts`. Notable:
   transcript events.
 - `extensionUi.customStarted` / `customFrame` / `customClosed` — ui.custom() panels: the host runs a real pi-tui TUI over a virtual terminal (`packages/pi-host/src/virtual-terminal.ts`) and streams its ANSI output as frames; the desktop renders them in an xterm.js dock panel and feeds keyboard input back via `extensionUi.customInput`
 
+### Async git tasks (pull/push)
+
+`git.pull` / `git.push` are fire-and-forget. The Host validates identity, hands the
+work to `GitAsyncTaskRunner`, and returns `GitAsyncAccepted`
+(`{ accepted, taskId, workspaceCwd }`) immediately — the response never waits for the
+network. A second request for a workspace whose task is still running fails with
+`GIT_OPERATION_FAILED` (message contains "already running").
+
+The network phase deliberately runs **outside** `serviceGraphLock` (per-repository
+`RepoMutex` instead): holding the graph lock across a 30s fetch is what used to make
+`workspace.setCurrent` answer `SERVICE_GRAPH_BUSY` ("服务繁忙，请稍后重试"). The lock
+covers only acceptance and the short post-completion snapshot refresh.
+
+Exactly one `git.taskFinished` event is emitted per task, addressed to the requesting
+workspace identity:
+
+```ts
+{ taskId, operation: "pull" | "push", workspaceName, ok,
+  error?, errorKind?: "conflict" | "clean-worktree" | "network" | "auth" | "other",
+  snapshot? }
+```
+
+- `workspaceName` lets the desktop label the toast per workspace, so several
+  workspaces can pull/push in parallel and stay distinguishable.
+- Only the **currently active** workspace additionally receives `git.changed`; a parked
+  workspace gets `git.taskFinished` alone. A `git.changed` for a non-active workspace
+  would trip the desktop's identity guard and force a full epoch recovery.
+- The desktop keeps its pull/push spinner until the matching `taskId` finishes, not just
+  until the request is accepted.
+
 ### Assistant message streaming
 
 `agent.event` keeps `message_start.message` and `message_end.message` as the
@@ -138,4 +168,5 @@ Before requesting it, the desktop opens a bounded same-Host event buffer. It ins
 | session create | 30s |
 | session open | 180s (includes blocking extension startup UI) |
 | package mutation | Host: 10 min + 5s cancellation/reconcile; desktop: 10m15s |
+| `git.pull` / `git.push` acceptance | 15s (task itself: Host network timeout 30s; completion arrives as `git.taskFinished`) |
 | shutdown | Host cleanup: 8s; Rust force-kill boundary: 10s |

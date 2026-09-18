@@ -126,3 +126,38 @@ npx prettier --check <改动文件>
 - per-repo 串行用 `RepoMutex`，**不要**用全局锁代替，否则多工作区并行拉取会被互相阻塞。
 - parked 工作区**只发 `git.taskFinished`，不发 `git.changed`**——`git.changed` 会撞上前端 `handleHostEvent` 的身份守卫触发全量恢复（本会话已验证该约束，`cross-workspace-events.test.ts` 有对应用例）。
 - 前端 `git.taskFinished` 必须在 `handleHostEvent` 的放行规则里豁免，否则切走工作区后收到完成事件会 `markDesynchronized`。
+
+---
+
+## 10. 后续会话处理结果（2026-09-18 收尾）
+
+代码已随 `691c725` 一并提交（含 schedule WIP）。本次收尾处理了 §5 清单：
+
+| §5 条目 | 处理 |
+|---|---|
+| 1. spinner 追踪 | ✅ `ChangesPanel.tsx`：`operationState` + `networkTask{taskId,kind}`，`operation = operationState ?? networkTask?.kind ?? null`；受理后按 `taskId` 匹配 `git.taskFinished` 清除，另加 120s 安全超时（宿主网络超时 30s）。新增 DOM 测试覆盖「不同 taskId 不清除」「匹配后恢复」。 |
+| 2. 历史页空列表 | ✅ `ChangesPanel.tsx`：新增 `view === "history" && !historyLoaded` 的 effect，HEAD 变化后自动 `loadHistory(false)`；`historyInFlightRef` 同步去重（StrictMode/竞态）。新增 DOM 测试断言 HEAD 移动后 `git.listHistory` 调用 2 次。 |
+| 3. 两个既有失败 | ✅ 均已消失。`ScheduleAgentPage.tsx` 的 tsc 报错实为 `packages/protocol/dist` 陈旧（`git.taskFinished` 未编进 `dist/events.d.ts`），`npx tsc -p packages/protocol` 重建即通过——**dist 是构建产物，改协议后必须重建，否则 desktop typecheck 会假红**。`model-runtime-refresh.test.ts` 通过把 `schedule-agent-runner.ts` 改为经 `createHostAgentSession` + 宿主注入的 `ModelRuntime`（新增 `configureScheduleAgentRuntime`，`main.ts` 启动时调用）而修复：schedule 会话不再自建 runtime。pi-host 全量 924 通过 / 1 skip。 |
+| 4. 通知空格 | ✅ zh 模板去掉 `{workspace}` 后的空格（`{workspace}拉取成功` / `推送失败：` / `已提交` / `已切换到` / `已创建并切换到`），与需求示例「PiAbyss推送成功」一致。en 保留 `{workspace} pulled successfully` 等英文语序。 |
+| 5. 极端逐出丢通知 | 未处理（已知可接受）。 |
+| 6. 架构文档 | ✅ `docs/architecture/protocol.md` 新增 `### Async git tasks (pull/push)` 与超时表一行；`source-map.md` Desktop UI 表新增 Changes panel 行。 |
+
+另：`git stash` 中的 `pre-existing SchedulePage WIP` 已不在 stash 列表（`git stash list` 为空）。
+
+### 10.1 顺带修复的仓库门禁问题（均为 `691c725` 提交时遗留，非本次功能引入）
+
+`pnpm lint` 在 `691c725` 之后是红的（用 `git stash` 对 HEAD 复现确认），本次一并修好：
+
+- **knip 10 处未使用导出**：`SCHEDULE_DEFAULT_TIMEOUT_MS` / `SchedulePermissionValue` /
+  `SCHEDULE_INTERVAL_UNITS` / `buildTrigger`（schedule-model）、`SCHEDULE_PLUGIN_ID` /
+  `schedulePluginStatus`（schedule-plugin-gate）、`extractPlanDraft`（ScheduleAgentPage）、
+  `workspaceFilterLabel`（SchedulePage）、`classifyGitTaskError`（git-service）——
+  全部只在各自文件内使用，去掉 `export`；`SCHEDULE_INTERVAL_UNITS` 只被类型引用，直接
+  内联成 `ScheduleIntervalUnit` 字面量联合。
+- **`schedulePlanPreamble`（schedule-agent-flow）已死**：`691c725` 把提示词注入搬到宿主
+  （`schedule-agent-runner.ts` 内联），前端这份旧副本无人引用且内容已与宿主版本分叉，删除。
+- **2 处 ESLint 报错**：`ScheduleAgentPage.tsx` 的 `refresh` useCallback 补 `t` 依赖；
+  `protocol/contracts.ts` 删掉未使用的 `ScheduleAgentMessage` 导入。
+- **4 个 schedule 文件在 `691c725` 提交时未经 Prettier 格式化**（`format:check` 只看改动
+  文件，所以一直没暴露）；本次触碰后已 `prettier --write`，`ScheduleAgentPage.tsx` 因此
+  有约 113 行格式重排。

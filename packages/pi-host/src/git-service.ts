@@ -486,7 +486,7 @@ export type GitTaskOutcome = {
  * Classify a raw git error message so the UI can phrase a localized failure
  * notification without pattern-matching git output itself.
  */
-export function classifyGitTaskError(message: string): GitTaskOutcome["errorKind"] {
+function classifyGitTaskError(message: string): GitTaskOutcome["errorKind"] {
   if (
     /cannot pull with rebase|please commit or stash|local changes.*would be overwritten|your local changes/i.test(
       message,

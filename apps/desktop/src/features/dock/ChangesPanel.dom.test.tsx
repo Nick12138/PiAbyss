@@ -571,6 +571,144 @@ describe("ChangesPanel", () => {
     );
   });
 
+  it("keeps the push spinner until the accepted task reports git.taskFinished", async () => {
+    // No staged changes + ahead>0 renders the dedicated Push button.
+    const clean = status({
+      files: [
+        {
+          path: "src/app.ts",
+          staged: null,
+          unstaged: "modified",
+          conflict: false,
+          submodule: false,
+          pathSupported: true,
+        },
+      ],
+    });
+    request.mockImplementation(async (method) => {
+      if (method === "git.setWatching")
+        return success(method, { watching: true, snapshot: clean }) as never;
+      if (method === "git.push")
+        return success(method, {
+          accepted: true,
+          taskId: "task-1",
+          workspaceCwd: "/repo",
+        }) as never;
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+    render(<ChangesPanel visible />);
+
+    await user.click(await screen.findByRole("button", { name: "Push" }));
+
+    // The request resolved on acceptance, but the Host task is still running:
+    // the spinner must survive until the matching completion event arrives.
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith("git.push", expect.any(Object), null, 15_000),
+    );
+    expect(screen.getByRole("button", { name: /Pushing/ })).toBeDisabled();
+
+    // A different task's event must not clear this workspace's spinner.
+    act(() => {
+      publishValidatedHostEvent({
+        protocolVersion: 1,
+        event: "git.taskFinished",
+        hostInstanceId: host.hostInstanceId,
+        workspaceId: workspace.id,
+        workspaceRevision: workspace.revision,
+        sessionId: null,
+        sessionRevision: 0,
+        packageRevision: 0,
+        sequence: 1,
+        timestamp: Date.now(),
+        payload: {
+          taskId: "someone-else",
+          operation: "push",
+          workspaceName: "app",
+          ok: true,
+        },
+      } as never);
+    });
+    expect(screen.getByRole("button", { name: /Pushing/ })).toBeDisabled();
+
+    act(() => {
+      publishValidatedHostEvent({
+        protocolVersion: 1,
+        event: "git.taskFinished",
+        hostInstanceId: host.hostInstanceId,
+        workspaceId: workspace.id,
+        workspaceRevision: workspace.revision,
+        sessionId: null,
+        sessionRevision: 0,
+        packageRevision: 0,
+        sequence: 2,
+        timestamp: Date.now(),
+        payload: {
+          taskId: "task-1",
+          operation: "push",
+          workspaceName: "app",
+          ok: true,
+          snapshot: status({ revision: 8, ahead: 0 }),
+        },
+      } as never);
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /Pushing/ })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("reloads history when a pull moves HEAD while the History tab is open", async () => {
+    const before = {
+      sha: "a".repeat(40),
+      shortSha: "aaaaaaaa",
+      parents: [],
+      authorName: "PiAbyss Test",
+      authoredAt: "2026-08-02T12:00:00+08:00",
+      subject: "Before pull",
+      refs: ["HEAD -> main"],
+    };
+    const after = { ...before, sha: "b".repeat(40), shortSha: "bbbbbbbb", subject: "After pull" };
+    let historyCalls = 0;
+    request.mockImplementation(async (method) => {
+      if (method === "git.setWatching")
+        return success(method, { watching: true, snapshot: status() }) as never;
+      if (method === "git.listHistory") {
+        historyCalls += 1;
+        return success(method, {
+          commits: [historyCalls === 1 ? before : after],
+          nextCursor: null,
+        }) as never;
+      }
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+    render(<ChangesPanel visible />);
+
+    await user.click(await screen.findByRole("tab", { name: "History" }));
+    expect(await screen.findByRole("button", { name: "Open commit: Before pull" })).toBeVisible();
+
+    // The pull's git.changed brings a snapshot whose HEAD moved, which empties
+    // the list; the panel must re-fetch instead of showing an empty history.
+    act(() => {
+      publishValidatedHostEvent({
+        protocolVersion: 1,
+        event: "git.changed",
+        hostInstanceId: host.hostInstanceId,
+        workspaceId: workspace.id,
+        workspaceRevision: workspace.revision,
+        sessionId: null,
+        sessionRevision: 0,
+        packageRevision: 0,
+        sequence: 1,
+        timestamp: Date.now(),
+        payload: { snapshot: status({ revision: 8, headSha: "b".repeat(40), ahead: 0 }) },
+      } as never);
+    });
+
+    expect(await screen.findByRole("button", { name: "Open commit: After pull" })).toBeVisible();
+    expect(historyCalls).toBe(2);
+  });
+
   it("browses history and opens a first-parent commit diff", async () => {
     const commit = {
       sha: "f".repeat(40),

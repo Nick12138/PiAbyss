@@ -50,6 +50,7 @@ the current Windows development-candidate boundary follow
 | Session Catalog / runtime projection | `apps/desktop/src/lib/stores/session-catalog.ts` | `session-catalog.test.ts`, `app-store.test.ts` |
 | Chat | `apps/desktop/src/features/chat/` | `transcript-model.test.ts` (row build + stable-row reuse), `ExtensionPresentation.dom.test.tsx` (group continuity, Composer blocking/focus, large-option search/virtualization) |
 | Packages | `apps/desktop/src/features/packages/PackagesPage.tsx` | atomic mutation apply |
+| Changes panel / git | `apps/desktop/src/features/dock/ChangesPanel.tsx` (async pull/push spinner driven by `git.taskFinished`) | `ChangesPanel.dom.test.tsx` (spinner lifetime, HEAD-move history reload), `ChangesPanel.test.ts` |
 | Settings | `apps/desktop/src/features/settings/` | `SettingsPage.dom.test.tsx` (nav dirty guard, routing mode sync/rollback, Host split), `ProvidersSettings.dom.test.tsx` (dirty tracking, key-removal safety, number fields), `HostSettings.dom.test.tsx` (capabilities, restart confirm, agent-dir change) |
 | Shared confirm dialog | `apps/desktop/src/components/Dialog.tsx` (tones: default/warning/danger) | `Dialog.dom.test.tsx` (Escape containment, focus) |
 | Shared UI controls | `apps/desktop/src/components/Switch.tsx`, `SectionHeader.tsx` | via settings/packages DOM tests |

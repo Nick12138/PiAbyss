@@ -207,7 +207,16 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   const [selection, setSelection] = useState<DiffSelection | null>(null);
   const [diff, setDiff] = useState<GitDiffSnapshot | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
-  const [operation, setOperation] = useState<string | null>(null);
+  const [operationState, setOperation] = useState<string | null>(null);
+  // A pull/push accepted by the Host keeps running after the request returns,
+  // so the request window alone cannot drive the spinner. This tracks the
+  // accepted task until its matching git.taskFinished arrives.
+  const [networkTask, setNetworkTask] = useState<{ taskId: string; kind: "pull" | "push" } | null>(
+    null,
+  );
+  // Any in-flight git operation: the synchronous request window, or an accepted
+  // background pull/push still running in the Host.
+  const operation = operationState ?? networkTask?.kind ?? null;
   const [commitMessage, setCommitMessage] = useState("");
   const [generatingMessage, setGeneratingMessage] = useState(false);
   const [commitSha, setCommitSha] = useState<string | null>(null);
@@ -228,6 +237,10 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   // result, manual refresh, git.changed event). Used to skip diff reloads for
   // snapshots we already applied ourselves.
   const appliedRevisionRef = useRef(0);
+  // Synchronous in-flight guard for history loads: `historyLoading` state lags
+  // a same-tick second call (StrictMode double effects, tab click racing the
+  // HEAD-move reload).
+  const historyInFlightRef = useRef(false);
   const workspaceKey =
     host && workspace ? `${host.hostInstanceId}:${workspace.id}:${workspace.revision}` : "none";
   // workspaceContext() reads only hostInstanceId/workspaceId/workspaceRevision
@@ -270,6 +283,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
     setDiff(null);
     setDiffLoading(false);
     setOperation(null);
+    setNetworkTask(null);
     setCommitMessage("");
     setGeneratingMessage(false);
     setCommitSha(null);
@@ -400,6 +414,25 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
     [acceptSnapshot, gitWatchContext, visible, selection, diff, reloadDiffQuietly],
   );
 
+  // Hold the pull/push spinner for the whole task, not just the request that
+  // accepted it. The event is addressed to the requesting workspace identity,
+  // so it reaches this subscription as long as the user stays on it.
+  useEffect(() => {
+    if (!gitWatchContext || !networkTask) return;
+    const taskId = networkTask.taskId;
+    return subscribeValidatedHostEvent("git.taskFinished", gitWatchContext, (event) => {
+      if (event.payload.taskId === taskId) setNetworkTask(null);
+    });
+  }, [gitWatchContext, networkTask]);
+
+  // Safety net: if the Host restarts mid-task the event never arrives. The
+  // Host's own network timeout is 30s, so anything past this is stale.
+  useEffect(() => {
+    if (!networkTask) return;
+    const timer = window.setTimeout(() => setNetworkTask(null), 120_000);
+    return () => window.clearTimeout(timer);
+  }, [networkTask]);
+
   const ready = snapshot?.state === "ready" ? snapshot : null;
   const rows = useMemo(() => (ready ? buildGitListRows(ready) : []), [ready]);
   const virtualizer = useVirtualizer({
@@ -444,7 +477,8 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   };
 
   const loadHistory = async (append = false) => {
-    if (!host || !workspace || historyLoading) return;
+    if (!host || !workspace || historyLoading || historyInFlightRef.current) return;
+    historyInFlightRef.current = true;
     const requestGeneration = generation.current;
     setHistoryLoading(true);
     setError(null);
@@ -470,9 +504,22 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
         setError(requestError instanceof Error ? requestError.message : t("gitHistoryFailed"));
       }
     } finally {
+      historyInFlightRef.current = false;
       if (requestGeneration === generation.current) setHistoryLoading(false);
     }
   };
+
+  // A pull or branch switch moves HEAD, which empties the history list above.
+  // If the user is sitting on the History tab, re-fetch instead of leaving an
+  // empty panel behind (the old synchronous pull reloaded history explicitly).
+  useEffect(() => {
+    if (view !== "history" || historyLoaded) return;
+    if (historyHeadKey === "none") return;
+    void loadHistory(false);
+    // loadHistory is re-created every render; the guards above keep this from
+    // looping, and historyInFlightRef de-dupes a same-tick second call.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, historyHeadKey, historyLoaded]);
 
   const loadCommitDiff = async (commit: GitCommitSummary) => {
     if (!host || !workspace) return;
@@ -879,7 +926,9 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
       }
       // Accepted — the task keeps running in the Host. Its snapshot side
       // effects arrive via git.changed; its outcome notification is emitted by
-      // the git.taskFinished handler in App.tsx.
+      // the git.taskFinished handler in App.tsx. Track the taskId so the
+      // spinner survives until the task actually finishes.
+      setNetworkTask({ taskId: response.result.taskId, kind });
     } catch (requestError) {
       if (requestGeneration === generation.current) {
         setError(
