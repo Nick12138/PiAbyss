@@ -711,7 +711,6 @@ function PendingCard({
   const t = useT();
   return (
     <div className="flex items-center gap-2 rounded-lg border border-dashed border-border bg-surface/60 py-2 pl-3 pr-2">
-      <Hourglass size={13} className="shrink-0 text-warning" aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate text-sm font-medium" title={entry.title}>
         {entry.title}
       </span>
@@ -780,14 +779,13 @@ function JobCard({
         <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-accent" aria-hidden />
       )}
 
-      {/* Row 1: state dot + name + enable switch. */}
+      {/* Row 1: name + enable switch (no leading glyph). */}
       <div className="flex items-center gap-2">
         <span
           className={`size-1.5 shrink-0 rounded-full ${
             running ? "animate-pulse bg-accent" : job.enabled ? "bg-success" : "bg-border"
           }`}
         />
-        {job.command && <Terminal size={12} className="shrink-0 text-muted" aria-hidden="true" />}
         <span className="min-w-0 flex-1 truncate text-sm font-medium leading-5">
           {job.name || t("scheduleUntitledJob")}
         </span>

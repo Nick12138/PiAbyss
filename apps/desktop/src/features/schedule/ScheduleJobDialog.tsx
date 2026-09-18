@@ -43,7 +43,8 @@ const CWD_OPEN_VALUE = "__open__";
 const fieldClass =
   "box-border w-full rounded-md border border-border bg-surface px-2.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted focus:border-focus";
 const inputClass = `${fieldClass} interface-density-control`;
-const textareaClass = `${fieldClass} py-1.5 leading-5`;
+const textareaClass =
+  "box-border w-full rounded-md border border-border bg-surface px-2.5 text-[12px] text-foreground outline-none transition-colors placeholder:text-muted focus:border-focus py-1.5 leading-[1.7]";
 
 /** Section wrapper: a labelled block with an optional one-line description. */
 function FormSection({
