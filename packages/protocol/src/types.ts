@@ -272,6 +272,32 @@ export type GitMutationResult = {
   warning?: string;
 };
 
+/**
+ * Acknowledgement for asynchronous git mutations (pull/push). The request
+ * returns immediately; the actual result arrives later via the
+ * `git.taskFinished` event carrying the same `taskId`.
+ */
+export type GitAsyncAccepted = {
+  accepted: true;
+  taskId: string;
+  /** Absolute workspace path the task runs against (from the graph's canonical cwd). */
+  workspaceCwd: string;
+};
+
+/** Outcome of one asynchronous git task, emitted to the requesting workspace identity. */
+export type GitTaskFinishedPayload = {
+  taskId: string;
+  /** "pull" or "push" — enough for the UI to phrase the notification. */
+  operation: "pull" | "push";
+  /** Human-readable workspace label (canonical cwd basename). */
+  workspaceName: string;
+  ok: boolean;
+  /** User-facing failure message when `ok` is false (already localized server-side? no — raw git error). */
+  error?: string;
+  errorKind?: "conflict" | "clean-worktree" | "network" | "auth" | "other";
+  snapshot?: GitStatusSnapshot;
+};
+
 export type GitCommitResult = GitMutationResult & {
   commitSha: string | null;
 };
@@ -1562,6 +1588,18 @@ export type ScheduleHealth = {
 export type ScheduleAgentMessage = {
   role: string;
   text: string;
+};
+
+/** schedule.agentList 结果中的单个智能创建会话摘要。 */
+export type ScheduleAgentSessionSummary = {
+  sessionId: string;
+  sessionPath: string;
+  /** 会话首条用户消息中的需求正文（已剥去注入的 preamble）。 */
+  title: string;
+  /** 会话文件修改时间（ISO）。 */
+  updatedAt: string;
+  /** 是否仍在宿主内存中（可继续 agentSend；否则走 agentContinue）。 */
+  resident: boolean;
 };
 
 /** schedule.agentState 结果：会话不在宿主内存时 found=false。 */

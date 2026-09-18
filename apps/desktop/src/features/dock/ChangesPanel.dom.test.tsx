@@ -270,7 +270,7 @@ describe("ChangesPanel", () => {
         65_000,
       ),
     );
-    expect(await screen.findByText("Committed deadbeef")).toBeVisible();
+    expect(await screen.findByText("desktop: committed deadbeef")).toBeVisible();
     expect(screen.getByText("No changes")).toBeVisible();
   });
 

@@ -2061,14 +2061,53 @@ function isGitMutationResult(value: unknown, commit: boolean): boolean {
   );
 }
 
+function isGitAsyncAccepted(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["accepted", "taskId", "workspaceCwd"]) &&
+    value.accepted === true &&
+    isString(value.taskId) &&
+    value.taskId.length > 0 &&
+    isString(value.workspaceCwd) &&
+    value.workspaceCwd.length > 0
+  );
+}
+
+function isGitTaskFinishedPayload(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      ["taskId", "operation", "workspaceName", "ok"],
+      ["error", "errorKind", "snapshot"],
+    ) &&
+    isString(value.taskId) &&
+    value.taskId.length > 0 &&
+    (value.operation === "pull" || value.operation === "push") &&
+    isString(value.workspaceName) &&
+    value.workspaceName.length > 0 &&
+    value.ok === true &&
+    (value.error === undefined || isString(value.error)) &&
+    (value.errorKind === undefined ||
+      value.errorKind === "conflict" ||
+      value.errorKind === "clean-worktree" ||
+      value.errorKind === "network" ||
+      value.errorKind === "auth" ||
+      value.errorKind === "other") &&
+    (value.snapshot === undefined || isGitStatusSnapshot(value.snapshot))
+  );
+}
+
 /* ── Schedule（pi-schedule）result helpers ─────────────── */
 
 function isScheduleModelRef(value: unknown): boolean {
-  return isPlainObject(value) &&
+  return (
+    isPlainObject(value) &&
     hasExactKeys(value, ["provider", "id"], ["thinkingLevel"]) &&
     isString(value.provider) &&
     isString(value.id) &&
-    (value.thinkingLevel === undefined || isString(value.thinkingLevel));
+    (value.thinkingLevel === undefined || isString(value.thinkingLevel))
+  );
 }
 
 function isScheduleTrigger(value: unknown): boolean {
@@ -2081,9 +2120,11 @@ function isScheduleTrigger(value: unknown): boolean {
     case "interval":
       return hasExactKeys(value, ["type", "every"]) && isString(value.every);
     case "cron":
-      return hasExactKeys(value, ["type", "cron"], ["timezone"]) &&
+      return (
+        hasExactKeys(value, ["type", "cron"], ["timezone"]) &&
         isString(value.cron) &&
-        (value.timezone === undefined || isString(value.timezone));
+        (value.timezone === undefined || isString(value.timezone))
+      );
     default:
       return false;
   }
@@ -2094,7 +2135,8 @@ function isSchedulePermission(value: unknown): boolean {
 }
 
 function isScheduleUsage(value: unknown): boolean {
-  return isPlainObject(value) &&
+  return (
+    isPlainObject(value) &&
     hasExactKeys(value, ["input", "output", "total", "cost"]) &&
     typeof value.input === "number" &&
     Number.isFinite(value.input) &&
@@ -2103,7 +2145,8 @@ function isScheduleUsage(value: unknown): boolean {
     typeof value.total === "number" &&
     Number.isFinite(value.total) &&
     typeof value.cost === "number" &&
-    Number.isFinite(value.cost);
+    Number.isFinite(value.cost)
+  );
 }
 
 function isScheduleIsoOrNull(value: unknown): boolean {
@@ -2112,9 +2155,8 @@ function isScheduleIsoOrNull(value: unknown): boolean {
 
 function isScheduleJob(value: unknown): boolean {
   if (!isPlainObject(value)) return false;
-  return hasExactKeys(
-    value,
-    [
+  return (
+    hasExactKeys(value, [
       "id",
       "name",
       "prompt",
@@ -2138,8 +2180,7 @@ function isScheduleJob(value: unknown): boolean {
       "lastStatus",
       "runCount",
       "terminated",
-    ],
-  ) &&
+    ]) &&
     isString(value.id) &&
     isString(value.name) &&
     isString(value.prompt) &&
@@ -2174,14 +2215,14 @@ function isScheduleJob(value: unknown): boolean {
     (value.notify === undefined ||
       value.notify === "none" ||
       value.notify === "system" ||
-      value.notify === "tg");
+      value.notify === "tg")
+  );
 }
 
 function isScheduleRunSummary(value: unknown): boolean {
   if (!isPlainObject(value)) return false;
-  return hasExactKeys(
-    value,
-    [
+  return (
+    hasExactKeys(value, [
       "runId",
       "jobId",
       "jobName",
@@ -2197,8 +2238,7 @@ function isScheduleRunSummary(value: unknown): boolean {
       "error",
       "usage",
       "toolCalls",
-    ],
-  ) &&
+    ]) &&
     isString(value.runId) &&
     isString(value.jobId) &&
     isString(value.jobName) &&
@@ -2214,20 +2254,24 @@ function isScheduleRunSummary(value: unknown): boolean {
     isString(value.summary) &&
     (value.error === null || isString(value.error)) &&
     (value.usage === null || isScheduleUsage(value.usage)) &&
-    isSafeRevision(value.toolCalls);
+    isSafeRevision(value.toolCalls)
+  );
 }
 
 function isScheduleTranscriptEntry(value: unknown): boolean {
-  return isPlainObject(value) &&
+  return (
+    isPlainObject(value) &&
     hasExactKeys(value, ["id", "role", "text"], ["at"]) &&
     isString(value.id) &&
     isString(value.role) &&
     isString(value.text) &&
-    (value.at === undefined || isString(value.at));
+    (value.at === undefined || isString(value.at))
+  );
 }
 
 function isScheduleNotification(value: unknown): boolean {
-  return isPlainObject(value) &&
+  return (
+    isPlainObject(value) &&
     hasExactKeys(value, [
       "at",
       "jobId",
@@ -2245,18 +2289,35 @@ function isScheduleNotification(value: unknown): boolean {
     isString(value.status) &&
     (value.level === "info" || value.level === "error") &&
     isString(value.title) &&
-    isString(value.message);
+    isString(value.message)
+  );
 }
 
 function isScheduleAgentMessage(value: unknown): boolean {
-  return isPlainObject(value) &&
+  return (
+    isPlainObject(value) &&
     hasExactKeys(value, ["role", "text"]) &&
     isString(value.role) &&
-    isString(value.text);
+    isString(value.text)
+  );
+}
+
+function isScheduleAgentSessionSummary(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["sessionId", "sessionPath", "title", "updatedAt", "resident"]) &&
+    isString(value.sessionId) &&
+    value.sessionId.length > 0 &&
+    isString(value.sessionPath) &&
+    isString(value.title) &&
+    isString(value.updatedAt) &&
+    typeof value.resident === "boolean"
+  );
 }
 
 function isScheduleHealth(value: unknown): boolean {
-  return isPlainObject(value) &&
+  return (
+    isPlainObject(value) &&
     hasExactKeys(value, ["ok", "root", "port", "activeJobs", "tickMs", "maxConcurrent"]) &&
     isBoolean(value.ok) &&
     isString(value.root) &&
@@ -2264,7 +2325,8 @@ function isScheduleHealth(value: unknown): boolean {
     Array.isArray(value.activeJobs) &&
     value.activeJobs.every((id) => isString(id)) &&
     isSafeRevision(value.tickMs) &&
-    isSafeRevision(value.maxConcurrent);
+    isSafeRevision(value.maxConcurrent)
+  );
 }
 
 export function validateMethodResultShape(method: HostMethod, result: unknown): string | null {
@@ -2483,8 +2545,10 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
     case "git.unstage":
     case "git.unstageAll":
     case "git.discard":
+      return isGitMutationResult(result, false) ? null : `invalid ${method} result`;
     case "git.push":
     case "git.pull":
+      return isGitAsyncAccepted(result) ? null : `invalid ${method} result`;
     case "git.createBranch":
     case "git.switchBranch":
       return isGitMutationResult(result, false) ? null : `invalid ${method} result`;
@@ -2930,12 +2994,26 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         isString(result.sessionPath)
         ? null
         : "invalid schedule.agentStart result";
+    case "schedule.agentList":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["sessions"]) &&
+        Array.isArray(result.sessions) &&
+        result.sessions.every(isScheduleAgentSessionSummary)
+        ? null
+        : "invalid schedule.agentList result";
     case "schedule.agentSend":
-    case "schedule.agentContinue":
       return isPlainObject(result) &&
         hasExactKeys(result, ["sessionId"]) &&
         isString(result.sessionId) &&
         result.sessionId.length > 0
+        ? null
+        : "invalid schedule.agent session result";
+    case "schedule.agentContinue":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["sessionId", "sessionPath"]) &&
+        isString(result.sessionId) &&
+        result.sessionId.length > 0 &&
+        isString(result.sessionPath)
         ? null
         : "invalid schedule.agent session result";
     case "schedule.agentState":
@@ -2957,9 +3035,7 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         ? null
         : "invalid schedule.agentTranscript result";
     case "schedule.agentAbort":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["ok"]) &&
-        isBoolean(result.ok)
+      return isPlainObject(result) && hasExactKeys(result, ["ok"]) && isBoolean(result.ok)
         ? null
         : "invalid schedule.agentAbort result";
     case "model.list":
@@ -3075,6 +3151,8 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
         isGitStatusSnapshot(payload.snapshot)
         ? null
         : "invalid git.changed payload";
+    case "git.taskFinished":
+      return isGitTaskFinishedPayload(payload) ? null : "invalid git.taskFinished payload";
     case "attachment.changed":
       return isPlainObject(payload) &&
         hasExactKeys(payload, ["attachment"]) &&

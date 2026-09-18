@@ -436,6 +436,79 @@ function safeGitMessage(message: string, fallback: string): string {
 
 type ParsedGitDiffHunk = GitDiffHunk & { patch: string };
 
+/**
+ * Per-repository serialization for the network phase of async git tasks
+ * (pull/push). Unlike the host-wide serviceGraphLock this does NOT block
+ * workspace switches, session opens, or other graph mutations — it only
+ * guarantees that two git network operations never target the same repo
+ * concurrently. Different repositories can pull/push at the same time.
+ */
+export class RepoMutex {
+  private locked = new Set<string>();
+  private waiters: Array<{ key: string; resolve: () => void }> = [];
+
+  private static keyFor(workspace: string): string {
+    return process.platform === "win32" ? win32.normalize(workspace).toLowerCase() : workspace;
+  }
+
+  async acquire(workspace: string): Promise<() => void> {
+    const key = RepoMutex.keyFor(workspace);
+    if (!this.locked.has(key)) {
+      this.locked.add(key);
+      return () => this.releaseKey(key);
+    }
+    return new Promise((resolve) => {
+      this.waiters.push({ key, resolve: () => resolve(() => this.releaseKey(key)) });
+    });
+  }
+
+  private releaseKey(key: string): void {
+    if (!this.locked.delete(key)) return;
+    const index = this.waiters.findIndex((waiter) => waiter.key === key);
+    if (index < 0) return;
+    const waiter = this.waiters.splice(index, 1)[0];
+    if (!waiter) return;
+    this.locked.add(key);
+    waiter.resolve();
+  }
+}
+
+export type GitTaskKind = "pull" | "push";
+
+export type GitTaskOutcome = {
+  ok: boolean;
+  snapshot?: GitStatusSnapshot;
+  error?: string;
+  errorKind?: "conflict" | "clean-worktree" | "network" | "auth" | "other";
+};
+
+/**
+ * Classify a raw git error message so the UI can phrase a localized failure
+ * notification without pattern-matching git output itself.
+ */
+export function classifyGitTaskError(message: string): GitTaskOutcome["errorKind"] {
+  if (
+    /cannot pull with rebase|please commit or stash|local changes.*would be overwritten|your local changes/i.test(
+      message,
+    )
+  ) {
+    return "clean-worktree";
+  }
+  if (/conflict|failed to merge|automatic merge failed|needs merge/i.test(message)) {
+    return "conflict";
+  }
+  if (
+    /rejected|non-fast-forward|fetch first|cannot lock ref|permission.*denied|authentication|could not read from remote|ssl|timed out|connection|host/i.test(
+      message,
+    )
+  ) {
+    return /authentication|permission.*denied|could not read from remote/i.test(message)
+      ? "auth"
+      : "network";
+  }
+  return "other";
+}
+
 function countPatchChanges(patch: string): { additions: number; deletions: number } {
   let additions = 0;
   let deletions = 0;
@@ -510,6 +583,11 @@ export class GitService {
   private runWatchStatus: (() => void) | null = null;
 
   constructor(private readonly executable = bundledGitExecutable() ?? "git") {}
+
+  /** Bundled/system git executable path, for background task runners. */
+  get gitExecutable(): string {
+    return this.executable;
+  }
 
   async getStatus(workspace: string, signal?: AbortSignal): Promise<GitStatusSnapshot> {
     const key = process.platform === "win32" ? win32.normalize(workspace).toLowerCase() : workspace;
@@ -1132,6 +1210,69 @@ export class GitService {
     }
     const snapshot = await this.getStatus(workspace, signal);
     return { applied: true, snapshot };
+  }
+
+  /** Synchronous (graph-locked) pull/push used only when the async runner is not wired. */
+  syncNetworkMutation(kind: "pull" | "push", workspace: string, signal?: AbortSignal) {
+    return kind === "pull" ? this.pull(workspace, signal) : this.push(workspace, signal);
+  }
+
+  /**
+   * Network phase of the async pull/push task — runs WITHOUT the global
+   * serviceGraphLock so workspace switches are never blocked behind it.
+   * Concurrency safety is per-repository via `repoMutex`. Returns a classified
+   * outcome instead of throwing; the final status refresh happens on the
+   * caller side under the graph lock.
+   */
+  static async runNetworkTask(
+    service: Pick<GitService, "getStatus">,
+    repoMutex: RepoMutex,
+    kind: GitTaskKind,
+    workspace: string,
+    executable: string,
+    signal?: AbortSignal,
+  ): Promise<GitTaskOutcome> {
+    const release = await repoMutex.acquire(workspace);
+    try {
+      const status = service.getStatus(workspace, signal);
+      const readyStatus = this.requireReadyStatic(await status);
+      const result = await runGitCommand(executable, {
+        cwd: readyStatus.repositoryRoot,
+        args: kind === "pull" ? ["pull", "--rebase"] : ["push"],
+        timeoutMs: GIT_MUTATION_TIMEOUT_MS,
+        maxStdoutBytes: GIT_MUTATION_OUTPUT_LIMIT_BYTES,
+        truncateStdout: true,
+        signal,
+      });
+      if (result.exitCode !== 0) {
+        const message = safeGitMessage(
+          result.stderr || result.stdout.toString("utf8"),
+          kind === "pull" ? "Git pull failed" : "Git push failed",
+        );
+        return { ok: false, error: message, errorKind: classifyGitTaskError(message) };
+      }
+      return { ok: true, snapshot: await service.getStatus(workspace, signal) };
+    } catch (error) {
+      if (signal?.aborted) {
+        return { ok: false, error: "Git task aborted", errorKind: "other" };
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: message, errorKind: classifyGitTaskError(message) };
+    } finally {
+      release();
+    }
+  }
+
+  private static requireReadyStatic(
+    snapshot: GitStatusSnapshot,
+  ): Extract<GitStatusSnapshot, { state: "ready" }> {
+    if (snapshot.state === "ready") return snapshot;
+    throw new GitServiceError(
+      snapshot.state === "unavailable" ? "GIT_UNAVAILABLE" : "GIT_OPERATION_FAILED",
+      snapshot.state === "not_repository"
+        ? "The workspace is not in a Git repository"
+        : snapshot.message,
+    );
   }
 
   async listHistory(

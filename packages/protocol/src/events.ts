@@ -5,6 +5,7 @@ export const HOST_EVENT_NAMES = [
   "workspace.changed",
   "workspace.filesChanged",
   "git.changed",
+  "git.taskFinished",
   "attachment.changed",
   "session.snapshot",
   "session.infoChanged",

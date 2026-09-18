@@ -274,6 +274,13 @@ export function handleHostEvent(
   const parkedToastEvent =
     boundParkedWorkspace &&
     (event.event === "extensionUi.notification" || event.event === "package.diagnostic");
+  // Async git task results (pull/push) are addressed to the workspace that
+  // requested them — which may now be parked after the user switched away.
+  // They are user-facing toasts plus optional snapshot deliveries, never an
+  // epoch-level identity mismatch.
+  const gitTaskEvent =
+    event.event === "git.taskFinished" &&
+    (event.workspaceId === activeWorkspaceId || boundParkedWorkspace);
   // Session-scoped Extension UI surface state is only ever applied to the
   // active session (see the guards in the switch below), so surface events
   // arriving for any other session — a parked workspace's session, or a
@@ -294,6 +301,7 @@ export function handleHostEvent(
   if (
     !parkedWorkspaceEvent &&
     !parkedToastEvent &&
+    !gitTaskEvent &&
     !foreignSessionSurfaceEvent &&
     !lifecycleEvent &&
     !hostClient.shouldAcceptEvent(
@@ -522,6 +530,44 @@ export function handleHostEvent(
     case "extensionUi.notification":
       store.pushNotification(event.payload.message ?? "", event.payload.level ?? "info");
       break;
+    case "git.taskFinished": {
+      // Outcome of an async pull/push. The payload carries the workspace name
+      // so notifications stay distinguishable when several workspaces pull or
+      // push in parallel.
+      const { payload } = event;
+      if (payload.ok) {
+        const message =
+          payload.operation === "pull"
+            ? tCurrent("gitPullSuccessNamed", { workspace: payload.workspaceName })
+            : tCurrent("gitPushSuccessNamed", { workspace: payload.workspaceName });
+        store.pushNotification(message, "success");
+      } else {
+        const kindKey =
+          payload.errorKind === "conflict"
+            ? "gitTaskFailedConflict"
+            : payload.errorKind === "clean-worktree"
+              ? "gitTaskFailedCleanWorktree"
+              : payload.errorKind === "network"
+                ? "gitTaskFailedNetwork"
+                : payload.errorKind === "auth"
+                  ? "gitTaskFailedAuth"
+                  : null;
+        const detail = kindKey ? tCurrent(kindKey) : (payload.error ?? "");
+        const message =
+          payload.operation === "pull"
+            ? tCurrent("gitPullFailedNamed", { workspace: payload.workspaceName, detail })
+            : tCurrent("gitPushFailedNamed", { workspace: payload.workspaceName, detail });
+        store.pushNotification(message, "error");
+      }
+      if (payload.snapshot && event.workspaceId === activeWorkspaceId) {
+        publishValidatedHostEvent({
+          ...event,
+          event: "git.changed",
+          payload: { snapshot: payload.snapshot },
+        });
+      }
+      break;
+    }
     case "extensionUi.customStarted":
       if (!event.sessionId) {
         requestRecovery("extensionUi.customStarted missing session identity");

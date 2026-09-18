@@ -136,6 +136,7 @@ export const HOST_METHODS = [
   "schedule.validateCron",
   "schedule.listNotifications",
   "schedule.agentStart",
+  "schedule.agentList",
   "schedule.agentSend",
   "schedule.agentContinue",
   "schedule.agentState",
@@ -232,6 +233,7 @@ export type HostOnlyMethod =
   | "schedule.validateCron"
   | "schedule.listNotifications"
   | "schedule.agentStart"
+  | "schedule.agentList"
   | "schedule.agentSend"
   | "schedule.agentContinue"
   | "schedule.agentState"
@@ -492,6 +494,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "schedule.validateCron": "host",
   "schedule.listNotifications": "host",
   "schedule.agentStart": "host",
+  "schedule.agentList": "host",
   "schedule.agentSend": "host",
   "schedule.agentContinue": "host",
   "schedule.agentState": "host",

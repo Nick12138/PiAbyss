@@ -7,6 +7,7 @@ import {
   type OpenAICompletionsCompat,
 } from "@earendil-works/pi-ai/compat";
 import { GitService, GitServiceError } from "./git-service.js";
+import { GitAsyncTaskRunner } from "./git-async-tasks.js";
 import { withRegisteredGraphMutation } from "./registered-graph-mutation.js";
 import type { MethodHandler } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
@@ -161,6 +162,7 @@ function fallbackCommitMessage(patch: string): string {
 export function createGitHandlers(
   factory: WorkspaceGraphFactory,
   service: GitService,
+  asyncTasks?: GitAsyncTaskRunner,
 ): Partial<Record<string, MethodHandler>> {
   const emitSnapshot = (snapshot: GitStatusSnapshot) => {
     factory.getServer()?.emit("git.changed", { snapshot });
@@ -495,10 +497,10 @@ export function createGitHandlers(
     },
 
     "git.push": async (ctx) =>
-      mutateGit(factory, ctx, (root, signal) => service.push(root, signal), emitSnapshot),
+      asyncGitTask(factory, ctx, asyncTasks, service, "push", emitSnapshot),
 
     "git.pull": async (ctx) =>
-      mutateGit(factory, ctx, (root, signal) => service.pull(root, signal), emitSnapshot),
+      asyncGitTask(factory, ctx, asyncTasks, service, "pull", emitSnapshot),
 
     "git.createBranch": async (ctx) =>
       mutateGit(
@@ -537,7 +539,6 @@ async function mutateGit(
   if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
   const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
   if (stale) return { error: stale };
-
   try {
     return await withRegisteredGraphMutation({
       server,
@@ -560,4 +561,60 @@ async function mutateGit(
   } catch (error) {
     return { error: hostError(error) };
   }
+}
+
+/**
+ * Pull/push as fire-and-forget background tasks. The handler keeps the
+ * serviceGraphLock only long enough to capture the workspace identity and run
+ * the pre-flight clean-worktree check, then returns `GitAsyncAccepted`.
+ * The network phase runs without the graph lock (per-repo serialized), so a
+ * slow remote never blocks workspace switches or other graph mutations. The
+ * outcome arrives via the `git.taskFinished` event carrying the workspace
+ * name, so pull/push notifications stay identifiable across workspaces.
+ */
+async function asyncGitTask(
+  factory: WorkspaceGraphFactory,
+  ctx: Parameters<MethodHandler>[0],
+  asyncTasks: GitAsyncTaskRunner | undefined,
+  service: GitService,
+  kind: "pull" | "push",
+  emitSnapshot: (snapshot: GitStatusSnapshot) => void,
+) {
+  if (!asyncTasks) {
+    // Legacy fallback (runner not wired): behave like before.
+    return mutateGit(
+      factory,
+      ctx,
+      (root, signal) => service.syncNetworkMutation(kind, root, signal),
+      emitSnapshot,
+    );
+  }
+  const server = factory.getServer();
+  if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
+  const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+  if (stale) return { error: stale };
+  return withRegisteredGraphMutation({
+    server,
+    operationKind: "git.mutation",
+    requestId: ctx.id,
+    run: async () => {
+      const staleAfterLock = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+      if (staleAfterLock) return { error: staleAfterLock };
+      const graph = factory.getGraph();
+      if (!graph) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
+      const started = asyncTasks.start({
+        kind,
+        workspaceCwd: graph.canonicalCwd,
+        identity: server.getIdentity(),
+      });
+      if ("error" in started) return { error: started.error };
+      return {
+        result: {
+          accepted: true as const,
+          taskId: started.taskId,
+          workspaceCwd: graph.canonicalCwd,
+        },
+      };
+    },
+  });
 }

@@ -10,11 +10,9 @@ export type ScheduleAgentState = {
   /** The smart-creation session currently driving the agent page. */
   sessionId: string | null;
   sessionPath: string | null;
-  /** Pending-entry id when the session was reopened from the backlog. */
-  pendingId: string | null;
-  /** Set after the plan was confirmed & created (suppresses backlog write). */
+  /** Set after the plan was confirmed & created (hides it from the backlog). */
   created: boolean;
-  start: (input: { sessionId: string | null; sessionPath: string | null; pendingId?: string | null }) => void;
+  start: (input: { sessionId: string | null; sessionPath: string | null }) => void;
   setSession: (input: { sessionId: string; sessionPath: string }) => void;
   markCreated: () => void;
   finish: () => void;
@@ -23,69 +21,49 @@ export type ScheduleAgentState = {
 export const useScheduleAgentStore = create<ScheduleAgentState>((set) => ({
   sessionId: null,
   sessionPath: null,
-  pendingId: null,
   created: false,
-  start: ({ sessionId, sessionPath, pendingId = null }) =>
-    set({ sessionId, sessionPath, pendingId, created: false }),
+  start: ({ sessionId, sessionPath }) => set({ sessionId, sessionPath, created: false }),
   setSession: ({ sessionId, sessionPath }) => set({ sessionId, sessionPath }),
   markCreated: () => set({ created: true }),
-  finish: () => set({ sessionId: null, sessionPath: null, pendingId: null, created: false }),
+  finish: () => set({ sessionId: null, sessionPath: null, created: false }),
 }));
 
-/* ── Backlog（待办）：unfinished smart-creation sessions ─────────── */
+/* ── Backlog（待办）───────────────────────────────────────────────
+ *
+ * The list itself comes from the Host (schedule.agentList scans the
+ * agent-sessions directory), so a session is never lost just because the user
+ * left the page some other way. The frontend only remembers which sessions
+ * the user already handled (confirmed into a plan, or dismissed manually):
+ * those are filtered out of the list.
+ *
+ * This replaces the old localStorage-only backlog, which was written solely
+ * by the agent page's back button and therefore silently dropped every
+ * session the user left through another path.
+ */
 
-export type ScheduleAgentPending = {
-  /** Stable key; also the localStorage index. */
-  id: string;
-  /** The schedule-agent session id (host-resident while the host lives). */
-  sessionId: string;
-  /** Persisted transcript file under the schedule root. */
-  sessionPath: string;
-  name: string;
-  createdAt: string;
-};
+const HANDLED_KEY = "piabyss.schedule.agentHandled.v1";
 
-const PENDING_KEY = "piabyss.schedule.agentPending.v1";
-
-export function listAgentPending(): ScheduleAgentPending[] {
+/** Session paths the user has confirmed or dismissed. */
+export function listHandledAgentSessions(): string[] {
   try {
-    const raw = globalThis.localStorage?.getItem(PENDING_KEY);
+    const raw = globalThis.localStorage?.getItem(HANDLED_KEY);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (item): item is ScheduleAgentPending =>
-        typeof item === "object" &&
-        item !== null &&
-        typeof (item as ScheduleAgentPending).id === "string" &&
-        typeof (item as ScheduleAgentPending).sessionPath === "string" &&
-        typeof (item as ScheduleAgentPending).sessionId === "string",
-    );
+    return parsed.filter((item): item is string => typeof item === "string");
   } catch {
     return [];
   }
 }
 
-export function addAgentPending(entry: Omit<ScheduleAgentPending, "id" | "createdAt">): void {
-  const list = listAgentPending().filter(
-    (item) => item.sessionPath !== entry.sessionPath,
-  );
-  list.push({
-    ...entry,
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    createdAt: new Date().toISOString(),
-  });
+/** Mark a session as handled so it leaves the backlog. Idempotent. */
+export function markAgentSessionHandled(sessionPath: string): void {
+  if (!sessionPath) return;
+  const list = listHandledAgentSessions();
+  if (list.includes(sessionPath)) return;
+  list.push(sessionPath);
   try {
-    globalThis.localStorage?.setItem(PENDING_KEY, JSON.stringify(list));
-  } catch {
-    /* unavailable */
-  }
-}
-
-export function removeAgentPending(id: string): void {
-  const list = listAgentPending().filter((item) => item.id !== id);
-  try {
-    globalThis.localStorage?.setItem(PENDING_KEY, JSON.stringify(list));
+    globalThis.localStorage?.setItem(HANDLED_KEY, JSON.stringify(list));
   } catch {
     /* unavailable */
   }

@@ -6,7 +6,7 @@
  * session catalog, never touch the workspace service graph, and survive in
  * the backlog across host restarts via their persisted session files.
  */
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   createAgentSession,
@@ -146,6 +146,9 @@ export async function startAgentConversation(args: {
   void session
     .prompt(
       [
+        // <schedule-preamble> sentinels: the frontend splits this injected
+        // preamble from the user's requirement for separate rendering.
+        "<schedule-preamble>",
         "你是「周期计划」智能创建助手，帮用户把需求变成一个定时任务（计划）配置。",
         "",
         "规则：",
@@ -168,10 +171,10 @@ export async function startAgentConversation(args: {
         "4. 用户没有明确表达的字段保持 null，不要臆造。",
         "5. 最终创建由用户在预览面板点「确认创建」完成，你不要声称已经创建成功。",
         "",
+        `计划的默认工作目录（cwd）：${args.cwd}`,
+        "</schedule-preamble>",
         "用户需求：",
         args.requirement,
-        "",
-        `计划的默认工作目录（cwd）：${args.cwd}`,
       ].join("\n"),
     )
     .catch((error: unknown) => {
@@ -208,7 +211,7 @@ export async function continueAgentConversation(args: {
   cwd: string;
   text: string;
   agentDir: string;
-}): Promise<{ sessionId: string } | { ok: false; error: string }> {
+}): Promise<{ sessionId: string; sessionPath: string } | { ok: false; error: string }> {
   if (!existsSync(args.sessionPath)) {
     return { ok: false, error: `会话文件不存在：${args.sessionPath}` };
   }
@@ -228,7 +231,9 @@ export async function continueAgentConversation(args: {
     .catch((error: unknown) => {
       entry.lastError = error instanceof Error ? error.message : String(error);
     });
-  return { sessionId };
+  // The fork is a new session file; report it so the caller can track it and
+  // retire the old path in the backlog.
+  return { sessionId, sessionPath: entry.sessionPath };
 }
 
 export function agentState(sessionId: string): {
@@ -245,6 +250,88 @@ export function agentState(sessionId: string): {
     error: entry.lastError,
     messages: messagesOf(entry.session),
   };
+}
+
+/** All smart-creation sessions on disk (plus resident in-memory ones),
+ *  newest first. This is the source of truth for the backlog list — the
+ *  previous localStorage-only backlog lost sessions whenever the user left
+ *  the agent page without pressing its back button. */
+export function listAgentSessions(): Array<{
+  sessionId: string;
+  sessionPath: string;
+  title: string;
+  updatedAt: string;
+  resident: boolean;
+}> {
+  const dir = agentSessionsDir();
+  const byPath = new Map<string, { mtime: number; sessionId: string }>();
+  let names: string[] = [];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    names = [];
+  }
+  for (const name of names) {
+    if (!name.endsWith(".jsonl")) continue;
+    const fullPath = join(dir, name);
+    let mtime = 0;
+    try {
+      mtime = statSync(fullPath).mtimeMs;
+    } catch {
+      continue;
+    }
+    // Session id from the header line; fall back to the filename suffix.
+    let sessionId = name.slice(name.lastIndexOf("_") + 1).replace(/\.jsonl$/, "");
+    try {
+      const head = readFileSync(fullPath, "utf8").slice(0, 512);
+      const match = head.match(/"type":"session"[\s\S]*?"id":"([^"]+)"/);
+      if (match?.[1]) sessionId = match[1];
+    } catch {
+      /* keep the filename-derived id */
+    }
+    byPath.set(fullPath, { mtime, sessionId });
+  }
+  // Resident sessions may not have flushed their file yet; still list them.
+  for (const [sessionId, entry] of sessions) {
+    if (entry.sessionPath && !byPath.has(entry.sessionPath)) {
+      byPath.set(entry.sessionPath, { mtime: Date.now(), sessionId });
+    }
+  }
+  const out: Array<{
+    sessionId: string;
+    sessionPath: string;
+    title: string;
+    updatedAt: string;
+    resident: boolean;
+  }> = [];
+  for (const [path, info] of byPath) {
+    const resident = [...sessions.values()].some((s) => s.sessionPath === path);
+    const title = extractTitle(path);
+    if (!title) continue; // empty/unreadable transcript: skip
+    out.push({
+      sessionId: info.sessionId,
+      sessionPath: path,
+      title,
+      updatedAt: new Date(info.mtime).toISOString(),
+      resident,
+    });
+  }
+  out.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+  return out;
+}
+
+/** Requirement text from the session's first user message (preamble
+ *  stripped), used as the backlog entry title. */
+function extractTitle(sessionPath: string): string {
+  const messages = agentTranscriptFrom(sessionPath);
+  const firstUser = messages.find((m) => m.role === "user");
+  if (!firstUser) return "";
+  const marker = firstUser.text.lastIndexOf("用户需求：");
+  let requirement =
+    marker >= 0 ? firstUser.text.slice(marker + "用户需求：".length) : firstUser.text;
+  // Older prompts append the cwd line after the requirement; drop it.
+  requirement = requirement.replace(/\n+计划的默认工作目录（cwd）：[\s\S]*$/, "").trim();
+  return (requirement || firstUser.text).slice(0, 120);
 }
 
 /** Minimal JSONL transcript read for non-resident sessions. */

@@ -15,6 +15,7 @@ import {
   agentState,
   agentTranscriptFrom,
   continueAgentConversation,
+  listAgentSessions,
   sendAgentMessage,
   startAgentConversation,
 } from "./schedule-agent-runner.js";
@@ -226,6 +227,19 @@ export function createScheduleHandlers(agentDir: string): Partial<Record<string,
       }
     },
 
+    "schedule.agentList": async () => {
+      try {
+        return { result: { sessions: listAgentSessions() } };
+      } catch (error) {
+        return {
+          error: createHostError(
+            "INTERNAL_ERROR",
+            error instanceof Error ? error.message : String(error),
+          ),
+        };
+      }
+    },
+
     "schedule.agentSend": async (ctx) => {
       const params = ctx.params as { sessionId: string; text: string };
       const result = await sendAgentMessage(params);
@@ -240,7 +254,7 @@ export function createScheduleHandlers(agentDir: string): Partial<Record<string,
         if ("ok" in result) {
           return { error: createHostError("RESOURCE_NOT_FOUND", result.error) };
         }
-        return { result: { sessionId: result.sessionId } };
+        return { result: { sessionId: result.sessionId, sessionPath: result.sessionPath } };
       } catch (error) {
         return {
           error: createHostError(

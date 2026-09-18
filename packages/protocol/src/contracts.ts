@@ -73,6 +73,8 @@ import type {
   GitHistoryResult,
   GitCommitDiffSnapshot,
   GitMutationResult,
+  GitAsyncAccepted,
+  GitTaskFinishedPayload,
   GitCommitResult,
   GitCommitMessageResult,
   PiSettingsSnapshot,
@@ -93,6 +95,7 @@ import type {
   ScheduleTranscriptEntry,
   ScheduleNotification,
   ScheduleAgentMessage,
+  ScheduleAgentSessionSummary,
   ScheduleAgentState,
   ScheduleAgentTranscript,
 } from "./types.js";
@@ -234,6 +237,7 @@ export type HostContextMap = {
   "schedule.validateCron": HostContext;
   "schedule.listNotifications": HostContext;
   "schedule.agentStart": HostContext;
+  "schedule.agentList": HostContext;
   "schedule.agentSend": HostContext;
   "schedule.agentContinue": HostContext;
   "schedule.agentState": HostContext;
@@ -438,6 +442,7 @@ export type HostRequestParams = {
   "schedule.validateCron": { cron: string; timezone?: string };
   "schedule.listNotifications": { limit?: number };
   "schedule.agentStart": { cwd: string; requirement: string };
+  "schedule.agentList": null;
   "schedule.agentSend": { sessionId: string; text: string };
   "schedule.agentContinue": { sessionPath: string; cwd: string; text: string };
   "schedule.agentState": { sessionId: string };
@@ -484,8 +489,8 @@ export type HostResultMap = {
   "git.listHistory": GitHistoryResult;
   "git.getCommitDiff": GitCommitDiffSnapshot;
   "git.generateCommitMessage": GitCommitMessageResult;
-  "git.push": GitMutationResult;
-  "git.pull": GitMutationResult;
+  "git.push": GitAsyncAccepted;
+  "git.pull": GitAsyncAccepted;
   "attachment.create": AttachmentSnapshot;
   "attachment.createText": AttachmentSnapshot;
   "attachment.get": AttachmentSnapshot;
@@ -647,8 +652,9 @@ export type HostResultMap = {
   "schedule.validateCron": { valid: boolean; reason: string | null };
   "schedule.listNotifications": { entries: ScheduleNotification[] };
   "schedule.agentStart": { sessionId: string; sessionPath: string };
+  "schedule.agentList": { sessions: ScheduleAgentSessionSummary[] };
   "schedule.agentSend": { sessionId: string };
-  "schedule.agentContinue": { sessionId: string };
+  "schedule.agentContinue": { sessionId: string; sessionPath: string };
   "schedule.agentState": ScheduleAgentState;
   "schedule.agentTranscript": ScheduleAgentTranscript;
   "schedule.agentAbort": { ok: boolean };
@@ -661,6 +667,7 @@ export type HostEventPayloadMap = {
   "workspace.changed": WorkspaceSnapshot;
   "workspace.filesChanged": { directories: string[] };
   "git.changed": { snapshot: GitStatusSnapshot };
+  "git.taskFinished": GitTaskFinishedPayload;
   "attachment.changed": { attachment: AttachmentSnapshot };
   "session.snapshot": SessionSnapshot | null;
   "session.infoChanged": { sessionId: string; name?: string };

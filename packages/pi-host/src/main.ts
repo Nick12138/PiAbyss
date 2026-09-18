@@ -45,6 +45,7 @@ import { applyHostNetworkSettings, ensureGlobalSettingsFile } from "./network-bo
 import { AttachmentStore } from "./attachment-store.js";
 import { createAttachmentHandlers } from "./attachment-controller.js";
 import { createGitHandlers } from "./git-controller.js";
+import { GitAsyncTaskRunner } from "./git-async-tasks.js";
 import { GitService } from "./git-service.js";
 import { refreshActiveSessionSnapshot } from "./session-snapshot.js";
 import { createPiSettingsHandlers, removeSupersededPackages } from "./pi-settings-controller.js";
@@ -329,10 +330,13 @@ async function main(): Promise<void> {
   providerOwnership.setFallbackOwnerSource(() => graphFactory.getGraph()?.providerOwner ?? null);
   const workspaceFiles = new WorkspaceFileService();
   const gitService = new GitService();
+  const gitAsyncTasks = new GitAsyncTaskRunner(gitService, gitService.gitExecutable, () =>
+    graphFactory.getServer(),
+  );
 
   const handlers = {
     ...createWorkspaceHandlers(graphFactory, workspaceFiles, gitService),
-    ...createGitHandlers(graphFactory, gitService),
+    ...createGitHandlers(graphFactory, gitService, gitAsyncTasks),
     ...createAttachmentHandlers(graphFactory),
     ...createSessionHandlers(graphFactory),
     ...createAgentHandlers(graphFactory),
@@ -365,6 +369,7 @@ async function main(): Promise<void> {
     },
     onShutdown: async () => {
       workspaceFiles.dispose();
+      gitAsyncTasks.abortAll("Host shutdown");
       gitService.dispose();
       const { cancelAllPending } = await import("./extension-ui-bridge.js");
       cancelAllPending("Host shutdown");

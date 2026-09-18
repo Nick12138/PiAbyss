@@ -1143,6 +1143,8 @@ export function validateRequestParams<M extends HostMethod>(
         params.requirement.length <= 20_000
         ? ok(params)
         : fail("invalid schedule.agentStart params", { method });
+    case "schedule.agentList":
+      return params === null ? ok(params) : fail("invalid schedule.agentList params", { method });
     case "schedule.agentSend":
       return exactObject(params, ["sessionId", "text"]) &&
         isNonEmptyString(params.sessionId) &&

@@ -534,4 +534,62 @@ describe("App cross-workspace event handling", () => {
     // The render belongs to a different session — never applied to the active one.
     expect(useAppStore.getState().session?.extensionMessageRenders).toBeUndefined();
   });
+
+  it("routes a parked workspace's async git task result into a workspace-named toast", () => {
+    const agentEvents = eventBuffer();
+    const gitTask = {
+      protocolVersion: 1 as const,
+      event: "git.taskFinished" as const,
+      hostInstanceId: HOST_ID,
+      workspaceId: PARKED_WS_ID,
+      workspaceRevision: 3,
+      sessionId: null,
+      sessionRevision: 0,
+      packageRevision: 0,
+      sequence: 1,
+      timestamp: Date.now(),
+      payload: {
+        taskId: "task-1",
+        operation: "pull" as const,
+        workspaceName: "parked",
+        ok: true,
+      },
+    } as HostEventEnvelope;
+    expect(handleHostEvent(gitTask, requestRecovery, agentEvents)).toBe(true);
+    expect(requestRecovery).not.toHaveBeenCalled();
+    expect(useAppStore.getState().desynchronized).toBe(false);
+    const messages = [
+      ...useAppStore.getState().notifications,
+      ...useAppStore.getState().transientNotifications,
+    ].map((item) => item.message);
+    expect(
+      messages.some((message) => message.includes("parked") && message.includes("pulled")),
+    ).toBe(true);
+  });
+
+  it("rejects a git task result from a workspace that is not bound", () => {
+    const agentEvents = eventBuffer();
+    const gitTask = {
+      protocolVersion: 1 as const,
+      event: "git.taskFinished" as const,
+      hostInstanceId: HOST_ID,
+      workspaceId: UNBOUND_WS_ID,
+      workspaceRevision: 9,
+      sessionId: null,
+      sessionRevision: 0,
+      packageRevision: 0,
+      sequence: 1,
+      timestamp: Date.now(),
+      payload: {
+        taskId: "task-2",
+        operation: "push" as const,
+        workspaceName: "ghost",
+        ok: true,
+      },
+    } as HostEventEnvelope;
+    expect(handleHostEvent(gitTask, requestRecovery, agentEvents)).toBe(false);
+    expect(requestRecovery).toHaveBeenCalledWith(
+      expect.stringContaining("identity mismatch for git.taskFinished"),
+    );
+  });
 });

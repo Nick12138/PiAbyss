@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
-import { ArrowLeft, ArrowUp, Check, CircleDashed, Loader2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, ChevronUp, CircleDashed, Loader2, Sparkles } from "lucide-react";
 import type { ScheduleJobInput } from "@piabyss/protocol";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
-import { useScheduleAgentStore } from "./schedule-agent-store";
+import { markAgentSessionHandled, useScheduleAgentStore } from "./schedule-agent-store";
 import { leaveScheduleAgent } from "./schedule-agent-flow";
 import { ModelControls } from "../chat/ModelControls";
 
@@ -58,6 +58,54 @@ export function extractPlanDraft(messages: AgentMessage[]): SchedulePlanDraft | 
   return null;
 }
 
+/** Remove ```schedule-plan fences from assistant text. The plan JSON feeds
+ *  the preview panel (extractPlanDraft); the transcript itself should stay
+ *  clean, so the block is stripped at render time — including the still-
+ *  streaming tail of an unclosed fence. */
+export function stripPlanBlocks(text: string): string {
+  let out = text.replace(/```schedule-plan[^\n]*\n[\s\S]*?```/g, "");
+  const open = out.indexOf("```schedule-plan");
+  if (open >= 0) out = out.slice(0, open);
+  return out.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+export type SplitUserMessage = {
+  /** Injected system preamble（提示词注入段），rendered collapsed by default. */
+  preamble: string | null;
+  /** What the user actually typed. */
+  requirement: string;
+};
+
+/** The first user message of a smart-creation session bundles the injected
+ *  preamble and the user's requirement into one string. Split them for
+ *  separate rendering. New sessions wrap the preamble in
+ *  <schedule-preamble>...</schedule-preamble> sentinels; older persisted
+ *  transcripts fall back to the "用户需求：" separator. */
+export function splitUserMessage(text: string): SplitUserMessage {
+  const open = text.indexOf("<schedule-preamble>");
+  if (open >= 0) {
+    const close = text.indexOf("</schedule-preamble>", open);
+    if (close >= 0) {
+      const before = text.slice(0, open).trim();
+      const preamble = text.slice(open + "<schedule-preamble>".length, close).trim();
+      const after = text
+        .slice(close + "</schedule-preamble>".length)
+        .replace(/^\s*用户需求[:：]\s*\n?/, "")
+        .trim();
+      const requirement = [before, after].filter(Boolean).join("\n").trim();
+      return { preamble: preamble || null, requirement: requirement || text.trim() };
+    }
+  }
+  const marker = "用户需求：";
+  const at = text.indexOf(marker);
+  if (at >= 0) {
+    const preamble = text.slice(0, at).trim();
+    const requirement = text.slice(at + marker.length).trim();
+    if (preamble && requirement) return { preamble, requirement };
+  }
+  return { preamble: null, requirement: text };
+}
+
 function triggerLabel(trigger: Record<string, unknown> | null | undefined): string {
   if (!trigger || typeof trigger.type !== "string") return "";
   switch (trigger.type) {
@@ -94,6 +142,7 @@ export function ScheduleAgentPage() {
   const userScrolledRef = useRef(false);
   const lastMessageCountRef = useRef(0);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [preambleOpen, setPreambleOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!sessionId || !sessionPath) return;
@@ -231,11 +280,15 @@ export function ScheduleAgentPage() {
       if (!response.ok) {
         setLoadError(response.error?.message ?? t("scheduleLoadFailed"));
         setMessages((current) => [...current, { role: "user", text }]);
-      } else if (!resident) {
-        // Continued via a fork: track the new resident session.
-        useScheduleAgentStore
-          .getState()
-          .setSession({ sessionId: response.result.sessionId, sessionPath });
+      } else if (!resident && "sessionPath" in response.result) {
+        // Continued via a fork: the turns now live in a NEW session file.
+        // Track it and retire the forked-from path so the backlog shows one
+        // entry and later replies keep the new history.
+        markAgentSessionHandled(sessionPath);
+        useScheduleAgentStore.getState().setSession({
+          sessionId: response.result.sessionId,
+          sessionPath: response.result.sessionPath,
+        });
       }
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : t("scheduleLoadFailed"));
@@ -363,8 +416,11 @@ export function ScheduleAgentPage() {
       </div>
       <div className="flex min-h-0 flex-1">
         {/* Conversation (70%) */}
-        <div className="flex min-w-0 flex-[7] flex-col relative">
-          <div ref={transcriptRef} className="scrollbar-subtle flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-5">
+        <div className="flex min-w-0 flex-[7] flex-col">
+          {/* isolate: the button's z-10 stays inside this container, so the
+              composer (later sibling) always paints above the scroll area. */}
+          <div className="relative isolate min-h-0 flex-1">
+          <div ref={transcriptRef} className="scrollbar-subtle h-full overflow-y-auto px-3 py-4 sm:px-6 sm:py-5">
             {messages.length === 0 && !loadError && (
               <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted">
                 <Loader2 size={13} className="animate-spin" />
@@ -376,21 +432,59 @@ export function ScheduleAgentPage() {
                 key={index}
                 className={`mb-2.5 flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                {message.role === "user" ? (
-                  <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg bg-accent/15 px-3 py-2 text-sm leading-6 text-foreground">
-                    {message.text}
-                  </div>
-                ) : (
-                  <div className="max-w-[85%] text-sm leading-6">
-                    <Suspense
-                      fallback={
-                        <div className="whitespace-pre-wrap break-words">{message.text}</div>
-                      }
-                    >
-                      <MarkdownMessage content={message.text} mode={running && index === messages.length - 1 ? "streaming" : "static"} showCaret={running && index === messages.length - 1} />
-                    </Suspense>
-                  </div>
-                )}
+                {message.role === "user" ? (() => {
+                  const { preamble, requirement } =
+                    index === 0 ? splitUserMessage(message.text) : { preamble: null, requirement: message.text };
+                  return (
+                    <div className="flex max-w-[85%] flex-col items-end gap-1.5">
+                      {preamble && (
+                        <div className="flex w-full flex-col items-center">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
+                            aria-expanded={preambleOpen}
+                            onClick={() => setPreambleOpen((open) => !open)}
+                          >
+                            <Sparkles size={11} />
+                            {t("scheduleAgentPreambleToggle")}
+                            {preambleOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                          </button>
+                          {preambleOpen && (
+                            <div className="mt-1.5 w-full whitespace-pre-wrap break-words rounded-lg border border-dashed border-border bg-surface px-3 py-2 text-xs leading-5 text-muted">
+                              {preamble}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <div className="whitespace-pre-wrap break-words rounded-lg bg-accent/15 px-3 py-2 text-sm leading-6 text-foreground">
+                        {requirement}
+                      </div>
+                    </div>
+                  );
+                })() : (() => {
+                  const visible = stripPlanBlocks(message.text);
+                  // The message only carried a schedule-plan block: the plan
+                  // still updates the preview, the transcript shows a stub.
+                  if (!visible) {
+                    return (
+                      <div className="flex max-w-[85%] items-center gap-1.5 text-xs text-muted">
+                        <CircleDashed size={12} />
+                        {t("scheduleAgentPlanUpdated")}
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="max-w-[85%] text-sm leading-6">
+                      <Suspense
+                        fallback={
+                          <div className="whitespace-pre-wrap break-words">{visible}</div>
+                        }
+                      >
+                        <MarkdownMessage content={visible} mode={running && index === messages.length - 1 ? "streaming" : "static"} showCaret={running && index === messages.length - 1} />
+                      </Suspense>
+                    </div>
+                  );
+                })()}
               </div>
             ))}
             {running && (
@@ -401,18 +495,20 @@ export function ScheduleAgentPage() {
             )}
           </div>
           
-          {/* Scroll to bottom button */}
+          {/* Scroll to bottom button — anchored inside the scroll area, same
+              style as the chat transcript's jump-to-latest button. */}
           {showScrollToBottom && (
             <button
               type="button"
               onClick={scrollToBottom}
-              className="absolute bottom-20 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-surface-raised border border-border shadow-lg hover:bg-surface-overlay transition-colors"
+              className="absolute bottom-3 left-1/2 z-10 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-surface-raised text-muted shadow-md transition-colors hover:bg-surface-overlay hover:text-foreground"
               title={t("transcriptScrollToBottom")}
               aria-label={t("transcriptScrollToBottom")}
             >
-              <ArrowUp size={18} className="rotate-180" />
+              <ArrowDown size={15} />
             </button>
           )}
+          </div>
           
           <div className="shrink-0 px-3 pb-3 pt-2 sm:px-6 sm:pb-5">
             {loadError && <p className="mb-2 text-xs text-danger">{loadError}</p>}

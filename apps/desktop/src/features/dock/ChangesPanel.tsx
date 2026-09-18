@@ -40,6 +40,7 @@ import { subscribeValidatedHostEvent } from "../../lib/bridge/validated-host-eve
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { useLocale, useT, type Translate } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
+import { workspaceDisplayName } from "../workspaces/WorkspacePicker";
 
 type ReadyStatus = Extract<GitStatusSnapshot, { state: "ready" }>;
 type DiffSelection = { path: string; area: "staged" | "unstaged" };
@@ -120,18 +121,6 @@ function errorMessage(error: HostError | undefined, fallback: string, t: Transla
   }
 }
 
-function pullErrorMessage(error: HostError | undefined, t: Translate): string {
-  const message = error?.message ?? "";
-  if (
-    /cannot pull with rebase|please commit or stash|local changes.*would be overwritten/i.test(
-      message,
-    )
-  ) {
-    return t("gitPullRequiresCleanWorktree");
-  }
-  return errorMessage(error, t("gitPullFailed"), t);
-}
-
 export function buildGitListRows(status: ReadyStatus): ListRow[] {
   const unstaged = status.files.filter((file) => file.unstaged !== null);
   const staged = status.files.filter((file) => file.staged !== null);
@@ -206,6 +195,11 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   const host = useAppStore((state) => state.host);
   const workspace = useAppStore((state) => state.workspace);
   const pushNotification = useAppStore((state) => state.pushNotification);
+  // Workspace display name for user-facing notifications (branch ops, commit).
+  // Pull/push outcomes are notified from git.taskFinished payloads instead.
+  const workspaceName = workspace
+    ? workspaceDisplayName(workspace.canonicalCwd ?? workspace.cwd)
+    : "";
   const [snapshot, setSnapshot] = useState<GitStatusSnapshot | null>(null);
   const [view, setView] = useState<GitView>("changes");
   const [loading, setLoading] = useState(false);
@@ -594,8 +588,8 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
       setCommitDiff(null);
       pushNotification(
         method === "git.createBranch"
-          ? t("gitBranchCreated", { branch: name })
-          : t("gitBranchSwitched", { branch: name }),
+          ? t("gitBranchCreated", { workspace: workspaceName, branch: name })
+          : t("gitBranchSwitched", { workspace: workspaceName, branch: name }),
         "success",
       );
     } catch (requestError) {
@@ -844,73 +838,66 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
 
   const hasUnpushedCommits = Boolean(ready && ready.ahead > 0);
 
-  const push = async () => {
+  /**
+   * Pull/push are asynchronous: the Host accepts the task (holding the graph
+   * lock only briefly) and returns immediately, so the user can switch to
+   * another workspace and start its own pull/push while this one runs. The
+   * outcome arrives via `git.taskFinished`, which App.tsx turns into a
+   * workspace-named notification and (for the active workspace) a snapshot
+   * update.
+   */
+  const startNetworkTask = async (kind: "pull" | "push") => {
     if (!host || !workspace || !ready) return;
+    if (kind === "pull" && ready.files.length > 0) {
+      setError(t("gitPullRequiresCleanWorktree"));
+      return;
+    }
+    const method = kind === "pull" ? "git.pull" : "git.push";
     const requestGeneration = generation.current;
-    setOperation("push");
+    setOperation(kind);
     setError(null);
     try {
       const response = await hostClient.request(
-        "git.push",
+        method,
         workspaceContext(host, workspace),
         null,
-        90_000,
+        15_000,
       );
       if (requestGeneration !== generation.current) return;
       if (!response.ok) {
-        setError(errorMessage(response.error, t("gitPushFailed"), t));
+        setError(
+          response.error.code === "GIT_OPERATION_FAILED" &&
+            /already running/i.test(response.error.message)
+            ? t("gitTaskAlreadyRunning")
+            : errorMessage(
+                response.error,
+                kind === "pull" ? t("gitPullFailed") : t("gitPushFailed"),
+                t,
+              ),
+        );
         return;
       }
-      if (response.result.snapshot) acceptSnapshot(response.result.snapshot);
-      else void refresh();
-      pushNotification(t("gitPushSuccess"), "success");
+      // Accepted — the task keeps running in the Host. Its snapshot side
+      // effects arrive via git.changed; its outcome notification is emitted by
+      // the git.taskFinished handler in App.tsx.
     } catch (requestError) {
       if (requestGeneration === generation.current) {
-        setError(requestError instanceof Error ? requestError.message : t("gitPushFailed"));
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : kind === "pull"
+              ? t("gitPullFailed")
+              : t("gitPushFailed"),
+        );
       }
     } finally {
       if (requestGeneration === generation.current) setOperation(null);
     }
   };
 
-  const pull = async () => {
-    if (!host || !workspace || !ready) return;
-    if (ready.files.length > 0) {
-      setError(t("gitPullRequiresCleanWorktree"));
-      return;
-    }
-    const requestGeneration = generation.current;
-    setOperation("pull");
-    setError(null);
-    try {
-      const response = await hostClient.request(
-        "git.pull",
-        workspaceContext(host, workspace),
-        null,
-        90_000,
-      );
-      if (requestGeneration !== generation.current) return;
-      if (!response.ok) {
-        setError(pullErrorMessage(response.error, t));
-        return;
-      }
-      if (response.result.snapshot) acceptSnapshot(response.result.snapshot);
-      else void refresh();
-      setHistory([]);
-      setHistoryCursor(null);
-      setHistoryLoaded(false);
-      // 拉取会移动 HEAD，历史已清空；若正停在历史页必须立即重载，
-      // 否则页面空白直到手动切标签或点刷新。
-      if (view === "history") void loadHistory(false);
-      pushNotification(t("gitPullSuccess"), "success");
-    } catch (requestError) {
-      if (requestGeneration === generation.current) {
-        setError(requestError instanceof Error ? requestError.message : t("gitPullFailed"));
-      }
-    } finally {
-      if (requestGeneration === generation.current) setOperation(null);
-    }
-  };
+  const push = () => void startNetworkTask("push");
+
+  const pull = () => void startNetworkTask("pull");
 
   if (!host || !workspace) {
     return <GitEmptyState title={t("gitNoWorkspace")} detail={t("gitNoWorkspaceDetail")} />;
@@ -1240,7 +1227,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
               {commitSha && (
                 <p role="status" className="mb-2 flex items-center gap-1.5 text-xs text-success">
                   <Check size={12} />
-                  {t("gitCommitSuccess", { sha: commitSha })}
+                  {t("gitCommitSuccess", { workspace: workspaceName, sha: commitSha })}
                 </p>
               )}
               {hasUnpushedCommits && stagedCount === 0 ? (

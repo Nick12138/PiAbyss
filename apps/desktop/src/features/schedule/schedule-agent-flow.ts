@@ -13,12 +13,9 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
 import {
-  addAgentPending,
-  removeAgentPending,
+  markAgentSessionHandled,
   useScheduleAgentStore,
 } from "./schedule-agent-store";
-
-export const AGENT_SESSION_NAME = "⏰ 周期计划 · 智能创建";
 
 export function schedulePlanPreamble(requirement: string, cwd: string): string {
   return [
@@ -87,30 +84,23 @@ export async function startScheduleAgent(
 /** Reopen a backlog (待办) conversation. Pure frontend bookkeeping: the agent
  *  page pulls the transcript from the session file (or resident state). */
 export function reopenScheduleAgent(entry: {
-  id: string;
   sessionId: string;
   sessionPath: string;
 }): ScheduleAgentStartResult {
   useScheduleAgentStore.getState().start({
     sessionId: entry.sessionId,
     sessionPath: entry.sessionPath,
-    pendingId: entry.id,
   });
   return { ok: true };
 }
 
-/** Leave the agent page: park the conversation into the backlog when it has
- *  no confirmed plan (the store's `created` flag). */
+/** Leave the agent page. A session with a confirmed plan (`created`) is marked
+ *  handled so it drops out of the backlog; an unfinished one simply stays
+ *  listed (the Host enumerates the session files, so nothing needs writing). */
 export function leaveScheduleAgent(): void {
   const agent = useScheduleAgentStore.getState();
-  if (!agent.created && agent.sessionId && agent.sessionPath) {
-    addAgentPending({
-      sessionId: agent.sessionId,
-      sessionPath: agent.sessionPath,
-      name: AGENT_SESSION_NAME,
-    });
+  if (agent.created && agent.sessionPath) {
+    markAgentSessionHandled(agent.sessionPath);
   }
-
-  if (agent.pendingId && agent.created) removeAgentPending(agent.pendingId);
   useScheduleAgentStore.getState().finish();
 }

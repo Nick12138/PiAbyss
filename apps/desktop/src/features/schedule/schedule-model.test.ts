@@ -216,3 +216,66 @@ describe("time helpers", () => {
     expect(formatCountdown(null, now)).toBeNull();
   });
 });
+
+describe("stripPlanBlocks", () => {
+  it("strips closed schedule-plan fences and keeps surrounding text", async () => {
+    const { stripPlanBlocks } = await import("./ScheduleAgentPage");
+    const text = [
+      "好的，配置如下，请确认。",
+      "```schedule-plan",
+      '{"name":"安全审查"}',
+      "```",
+      "如需调整请告诉我。",
+    ].join("\n");
+    expect(stripPlanBlocks(text)).toBe("好的，配置如下，请确认。\n\n如需调整请告诉我。");
+  });
+
+  it("strips an unclosed streaming fence tail", async () => {
+    const { stripPlanBlocks } = await import("./ScheduleAgentPage");
+    const text = '已更新配置。\n```schedule-plan\n{"na';
+    expect(stripPlanBlocks(text)).toBe("已更新配置。");
+  });
+
+  it("keeps ordinary code fences intact", async () => {
+    const { stripPlanBlocks } = await import("./ScheduleAgentPage");
+    const text = "```bash\ngit status\n```";
+    expect(stripPlanBlocks(text)).toBe(text);
+  });
+
+  it("returns empty for a plan-only message", async () => {
+    const { stripPlanBlocks } = await import("./ScheduleAgentPage");
+    const text = '```schedule-plan\n{"name":"x"}\n```';
+    expect(stripPlanBlocks(text)).toBe("");
+  });
+});
+
+describe("splitUserMessage", () => {
+  it("splits sentinel-wrapped preamble from the requirement", async () => {
+    const { splitUserMessage } = await import("./ScheduleAgentPage");
+    const text = [
+      "<schedule-preamble>",
+      "你是「周期计划」智能创建助手。",
+      "计划的默认工作目录（cwd）：C:/proj",
+      "</schedule-preamble>",
+      "用户需求：",
+      "每天早上九点审查代码",
+    ].join("\n");
+    const split = splitUserMessage(text);
+    expect(split.preamble).toBe("你是「周期计划」智能创建助手。\n计划的默认工作目录（cwd）：C:/proj");
+    expect(split.requirement).toBe("每天早上九点审查代码");
+  });
+
+  it("falls back to the 用户需求 marker for legacy transcripts", async () => {
+    const { splitUserMessage } = await import("./ScheduleAgentPage");
+    const split = splitUserMessage("你是助手。\n\n用户需求：\n每天备份");
+    expect(split.preamble).toBe("你是助手。");
+    expect(split.requirement).toBe("每天备份");
+  });
+
+  it("returns the text untouched when nothing matches", async () => {
+    const { splitUserMessage } = await import("./ScheduleAgentPage");
+    const split = splitUserMessage("就一句话");
+    expect(split.preamble).toBeNull();
+    expect(split.requirement).toBe("就一句话");
+  });
+});

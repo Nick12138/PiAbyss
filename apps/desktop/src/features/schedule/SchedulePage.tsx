@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarClock, Loader2, Play, Plus, RefreshCw, Trash2, Pencil } from "lucide-react";
 import type {
+  ScheduleAgentSessionSummary,
   ScheduleHealth,
   ScheduleJob,
   ScheduleRunSummary,
@@ -17,11 +18,7 @@ import { Switch } from "../../components/Switch";
 import { ScheduleJobDialog } from "./ScheduleJobDialog";
 import { ScheduleRuns } from "./ScheduleRuns";
 import { startScheduleAgent, reopenScheduleAgent } from "./schedule-agent-flow";
-import {
-  listAgentPending,
-  removeAgentPending,
-  type ScheduleAgentPending,
-} from "./schedule-agent-store";
+import { listHandledAgentSessions, markAgentSessionHandled } from "./schedule-agent-store";
 import {
   formatCountdown,
   formatDateTime,
@@ -126,18 +123,45 @@ export function SchedulePage() {
     }
   }, [host, selectedJobId]);
 
+  // Unfinished smart-creation sessions, enumerated by the Host from the
+  // agent-sessions directory; sessions the user already handled (confirmed or
+  // dismissed) are filtered out here.
+  const [agentSessions, setAgentSessions] = useState<ScheduleAgentSessionSummary[]>([]);
+
+  const refreshAgentSessions = useCallback(async () => {
+    if (!host) return;
+    try {
+      const response = await hostClient.request(
+        "schedule.agentList",
+        hostContext(host),
+        null,
+        LIST_TIMEOUT_MS,
+      );
+      const handled = new Set(listHandledAgentSessions());
+      if (response.ok) {
+        setAgentSessions(
+          response.result.sessions.filter((session) => !handled.has(session.sessionPath)),
+        );
+      }
+    } catch {
+      /* transient */
+    }
+  }, [host]);
+
   useEffect(() => {
     void refreshStatusAndJobs();
-  }, [refreshStatusAndJobs]);
+    void refreshAgentSessions();
+  }, [refreshStatusAndJobs, refreshAgentSessions]);
 
   useEffect(() => {
     const timer = setInterval(() => {
       void refreshStatusAndJobs();
       void refreshRuns();
+      void refreshAgentSessions();
       setNow(Date.now());
     }, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [refreshStatusAndJobs, refreshRuns]);
+  }, [refreshStatusAndJobs, refreshRuns, refreshAgentSessions]);
 
   useEffect(() => {
     setRuns([]);
@@ -210,18 +234,20 @@ export function SchedulePage() {
   }
 
   const activeCount = activeJobIds.length;
-  const [pendingList, setPendingList] = useState<ScheduleAgentPending[]>(() => listAgentPending());
 
-  function handleReopenPending(entry: ScheduleAgentPending) {
+  function handleReopenPending(entry: ScheduleAgentSessionSummary) {
     const result = reopenScheduleAgent(entry);
     if (result.ok) setPage("schedule-agent");
     else setLoadError(result.error);
   }
 
-  function handleRemovePending(id: string) {
-    removeAgentPending(id);
-    setPendingList(listAgentPending());
+  function handleRemovePending(entry: ScheduleAgentSessionSummary) {
+    markAgentSessionHandled(entry.sessionPath);
+    setAgentSessions((current) =>
+      current.filter((session) => session.sessionPath !== entry.sessionPath),
+    );
   }
+
   const [workspaceFilter, setWorkspaceFilter] = useState<string>("__all__");
   const [tagFilter, setTagFilter] = useState<string>("__all__");
 
@@ -326,7 +352,7 @@ export function SchedulePage() {
           </p>
           <p className="max-w-md text-xs text-muted">{t("scheduleOfflineHint")}</p>
         </div>
-      ) : jobs.length === 0 && pendingList.length === 0 ? (
+      ) : jobs.length === 0 && agentSessions.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
           <CalendarClock size={28} className="text-muted" />
           <p className="text-sm font-medium">{t("scheduleEmptyTitle")}</p>
@@ -344,17 +370,17 @@ export function SchedulePage() {
         <div className="flex min-h-0 flex-1">
           {/* Job list */}
           <div className="scrollbar-subtle w-80 shrink-0 overflow-y-auto border-r border-border p-2">
-            {pendingList.length > 0 && (
+            {agentSessions.length > 0 && (
               <div className="mb-2">
                 <div className="mb-1 px-1 text-xs font-medium text-muted">
                   {t("scheduleAgentPendingTitle")}
                 </div>
-                {pendingList.map((entry) => (
+                {agentSessions.map((entry) => (
                   <div
-                    key={entry.id}
+                    key={entry.sessionId}
                     className="mb-1 rounded-md border border-dashed border-border px-2.5 py-2"
                   >
-                    <div className="truncate text-[13px] font-medium">⏳ {entry.name}</div>
+                    <div className="truncate text-[13px] font-medium">⏳ {entry.title}</div>
                     <div className="mt-1 flex items-center gap-2 text-xs">
                       <button
                         type="button"
@@ -366,7 +392,7 @@ export function SchedulePage() {
                       <button
                         type="button"
                         className="text-danger hover:underline"
-                        onClick={() => handleRemovePending(entry.id)}
+                        onClick={() => handleRemovePending(entry)}
                       >
                         {t("scheduleAgentPendingRemove")}
                       </button>

@@ -124,6 +124,23 @@ export class PiHostServer {
     return this.identity.snapshot();
   }
 
+  /** Workspace currently bound to this Host, or null before the first switch. */
+  currentWorkspaceId(): string | null {
+    return this.identity.workspaceId;
+  }
+
+  /**
+   * True while (workspaceId, revision) is the active workspace or a parked
+   * (retained) workspace graph still bound to this Host instance. Mirrors the
+   * acceptance rule used by `emitForBoundIdentity`.
+   */
+  isBoundWorkspaceIdentity(workspaceId: string | null, revision: number): boolean {
+    if (workspaceId === null) return false;
+    const current = this.identity.snapshot();
+    if (workspaceId === current.workspaceId && revision === current.workspaceRevision) return true;
+    return this.boundWorkspaceChecker?.(workspaceId, revision) === true;
+  }
+
   /** Injected by the graph factory: is (workspaceId, revision) still bound? */
   setBoundWorkspaceChecker(fn: (workspaceId: string, revision: number) => boolean): void {
     this.boundWorkspaceChecker = fn;

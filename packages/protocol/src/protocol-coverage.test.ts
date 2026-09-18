@@ -272,6 +272,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "schedule.validateCron": { cron: "0 9 * * 1-5" },
   "schedule.listNotifications": { limit: 50 },
   "schedule.agentStart": { cwd: "C:/tmp", requirement: "每天审查代码" },
+  "schedule.agentList": null,
   "schedule.agentSend": { sessionId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150", text: "继续" },
   "schedule.agentContinue": { sessionPath: "C:/s.jsonl", cwd: "C:/tmp", text: "继续" },
   "schedule.agentState": { sessionId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150" },
@@ -531,6 +532,8 @@ function invalidParams(method: HostMethod): unknown {
       return { runId: "2fa6a8c56cc8", text: "   " };
     case "schedule.agentStart":
       return { cwd: "", requirement: "" };
+    case "schedule.agentList":
+      return {}; // must be null
     case "schedule.agentSend":
       return { sessionId: "", text: "  " };
     case "schedule.agentContinue":
@@ -835,6 +838,12 @@ describe("protocol coverage — events", () => {
     },
     "workspace.filesChanged": { directories: ["", "src"] },
     "git.changed": { snapshot: { state: "not_repository", revision: 1 } },
+    "git.taskFinished": {
+      taskId: RUN_ID,
+      operation: "pull",
+      workspaceName: "PiAbyss",
+      ok: true,
+    },
     "attachment.changed": {
       attachment: {
         id: RUN_ID,
