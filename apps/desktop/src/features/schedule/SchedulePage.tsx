@@ -50,9 +50,9 @@ export function SchedulePage() {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [runs, setRuns] = useState<ScheduleRunSummary[]>([]);
   const [runsLoading, setRunsLoading] = useState(false);
-  const [dialog, setDialog] = useState<{ mode: "create" } | { mode: "edit"; job: ScheduleJob } | null>(
-    null,
-  );
+  const [dialog, setDialog] = useState<
+    { mode: "create" } | { mode: "edit"; job: ScheduleJob } | null
+  >(null);
   const [deleteTarget, setDeleteTarget] = useState<ScheduleJob | null>(null);
   const [runningJobId, setRunningJobId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -68,7 +68,12 @@ export function SchedulePage() {
     if (!host) return;
     const request = ++requestIdRef.current;
     try {
-      const statusResponse = await hostClient.request("schedule.status", hostContext(host), null, 10_000);
+      const statusResponse = await hostClient.request(
+        "schedule.status",
+        hostContext(host),
+        null,
+        10_000,
+      );
       if (request !== requestIdRef.current) return;
       if (statusResponse.ok) {
         setStatus(statusResponse.result);
@@ -347,9 +352,7 @@ export function SchedulePage() {
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
           <CalendarClock size={28} className="text-muted" />
           <p className="text-sm font-medium">{t("scheduleOfflineTitle")}</p>
-          <p className="max-w-md text-xs text-muted">
-            {status?.error ?? t("scheduleOfflineBody")}
-          </p>
+          <p className="max-w-md text-xs text-muted">{status?.error ?? t("scheduleOfflineBody")}</p>
           <p className="max-w-md text-xs text-muted">{t("scheduleOfflineHint")}</p>
         </div>
       ) : jobs.length === 0 && agentSessions.length === 0 ? (
@@ -443,9 +446,7 @@ export function SchedulePage() {
                       ) : (
                         <Play size={13} />
                       )}
-                      {runningJobId === selectedJob.id
-                        ? t("scheduleRunning")
-                        : t("scheduleRunNow")}
+                      {runningJobId === selectedJob.id ? t("scheduleRunning") : t("scheduleRunNow")}
                     </button>
                     <button
                       type="button"
@@ -528,9 +529,7 @@ export function SchedulePage() {
           onCancel={() => setDeleteTarget(null)}
           onConfirm={() => void confirmDelete()}
         >
-          <p className="text-sm">
-            {t("scheduleDeleteBody", { name: deleteTarget.name })}
-          </p>
+          <p className="text-sm">{t("scheduleDeleteBody", { name: deleteTarget.name })}</p>
         </Dialog>
       )}
     </div>
@@ -538,7 +537,7 @@ export function SchedulePage() {
 }
 
 /** Short label for a workspace path: its base directory name. */
-export function workspaceFilterLabel(cwd: string): string {
+function workspaceFilterLabel(cwd: string): string {
   const trimmed = cwd.replace(/[\/]+$/, "");
   const base = trimmed.split(/[\/]/).pop() ?? trimmed;
   return base.length > 0 ? base : cwd;
@@ -591,9 +590,7 @@ function JobCard({
       }}
       data-selected={selected ? "true" : "false"}
       className={`mb-1.5 cursor-pointer rounded-md border px-2.5 py-2 transition-colors ${
-        selected
-          ? "border-accent bg-accent/10"
-          : "border-border hover:bg-surface-overlay"
+        selected ? "border-accent bg-accent/10" : "border-border hover:bg-surface-overlay"
       }`}
     >
       <div className="flex items-center gap-2">
@@ -607,11 +604,7 @@ function JobCard({
           {job.name || t("scheduleUntitledJob")}
         </span>
         <div onClick={(event) => event.stopPropagation()}>
-          <Switch
-            checked={job.enabled}
-            onChange={onToggle}
-            label={t("scheduleFormEnabled")}
-          />
+          <Switch checked={job.enabled} onChange={onToggle} label={t("scheduleFormEnabled")} />
         </div>
       </div>
       <div className="mt-1 flex items-center gap-2 pl-3.5 text-[11px] text-muted">
@@ -705,7 +698,9 @@ function JobDetail({ job }: { job: ScheduleJob }) {
         <dt className="text-muted">{t("scheduleFormTimeoutMinutes")}</dt>
         <dd>{Math.round(job.timeoutMs / 60_000)} min</dd>
         <dt className="text-muted">{t("scheduleFormMissedWindow")}</dt>
-        <dd>{t(`scheduleMissedWindow${job.missedWindow === "catch_up_one" ? "CatchUp" : "Skip"}`)}</dd>
+        <dd>
+          {t(`scheduleMissedWindow${job.missedWindow === "catch_up_one" ? "CatchUp" : "Skip"}`)}
+        </dd>
         {job.tags.length > 0 && (
           <>
             <dt className="text-muted">{t("scheduleFormTags")}</dt>

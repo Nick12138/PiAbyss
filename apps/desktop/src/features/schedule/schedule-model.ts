@@ -1,16 +1,12 @@
-import type {
-  ScheduleJob,
-  ScheduleJobInput,
-  ScheduleTrigger,
-} from "@piabyss/protocol";
+import type { ScheduleJob, ScheduleJobInput, ScheduleTrigger } from "@piabyss/protocol";
 import type { MessageKey } from "../../lib/i18n";
 
 /** Matches the plugin's DEFAULTS.timeoutMs (30 minutes). */
-export const SCHEDULE_DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
+const SCHEDULE_DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 /** Plugin LIMITS.maxJobs-aware guard rails used by the form. */
 export const SCHEDULE_MAX_TIMEOUT_MINUTES = 6 * 60;
 
-export type SchedulePermissionValue = "read_only" | "write" | "full";
+type SchedulePermissionValue = "read_only" | "write" | "full";
 
 export type ScheduleFormState = {
   name: string;
@@ -40,8 +36,7 @@ export type ScheduleFormState = {
   enabled: boolean;
 };
 
-export const SCHEDULE_INTERVAL_UNITS = ["s", "m", "h", "d", "w", "mo"] as const;
-export type ScheduleIntervalUnit = (typeof SCHEDULE_INTERVAL_UNITS)[number];
+export type ScheduleIntervalUnit = "s" | "m" | "h" | "d" | "w" | "mo";
 
 export function defaultScheduleForm(cwd: string): ScheduleFormState {
   return {
@@ -68,9 +63,7 @@ export function defaultScheduleForm(cwd: string): ScheduleFormState {
 }
 
 /** Parse the plugin's interval string ("30m" / "2h" / "1d" / "15s" / "2w" / "1mo"). */
-export function parseIntervalEvery(
-  every: string,
-): { value: number; unit: ScheduleIntervalUnit } {
+export function parseIntervalEvery(every: string): { value: number; unit: ScheduleIntervalUnit } {
   const match = every.trim().match(/^(\d+)\s*(mo|m|h|d|w|s)$/i);
   if (!match) return { value: 30, unit: "m" };
   return {
@@ -82,7 +75,9 @@ export function parseIntervalEvery(
 export function jobToForm(job: ScheduleJob): ScheduleFormState {
   const trigger = job.trigger;
   const interval =
-    trigger.type === "interval" ? parseIntervalEvery(trigger.every) : { value: 30, unit: "m" as const };
+    trigger.type === "interval"
+      ? parseIntervalEvery(trigger.every)
+      : { value: 30, unit: "m" as const };
   return {
     name: job.name,
     kind: job.command ? "command" : "prompt",
@@ -90,8 +85,7 @@ export function jobToForm(job: ScheduleJob): ScheduleFormState {
     command: job.command ?? "",
     cwd: job.cwd,
     triggerType: trigger.type === "once" ? "once" : trigger.type,
-    onceAt:
-      trigger.type === "once" ? toDatetimeLocalValue(trigger.at) : "",
+    onceAt: trigger.type === "once" ? toDatetimeLocalValue(trigger.at) : "",
     intervalValue: interval.value,
     intervalUnit: interval.unit,
     cron: trigger.type === "cron" ? trigger.cron : "0 9 * * 1-5",
@@ -118,7 +112,7 @@ export function toDatetimeLocalValue(iso: string): string {
   );
 }
 
-export function buildTrigger(form: ScheduleFormState): ScheduleTrigger | { error: MessageKey } {
+function buildTrigger(form: ScheduleFormState): ScheduleTrigger | { error: MessageKey } {
   switch (form.triggerType) {
     case "manual":
       return { type: "manual" };
@@ -189,11 +183,13 @@ export function scheduleFormErrors(form: ScheduleFormState): Partial<Record<stri
   const errors: Partial<Record<string, MessageKey>> = {};
   if (!form.name.trim()) errors.name = "scheduleFormNameRequired";
   if (form.kind === "prompt" && !form.prompt.trim()) errors.prompt = "scheduleFormPromptRequired";
-  if (form.kind === "command" && !form.command.trim()) errors.command = "scheduleFormCommandRequired";
+  if (form.kind === "command" && !form.command.trim())
+    errors.command = "scheduleFormCommandRequired";
   if (!form.cwd.trim()) errors.cwd = "scheduleFormCwdRequired";
   if (form.triggerType === "once") {
     if (!form.onceAt) errors.onceAt = "scheduleFormOnceRequired";
-    else if (Number.isNaN(new Date(form.onceAt).getTime())) errors.onceAt = "scheduleFormOnceInvalid";
+    else if (Number.isNaN(new Date(form.onceAt).getTime()))
+      errors.onceAt = "scheduleFormOnceInvalid";
   }
   if (form.triggerType === "interval" && form.intervalValue < 1) {
     errors.interval = "scheduleFormIntervalInvalid";
@@ -206,7 +202,8 @@ export function scheduleFormErrors(form: ScheduleFormState): Partial<Record<stri
   }
   if (form.maxRuns.trim() !== "") {
     const maxRuns = Number(form.maxRuns.trim());
-    if (!Number.isSafeInteger(maxRuns) || maxRuns < 1) errors.maxRuns = "scheduleFormMaxRunsInvalid";
+    if (!Number.isSafeInteger(maxRuns) || maxRuns < 1)
+      errors.maxRuns = "scheduleFormMaxRunsInvalid";
   }
   return errors;
 }

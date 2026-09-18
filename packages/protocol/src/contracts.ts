@@ -94,7 +94,6 @@ import type {
   ScheduleStatus,
   ScheduleTranscriptEntry,
   ScheduleNotification,
-  ScheduleAgentMessage,
   ScheduleAgentSessionSummary,
   ScheduleAgentState,
   ScheduleAgentTranscript,

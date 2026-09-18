@@ -1,22 +1,23 @@
 /**
  * Smart-plan creation conversation runner — a schedule-owned independent
  * agent session, mirroring how the pi-schedule plugin runs job sessions:
- * direct SDK `createAgentSession` with a custom SessionManager directory
- * under the schedule root. These sessions never enter any workspace's
- * session catalog, never touch the workspace service graph, and survive in
- * the backlog across host restarts via their persisted session files.
+ * a custom SessionManager directory under the schedule root. These sessions
+ * never enter any workspace's session catalog, never touch the workspace
+ * service graph, and survive in the backlog across host restarts via their
+ * persisted session files. They are still built through
+ * `createHostAgentSession` on the Host-owned ModelRuntime (see
+ * `model-runtime-refresh.test.ts`) so provider/auth state is never duplicated.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
-  createAgentSession,
   DefaultResourceLoader,
-  ModelRuntime,
   SessionManager,
   SettingsManager,
   type AgentSession,
+  type ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
-import type { Api, Model } from "@earendil-works/pi-ai/compat";
+import { createHostAgentSession } from "./agent-session-factory.js";
 import { scheduleRoot } from "./schedule-api.js";
 
 type AgentEntry = {
@@ -29,6 +30,25 @@ type AgentEntry = {
 /** Resident sessions, keyed by sessionId. Lost on host restart; the session
  *  file remains and agentContinue forks from it. */
 const sessions = new Map<string, AgentEntry>();
+
+/**
+ * The Host-owned runtime, injected once at startup. Schedule conversations are
+ * user-visible agent sessions, so they must share the single authoritative
+ * runtime (provider registrations, credentials, model catalog) instead of
+ * building a private one — see `model-runtime-refresh.test.ts`.
+ */
+let hostModelRuntime: ModelRuntime | null = null;
+
+export function configureScheduleAgentRuntime(runtime: ModelRuntime): void {
+  hostModelRuntime = runtime;
+}
+
+function requireHostModelRuntime(): ModelRuntime {
+  if (!hostModelRuntime) {
+    throw new Error("Schedule agent runtime is not configured (configureScheduleAgentRuntime)");
+  }
+  return hostModelRuntime;
+}
 
 function agentSessionsDir(): string {
   const dir = join(scheduleRoot(), "agent-sessions");
@@ -65,42 +85,12 @@ function messagesOf(session: AgentSession): Array<{ role: string; text: string }
   return out;
 }
 
-async function resolveDefaultModel(
-  runtime: ModelRuntime,
-  settings: SettingsManager,
-): Promise<{ model: Model<Api>; ref: { provider: string; id: string } }> {
-  const available = (await runtime.getAvailable()) as readonly (Model<Api> & {
-    provider: string;
-    id: string;
-  })[];
-  const lookup = (provider: string, id: string) => {
-    const fromRuntime = runtime.getModel(provider, id);
-    if (fromRuntime) return fromRuntime;
-    return available.find((m) => m.provider === provider && m.id === id);
-  };
-  const global = settings.getGlobalSettings() as {
-    defaultProvider?: string;
-    defaultModel?: string;
-  };
-  if (global.defaultProvider && global.defaultModel) {
-    const model = lookup(global.defaultProvider, global.defaultModel);
-    if (model) {
-      return { model, ref: { provider: global.defaultProvider, id: global.defaultModel } };
-    }
-  }
-  const first = available[0];
-  if (!first) throw new Error("没有可用模型：请先在 pi 中登录 provider 或配置 models.json");
-  return { model: first, ref: { provider: first.provider, id: first.id } };
-}
-
 async function buildSession(
   cwd: string,
   agentDir: string,
   sessionManager: SessionManager,
 ): Promise<AgentSession> {
-  const runtime = await ModelRuntime.create({});
   const settings = SettingsManager.create(cwd, agentDir);
-  const { model } = await resolveDefaultModel(runtime, settings);
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir,
@@ -111,11 +101,10 @@ async function buildSession(
     noThemes: true,
   });
   await resourceLoader.reload();
-  const created = await createAgentSession({
+  const created = await createHostAgentSession({
     cwd,
     agentDir,
-    model,
-    modelRuntime: runtime,
+    modelRuntime: requireHostModelRuntime(),
     resourceLoader,
     settingsManager: settings,
     sessionManager,
@@ -155,7 +144,7 @@ export async function startAgentConversation(args: {
         "1. 通过对话逐步确认配置；信息足够时可直接给出完整配置让用户确认。",
         "2. 每当你确定或更新了任何配置，都在回复里输出一个 ```schedule-plan 代码块，内容为完整配置的 JSON（未确定的字段用 null）。每次都输出完整配置，不要只输出增量。",
         "3. 配置 JSON 字段：",
-        '   name: string 计划名；',
+        "   name: string 计划名；",
         '   kind: "prompt" | "command"（prompt=走模型的计划书任务；command=直接执行 shell 命令）；',
         '   prompt: string（kind=prompt 时的计划书，kind=command 时为 ""）；',
         "   command: string | null（kind=command 时的 shell 命令，否则 null）；",
@@ -196,11 +185,9 @@ export async function sendAgentMessage(args: {
     return { ok: false, error: "上一条回复还在生成中" };
   }
   entry.lastError = null;
-  void entry.session
-    .prompt(args.text)
-    .catch((error: unknown) => {
-      entry.lastError = error instanceof Error ? error.message : String(error);
-    });
+  void entry.session.prompt(args.text).catch((error: unknown) => {
+    entry.lastError = error instanceof Error ? error.message : String(error);
+  });
   return { ok: true };
 }
 
@@ -226,11 +213,9 @@ export async function continueAgentConversation(args: {
     lastError: null,
   };
   sessions.set(sessionId, entry);
-  void entry.session
-    .prompt(args.text)
-    .catch((error: unknown) => {
-      entry.lastError = error instanceof Error ? error.message : String(error);
-    });
+  void entry.session.prompt(args.text).catch((error: unknown) => {
+    entry.lastError = error instanceof Error ? error.message : String(error);
+  });
   // The fork is a new session file; report it so the caller can track it and
   // retire the old path in the backlog.
   return { sessionId, sessionPath: entry.sessionPath };
@@ -335,9 +320,7 @@ function extractTitle(sessionPath: string): string {
 }
 
 /** Minimal JSONL transcript read for non-resident sessions. */
-export function agentTranscriptFrom(
-  sessionPath: string,
-): Array<{ role: string; text: string }> {
+export function agentTranscriptFrom(sessionPath: string): Array<{ role: string; text: string }> {
   if (!existsSync(sessionPath)) return [];
   let raw = "";
   try {

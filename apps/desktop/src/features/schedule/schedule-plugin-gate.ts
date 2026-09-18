@@ -6,7 +6,7 @@ import { hostContext, workspaceContext } from "../../lib/bridge/host-context";
 import { pluginCardState } from "../plugin-library/plugin-library-model";
 
 /** The plugin-library entry that backs the Schedule page. */
-export const SCHEDULE_PLUGIN_ID = "pi-schedule";
+const SCHEDULE_PLUGIN_ID = "pi-schedule";
 
 const CATALOG_TIMEOUT_MS = 30_000;
 const PACKAGE_LIST_TIMEOUT_MS = 60_000;
@@ -15,7 +15,7 @@ type PluginStatus = "enabled" | "disabled" | "not-installed" | "unknown";
 
 /** Pure derivation: the schedule page entry shows only while the plugin is
  *  installed AND all of its extension resources are enabled. */
-export function schedulePluginStatus(
+function schedulePluginStatus(
   catalog: PluginLibraryCatalog | null,
   packages: PackageSnapshot | null,
 ): PluginStatus {

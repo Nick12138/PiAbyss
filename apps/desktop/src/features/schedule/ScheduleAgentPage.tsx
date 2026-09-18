@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
-import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, ChevronUp, CircleDashed, Loader2, Sparkles } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  CircleDashed,
+  Loader2,
+  Sparkles,
+} from "lucide-react";
 import type { ScheduleJobInput } from "@piabyss/protocol";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -40,7 +50,7 @@ type SchedulePlanDraft = {
 };
 
 /** Latest ```schedule-plan JSON from the assistant messages. */
-export function extractPlanDraft(messages: AgentMessage[]): SchedulePlanDraft | null {
+function extractPlanDraft(messages: AgentMessage[]): SchedulePlanDraft | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (message.role !== "assistant") continue;
@@ -180,14 +190,14 @@ export function ScheduleAgentPage() {
       } else if (!transcript.ok) {
         setLoadError(
           state.ok
-            ? transcript.error?.message ?? t("scheduleLoadFailed")
-            : state.error?.message ?? t("scheduleLoadFailed"),
+            ? (transcript.error?.message ?? t("scheduleLoadFailed"))
+            : (state.error?.message ?? t("scheduleLoadFailed")),
         );
       }
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : t("scheduleLoadFailed"));
     }
-  }, [sessionId, sessionPath]);
+  }, [sessionId, sessionPath, t]);
 
   useEffect(() => {
     void refresh();
@@ -205,7 +215,7 @@ export function ScheduleAgentPage() {
 
     // Check if user has scrolled away from bottom
     const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-    
+
     // Only auto-scroll if:
     // 1. User hasn't manually scrolled away (userScrolledRef is false)
     // 2. OR user is already near the bottom
@@ -235,20 +245,20 @@ export function ScheduleAgentPage() {
       }
     };
 
-    el.addEventListener('scroll', handleScroll, { passive: true });
-    return () => el.removeEventListener('scroll', handleScroll);
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => el.removeEventListener("scroll", handleScroll);
   }, []);
 
   const plan = useMemo(() => extractPlanDraft(messages), [messages]);
   const planReady = Boolean(
     plan &&
-      typeof plan.name === "string" &&
-      plan.name.trim() &&
-      typeof plan.cwd === "string" &&
-      plan.cwd.trim() &&
-      plan.trigger &&
-      typeof plan.trigger.type === "string" &&
-      (plan.kind === "command" ? Boolean(plan.command?.trim()) : Boolean(plan.prompt?.trim())),
+    typeof plan.name === "string" &&
+    plan.name.trim() &&
+    typeof plan.cwd === "string" &&
+    plan.cwd.trim() &&
+    plan.trigger &&
+    typeof plan.trigger.type === "string" &&
+    (plan.kind === "command" ? Boolean(plan.command?.trim()) : Boolean(plan.prompt?.trim())),
   );
 
   async function send() {
@@ -358,14 +368,22 @@ export function ScheduleAgentPage() {
   const previewRows: Array<{ label: MessageKeyOf; value: string | null; fullText?: string }> = plan
     ? [
         { label: "scheduleFormName", value: plan.name ?? null },
-        { 
-          label: "scheduleFormKind", 
-          value: plan.kind === "prompt" ? "提示词计划" : plan.kind === "command" ? "命令计划" : null 
+        {
+          label: "scheduleFormKind",
+          value:
+            plan.kind === "prompt" ? "提示词计划" : plan.kind === "command" ? "命令计划" : null,
         },
         { label: "scheduleFormCwd", value: plan.cwd ?? null },
-        { 
-          label: "scheduleFormPermission", 
-          value: plan.permission === "read_only" ? "只读" : plan.permission === "write" ? "可写" : plan.permission === "full" ? "完整" : null 
+        {
+          label: "scheduleFormPermission",
+          value:
+            plan.permission === "read_only"
+              ? "只读"
+              : plan.permission === "write"
+                ? "可写"
+                : plan.permission === "full"
+                  ? "完整"
+                  : null,
         },
         {
           label: "scheduleFormModel",
@@ -374,29 +392,41 @@ export function ScheduleAgentPage() {
               ? `${plan.model.provider}/${plan.model.id}`
               : null,
         },
-        { 
-          label: "scheduleFormMissedWindow", 
-          value: plan.missedWindow === "catch_up_one" ? "补执行一次" : plan.missedWindow === "skip" ? "跳过" : null 
+        {
+          label: "scheduleFormMissedWindow",
+          value:
+            plan.missedWindow === "catch_up_one"
+              ? "补执行一次"
+              : plan.missedWindow === "skip"
+                ? "跳过"
+                : null,
         },
-        { 
-          label: "scheduleFormTimeout", 
-          value: plan.timeoutMs ? `${Math.round(plan.timeoutMs / 1000)}s` : null 
+        {
+          label: "scheduleFormTimeout",
+          value: plan.timeoutMs ? `${Math.round(plan.timeoutMs / 1000)}s` : null,
         },
-        { 
-          label: "scheduleFormMaxRuns", 
-          value: plan.maxRuns ? String(plan.maxRuns) : null 
+        {
+          label: "scheduleFormMaxRuns",
+          value: plan.maxRuns ? String(plan.maxRuns) : null,
         },
-        { 
-          label: "scheduleFormTags", 
-          value: Array.isArray(plan.tags) && plan.tags.length > 0 ? plan.tags.join(", ") : null 
+        {
+          label: "scheduleFormTags",
+          value: Array.isArray(plan.tags) && plan.tags.length > 0 ? plan.tags.join(", ") : null,
         },
-        { 
-          label: "scheduleFormNotify", 
-          value: plan.notify === "system" ? "系统通知" : plan.notify === "tg" ? "Telegram" : plan.notify === "none" ? "无" : null 
+        {
+          label: "scheduleFormNotify",
+          value:
+            plan.notify === "system"
+              ? "系统通知"
+              : plan.notify === "tg"
+                ? "Telegram"
+                : plan.notify === "none"
+                  ? "无"
+                  : null,
         },
         {
           label: "scheduleFormLoadExtensions",
-          value: plan.loadExtensions === true ? "是" : plan.loadExtensions === false ? "否" : null
+          value: plan.loadExtensions === true ? "是" : plan.loadExtensions === false ? "否" : null,
         },
       ]
     : [];
@@ -420,96 +450,113 @@ export function ScheduleAgentPage() {
           {/* isolate: the button's z-10 stays inside this container, so the
               composer (later sibling) always paints above the scroll area. */}
           <div className="relative isolate min-h-0 flex-1">
-          <div ref={transcriptRef} className="scrollbar-subtle h-full overflow-y-auto px-3 py-4 sm:px-6 sm:py-5">
-            {messages.length === 0 && !loadError && (
-              <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted">
-                <Loader2 size={13} className="animate-spin" />
-                {t("scheduleAgentAnalyzing")}
-              </div>
-            )}
-            {messages.map((message, index) => (
-              <div
-                key={index}
-                className={`mb-2.5 flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-              >
-                {message.role === "user" ? (() => {
-                  const { preamble, requirement } =
-                    index === 0 ? splitUserMessage(message.text) : { preamble: null, requirement: message.text };
-                  return (
-                    <div className="flex max-w-[85%] flex-col items-end gap-1.5">
-                      {preamble && (
-                        <div className="flex w-full flex-col items-center">
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
-                            aria-expanded={preambleOpen}
-                            onClick={() => setPreambleOpen((open) => !open)}
-                          >
-                            <Sparkles size={11} />
-                            {t("scheduleAgentPreambleToggle")}
-                            {preambleOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-                          </button>
-                          {preambleOpen && (
-                            <div className="mt-1.5 w-full whitespace-pre-wrap break-words rounded-lg border border-dashed border-border bg-surface px-3 py-2 text-xs leading-5 text-muted">
-                              {preamble}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      <div className="whitespace-pre-wrap break-words rounded-lg bg-accent/15 px-3 py-2 text-sm leading-6 text-foreground">
-                        {requirement}
-                      </div>
-                    </div>
-                  );
-                })() : (() => {
-                  const visible = stripPlanBlocks(message.text);
-                  // The message only carried a schedule-plan block: the plan
-                  // still updates the preview, the transcript shows a stub.
-                  if (!visible) {
-                    return (
-                      <div className="flex max-w-[85%] items-center gap-1.5 text-xs text-muted">
-                        <CircleDashed size={12} />
-                        {t("scheduleAgentPlanUpdated")}
-                      </div>
-                    );
-                  }
-                  return (
-                    <div className="max-w-[85%] text-sm leading-6">
-                      <Suspense
-                        fallback={
-                          <div className="whitespace-pre-wrap break-words">{visible}</div>
-                        }
-                      >
-                        <MarkdownMessage content={visible} mode={running && index === messages.length - 1 ? "streaming" : "static"} showCaret={running && index === messages.length - 1} />
-                      </Suspense>
-                    </div>
-                  );
-                })()}
-              </div>
-            ))}
-            {running && (
-              <div className="flex items-center gap-1.5 px-1 text-xs text-muted">
-                <Loader2 size={12} className="animate-spin" />
-                {t("scheduleAgentThinking")}
-              </div>
-            )}
-          </div>
-          
-          {/* Scroll to bottom button — anchored inside the scroll area, same
-              style as the chat transcript's jump-to-latest button. */}
-          {showScrollToBottom && (
-            <button
-              type="button"
-              onClick={scrollToBottom}
-              className="absolute bottom-3 left-1/2 z-10 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-surface-raised text-muted shadow-md transition-colors hover:bg-surface-overlay hover:text-foreground"
-              title={t("transcriptScrollToBottom")}
-              aria-label={t("transcriptScrollToBottom")}
+            <div
+              ref={transcriptRef}
+              className="scrollbar-subtle h-full overflow-y-auto px-3 py-4 sm:px-6 sm:py-5"
             >
-              <ArrowDown size={15} />
-            </button>
-          )}
+              {messages.length === 0 && !loadError && (
+                <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted">
+                  <Loader2 size={13} className="animate-spin" />
+                  {t("scheduleAgentAnalyzing")}
+                </div>
+              )}
+              {messages.map((message, index) => (
+                <div
+                  key={index}
+                  className={`mb-2.5 flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  {message.role === "user"
+                    ? (() => {
+                        const { preamble, requirement } =
+                          index === 0
+                            ? splitUserMessage(message.text)
+                            : { preamble: null, requirement: message.text };
+                        return (
+                          <div className="flex max-w-[85%] flex-col items-end gap-1.5">
+                            {preamble && (
+                              <div className="flex w-full flex-col items-center">
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
+                                  aria-expanded={preambleOpen}
+                                  onClick={() => setPreambleOpen((open) => !open)}
+                                >
+                                  <Sparkles size={11} />
+                                  {t("scheduleAgentPreambleToggle")}
+                                  {preambleOpen ? (
+                                    <ChevronUp size={11} />
+                                  ) : (
+                                    <ChevronDown size={11} />
+                                  )}
+                                </button>
+                                {preambleOpen && (
+                                  <div className="mt-1.5 w-full whitespace-pre-wrap break-words rounded-lg border border-dashed border-border bg-surface px-3 py-2 text-xs leading-5 text-muted">
+                                    {preamble}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            <div className="whitespace-pre-wrap break-words rounded-lg bg-accent/15 px-3 py-2 text-sm leading-6 text-foreground">
+                              {requirement}
+                            </div>
+                          </div>
+                        );
+                      })()
+                    : (() => {
+                        const visible = stripPlanBlocks(message.text);
+                        // The message only carried a schedule-plan block: the plan
+                        // still updates the preview, the transcript shows a stub.
+                        if (!visible) {
+                          return (
+                            <div className="flex max-w-[85%] items-center gap-1.5 text-xs text-muted">
+                              <CircleDashed size={12} />
+                              {t("scheduleAgentPlanUpdated")}
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="max-w-[85%] text-sm leading-6">
+                            <Suspense
+                              fallback={
+                                <div className="whitespace-pre-wrap break-words">{visible}</div>
+                              }
+                            >
+                              <MarkdownMessage
+                                content={visible}
+                                mode={
+                                  running && index === messages.length - 1 ? "streaming" : "static"
+                                }
+                                showCaret={running && index === messages.length - 1}
+                              />
+                            </Suspense>
+                          </div>
+                        );
+                      })()}
+                </div>
+              ))}
+              {running && (
+                <div className="flex items-center gap-1.5 px-1 text-xs text-muted">
+                  <Loader2 size={12} className="animate-spin" />
+                  {t("scheduleAgentThinking")}
+                </div>
+              )}
+            </div>
+
+            {/* Scroll to bottom button — anchored inside the scroll area, same
+              style as the chat transcript's jump-to-latest button. */}
+            {showScrollToBottom && (
+              <button
+                type="button"
+                onClick={scrollToBottom}
+                className="absolute bottom-3 left-1/2 z-10 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-surface-raised text-muted shadow-md transition-colors hover:bg-surface-overlay hover:text-foreground"
+                title={t("transcriptScrollToBottom")}
+                aria-label={t("transcriptScrollToBottom")}
+              >
+                <ArrowDown size={15} />
+              </button>
+            )}
           </div>
-          
+
           <div className="shrink-0 px-3 pb-3 pt-2 sm:px-6 sm:pb-5">
             {loadError && <p className="mb-2 text-xs text-danger">{loadError}</p>}
             <div className="chat-composer-surface rounded-xl border-[1.5px] border-border bg-surface-raised p-2 shadow-sm">
@@ -519,7 +566,11 @@ export function ScheduleAgentPage() {
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                    if (
+                      event.key === "Enter" &&
+                      !event.shiftKey &&
+                      !event.nativeEvent.isComposing
+                    ) {
                       event.preventDefault();
                       void send();
                     }
@@ -591,24 +642,34 @@ export function ScheduleAgentPage() {
                   )}
                 </div>
               </div>
-              
+
               {/* 提示词或命令预览 */}
-              {plan.kind === "prompt" && plan.prompt && typeof plan.prompt === "string" && plan.prompt.trim() ? (
+              {plan.kind === "prompt" &&
+              plan.prompt &&
+              typeof plan.prompt === "string" &&
+              plan.prompt.trim() ? (
                 <div className="flex flex-col gap-1.5 rounded-md border border-border p-2.5">
-                  <div className="text-xs font-medium text-foreground">{t("scheduleFormPrompt")}</div>
+                  <div className="text-xs font-medium text-foreground">
+                    {t("scheduleFormPrompt")}
+                  </div>
                   <div className="max-h-48 overflow-y-auto rounded bg-surface p-2 text-xs leading-relaxed whitespace-pre-wrap break-words">
                     {plan.prompt}
                   </div>
                 </div>
-              ) : plan.kind === "command" && plan.command && typeof plan.command === "string" && plan.command.trim() ? (
+              ) : plan.kind === "command" &&
+                plan.command &&
+                typeof plan.command === "string" &&
+                plan.command.trim() ? (
                 <div className="flex flex-col gap-1.5 rounded-md border border-border p-2.5">
-                  <div className="text-xs font-medium text-foreground">{t("scheduleFormCommand")}</div>
+                  <div className="text-xs font-medium text-foreground">
+                    {t("scheduleFormCommand")}
+                  </div>
                   <div className="rounded bg-surface p-2 text-xs font-mono leading-relaxed whitespace-pre-wrap break-all">
                     {plan.command}
                   </div>
                 </div>
               ) : null}
-              
+
               <button
                 type="button"
                 className="interface-density-control flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-xs text-accent-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
