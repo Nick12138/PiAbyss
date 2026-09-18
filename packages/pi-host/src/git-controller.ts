@@ -192,7 +192,17 @@ export function createGitHandlers(
         return { error: createHostError("PROJECT_NOT_SELECTED", "No workspace") };
       }
       const params = ctx.params as { enabled: boolean };
-      const identity = server.getIdentity();
+      // Git status is workspace-scoped state: it describes the working tree,
+      // not any particular Session. Capture the workspace binding this watcher
+      // was armed for (to detect a switch away), but stamp every emitted event
+      // with the identity live at emit time. Freezing the whole identity here
+      // made every event carry the Session identity of the arming moment, so a
+      // later Session switch (or a package reload that only bumps the Session
+      // revision) left the renderer rejecting every git.changed as an identity
+      // mismatch until the user refreshed by hand.
+      const armed = server.getIdentity();
+      const armedWorkspaceId = armed.workspaceId;
+      const armedWorkspaceRevision = armed.workspaceRevision;
       try {
         const result = await service.setWatching(params.enabled, root, (snapshot) => {
           const current = factory.getGraph();
@@ -200,13 +210,13 @@ export function createGitHandlers(
           if (
             !current ||
             !currentServer ||
-            current.workspaceId !== identity.workspaceId ||
-            current.revision !== identity.workspaceRevision ||
+            current.workspaceId !== armedWorkspaceId ||
+            current.revision !== armedWorkspaceRevision ||
             current.canonicalCwd !== root
           ) {
             return;
           }
-          currentServer.emitForIdentity(identity, "git.changed", { snapshot });
+          currentServer.emit("git.changed", { snapshot });
         });
         const staleAfter = factory.checkIdentity(ctx.context, { requireWorkspace: true });
         if (staleAfter) {

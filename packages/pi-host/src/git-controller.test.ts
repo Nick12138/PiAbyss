@@ -257,15 +257,19 @@ describe("Git controller", () => {
       context("git.setWatching", { enabled: true }),
     );
     expect(result).toEqual({ result: { watching: true, snapshot: ready } });
-    expect(state.server.emitForIdentity).toHaveBeenCalledWith(identity, "git.changed", {
+    expect(state.server.emit).toHaveBeenCalledWith("git.changed", {
       snapshot: ready,
     });
+    // The envelope must carry the LIVE identity, not the one captured when the
+    // watcher was armed: Git status is workspace-scoped, and a frozen Session
+    // stamp made the renderer reject every later event after a Session switch.
+    expect(state.server.emitForIdentity).not.toHaveBeenCalled();
 
-    state.server.emitForIdentity.mockClear();
+    state.server.emit.mockClear();
     state.graph.revision += 1;
     const emit = vi.mocked(state.service.setWatching).mock.calls[0]![2];
     emit(ready);
-    expect(state.server.emitForIdentity).not.toHaveBeenCalled();
+    expect(state.server.emit).not.toHaveBeenCalled();
 
     vi.mocked(state.factory.checkIdentity).mockReturnValueOnce(
       createHostError("STALE_REVISION", "stale"),

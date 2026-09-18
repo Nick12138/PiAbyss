@@ -42,6 +42,17 @@ export function expectedIdentityForEvent(
     case "session.infoChanged":
     case "session.runtimeChanged":
     case "agent.event":
+    // Git status is workspace-scoped state (the working tree), so it is
+    // validated against the Host + workspace generation only. Requiring the
+    // Session identity here used to drop every `git.changed` whose envelope
+    // predated a Session switch or a package reload (which only bumps the
+    // Session revision), leaving the Changes panel stale until a manual
+    // refresh — no rehydrate path re-fetches git status.
+    case "git.changed":
+    // Async pull/push results may only be excused down to workspace scope: the
+    // requesting workspace can be parked by the time they land, but a foreign
+    // or unbound workspace is still an identity mismatch.
+    case "git.taskFinished":
     case "package.diagnostic":
     case "extensionUi.statusChanged":
     case "extensionUi.widgetChanged":

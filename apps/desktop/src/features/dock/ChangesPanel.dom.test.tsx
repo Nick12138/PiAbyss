@@ -222,6 +222,25 @@ describe("ChangesPanel", () => {
     expect(request.mock.calls.filter(([method]) => method === "git.getDiff")).toHaveLength(2);
   });
 
+  it("re-reads status after a recovery rehydrate re-establishes the epoch", async () => {
+    // Recovery snapshots carry no Git state, so a single dropped git.changed
+    // (sequence gap, backpressure) would otherwise leave the panel stale until
+    // the user pressed refresh by hand.
+    render(<ChangesPanel visible />);
+    expect(await screen.findByRole("button", { name: "Changes: src/app.ts" })).toBeVisible();
+    const callsBefore = request.mock.calls.filter(([method]) => method === "git.getStatus").length;
+
+    act(() => {
+      useAppStore.getState().completeRehydrate({ lastSequence: 5 });
+    });
+
+    await waitFor(() =>
+      expect(
+        request.mock.calls.filter(([method]) => method === "git.getStatus").length,
+      ).toBeGreaterThan(callsBefore),
+    );
+  });
+
   it("stages a file and commits staged content with Ctrl+Enter", async () => {
     const stagedOnly = status({
       revision: 8,

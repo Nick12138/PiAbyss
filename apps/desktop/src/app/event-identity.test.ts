@@ -211,6 +211,57 @@ describe("expectedIdentityForEvent", () => {
       false,
     );
   });
+
+  it("accepts git.changed across Session switches and package reloads", () => {
+    // A watcher armed under Session A keeps emitting after the user switches to
+    // Session B, and a package reload only bumps the Session revision. Git state
+    // is workspace-scoped, so neither may reject the event.
+    for (const stale of [
+      { sessionId: "55555555-5555-4555-8555-555555555555", sessionRevision: 3 },
+      { sessionId: state.sessionId, sessionRevision: state.sessionRevision + 1 },
+      { sessionId: null, sessionRevision: 0 },
+    ]) {
+      const incoming = event("git.changed", stale);
+      expect(client.shouldAcceptEvent(incoming, expectedIdentityForEvent(incoming, state))).toBe(
+        true,
+      );
+    }
+  });
+
+  it("still rejects git.changed from another workspace generation", () => {
+    const incoming = event("git.changed", { workspaceRevision: state.workspaceRevision + 1 });
+    expect(client.shouldAcceptEvent(incoming, expectedIdentityForEvent(incoming, state))).toBe(
+      false,
+    );
+  });
+
+  it("narrows git.taskFinished to the Host plus workspace generation", () => {
+    // A parked workspace's revision is validated against the bound-workspace map
+    // by App.handleHostEvent (which excuses the Session stamp); this identity
+    // helper only guarantees the Host and workspace never drift silently.
+    const parked = event("git.taskFinished", {
+      workspaceId: "44444444-4444-4444-8444-444444444444",
+      workspaceRevision: 5,
+      sessionId: null,
+      sessionRevision: 0,
+      payload: { taskId: "t", operation: "pull", workspaceName: "w", ok: true },
+    });
+    expect(client.shouldAcceptEvent(parked, expectedIdentityForEvent(parked, state))).toBe(false);
+
+    const foreign = event("git.taskFinished", {
+      hostInstanceId: "99999999-9999-4999-8999-999999999999",
+    });
+    expect(client.shouldAcceptEvent(foreign, expectedIdentityForEvent(foreign, state))).toBe(false);
+
+    const activeWorkspace = event("git.taskFinished", {
+      sessionId: null,
+      sessionRevision: 0,
+      payload: { taskId: "t", operation: "pull", workspaceName: "w", ok: true },
+    });
+    expect(
+      client.shouldAcceptEvent(activeWorkspace, expectedIdentityForEvent(activeWorkspace, state)),
+    ).toBe(true);
+  });
 });
 
 describe("extensionUiRequestDelivery", () => {

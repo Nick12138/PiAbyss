@@ -231,6 +231,12 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [selectedCommit, setSelectedCommit] = useState<GitCommitSummary | null>(null);
   const [commitDiff, setCommitDiff] = useState<GitCommitDiffSnapshot | null>(null);
+  // Recovery-harness revision: bumped by every App rehydrate so the panel can
+  // re-read the working tree afterwards. A dropped git.changed (sequence gap,
+  // backpressure, identity gate) has no other way back into sync: rehydrate
+  // carries no git state, and the watch effect below only re-runs when the
+  // workspace generation moves.
+  const recoveryRevision = useAppStore((state) => state.recoveryRevision);
   const listRef = useRef<HTMLDivElement>(null);
   const generation = useRef(0);
   // Latest snapshot revision applied by any path (watch response, mutation
@@ -362,6 +368,22 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
         .catch(() => undefined);
     };
   }, [visible, gitWatchContext, acceptSnapshot, t]);
+
+  // Recovery harness: a rehydrate pass re-establishes the epoch but carries no
+  // Git state, and the watch effect above only re-runs when the workspace
+  // generation moves. Without this, a single dropped git.changed (sequence gap,
+  // outbound backpressure, or a rejected envelope) left the panel showing a
+  // stale tree until the user pressed refresh by hand. Re-read status after
+  // every recovery that happens while the panel is on screen; a recovery that
+  // landed while it was hidden is covered by the watch effect's own fetch on
+  // open.
+  const handledRecoveryRef = useRef(recoveryRevision);
+  useEffect(() => {
+    if (handledRecoveryRef.current === recoveryRevision) return;
+    handledRecoveryRef.current = recoveryRevision;
+    if (!visible) return;
+    void refresh();
+  }, [recoveryRevision, visible, refresh]);
 
   // Quietly reload the open diff after a git.changed event so the detail view
   // stays in sync with disk without unmounting or flashing a spinner.

@@ -276,11 +276,25 @@ export function handleHostEvent(
     (event.event === "extensionUi.notification" || event.event === "package.diagnostic");
   // Async git task results (pull/push) are addressed to the workspace that
   // requested them — which may now be parked after the user switched away.
-  // They are user-facing toasts plus optional snapshot deliveries, never an
-  // epoch-level identity mismatch.
-  const gitTaskEvent =
-    event.event === "git.taskFinished" &&
-    (event.workspaceId === activeWorkspaceId || boundParkedWorkspace);
+  //
+  // Git state is workspace-scoped, not Session-scoped: a watcher armed under
+  // one Session keeps emitting after the user switches Sessions, and a package
+  // reload only bumps the Session revision, so the envelope's Session stamp is
+  // routinely older than the live one. Requiring it here used to reject those
+  // events as identity mismatches (visible desync) and left the Changes panel
+  // stale until a manual refresh — no recovery path re-fetches git status.
+  //
+  // The Host and the workspace generation are still enforced: the workspace
+  // must be the active one at its live revision, or a parked workspace at the
+  // revision the Host reported for it.
+  const gitWorkspaceEvent =
+    (event.event === "git.changed" || event.event === "git.taskFinished") &&
+    hostId !== null &&
+    event.hostInstanceId === hostId &&
+    ((event.workspaceId !== null &&
+      event.workspaceId === activeWorkspaceId &&
+      event.workspaceRevision === store.workspace?.revision) ||
+      boundParkedWorkspace);
   // Session-scoped Extension UI surface state is only ever applied to the
   // active session (see the guards in the switch below), so surface events
   // arriving for any other session — a parked workspace's session, or a
@@ -301,7 +315,7 @@ export function handleHostEvent(
   if (
     !parkedWorkspaceEvent &&
     !parkedToastEvent &&
-    !gitTaskEvent &&
+    !gitWorkspaceEvent &&
     !foreignSessionSurfaceEvent &&
     !lifecycleEvent &&
     !hostClient.shouldAcceptEvent(

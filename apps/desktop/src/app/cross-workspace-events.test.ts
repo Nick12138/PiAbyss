@@ -567,6 +567,50 @@ describe("App cross-workspace event handling", () => {
     ).toBe(true);
   });
 
+  it("accepts a git.changed stamped with a stale Session identity", () => {
+    const agentEvents = eventBuffer();
+    // The watcher was armed while the active Session was s0; the user then
+    // switched to s1. The Host's envelope still carries the arming Session.
+    useAppStore.getState().applySessionSnapshot(activeSessionSnapshot("s1"));
+    const gitChanged = {
+      protocolVersion: 1 as const,
+      event: "git.changed" as const,
+      hostInstanceId: HOST_ID,
+      workspaceId: ACTIVE_WS_ID,
+      workspaceRevision: 1,
+      sessionId: "s0",
+      sessionRevision: 1,
+      packageRevision: 0,
+      sequence: 1,
+      timestamp: Date.now(),
+      payload: { snapshot: { state: "not_repository" } },
+    } as unknown as HostEventEnvelope;
+    expect(handleHostEvent(gitChanged, requestRecovery, agentEvents)).toBe(true);
+    expect(requestRecovery).not.toHaveBeenCalled();
+    expect(useAppStore.getState().desynchronized).toBe(false);
+  });
+
+  it("still rejects a git.changed from a foreign workspace generation", () => {
+    const agentEvents = eventBuffer();
+    const gitChanged = {
+      protocolVersion: 1 as const,
+      event: "git.changed" as const,
+      hostInstanceId: HOST_ID,
+      workspaceId: ACTIVE_WS_ID,
+      workspaceRevision: 99,
+      sessionId: null,
+      sessionRevision: 0,
+      packageRevision: 0,
+      sequence: 1,
+      timestamp: Date.now(),
+      payload: { snapshot: { state: "not_repository" } },
+    } as unknown as HostEventEnvelope;
+    expect(handleHostEvent(gitChanged, requestRecovery, agentEvents)).toBe(false);
+    expect(requestRecovery).toHaveBeenCalledWith(
+      expect.stringContaining("identity mismatch for git.changed"),
+    );
+  });
+
   it("rejects a git task result from a workspace that is not bound", () => {
     const agentEvents = eventBuffer();
     const gitTask = {

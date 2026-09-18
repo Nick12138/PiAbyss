@@ -503,6 +503,13 @@ export type AppState = EpochState & {
   hostFatal: string | null;
   connecting: boolean;
   rehydrating: boolean;
+  /**
+   * Bumped every time an authoritative rehydrate completes. Recovery snapshots
+   * carry no Git state, so workspace-scoped panels (the Changes panel's watch
+   * subscription) use this as a harness to re-arm and re-read the working tree
+   * after a dropped event would otherwise leave them stale forever.
+   */
+  recoveryRevision: number;
   /** True while the Providers settings form holds unsaved edits (guards Settings close/nav). */
   providersDirty: boolean;
   providerLogin: ProviderLoginUiState | null;
@@ -696,6 +703,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   hostFatal: null,
   connecting: true,
   rehydrating: false,
+  recoveryRevision: 0,
   providersDirty: false,
   providerLogin: null,
   beginProviderLogin: (loginId, providerId) =>
@@ -1643,6 +1651,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       desynchronized: false,
       desyncReason: undefined,
       rehydrating: false,
+      recoveryRevision: current.recoveryRevision + 1,
       extensionUiRequest: null,
       extensionUiQueue: [],
       extensionDecisionGroups: {},
