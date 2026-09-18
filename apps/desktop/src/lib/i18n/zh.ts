@@ -1686,6 +1686,8 @@ export const zh: Record<MessageKey, string> = {
   scheduleFormCwd: "工作目录",
   scheduleFormTrigger: "触发方式",
   scheduleFormIntervalUnit: "单位",
+  scheduleFormTimezone: "时区",
+  scheduleFormTimezone: "时区",
   scheduleFormTimezonePlaceholder: "时区，如 Asia/Shanghai（留空用系统时区）",
   scheduleFormValidateCron: "校验",
   scheduleFormCronValid: "有效 — 未来会触发",

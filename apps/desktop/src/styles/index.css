@@ -300,6 +300,29 @@ body,
   height: var(--interface-control-height);
 }
 
+/* Native datetime inputs read as system chrome by default; align them with the
+   app's own inputs: tabular numerals, a subdued calendar glyph that lights up
+   on hover, and no garish focus ring from the UA stylesheet. */
+input[type="datetime-local"],
+input[type="date"],
+input[type="time"] {
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  opacity: 0.45;
+  cursor: pointer;
+  transition: opacity var(--theme-motion-fast) var(--theme-easing);
+}
+
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="time"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 0.9;
+}
+
 :root:is([data-interface-density="compact"], [data-interface-density="comfortable"])
   :where(
     input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not(

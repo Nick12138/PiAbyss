@@ -50,17 +50,23 @@ const textareaClass =
 function FormSection({
   title,
   description,
+  headerExtra,
   children,
 }: {
   title: string;
   description?: string;
+  /** Optional content pinned to the right edge of the header row. */
+  headerExtra?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-3 border-b border-border-subtle px-4 py-4 last:border-b-0">
-      <header className="flex flex-col gap-0.5">
-        <h3 className="text-[13px] font-semibold">{title}</h3>
-        {description && <p className="text-xs leading-4 text-muted">{description}</p>}
+    <section className="flex flex-col gap-3 border-b border-border-subtle px-4 py-4 last:border-b-0 [&:has(+.schedule-form-footer)]:border-b-0">
+      <header className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-0.5">
+          <h3 className="text-[13px] font-semibold">{title}</h3>
+          {description && <p className="text-xs leading-4 text-muted">{description}</p>}
+        </div>
+        {headerExtra && <div className="shrink-0">{headerExtra}</div>}
       </header>
       {children}
     </section>
@@ -91,41 +97,29 @@ function Field({
   );
 }
 
-/** Compact selectable card used for the plan kind (2 options). */
-function ChoiceCard({
-  active,
-  title,
+/** Settings-style row: text on the left, control pinned to the right edge. */
+function FieldRow({
+  label,
   description,
-  icon: Icon,
-  onClick,
+  error,
+  children,
 }: {
-  active: boolean;
-  title: string;
-  description: string;
-  icon: LucideIcon;
-  onClick: () => void;
+  label: string;
+  description?: ReactNode;
+  error?: string;
+  children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      data-state={active ? "active" : "inactive"}
-      className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors ${
-        active
-          ? "border-accent bg-accent/10"
-          : "border-border hover:border-border-strong hover:bg-surface-overlay"
-      }`}
-    >
-      <Icon
-        size={15}
-        className={`mt-0.5 shrink-0 ${active ? "text-accent" : "text-muted"}`}
-        aria-hidden="true"
-      />
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-[13px] font-medium">{title}</span>
-        <span className="text-xs leading-4 text-muted">{description}</span>
+    <div className="flex items-center justify-between gap-4">
+      <span className="min-w-0">
+        <span className="block text-sm">{label}</span>
+        {description && (
+          <span className="block text-xs leading-4 text-muted">{description}</span>
+        )}
+        {error && <span className="block text-xs text-danger">{error}</span>}
       </span>
-    </button>
+      <div className="flex shrink-0 items-center gap-2">{children}</div>
+    </div>
   );
 }
 
@@ -452,7 +446,7 @@ export function ScheduleJobDialog({
             </FormSection>
 
             {/* Sticky footer: the submit action never scrolls out of reach. */}
-            <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-border bg-surface-raised px-4 py-3">
+            <div className="schedule-form-footer sticky bottom-0 flex items-center justify-end gap-2 px-4 py-3">
               <button type="button" className={secondaryButton} onClick={onClose}>
                 {t("scheduleFormCancel")}
               </button>
@@ -498,35 +492,42 @@ export function ScheduleJobDialog({
             <FormSection
               title={t("scheduleFormSectionBasics")}
               description={t("scheduleFormSectionBasicsDesc")}
+              headerExtra={
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={form.enabled}
+                    onChange={(enabled) => patch({ enabled })}
+                    label={t("scheduleFormEnabled")}
+                  />
+                  <span className="text-[13px] font-medium text-foreground">
+                    {t("scheduleFormEnabled")}
+                  </span>
+                </div>
+              }
             >
-              <Field label={t("scheduleFormName")} error={errors.name && t(errors.name)}>
+              <FieldRow label={t("scheduleFormName")} error={errors.name && t(errors.name)}>
                 <input
                   data-testid="schedule-form-name"
                   value={form.name}
                   onChange={(event) => patch({ name: event.target.value })}
-                  className={inputClass}
+                  className={`${inputClass} w-64`}
                 />
-              </Field>
+              </FieldRow>
 
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-muted">{t("scheduleFormKind")}</span>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <ChoiceCard
-                    active={form.kind === "prompt"}
-                    icon={Sparkles}
-                    title={t("scheduleFormKindPrompt")}
-                    description={t("scheduleFormKindPromptHint")}
-                    onClick={() => patch({ kind: "prompt" })}
-                  />
-                  <ChoiceCard
-                    active={form.kind === "command"}
-                    icon={Terminal}
-                    title={t("scheduleFormKindCommand")}
-                    description={t("scheduleFormKindCommandHint")}
-                    onClick={() => patch({ kind: "command" })}
-                  />
-                </div>
-              </div>
+              <FieldRow label={t("scheduleFormKind")}>
+                <TriggerChip
+                  active={form.kind === "prompt"}
+                  icon={Sparkles}
+                  label={t("scheduleFormKindPrompt")}
+                  onClick={() => patch({ kind: "prompt" })}
+                />
+                <TriggerChip
+                  active={form.kind === "command"}
+                  icon={Terminal}
+                  label={t("scheduleFormKindCommand")}
+                  onClick={() => patch({ kind: "command" })}
+                />
+              </FieldRow>
 
               {form.kind === "prompt" ? (
                 <Field label={t("scheduleFormPrompt")} error={errors.prompt && t(errors.prompt)}>
@@ -566,32 +567,30 @@ export function ScheduleJobDialog({
                 </Field>
               )}
 
-              <Field label={t("scheduleFormCwd")} error={errors.cwd && t(errors.cwd)}>
-                <div className="flex items-center gap-2">
-                  <Select
-                    value={cwdValue}
-                    onChange={(value) => {
-                      if (value === CWD_OPEN_VALUE) void pickFolder();
-                      else patch({ cwd: value });
-                    }}
-                    ariaLabel={t("scheduleFormCwd")}
-                    className="flex-1"
-                    triggerClassName="w-full"
-                    options={[
-                      ...cwdPresets.map((path) => ({ value: path, label: path })),
-                      { value: CWD_OPEN_VALUE, label: t("scheduleFormOpenFolder") },
-                    ]}
-                  />
-                  <button
-                    type="button"
-                    className={secondaryButton}
-                    aria-label={t("scheduleFormOpenFolder")}
-                    onClick={() => void pickFolder()}
-                  >
-                    <FolderOpen size={13} />
-                  </button>
-                </div>
-              </Field>
+              <FieldRow label={t("scheduleFormCwd")} error={errors.cwd && t(errors.cwd)}>
+                <Select
+                  value={cwdValue}
+                  onChange={(value) => {
+                    if (value === CWD_OPEN_VALUE) void pickFolder();
+                    else patch({ cwd: value });
+                  }}
+                  ariaLabel={t("scheduleFormCwd")}
+                  className="w-64"
+                  triggerClassName="w-full"
+                  options={[
+                    ...cwdPresets.map((path) => ({ value: path, label: path })),
+                    { value: CWD_OPEN_VALUE, label: t("scheduleFormOpenFolder") },
+                  ]}
+                />
+                <button
+                  type="button"
+                  className={secondaryButton}
+                  aria-label={t("scheduleFormOpenFolder")}
+                  onClick={() => void pickFolder()}
+                >
+                  <FolderOpen size={13} />
+                </button>
+              </FieldRow>
             </FormSection>
 
             {/* ② Trigger: a chip row, with only the selected editor expanded. */}
@@ -626,92 +625,97 @@ export function ScheduleJobDialog({
               </p>
 
               {form.triggerType === "once" && (
-                <Field label={t("scheduleTriggerOnce")} error={errors.onceAt && t(errors.onceAt)}>
+                <FieldRow
+                  label={t("scheduleTriggerOnce")}
+                  error={errors.onceAt && t(errors.onceAt)}
+                >
                   <input
                     type="datetime-local"
                     value={form.onceAt}
                     onChange={(event) => patch({ onceAt: event.target.value })}
-                    className={inputClass}
+                    className={`${inputClass} w-56`}
                   />
-                </Field>
+                </FieldRow>
               )}
 
               {form.triggerType === "interval" && (
-                <Field
+                <FieldRow
                   label={t("scheduleTriggerInterval")}
                   error={errors.interval && t(errors.interval)}
                 >
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={1}
-                      value={form.intervalValue}
-                      onChange={(event) => patch({ intervalValue: Number(event.target.value) })}
-                      className={`${inputClass} w-24`}
-                    />
-                    <Select
-                      value={form.intervalUnit}
-                      onChange={(value) =>
-                        patch({ intervalUnit: value as ScheduleFormState["intervalUnit"] })
-                      }
-                      ariaLabel={t("scheduleFormIntervalUnit")}
-                      triggerClassName="w-28"
-                      options={[
-                        { value: "s", label: t("scheduleIntervalSeconds") },
-                        { value: "m", label: t("scheduleIntervalMinutes") },
-                        { value: "h", label: t("scheduleIntervalHours") },
-                        { value: "d", label: t("scheduleIntervalDays") },
-                        { value: "w", label: t("scheduleIntervalWeeks") },
-                        { value: "mo", label: t("scheduleIntervalMonths") },
-                      ]}
-                    />
-                  </div>
-                </Field>
+                  <input
+                    type="number"
+                    min={1}
+                    value={form.intervalValue}
+                    onChange={(event) => patch({ intervalValue: Number(event.target.value) })}
+                    className={`${inputClass} w-20 text-right`}
+                  />
+                  <Select
+                    value={form.intervalUnit}
+                    onChange={(value) =>
+                      patch({ intervalUnit: value as ScheduleFormState["intervalUnit"] })
+                    }
+                    ariaLabel={t("scheduleFormIntervalUnit")}
+                    triggerClassName="w-32"
+                    options={[
+                      { value: "s", label: t("scheduleIntervalSeconds") },
+                      { value: "m", label: t("scheduleIntervalMinutes") },
+                      { value: "h", label: t("scheduleIntervalHours") },
+                      { value: "d", label: t("scheduleIntervalDays") },
+                      { value: "w", label: t("scheduleIntervalWeeks") },
+                      { value: "mo", label: t("scheduleIntervalMonths") },
+                    ]}
+                  />
+                </FieldRow>
               )}
 
               {form.triggerType === "cron" && (
-                <Field
-                  label={t("scheduleTriggerCron")}
-                  error={errors.cron && t(errors.cron)}
-                  hint={
-                    <button
-                      type="button"
-                      className="text-xs text-accent hover:underline disabled:cursor-not-allowed disabled:opacity-40"
-                      disabled={cronChecking || !form.cron.trim()}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        void validateCron();
-                      }}
-                    >
-                      {cronChecking ? t("scheduleFormValidating") : t("scheduleFormValidateCron")}
-                    </button>
-                  }
-                >
-                  <div className="flex flex-col gap-1.5">
+                <>
+                  <FieldRow
+                    label={t("scheduleTriggerCron")}
+                    description={
+                      <button
+                        type="button"
+                        className="text-xs text-accent hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={cronChecking || !form.cron.trim()}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          void validateCron();
+                        }}
+                      >
+                        {cronChecking
+                          ? t("scheduleFormValidating")
+                          : t("scheduleFormValidateCron")}
+                      </button>
+                    }
+                    error={errors.cron && t(errors.cron)}
+                  >
                     <input
                       data-testid="schedule-form-cron"
                       value={form.cron}
                       onChange={(event) => patch({ cron: event.target.value })}
-                      className={`${inputClass} font-mono`}
+                      className={`${inputClass} w-56 font-mono`}
                       placeholder="0 9 * * 1-5"
                     />
+                  </FieldRow>
+                  <FieldRow label={t("scheduleFormTimezone")}>
                     <input
                       value={form.cronTimezone}
                       onChange={(event) => patch({ cronTimezone: event.target.value })}
-                      className={inputClass}
+                      className={`${inputClass} w-56`}
                       placeholder={t("scheduleFormTimezonePlaceholder")}
                     />
-                    {cronCheck && (
-                      <span
-                        className={`text-xs ${cronCheck.valid ? "text-success" : "text-danger"}`}
-                      >
-                        {cronCheck.valid
-                          ? t("scheduleFormCronValid")
-                          : (cronCheck.reason ?? t("scheduleFormCronInvalid"))}
-                      </span>
-                    )}
-                  </div>
-                </Field>
+                  </FieldRow>
+                  {cronCheck && (
+                    <p
+                      className={`text-xs ${cronCheck.valid ? "text-success" : "text-danger"}`}
+                    >
+                      {cronCheck.valid
+                        ? t("scheduleFormCronValid")
+                        : (cronCheck.reason ?? t("scheduleFormCronInvalid"))}
+                    </p>
+                  )}
+                </>
               )}
             </FormSection>
 
@@ -719,7 +723,7 @@ export function ScheduleJobDialog({
             <FormSection title={t("scheduleFormSectionExecution")}>
               {form.kind === "prompt" && (
                 <>
-                  <Field label={t("scheduleFormModel")}>
+                  <FieldRow label={t("scheduleFormModel")}>
                     {models.length > 0 ? (
                       <Select
                         value={modelValue}
@@ -736,6 +740,8 @@ export function ScheduleJobDialog({
                           }
                         }}
                         ariaLabel={t("scheduleFormModel")}
+                        className="min-w-56 max-w-72"
+                        triggerClassName="w-full"
                         options={[
                           { value: MODEL_DEFAULT_VALUE, label: defaultModelLabel },
                           ...models.map((model) => ({
@@ -746,40 +752,42 @@ export function ScheduleJobDialog({
                         ]}
                       />
                     ) : (
-                      <div className={`${inputClass} flex items-center text-muted`}>
+                      <div className={`${inputClass} flex w-56 items-center text-muted`}>
                         {defaultModelLabel}
                       </div>
                     )}
-                  </Field>
+                  </FieldRow>
 
-                  <Field label={t("scheduleFormPermission")}>
+                  <FieldRow label={t("scheduleFormPermission")}>
                     <Select
                       value={form.permission}
                       onChange={(value) =>
                         patch({ permission: value as ScheduleFormState["permission"] })
                       }
                       ariaLabel={t("scheduleFormPermission")}
+                      triggerClassName="w-40"
                       options={[
                         { value: "read_only", label: t("schedulePermissionReadOnly") },
                         { value: "write", label: t("schedulePermissionWrite") },
                         { value: "full", label: t("schedulePermissionFull") },
                       ]}
                     />
-                  </Field>
+                  </FieldRow>
                 </>
               )}
 
-              <Field label={t("scheduleFormNotify")}>
+              <FieldRow label={t("scheduleFormNotify")}>
                 <Select
                   value={form.notify}
                   onChange={(value) => patch({ notify: value as ScheduleFormState["notify"] })}
                   ariaLabel={t("scheduleFormNotify")}
+                  triggerClassName="w-40"
                   options={[
                     { value: "none", label: t("scheduleNotifyNone") },
                     { value: "system", label: t("scheduleNotifySystem") },
                   ]}
                 />
-              </Field>
+              </FieldRow>
             </FormSection>
 
             {/* ④ Advanced: collapsed by default. */}
@@ -794,69 +802,60 @@ export function ScheduleJobDialog({
               </button>
               {advancedOpen && (
                 <div className="flex flex-col gap-3 pt-1">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <Field
-                      label={t("scheduleFormTimeoutMinutes")}
-                      error={errors.timeout && t(errors.timeout)}
-                    >
-                      <input
-                        type="number"
-                        min={1}
-                        max={SCHEDULE_MAX_TIMEOUT_MINUTES}
-                        value={form.timeoutMinutes}
-                        onChange={(event) => patch({ timeoutMinutes: Number(event.target.value) })}
-                        className={inputClass}
-                      />
-                    </Field>
-                    <Field
-                      label={t("scheduleFormMaxRuns")}
-                      error={errors.maxRuns && t(errors.maxRuns)}
-                    >
-                      <input
-                        type="number"
-                        min={1}
-                        value={form.maxRuns}
-                        onChange={(event) => patch({ maxRuns: event.target.value })}
-                        placeholder={t("scheduleFormMaxRunsPlaceholder")}
-                        className={inputClass}
-                      />
-                    </Field>
-                  </div>
-                  <Field label={t("scheduleFormMissedWindow")}>
+                  <FieldRow
+                    label={t("scheduleFormTimeoutMinutes")}
+                    error={errors.timeout && t(errors.timeout)}
+                  >
+                    <input
+                      type="number"
+                      min={1}
+                      max={SCHEDULE_MAX_TIMEOUT_MINUTES}
+                      value={form.timeoutMinutes}
+                      onChange={(event) => patch({ timeoutMinutes: Number(event.target.value) })}
+                      className={`${inputClass} w-20 text-right`}
+                    />
+                  </FieldRow>
+                  <FieldRow
+                    label={t("scheduleFormMaxRuns")}
+                    error={errors.maxRuns && t(errors.maxRuns)}
+                  >
+                    <input
+                      type="number"
+                      min={1}
+                      value={form.maxRuns}
+                      onChange={(event) => patch({ maxRuns: event.target.value })}
+                      placeholder={t("scheduleFormMaxRunsPlaceholder")}
+                      className={`${inputClass} w-20 text-right`}
+                    />
+                  </FieldRow>
+                  <FieldRow label={t("scheduleFormMissedWindow")}>
                     <Select
                       value={form.missedWindow}
                       onChange={(value) =>
                         patch({ missedWindow: value as ScheduleFormState["missedWindow"] })
                       }
                       ariaLabel={t("scheduleFormMissedWindow")}
+                      triggerClassName="w-40"
                       options={[
                         { value: "catch_up_one", label: t("scheduleMissedWindowCatchUp") },
                         { value: "skip", label: t("scheduleMissedWindowSkip") },
                       ]}
                     />
-                  </Field>
-                  <Field label={t("scheduleFormTags")}>
+                  </FieldRow>
+                  <FieldRow label={t("scheduleFormTags")}>
                     <input
                       value={form.tags}
                       onChange={(event) => patch({ tags: event.target.value })}
                       placeholder={t("scheduleFormTagsPlaceholder")}
-                      className={inputClass}
+                      className={`${inputClass} w-56`}
                     />
-                  </Field>
+                  </FieldRow>
                 </div>
               )}
             </FormSection>
 
-            {/* Sticky footer: enabled toggle on the left, actions on the right. */}
-            <div className="sticky bottom-0 flex items-center gap-3 border-t border-border bg-surface-raised px-4 py-3">
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={form.enabled}
-                  onChange={(enabled) => patch({ enabled })}
-                  label={t("scheduleFormEnabled")}
-                />
-                <span className="text-xs text-muted">{t("scheduleFormEnabled")}</span>
-              </div>
+            {/* Sticky footer: actions on the right. */}
+            <div className="schedule-form-footer sticky bottom-0 flex items-center gap-3 px-4 py-3">
               <div className="ml-auto flex min-w-0 items-center gap-3">
                 {saveError && (
                   <span

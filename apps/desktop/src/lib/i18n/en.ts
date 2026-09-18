@@ -1758,6 +1758,8 @@ export const en = {
   scheduleFormCwd: "Working directory",
   scheduleFormTrigger: "Trigger",
   scheduleFormIntervalUnit: "Unit",
+  scheduleFormTimezone: "Timezone",
+  scheduleFormTimezone: "Timezone",
   scheduleFormTimezonePlaceholder: "Timezone, e.g. Asia/Shanghai (empty = system)",
   scheduleFormValidateCron: "Validate",
   scheduleFormCronValid: "Valid — will trigger in the future",

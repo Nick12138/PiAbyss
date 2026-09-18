@@ -4,7 +4,7 @@ import { AlertTriangle, PackageOpen, X, type LucideIcon } from "lucide-react";
 import { useT } from "../lib/i18n/use-t";
 
 const buttonBase =
-  "interface-density-control inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs disabled:cursor-not-allowed disabled:opacity-40";
 export const secondaryButton = `${buttonBase} theme-secondary-control border border-border hover:bg-surface-overlay`;
 export const primaryButton = `${buttonBase} theme-primary-control bg-accent text-accent-foreground hover:bg-accent-hover`;
 
