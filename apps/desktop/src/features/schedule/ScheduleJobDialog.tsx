@@ -226,6 +226,34 @@ export function ScheduleJobDialog({
       showCloseIcon
       showCancel={false}
       hideActions
+      headerExtra={
+        !job && (
+          <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
+            {(["smart", "manual"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setMode(value)}
+                data-state={mode === value ? "active" : "inactive"}
+                title={
+                  value === "smart"
+                    ? t("scheduleFormModeSmartHint")
+                    : t("scheduleFormModeManualHint")
+                }
+                className={`rounded px-2 py-1 text-xs font-medium ${
+                  mode === value
+                    ? "bg-accent/15 text-accent"
+                    : "text-muted hover:bg-surface-overlay hover:text-foreground"
+                }`}
+              >
+                {value === "smart"
+                  ? t("scheduleFormModeSmart")
+                  : t("scheduleFormModeManual")}
+              </button>
+            ))}
+          </div>
+        )
+      }
       onCancel={onClose}
       onConfirm={submit}
     >
@@ -233,35 +261,6 @@ export function ScheduleJobDialog({
         data-testid="schedule-job-form"
         className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto px-1 text-sm"
       >
-        {!job && (
-          <div className="grid grid-cols-2 gap-2">
-            {(["smart", "manual"] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setMode(value)}
-                data-state={mode === value ? "active" : "inactive"}
-                className={`rounded-md border px-3 py-2 text-left ${
-                  mode === value
-                    ? "border-accent bg-accent/10"
-                    : "border-border hover:bg-surface-overlay"
-                }`}
-              >
-                <div className="text-[13px] font-medium">
-                  {value === "smart"
-                    ? t("scheduleFormModeSmart")
-                    : t("scheduleFormModeManual")}
-                </div>
-                <div className="text-xs text-muted">
-                  {value === "smart"
-                    ? t("scheduleFormModeSmartHint")
-                    : t("scheduleFormModeManualHint")}
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-
         {mode === "smart" && !job && (
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1">
@@ -558,7 +557,8 @@ export function ScheduleJobDialog({
                   { value: MODEL_DEFAULT_VALUE, label: defaultModelLabel },
                   ...models.map((model) => ({
                     value: `${model.provider}/${model.modelId}`,
-                    label: `${model.providerName ?? model.provider} · ${model.name}`,
+                    label: model.name || model.modelId,
+                    group: model.providerName || model.provider,
                   })),
                 ]}
               />

@@ -1,10 +1,13 @@
 import { Check, ChevronDown } from "lucide-react";
 import { createPortal } from "react-dom";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 interface SelectOption {
   value: string;
   label: ReactNode;
+  /** Optional group header; rendered above the first option of each group
+   *  (like the chat model menu's provider headers). */
+  group?: string;
 }
 
 interface SelectProps {
@@ -42,6 +45,17 @@ export function Select({
   const menuRef = useRef<HTMLDivElement>(null);
 
   const selected = options.find((option) => option.value === value);
+
+  // Precompute group-header placement: a header row shows before the first
+  // option of each distinct group (undefined group = no header).
+  const groupHeaders = new Map<string, string>();
+  let lastGroup: string | undefined;
+  for (const option of options) {
+    if (option.group !== undefined && option.group !== lastGroup) {
+      groupHeaders.set(option.value, option.group);
+    }
+    lastGroup = option.group;
+  }
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -131,27 +145,37 @@ export function Select({
           >
             {options.map((option) => {
               const isSelected = option.value === value;
+              const header = groupHeaders.get(option.value);
               return (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="option"
-                  aria-selected={isSelected}
-                  className={`flex h-8 w-full items-center gap-1.5 whitespace-nowrap px-2.5 text-left text-xs transition-colors hover:bg-surface-overlay ${
-                    isSelected ? "font-medium text-foreground" : "text-muted"
-                  }`}
-                  onClick={() => {
-                    setOpen(false);
-                    onChange(option.value);
-                  }}
-                >
-                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                  {isSelected && (
-                    <span className="flex shrink-0 items-center justify-center">
-                      <Check size={16} strokeWidth={2.5} />
-                    </span>
+                <Fragment key={option.value}>
+                  {header !== undefined && (
+                    <div
+                      role="presentation"
+                      className="flex h-7 items-center px-2.5 pt-1 text-xs font-medium text-foreground"
+                    >
+                      {header}
+                    </div>
                   )}
-                </button>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    className={`flex h-8 w-full items-center gap-1.5 whitespace-nowrap px-2.5 text-left text-xs transition-colors hover:bg-surface-overlay ${
+                      isSelected ? "font-medium text-foreground" : "text-muted"
+                    }`}
+                    onClick={() => {
+                      setOpen(false);
+                      onChange(option.value);
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                    {isSelected && (
+                      <span className="flex shrink-0 items-center justify-center">
+                        <Check size={16} strokeWidth={2.5} />
+                      </span>
+                    )}
+                  </button>
+                </Fragment>
               );
             })}
           </div>,
