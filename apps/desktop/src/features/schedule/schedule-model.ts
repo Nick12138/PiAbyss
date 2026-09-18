@@ -1,10 +1,20 @@
 import type { ScheduleJob, ScheduleJobInput, ScheduleTrigger } from "@piabyss/protocol";
 import type { MessageKey } from "../../lib/i18n";
+import type { Translate } from "../../lib/i18n/use-t";
 
 /** Matches the plugin's DEFAULTS.timeoutMs (30 minutes). */
 const SCHEDULE_DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 /** Plugin LIMITS.maxJobs-aware guard rails used by the form. */
 export const SCHEDULE_MAX_TIMEOUT_MINUTES = 6 * 60;
+
+/** Shared run-status → i18n key map (主界面列表 / 详情 / 执行历史共用). */
+export const SCHEDULE_STATUS_LABEL: Record<string, MessageKey> = {
+  ok: "scheduleStatusOk",
+  error: "scheduleStatusError",
+  timeout: "scheduleStatusTimeout",
+  aborted: "scheduleStatusAborted",
+  running: "scheduleStatusRunning",
+};
 
 type SchedulePermissionValue = "read_only" | "write" | "full";
 
@@ -245,6 +255,189 @@ export function formatIntervalEvery(every: string): string {
   }
   if (unit === "m") return `${value}m`;
   return `${value}${unit}`;
+}
+
+/* ── Smart-creation preview ────────────────────────────────────
+ *
+ * The preview answers "what will actually be created?", so a field the AI
+ * never mentioned must not read as an unresolved blank when the plugin has a
+ * well-defined default for it: a null model really creates "host default", a
+ * null maxRuns really creates "unlimited". Only genuinely open *required*
+ * fields are reported as pending, and fields that do not apply to the chosen
+ * kind are dropped instead of rendered empty.
+ */
+
+/** Plan-config draft parsed from the assistant's ```schedule-plan block.
+ *  `null` means the field was never determined. */
+export type SchedulePlanDraft = {
+  name?: string | null;
+  kind?: "prompt" | "command" | null;
+  prompt?: string | null;
+  command?: string | null;
+  cwd?: string | null;
+  trigger?: ScheduleTrigger | null;
+  permission?: string | null;
+  model?: { provider: string; id: string } | null;
+  missedWindow?: string | null;
+  timeoutMs?: number | null;
+  maxRuns?: number | null;
+  tags?: string[] | null;
+  notify?: string | null;
+  loadExtensions?: boolean | null;
+};
+
+/** Matches the plugin's create path: only an explicit "command" is a command plan. */
+function schedulePlanIsCommand(plan: SchedulePlanDraft): boolean {
+  return plan.kind === "command";
+}
+
+/** Required fields still missing. Empty ⇒ the plan is creatable. */
+export function schedulePlanMissingFields(plan: SchedulePlanDraft): MessageKey[] {
+  const missing: MessageKey[] = [];
+  if (!plan.name?.trim()) missing.push("scheduleFormName");
+  if (!plan.cwd?.trim()) missing.push("scheduleFormCwd");
+  if (!(plan.trigger && typeof plan.trigger.type === "string")) {
+    missing.push("scheduleFormTrigger");
+  }
+  // Mirrors the create path: anything that is not explicitly "command" is
+  // created as a prompt plan, so a null kind does not block confirmation.
+  if (schedulePlanIsCommand(plan)) {
+    if (!plan.command?.trim()) missing.push("scheduleFormCommand");
+  } else if (!plan.prompt?.trim()) {
+    missing.push("scheduleFormPrompt");
+  }
+  return missing;
+}
+
+/**
+ * One preview line. `value === null` means the field is still open — by
+ * construction that only happens for required fields, because every optional
+ * field resolves to the value the plugin would use.
+ */
+export type SchedulePreviewRow = {
+  label: MessageKey;
+  value: string | null;
+  /** The value comes from the plugin/host default, not an explicit decision. */
+  fallback?: boolean;
+};
+
+/** Human trigger label, e.g. "周期 · 每 1h30m". */
+function scheduleTriggerDisplay(
+  trigger: ScheduleTrigger | null | undefined,
+  t: Translate,
+): string | null {
+  if (!trigger || typeof trigger.type !== "string") return null;
+  switch (trigger.type) {
+    case "manual":
+      return t("scheduleTriggerManual");
+    case "once":
+      return trigger.at
+        ? `${t("scheduleTriggerOnce")} · ${formatDateTime(trigger.at)}`
+        : t("scheduleTriggerOnce");
+    case "interval":
+      return `${t("scheduleTriggerInterval")} · ${t("scheduleEveryValue", {
+        value: formatIntervalEvery(trigger.every),
+      })}`;
+    case "cron":
+      return `${t("scheduleTriggerCron")} · ${trigger.cron}`;
+    default:
+      return null;
+  }
+}
+
+/** Preview rows for the smart-creation panel, in display order. */
+export function schedulePlanPreviewRows(
+  plan: SchedulePlanDraft,
+  t: Translate,
+  hostDefaultModelLabel: string,
+): SchedulePreviewRow[] {
+  const isCommand = schedulePlanIsCommand(plan);
+  const rows: SchedulePreviewRow[] = [
+    { label: "scheduleFormName", value: plan.name?.trim() || null },
+    {
+      label: "scheduleFormKind",
+      value: isCommand ? t("scheduleFormKindCommand") : t("scheduleFormKindPrompt"),
+      // A null kind creates a prompt plan, so label it as the default rather
+      // than pretending the choice is still open.
+      fallback: plan.kind !== "command",
+    },
+    {
+      label: "scheduleFormTrigger",
+      value: scheduleTriggerDisplay(plan.trigger, t),
+    },
+    { label: "scheduleFormCwd", value: plan.cwd?.trim() || null },
+  ];
+  // Permission/model only exist for prompt plans (`handleConfirm` ignores them
+  // for command plans), so a command plan drops the rows instead of showing
+  // them as undecided.
+  if (!isCommand) {
+    rows.push({
+      label: "scheduleFormPermission",
+      value: t(
+        plan.permission === "write"
+          ? "schedulePermissionWrite"
+          : plan.permission === "full"
+            ? "schedulePermissionFull"
+            : "schedulePermissionReadOnly",
+      ),
+      fallback: plan.permission !== "write" && plan.permission !== "full",
+    });
+    rows.push({
+      label: "scheduleFormModel",
+      value: plan.model ? `${plan.model.provider}/${plan.model.id}` : hostDefaultModelLabel,
+      fallback: !plan.model,
+    });
+  }
+  rows.push(
+    {
+      label: "scheduleFormMissedWindow",
+      value: t(
+        plan.missedWindow === "skip" ? "scheduleMissedWindowSkip" : "scheduleMissedWindowCatchUp",
+      ),
+      fallback: plan.missedWindow !== "skip",
+    },
+    {
+      label: "scheduleFormTimeout",
+      value: t("scheduleTimeoutValue", {
+        value: Math.round(
+          (typeof plan.timeoutMs === "number" && plan.timeoutMs > 0
+            ? plan.timeoutMs
+            : SCHEDULE_DEFAULT_TIMEOUT_MS) / 60_000,
+        ),
+      }),
+      fallback: !(typeof plan.timeoutMs === "number" && plan.timeoutMs > 0),
+    },
+    {
+      label: "scheduleFormMaxRuns",
+      value:
+        typeof plan.maxRuns === "number" && plan.maxRuns > 0
+          ? String(plan.maxRuns)
+          : t("scheduleFormMaxRunsPlaceholder"),
+      fallback: !(typeof plan.maxRuns === "number" && plan.maxRuns > 0),
+    },
+    {
+      label: "scheduleFormNotify",
+      value: t(
+        plan.notify === "system"
+          ? "scheduleNotifySystem"
+          : plan.notify === "tg"
+            ? "scheduleNotifyTg"
+            : "scheduleNotifyNone",
+      ),
+      fallback: plan.notify !== "system" && plan.notify !== "tg",
+    },
+    {
+      label: "scheduleFormLoadExtensions",
+      value: t(plan.loadExtensions === true ? "scheduleValueYes" : "scheduleValueNo"),
+      fallback: plan.loadExtensions !== true,
+    },
+  );
+  // Tags are purely additive: an empty list is not "undetermined", it is
+  // "none", and the panel just omits the row.
+  if (Array.isArray(plan.tags) && plan.tags.length > 0) {
+    rows.push({ label: "scheduleFormTags", value: plan.tags.join(", ") });
+  }
+  return rows;
 }
 
 export function formatDurationMs(ms: number | null): string {

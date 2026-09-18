@@ -21,6 +21,11 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { markAgentSessionHandled, useScheduleAgentStore } from "./schedule-agent-store";
 import { leaveScheduleAgent } from "./schedule-agent-flow";
+import {
+  schedulePlanMissingFields,
+  schedulePlanPreviewRows,
+  type SchedulePlanDraft,
+} from "./schedule-model";
 import { ModelControls } from "../chat/ModelControls";
 import { TranscriptRowView } from "../chat/Transcript";
 import { buildTranscriptRows, type TranscriptRow } from "../chat/transcript-model";
@@ -124,24 +129,6 @@ export function buildScheduleRows(
   return buildTranscriptRows(projected, { turnActive });
 }
 
-/** Plan-config fields the preview panel understands. `null` = undetermined. */
-type SchedulePlanDraft = {
-  name?: string | null;
-  kind?: "prompt" | "command" | null;
-  prompt?: string | null;
-  command?: string | null;
-  cwd?: string | null;
-  trigger?: Record<string, unknown> | null;
-  permission?: string | null;
-  model?: { provider: string; id: string } | null;
-  missedWindow?: string | null;
-  timeoutMs?: number | null;
-  maxRuns?: number | null;
-  tags?: string[] | null;
-  notify?: string | null;
-  loadExtensions?: boolean | null;
-};
-
 /** Latest ```schedule-plan JSON from the assistant messages. */
 function extractPlanDraft(
   messages: readonly ScheduleAgentTranscriptMessage[],
@@ -211,22 +198,6 @@ export function splitUserMessage(text: string): SplitUserMessage {
   return { preamble: null, requirement: text };
 }
 
-function triggerLabel(trigger: Record<string, unknown> | null | undefined): string {
-  if (!trigger || typeof trigger.type !== "string") return "";
-  switch (trigger.type) {
-    case "manual":
-      return "手动";
-    case "once":
-      return `一次性 · ${String(trigger.at ?? "")}`;
-    case "interval":
-      return `周期 · 每 ${String(trigger.every ?? "")}`;
-    case "cron":
-      return `Cron · ${String(trigger.cron ?? "")}`;
-    default:
-      return "";
-  }
-}
-
 /** 二级智能创建页：左侧为周期计划自有的对话区（独立会话，不进工作区会话
  *  列表），右侧为配置实时预览。 */
 export function ScheduleAgentPage() {
@@ -248,6 +219,38 @@ export function ScheduleAgentPage() {
   const lastMessageCountRef = useRef(0);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [preambleOpen, setPreambleOpen] = useState(false);
+  /**
+   * Resolved host default model, for the preview's `model` row. Read from
+   * `piSettings.get` — the same host-scoped snapshot the create dialog and the
+   * settings page use — so a plan without an explicit model shows the model it
+   * will really run with instead of an "undetermined" placeholder.
+   */
+  const [hostDefaultModelLabel, setHostDefaultModelLabel] = useState(() =>
+    t("scheduleModelDefaultPlain"),
+  );
+
+  useEffect(() => {
+    const host = useAppStore.getState().host;
+    if (!host) return;
+    let cancelled = false;
+    void hostClient
+      .request("piSettings.get", hostContext(host), null, AGENT_TIMEOUT_MS)
+      .then((response) => {
+        if (cancelled || !response.ok) return;
+        const { defaultProvider, defaultModel } = response.result;
+        if (!defaultProvider || !defaultModel) return;
+        const name = response.result.models.find(
+          (model) => model.provider === defaultProvider && model.modelId === defaultModel,
+        )?.name;
+        setHostDefaultModelLabel(
+          t("scheduleModelDefault", { name: name ?? `${defaultProvider}/${defaultModel}` }),
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
 
   const refresh = useCallback(async () => {
     if (!sessionId || !sessionPath) return;
@@ -362,17 +365,6 @@ export function ScheduleAgentPage() {
     const tail = rows[rows.length - 1];
     return tail?.role === "assistant" ? tail.key : undefined;
   }, [rows, running]);
-  const planReady = Boolean(
-    plan &&
-    typeof plan.name === "string" &&
-    plan.name.trim() &&
-    typeof plan.cwd === "string" &&
-    plan.cwd.trim() &&
-    plan.trigger &&
-    typeof plan.trigger.type === "string" &&
-    (plan.kind === "command" ? Boolean(plan.command?.trim()) : Boolean(plan.prompt?.trim())),
-  );
-
   async function send() {
     const text = draft.trim();
     if (!text || sending || !sessionId || !sessionPath) return;
@@ -477,71 +469,11 @@ export function ScheduleAgentPage() {
     }
   }
 
-  const previewRows: Array<{ label: MessageKeyOf; value: string | null; fullText?: string }> = plan
-    ? [
-        { label: "scheduleFormName", value: plan.name ?? null },
-        {
-          label: "scheduleFormKind",
-          value:
-            plan.kind === "prompt" ? "提示词计划" : plan.kind === "command" ? "命令计划" : null,
-        },
-        { label: "scheduleFormCwd", value: plan.cwd ?? null },
-        {
-          label: "scheduleFormPermission",
-          value:
-            plan.permission === "read_only"
-              ? "只读"
-              : plan.permission === "write"
-                ? "可写"
-                : plan.permission === "full"
-                  ? "完整"
-                  : null,
-        },
-        {
-          label: "scheduleFormModel",
-          value:
-            plan.model && typeof plan.model === "object"
-              ? `${plan.model.provider}/${plan.model.id}`
-              : null,
-        },
-        {
-          label: "scheduleFormMissedWindow",
-          value:
-            plan.missedWindow === "catch_up_one"
-              ? "补执行一次"
-              : plan.missedWindow === "skip"
-                ? "跳过"
-                : null,
-        },
-        {
-          label: "scheduleFormTimeout",
-          value: plan.timeoutMs ? `${Math.round(plan.timeoutMs / 1000)}s` : null,
-        },
-        {
-          label: "scheduleFormMaxRuns",
-          value: plan.maxRuns ? String(plan.maxRuns) : null,
-        },
-        {
-          label: "scheduleFormTags",
-          value: Array.isArray(plan.tags) && plan.tags.length > 0 ? plan.tags.join(", ") : null,
-        },
-        {
-          label: "scheduleFormNotify",
-          value:
-            plan.notify === "system"
-              ? "系统通知"
-              : plan.notify === "tg"
-                ? "Telegram"
-                : plan.notify === "none"
-                  ? "无"
-                  : null,
-        },
-        {
-          label: "scheduleFormLoadExtensions",
-          value: plan.loadExtensions === true ? "是" : plan.loadExtensions === false ? "否" : null,
-        },
-      ]
-    : [];
+  const previewRows = plan ? schedulePlanPreviewRows(plan, t, hostDefaultModelLabel) : [];
+  // One required-field check drives both the missing-fields banner and the
+  // confirm button, so they can never disagree about whether creation is ready.
+  const missingFields = plan ? schedulePlanMissingFields(plan) : [];
+  const planReady = missingFields.length === 0;
 
   return (
     <div className="flex h-full min-w-0 flex-col" data-schedule-agent-page>
@@ -697,32 +629,38 @@ export function ScheduleAgentPage() {
             </div>
           ) : (
             <>
+              {/* Required-but-open fields are named once, above the table,
+                  instead of repeating "undetermined" on every row. */}
+              {missingFields.length > 0 && (
+                <p className="rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-xs text-warning">
+                  {t("scheduleAgentMissing", {
+                    fields: missingFields.map((field) => t(field)).join("、"),
+                  })}
+                </p>
+              )}
               <div className="flex flex-col gap-1.5 rounded-md border border-border p-2.5">
-                {previewRows.map(({ label, value }) => (
+                {previewRows.map(({ label, value, fallback }) => (
                   <div key={label} className="flex items-start gap-2 text-xs">
                     <span className="w-20 shrink-0 text-muted">{t(label)}</span>
-                    {value !== null && String(value).trim().length > 0 ? (
-                      <span className="min-w-0 flex-1 break-all">{value}</span>
+                    {value !== null ? (
+                      // A defaulted value stays readable but is dimmed, so the
+                      // fields the AI actually decided stand out from the ones
+                      // the plugin will fill in.
+                      <span className={`min-w-0 flex-1 break-all ${fallback ? "text-muted" : ""}`}>
+                        {value}
+                      </span>
                     ) : (
-                      <span className="flex items-center gap-1 text-muted">
+                      <span className="flex items-center gap-1 text-warning">
                         <CircleDashed size={11} />
                         {t("scheduleAgentUndetermined")}
                       </span>
                     )}
                   </div>
                 ))}
-                <div className="flex items-start gap-2 text-xs">
-                  <span className="w-20 shrink-0 text-muted">{t("scheduleFormTrigger")}</span>
-                  {plan.trigger && typeof plan.trigger.type === "string" ? (
-                    <span className="min-w-0 flex-1 break-all">{triggerLabel(plan.trigger)}</span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-muted">
-                      <CircleDashed size={11} />
-                      {t("scheduleAgentUndetermined")}
-                    </span>
-                  )}
-                </div>
               </div>
+              {previewRows.some((row) => row.fallback) && (
+                <p className="text-[11px] text-muted/75">{t("scheduleAgentDefaultsNote")}</p>
+              )}
 
               {/* 提示词或命令预览 */}
               {plan.kind === "prompt" &&
@@ -768,18 +706,3 @@ export function ScheduleAgentPage() {
     </div>
   );
 }
-
-type MessageKeyOf =
-  | "scheduleFormName"
-  | "scheduleFormKind"
-  | "scheduleFormCwd"
-  | "scheduleFormPermission"
-  | "scheduleFormNotify"
-  | "scheduleFormModel"
-  | "scheduleFormMissedWindow"
-  | "scheduleFormTimeout"
-  | "scheduleFormMaxRuns"
-  | "scheduleFormTags"
-  | "scheduleFormLoadExtensions"
-  | "scheduleFormPrompt"
-  | "scheduleFormCommand";

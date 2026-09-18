@@ -374,3 +374,87 @@ describe("buildScheduleRows", () => {
     expect(rows[0].blocks).toEqual([{ kind: "text", text: "每天早上九点审查代码" }]);
   });
 });
+
+describe("smart-creation preview", () => {
+  // Same shape as the panel's `t`: identity lookup, so assertions read the key
+  // instead of a translated string.
+  const t = ((key: string, params?: Record<string, string | number>) =>
+    params ? `${key}(${Object.values(params).join(",")})` : key) as never;
+
+  it("resolves plugin defaults instead of reporting them undetermined", async () => {
+    const { schedulePlanPreviewRows } = await import("./schedule-model");
+    const rows = schedulePlanPreviewRows(
+      { name: "内存监控", cwd: "D:/proj", trigger: { type: "manual" } },
+      t,
+      "hostDefaultModelLabel",
+    );
+    const byLabel = new Map(rows.map((row) => [row.label, row]));
+
+    // The model has a real fallback: the host default.
+    expect(byLabel.get("scheduleFormModel")).toMatchObject({
+      value: "hostDefaultModelLabel",
+      fallback: true,
+    });
+    // maxRuns null means "no cap", not "unknown".
+    expect(byLabel.get("scheduleFormMaxRuns")).toMatchObject({
+      value: "scheduleFormMaxRunsPlaceholder",
+      fallback: true,
+    });
+    // timeoutMs null falls back to the plugin's 30-minute default.
+    expect(byLabel.get("scheduleFormTimeout")?.value).toBe("scheduleTimeoutValue(30)");
+    // No row may be left open when every required field is present.
+    expect(rows.every((row) => row.value !== null)).toBe(true);
+  });
+
+  it("drops rows that do not apply to a command plan", async () => {
+    const { schedulePlanPreviewRows } = await import("./schedule-model");
+    const rows = schedulePlanPreviewRows(
+      {
+        kind: "command",
+        name: "内存",
+        command: "free -h",
+        cwd: "/tmp",
+        trigger: { type: "manual" },
+      },
+      t,
+      "hostDefaultModelLabel",
+    );
+    const labels = rows.map((row) => row.label);
+    // permission/model are prompt-only in the create path.
+    expect(labels).not.toContain("scheduleFormPermission");
+    expect(labels).not.toContain("scheduleFormModel");
+    expect(rows.map((row) => row.value)).not.toContain(null);
+  });
+
+  it("reports only genuinely open required fields", async () => {
+    const { schedulePlanMissingFields } = await import("./schedule-model");
+    expect(
+      schedulePlanMissingFields({ name: "n", cwd: "/p", trigger: { type: "manual" }, prompt: "x" }),
+    ).toEqual([]);
+    expect(schedulePlanMissingFields({})).toEqual([
+      "scheduleFormName",
+      "scheduleFormCwd",
+      "scheduleFormTrigger",
+      "scheduleFormPrompt",
+    ]);
+    // A command plan needs a command, not a prompt.
+    expect(
+      schedulePlanMissingFields({
+        kind: "command",
+        name: "n",
+        cwd: "/p",
+        trigger: { type: "manual" },
+      }),
+    ).toEqual(["scheduleFormCommand"]);
+  });
+
+  it("omits tags when the AI settled none", async () => {
+    const { schedulePlanPreviewRows } = await import("./schedule-model");
+    const rows = schedulePlanPreviewRows(
+      { tags: [], name: "n", cwd: "/p", trigger: { type: "manual" }, prompt: "x" },
+      t,
+      "m",
+    );
+    expect(rows.map((row) => row.label)).not.toContain("scheduleFormTags");
+  });
+});

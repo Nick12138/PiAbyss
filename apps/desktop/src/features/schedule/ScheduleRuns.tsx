@@ -6,21 +6,10 @@ import type { MessageKey } from "../../lib/i18n";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
-import {
-  formatDateTime,
-  formatDurationMs,
-} from "./schedule-model";
+import { SCHEDULE_STATUS_LABEL, formatDateTime, formatDurationMs } from "./schedule-model";
 
 const TRANSCRIPT_TIMEOUT_MS = 20_000;
 const REPLY_TIMEOUT_MS = 31 * 60 * 1000;
-
-const STATUS_LABEL: Record<string, MessageKey> = {
-  ok: "scheduleStatusOk",
-  error: "scheduleStatusError",
-  timeout: "scheduleStatusTimeout",
-  aborted: "scheduleStatusAborted",
-  running: "scheduleStatusRunning",
-};
 
 const TRIGGER_LABEL: Record<string, MessageKey> = {
   manual: "scheduleTriggerManual",
@@ -29,20 +18,14 @@ const TRIGGER_LABEL: Record<string, MessageKey> = {
   cron: "scheduleTriggerCron",
 };
 
-function statusTone(status: string): string {
-  switch (status) {
-    case "ok":
-      return "text-success";
-    case "running":
-      return "text-accent";
-    case "error":
-    case "timeout":
-    case "aborted":
-      return "text-danger";
-    default:
-      return "text-muted";
-  }
-}
+/** Semantic color per run status, mirroring the detail card's palette. */
+const STATUS_TONE: Record<string, string> = {
+  ok: "text-success",
+  running: "text-accent",
+  error: "text-danger",
+  timeout: "text-danger",
+  aborted: "text-danger",
+};
 
 /** Execution history for one job: a run list with inline transcript expansion
  *  and a reply box (forks the run's session via the plugin). */
@@ -118,53 +101,66 @@ export function ScheduleRuns({
   }
 
   if (runs.length === 0) {
-    return <p className="px-1 py-3 text-xs text-muted">{t("scheduleRunsEmpty")}</p>;
+    return <p className="px-0.5 py-2 text-xs text-muted">{t("scheduleRunsEmpty")}</p>;
   }
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1.5">
       {runs.map((run) => {
         const expanded = expandedRunId === run.runId;
         return (
-          <div key={run.runId} className="rounded-md border border-border">
+          <div key={run.runId} className="rounded-lg border border-border bg-surface/60">
             <button
               type="button"
               onClick={() => void toggleRun(run)}
-              className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-surface-overlay"
+              className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-surface-overlay ${expanded ? "rounded-t-lg" : "rounded-lg"}`}
             >
               {expanded ? (
                 <ChevronDown size={13} className="shrink-0 text-muted" />
               ) : (
                 <ChevronRight size={13} className="shrink-0 text-muted" />
               )}
-              <span className={`font-medium ${statusTone(run.status)}`}>
+              <span
+                className={`shrink-0 text-xs font-medium ${STATUS_TONE[run.status] ?? "text-muted"}`}
+              >
                 {run.status === "running" ? (
                   <span className="inline-flex items-center gap-1">
                     <Loader2 size={11} className="animate-spin" />
                     {t("scheduleStatusRunning")}
                   </span>
                 ) : (
-                  t(STATUS_LABEL[run.status] ?? "scheduleStatusRunning")
+                  t(SCHEDULE_STATUS_LABEL[run.status] ?? "scheduleStatusRunning")
                 )}
               </span>
-              <span className="text-muted">{formatDateTime(run.startedAt)}</span>
-              <span className="text-muted">· {formatDurationMs(run.durationMs)}</span>
-              {run.trigger !== "manual" && run.trigger !== "reply" && (
-                <span className="text-muted">· {t(TRIGGER_LABEL[run.trigger] ?? "scheduleTriggerManual")}</span>
-              )}
-              {run.forkOf && <span className="text-muted">· fork</span>}
+              <span className="min-w-0 flex-1 truncate text-xs text-muted">
+                {formatDateTime(run.startedAt)}
+                <span className="mx-1.5">·</span>
+                {formatDurationMs(run.durationMs)}
+                {run.trigger !== "manual" && run.trigger !== "reply" && (
+                  <>
+                    <span className="mx-1.5">·</span>
+                    {t(TRIGGER_LABEL[run.trigger] ?? "scheduleTriggerManual")}
+                  </>
+                )}
+                {run.forkOf && (
+                  <>
+                    <span className="mx-1.5">·</span>
+                    fork
+                  </>
+                )}
+              </span>
               {run.usage && (
-                <span className="ml-auto text-muted-foreground text-muted">
+                <span className="shrink-0 text-xs tabular-nums text-muted">
                   {run.usage.total.toLocaleString()} tok
                 </span>
               )}
             </button>
             {expanded && (
-              <div className="border-t border-border px-3 py-2">
+              <div className="border-t border-border px-3 py-2.5">
                 {run.summary && (
-                  <p className="mb-2 line-clamp-3 text-xs text-muted">{run.summary}</p>
+                  <p className="mb-2 line-clamp-3 text-xs leading-5 text-muted">{run.summary}</p>
                 )}
-                {run.error && <p className="mb-2 text-xs text-danger">{run.error}</p>}
+                {run.error && <p className="mb-2 text-xs leading-5 text-danger">{run.error}</p>}
                 {loadingTranscript ? (
                   <p className="flex items-center gap-1.5 text-xs text-muted">
                     <Loader2 size={12} className="animate-spin" />
@@ -176,7 +172,7 @@ export function ScheduleRuns({
                       <p className="text-xs text-muted">{t("scheduleTranscriptEmpty")}</p>
                     ) : (
                       transcript.map((entry) => (
-                        <div key={entry.id} className="text-xs">
+                        <div key={entry.id} className="text-[13px] leading-5">
                           <span
                             className={`mr-2 font-medium ${
                               entry.role === "user"
