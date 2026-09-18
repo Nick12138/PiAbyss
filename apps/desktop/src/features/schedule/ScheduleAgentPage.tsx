@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -10,7 +10,11 @@ import {
   Loader2,
   Sparkles,
 } from "lucide-react";
-import type { ScheduleJobInput } from "@piabyss/protocol";
+import type {
+  ScheduleJobInput,
+  SerializableAgentContent,
+  SerializableAgentMessage,
+} from "@piabyss/protocol";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
@@ -18,10 +22,8 @@ import { hostContext } from "../../lib/bridge/host-context";
 import { markAgentSessionHandled, useScheduleAgentStore } from "./schedule-agent-store";
 import { leaveScheduleAgent } from "./schedule-agent-flow";
 import { ModelControls } from "../chat/ModelControls";
-
-const MarkdownMessage = lazy(() =>
-  import("../chat/MarkdownMessage").then((module) => ({ default: module.MarkdownMessage })),
-);
+import { TranscriptRowView } from "../chat/Transcript";
+import { buildTranscriptRows, type TranscriptRow } from "../chat/transcript-model";
 
 const AGENT_TIMEOUT_MS = 60_000;
 const SEND_TIMEOUT_MS = 30_000;
@@ -29,7 +31,98 @@ const CREATE_TIMEOUT_MS = 15_000;
 const POLL_IDLE_MS = 2_500;
 const POLL_ACTIVE_MS = 1_200;
 
-type AgentMessage = { role: string; text: string };
+/** One message of the `schedule.agentState` transcript. */
+export type ScheduleAgentTranscriptMessage = {
+  role: string;
+  text: string;
+  reasoning?: string;
+  content?: unknown[];
+  toolCallId?: string;
+  toolName?: string;
+  isError?: boolean;
+};
+
+/**
+ * Project one schedule message into the conversation area's wire shape.
+ *
+ * The plan block is stripped from answer text (it feeds the preview panel) and
+ * only that: tool calls, reasoning, results and the `toolResult` linkage all
+ * pass through untouched, so `buildTranscriptRows` can fold them with the same
+ * disclosures as a normal workspace session.
+ */
+function toSerializableMessage(
+  message: ScheduleAgentTranscriptMessage,
+  planStub: string,
+): SerializableAgentMessage | null {
+  if (message.role === "toolResult") {
+    // Keep the result linkage: `buildTranscriptRows` settles the matching
+    // tool call from this message, exactly like the workspace transcript.
+    return {
+      role: "toolResult",
+      content: Array.isArray(message.content)
+        ? (message.content as SerializableAgentContent[])
+        : "",
+      ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
+      ...(message.toolName ? { toolName: message.toolName } : {}),
+      ...(message.isError ? { isError: true } : {}),
+    };
+  }
+  const blocks: SerializableAgentContent[] = [];
+  const raw = Array.isArray(message.content) ? message.content : [];
+  for (const part of raw) {
+    if (!part || typeof part !== "object") continue;
+    const block = part as SerializableAgentContent;
+    if (block.type === "text") {
+      const text = stripPlanBlocks(typeof block.text === "string" ? block.text : "");
+      if (text) blocks.push({ ...block, text });
+      continue;
+    }
+    blocks.push(block);
+  }
+  if (blocks.length === 0) {
+    // Older hosts (or persisted sessions) only carry the flattened fields.
+    const reasoning = message.reasoning?.trim();
+    if (reasoning) blocks.push({ type: "thinking", thinking: reasoning });
+    const text = stripPlanBlocks(message.text);
+    if (text) blocks.push({ type: "text", text });
+    // The message carried nothing but its plan block: the preview panel updated
+    // silently, so leave an inline marker instead of dropping the turn.
+    else if (message.text.trim()) blocks.push({ type: "text", text: planStub });
+  }
+  return blocks.length > 0 ? { role: message.role, content: blocks } : null;
+}
+
+/**
+ * Project the conversation into workspace-transcript rows.
+ *
+ * Consecutive assistant messages merge into a single turn row by
+ * `buildTranscriptRows`, so a settled turn folds into the same
+ * "N tool calls · M messages" summary row the conversation area shows, while a
+ * running turn streams its interleaved thinking / text / tool cards live. That
+ * shared projection is the whole point: the schedule page owns only the wire
+ * shape, never its own fold logic.
+ */
+export function buildScheduleRows(
+  messages: readonly ScheduleAgentTranscriptMessage[],
+  planStub: string,
+  turnActive: boolean,
+): TranscriptRow[] {
+  const projected: SerializableAgentMessage[] = [];
+  messages.forEach((message, index) => {
+    if (message.role === "user" && index === 0) {
+      // The first user message bundles the injected preamble with the
+      // requirement; only the requirement belongs in the bubble.
+      const { requirement } = splitUserMessage(message.text);
+      projected.push({ role: "user", content: [{ type: "text", text: requirement }] });
+      return;
+    }
+    const next = toSerializableMessage(message, planStub);
+    if (next) projected.push(next);
+  });
+  // turnActive mirrors the workspace session: while the agent runs, tool calls
+  // still awaiting their result stay open instead of being settled as aborted.
+  return buildTranscriptRows(projected, { turnActive });
+}
 
 /** Plan-config fields the preview panel understands. `null` = undetermined. */
 type SchedulePlanDraft = {
@@ -50,7 +143,9 @@ type SchedulePlanDraft = {
 };
 
 /** Latest ```schedule-plan JSON from the assistant messages. */
-function extractPlanDraft(messages: AgentMessage[]): SchedulePlanDraft | null {
+function extractPlanDraft(
+  messages: readonly ScheduleAgentTranscriptMessage[],
+): SchedulePlanDraft | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (message.role !== "assistant") continue;
@@ -141,7 +236,7 @@ export function ScheduleAgentPage() {
   const workspace = useAppStore((s) => s.workspace);
   const sessionId = useScheduleAgentStore((s) => s.sessionId);
   const sessionPath = useScheduleAgentStore((s) => s.sessionPath);
-  const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [messages, setMessages] = useState<ScheduleAgentTranscriptMessage[]>([]);
   const [resident, setResident] = useState(true);
   const [running, setRunning] = useState(false);
   const [draft, setDraft] = useState("");
@@ -250,6 +345,23 @@ export function ScheduleAgentPage() {
   }, []);
 
   const plan = useMemo(() => extractPlanDraft(messages), [messages]);
+  /** Injected preamble of the first user turn (null when the session has none). */
+  const preamble = useMemo(() => {
+    const first = messages[0];
+    return first?.role === "user" ? splitUserMessage(first.text).preamble : null;
+  }, [messages]);
+  /** Transcript rows, projected exactly like a workspace session's. */
+  const rows = useMemo(
+    () => buildScheduleRows(messages, t("scheduleAgentPlanUpdated"), running),
+    [messages, running, t],
+  );
+  // While the agent streams, the trailing assistant turn renders with the
+  // conversation area's live caret + working header.
+  const workingRowKey = useMemo(() => {
+    if (!running) return undefined;
+    const tail = rows[rows.length - 1];
+    return tail?.role === "assistant" ? tail.key : undefined;
+  }, [rows, running]);
   const planReady = Boolean(
     plan &&
     typeof plan.name === "string" &&
@@ -454,92 +566,61 @@ export function ScheduleAgentPage() {
               ref={transcriptRef}
               className="scrollbar-subtle h-full overflow-y-auto px-3 py-4 sm:px-6 sm:py-5"
             >
-              {messages.length === 0 && !loadError && (
-                <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted">
-                  <Loader2 size={13} className="animate-spin" />
-                  {t("scheduleAgentAnalyzing")}
-                </div>
-              )}
-              {messages.map((message, index) => (
-                <div
-                  key={index}
-                  className={`mb-2.5 flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  {message.role === "user"
-                    ? (() => {
-                        const { preamble, requirement } =
-                          index === 0
-                            ? splitUserMessage(message.text)
-                            : { preamble: null, requirement: message.text };
-                        return (
-                          <div className="flex max-w-[85%] flex-col items-end gap-1.5">
-                            {preamble && (
-                              <div className="flex w-full flex-col items-center">
-                                <button
-                                  type="button"
-                                  className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
-                                  aria-expanded={preambleOpen}
-                                  onClick={() => setPreambleOpen((open) => !open)}
-                                >
-                                  <Sparkles size={11} />
-                                  {t("scheduleAgentPreambleToggle")}
-                                  {preambleOpen ? (
-                                    <ChevronUp size={11} />
-                                  ) : (
-                                    <ChevronDown size={11} />
-                                  )}
-                                </button>
-                                {preambleOpen && (
-                                  <div className="mt-1.5 w-full whitespace-pre-wrap break-words rounded-lg border border-dashed border-border bg-surface px-3 py-2 text-xs leading-5 text-muted">
-                                    {preamble}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            <div className="whitespace-pre-wrap break-words rounded-lg bg-accent/15 px-3 py-2 text-sm leading-6 text-foreground">
-                              {requirement}
-                            </div>
+              {/* The same centered content column as the conversation area:
+                  the shared transcript rows keep their own alignment. */}
+              <div className="conversation-content-width mx-auto flex flex-col gap-5 sm:gap-6">
+                {messages.length === 0 && !loadError && (
+                  <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted">
+                    <Loader2 size={13} className="animate-spin" />
+                    {t("scheduleAgentAnalyzing")}
+                  </div>
+                )}
+                {rows.map((row, index) => (
+                  <div className="transcript-row" data-row-key={row.key} key={row.key}>
+                    {/* The injected preamble rides the first user turn, as a
+                        disclosure centered on the conversation column. */}
+                    {index === 0 && row.role === "user" && preamble && (
+                      <div className="flex w-full flex-col items-center">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 rounded-md border border-border bg-surface px-2.5 py-1 text-[11px] leading-5 text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
+                          aria-expanded={preambleOpen}
+                          onClick={() => setPreambleOpen((open) => !open)}
+                        >
+                          <Sparkles size={11} />
+                          {t("scheduleAgentPreambleToggle")}
+                          {preambleOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                        </button>
+                        {preambleOpen && (
+                          <div className="mb-1.5 w-full whitespace-pre-wrap break-words rounded-md border border-dashed border-border bg-surface px-3 py-2 text-xs leading-6 text-muted">
+                            {preamble}
                           </div>
-                        );
-                      })()
-                    : (() => {
-                        const visible = stripPlanBlocks(message.text);
-                        // The message only carried a schedule-plan block: the plan
-                        // still updates the preview, the transcript shows a stub.
-                        if (!visible) {
-                          return (
-                            <div className="flex max-w-[85%] items-center gap-1.5 text-xs text-muted">
-                              <CircleDashed size={12} />
-                              {t("scheduleAgentPlanUpdated")}
-                            </div>
-                          );
-                        }
-                        return (
-                          <div className="max-w-[85%] text-sm leading-6">
-                            <Suspense
-                              fallback={
-                                <div className="whitespace-pre-wrap break-words">{visible}</div>
-                              }
-                            >
-                              <MarkdownMessage
-                                content={visible}
-                                mode={
-                                  running && index === messages.length - 1 ? "streaming" : "static"
-                                }
-                                showCaret={running && index === messages.length - 1}
-                              />
-                            </Suspense>
-                          </div>
-                        );
-                      })()}
-                </div>
-              ))}
-              {running && (
-                <div className="flex items-center gap-1.5 px-1 text-xs text-muted">
-                  <Loader2 size={12} className="animate-spin" />
-                  {t("scheduleAgentThinking")}
-                </div>
-              )}
+                        )}
+                      </div>
+                    )}
+                    <TranscriptRowView
+                      row={row}
+                      mode={row.key === workingRowKey ? "streaming" : "static"}
+                      showCaret={row.key === workingRowKey}
+                      working={row.key === workingRowKey}
+                      retryableTurn={undefined}
+                      retryVisible={false}
+                      goOnVisible={false}
+                      onRetry={async () => undefined}
+                      readOnly
+                      userCollapsible={false}
+                      userExpanded={false}
+                      onToggleUser={undefined}
+                    />
+                  </div>
+                ))}
+                {running && !workingRowKey && (
+                  <div className="flex items-center gap-1.5 px-1 text-xs text-muted">
+                    <Loader2 size={12} className="animate-spin" />
+                    {t("scheduleAgentThinking")}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Scroll to bottom button — anchored inside the scroll area, same

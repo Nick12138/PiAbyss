@@ -2296,9 +2296,19 @@ function isScheduleNotification(value: unknown): boolean {
 function isScheduleAgentMessage(value: unknown): boolean {
   return (
     isPlainObject(value) &&
-    hasExactKeys(value, ["role", "text"]) &&
+    hasExactKeys(
+      value,
+      ["role", "text"],
+      ["reasoning", "content", "toolCallId", "toolName", "isError"],
+    ) &&
     isString(value.role) &&
-    isString(value.text)
+    isString(value.text) &&
+    (value.reasoning === undefined || isString(value.reasoning)) &&
+    (value.content === undefined ||
+      (Array.isArray(value.content) && value.content.every(isSerializableAgentContent))) &&
+    (value.toolCallId === undefined || isString(value.toolCallId)) &&
+    (value.toolName === undefined || isString(value.toolName)) &&
+    (value.isError === undefined || isBoolean(value.isError))
   );
 }
 

@@ -1584,10 +1584,23 @@ export type ScheduleHealth = {
   maxConcurrent: number;
 };
 
-/** 智能创建对话的消息（精简转录）。 */
+/** 智能创建对话的消息（精简转录）。
+ *
+ * The message keeps the raw content blocks alongside the flattened `text`:
+ * the page feeds `content` through the same transcript projection as a normal
+ * workspace session (`buildTranscriptRows`), so reasoning and tool calls fold
+ * exactly like the conversation area instead of being flattened to plain text.
+ * `text`/`reasoning` stay for the plan-block extraction and the backlog title. */
 export type ScheduleAgentMessage = {
   role: string;
   text: string;
+  reasoning?: string;
+  /** Raw content blocks (text/thinking/toolCall/image) of this message. */
+  content?: SerializableAgentContent[];
+  /** `toolResult` linkage, mirrored from the session message. */
+  toolCallId?: string;
+  toolName?: string;
+  isError?: boolean;
 };
 
 /** schedule.agentList 结果中的单个智能创建会话摘要。 */
