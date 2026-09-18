@@ -642,6 +642,9 @@ export function ScheduleAgentPage() {
                 {previewRows.map(({ label, value, fallback }) => (
                   <div key={label} className="flex items-start gap-2 text-xs">
                     <span className="w-20 shrink-0 text-muted">{t(label)}</span>
+                    {/* The banner above already names every open field, so an
+                        open row only carries a quiet placeholder — repeating
+                        "undetermined" on the row said the same thing twice. */}
                     {value !== null ? (
                       // A defaulted value stays readable but is dimmed, so the
                       // fields the AI actually decided stand out from the ones
@@ -650,10 +653,7 @@ export function ScheduleAgentPage() {
                         {value}
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 text-warning">
-                        <CircleDashed size={11} />
-                        {t("scheduleAgentUndetermined")}
-                      </span>
+                      <span className="min-w-0 flex-1 text-warning/70">—</span>
                     )}
                   </div>
                 ))}

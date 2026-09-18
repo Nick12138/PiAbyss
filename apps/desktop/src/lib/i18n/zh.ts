@@ -1760,7 +1760,6 @@ export const zh: Record<MessageKey, string> = {
   scheduleAgentHint: "与 AI 对话确定配置，右侧实时预览；确认后正式创建",
   scheduleAgentPreviewTitle: "计划配置预览",
   scheduleAgentPreviewEmpty: "AI 确定的配置会实时显示在这里",
-  scheduleAgentUndetermined: "未确定",
   scheduleAgentConfirm: "确认创建",
   scheduleAgentConfirmHint: "确认后正式创建计划并返回周期计划页；直接返回会保留为待办。",
   scheduleAgentThinking: "正在思考…",

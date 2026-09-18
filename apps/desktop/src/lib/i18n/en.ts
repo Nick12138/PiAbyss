@@ -1832,7 +1832,6 @@ export const en = {
   scheduleAgentHint: "Chat to settle the config; the preview updates live. Confirm to create.",
   scheduleAgentPreviewTitle: "Plan preview",
   scheduleAgentPreviewEmpty: "Config the AI settles will appear here in real time",
-  scheduleAgentUndetermined: "Undetermined",
   scheduleAgentConfirm: "Confirm & create",
   scheduleAgentConfirmHint:
     "Confirming creates the plan and returns to the plans page; leaving early keeps it as a backlog item.",
