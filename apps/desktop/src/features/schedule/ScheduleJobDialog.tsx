@@ -7,7 +7,7 @@ import { Select } from "../../components/Select";
 import { Switch } from "../../components/Switch";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
-import { activeSessionContext, hostContext } from "../../lib/bridge/host-context";
+import { hostContext } from "../../lib/bridge/host-context";
 import {
   defaultScheduleForm,
   jobToForm,
@@ -47,7 +47,6 @@ export function ScheduleJobDialog({
   const t = useT();
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
-  const session = useAppStore((s) => s.session);
   const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces);
   const [form, setForm] = useState<ScheduleFormState>(() =>
     job ? jobToForm(job) : defaultScheduleForm(workspace?.cwd ?? ""),
@@ -64,28 +63,31 @@ export function ScheduleJobDialog({
   );
   const [cronChecking, setCronChecking] = useState(false);
   const [models, setModels] = useState<ModelSummary[]>([]);
+  const [hostDefaultModel, setHostDefaultModel] = useState<{ provider: string; id: string } | null>(
+    null,
+  );
 
-  // Model list — same source the chat model picker uses. The chat session
-  // stays alive in the store while the schedule page is shown, so the
-  // session-scoped model.list call still works here.
+  // Model list — same source as the settings page's default-model picker:
+  // piSettings.get is host-scoped (no active session required) and returns the
+  // full ModelRuntime snapshot. The chat model picker's session-scoped
+  // model.list needs a live session, which the schedule page can't guarantee.
   useEffect(() => {
-    if (!host || !workspace || !session) return;
+    if (!host) return;
     let cancelled = false;
     void hostClient
-      .request(
-        "model.list",
-        activeSessionContext(host, workspace, session),
-        null,
-        MODEL_LIST_TIMEOUT_MS,
-      )
+      .request("piSettings.get", hostContext(host), null, MODEL_LIST_TIMEOUT_MS)
       .then((response) => {
-        if (!cancelled && response.ok) setModels(response.result.models);
+        if (cancelled || !response.ok) return;
+        setModels(response.result.models);
+        const provider = response.result.defaultProvider;
+        const id = response.result.defaultModel;
+        if (provider && id) setHostDefaultModel({ provider, id });
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [host, workspace, session]);
+  }, [host]);
 
   function patch(next: Partial<ScheduleFormState>) {
     setSaveError(null);
@@ -197,10 +199,14 @@ export function ScheduleJobDialog({
   );
   const cwdValue = cwdPresets.includes(form.cwd) ? form.cwd : CWD_OPEN_VALUE;
 
-  const currentModel = session?.model;
-  const defaultModelLabel = currentModel
+  const defaultModelLabel = hostDefaultModel
     ? t("scheduleModelDefault", {
-        name: `${currentModel.providerName ?? currentModel.provider}/${currentModel.name}`,
+        name:
+          models.find(
+            (model) =>
+              model.provider === hostDefaultModel.provider &&
+              model.modelId === hostDefaultModel.id,
+          )?.name ?? `${hostDefaultModel.provider}/${hostDefaultModel.id}`,
       })
     : t("scheduleModelDefaultPlain");
   const modelValue = form.model ? `${form.model.provider}/${form.model.id}` : MODEL_DEFAULT_VALUE;
@@ -225,7 +231,7 @@ export function ScheduleJobDialog({
     >
       <div
         data-testid="schedule-job-form"
-        className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto pr-1 text-sm"
+        className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto px-1 text-sm"
       >
         {!job && (
           <div className="grid grid-cols-2 gap-2">
