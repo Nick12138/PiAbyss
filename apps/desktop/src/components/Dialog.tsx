@@ -31,6 +31,9 @@ export function Dialog({
   showCancel = true,
   showCloseIcon = false,
   hideActions = false,
+  /** Extra content (e.g. small mode toggles) rendered in the header row,
+   *  between the title and the close icon. */
+  headerExtra,
   maxWidthClass = "max-w-lg",
   onCancel,
   onConfirm,
@@ -45,6 +48,8 @@ export function Dialog({
   showCloseIcon?: boolean;
   /** Hide the footer action buttons entirely (e.g. informational help dialogs). */
   hideActions?: boolean;
+  /** Header-right slot: between the title and the close icon. */
+  headerExtra?: ReactNode;
   /** Override the dialog's max-width Tailwind class (default 512px / max-w-lg). */
   maxWidthClass?: string;
   onCancel: () => void;
@@ -113,6 +118,7 @@ export function Dialog({
           <h2 id="app-dialog-title" className="min-w-0 flex-1 truncate text-base font-semibold">
             {title}
           </h2>
+          {headerExtra}
           {showCloseIcon && (
             <button
               type="button"
