@@ -161,3 +161,39 @@ npx prettier --check <改动文件>
 - **4 个 schedule 文件在 `691c725` 提交时未经 Prettier 格式化**（`format:check` 只看改动
   文件，所以一直没暴露）；本次触碰后已 `prettier --write`，`ScheduleAgentPage.tsx` 因此
   有约 113 行格式重排。
+
+---
+
+## 11. 修复：切走工作区后完成通知丢失（§5.5 的误判）
+
+**现象**（用户报告）：在 OKXBot 工作区点拉取 → 立刻切到 my-pi-plugins 再点拉取 →
+只收到「my-pi-plugins拉取成功」，OKXBot 那条通知没了。
+
+**根因**：`GitAsyncTaskRunner.finish()` 走的是**严格**的 `PiHostServer.emitForIdentity`，
+而它要求事件身份等于*当前*工作区：
+
+```ts
+if (identity.workspaceId !== current.workspaceId ||
+    identity.workspaceRevision !== current.workspaceRevision) {
+  throw new Error("Cannot emit an event for a stale Host or Workspace identity");
+}
+```
+
+切走工作区后 `current` 已经是新工作区（新工作区 revision = 旧 revision + 1），parked
+的 OKXBot 身份必然不匹配 → 抛错 → 被 `finish()` 的 `try/catch` 吞掉 → 通知丢失。
+
+**这不是 §5.5 说的「极端逐出场景」**：只要用户切走工作区就会发生，正是本功能要支持的
+主场景。§5.5 的判断错误，因为它把 `emitForIdentity` 当成了接受 parked 身份的宽松路径。
+
+**修复**：`finish()` 改用 `PiHostServer.emitForBoundIdentity`（活跃或 parked-but-bound
+均可，与 `agent-controller` / `session-runtime-cache` / `extension-ui-lifecycle` 一致）。
+`AsyncGitTaskHost` 接口相应改名。真正被逐出（不再 bound）时仍抛错，行为不变。
+
+**测试为什么没抓到**：`git-async-tasks.test.ts` 的 fake host 把 `emitForIdentity` 写成
+了无条件 push，于是「切走后仍能收到通知」用例在假语义下通过、在真实语义下必挂。
+现在 fake host 镜像了 `PiHostServer` 的严格/宽松两条路径（注释说明），并补了
+「切走后成功通知」「被逐出时静默丢弃」两个用例。
+
+**前端不需要改**：`cross-workspace-events.test.ts` 有意把「未绑定工作区」的
+`git.taskFinished` 判为身份漂移；宿主修复后这种事件不会再产生（`emitForBoundIdentity`
+会先抛错），该守卫退化为防御性兜底。

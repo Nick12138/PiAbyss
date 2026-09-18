@@ -21,7 +21,14 @@ type AsyncGitTaskHost = {
   /** True while the identity's workspace is active or a parked, bound graph. */
   isBoundWorkspaceIdentity(workspaceId: string | null, revision: number): boolean;
   emit(event: "git.changed", payload: unknown): void;
-  emitForIdentity(identity: HostIdentity, event: "git.taskFinished", payload: unknown): void;
+  /**
+   * Relaxed identity path: accepts the active workspace *or* a parked,
+   * still-bound one. Required here — the task completes after the user may
+   * have switched away, and the strict `emitForIdentity` would reject the
+   * requesting identity (its workspaceRevision is no longer current), silently
+   * dropping the toast.
+   */
+  emitForBoundIdentity(identity: HostIdentity, event: "git.taskFinished", payload: unknown): void;
   serviceGraphLock: ServiceGraphLock;
 };
 
@@ -42,11 +49,12 @@ type RunningTask = {
  *    repository by `RepoMutex`), so the user can switch workspaces and run
  *    pull/push in other workspaces concurrently.
  * 3. On completion the task re-acquires the graph lock briefly to refresh the
- *    status snapshot, then emits `git.taskFinished` — carrying the workspace
- *    name so multi-workspace notifications stay distinguishable. The result
- *    is delivered to the requesting workspace identity even after the user
- *    switched away (parked/bound workspace), and `git.changed` is only
- *    emitted while that workspace is still the active one.
+ *    status snapshot, then emits `git.taskFinished` through the *bound*
+ *    identity path — carrying the workspace name so multi-workspace
+ *    notifications stay distinguishable. The result reaches the requesting
+ *    workspace identity even after the user switched away (parked/bound
+ *    workspace), and `git.changed` is only emitted while that workspace is
+ *    still the active one.
  */
 export class GitAsyncTaskRunner {
   private readonly repoMutex = new RepoMutex();
@@ -159,10 +167,10 @@ export class GitAsyncTaskRunner {
     };
 
     try {
-      host.emitForIdentity(identity, "git.taskFinished", payload);
+      host.emitForBoundIdentity(identity, "git.taskFinished", payload);
     } catch {
-      // The workspace generation was superseded and is no longer bound — the
-      // result has no live subscriber.
+      // The workspace was evicted (no longer active or parked/bound) — the
+      // result has no live subscriber and is intentionally dropped.
       return;
     }
     // git.changed is delivered only to the still-active workspace: a parked

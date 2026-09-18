@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -94,15 +94,38 @@ describe("GitAsyncTaskRunner", () => {
     await rm(join(repo, ".."), { recursive: true, force: true }).catch(() => undefined);
   });
 
-  function runnerWith(emitCalls: Array<{ event: string; payload: unknown }>) {
+  /**
+   * Fake host mirroring PiHostServer's identity rules. The distinction
+   * matters: `emitForIdentity` is strict (current workspace only) while
+   * `emitForBoundIdentity` also accepts a parked-but-bound workspace. A fake
+   * that accepts everything hides the real bug where an async task completes
+   * for a workspace the user has already switched away from.
+   */
+  function runnerWith(
+    emitCalls: Array<{ event: string; payload: unknown }>,
+    options: { currentWorkspaceId?: string; bound?: boolean } = {},
+  ) {
     const lock = new TryMutex();
+    const currentWorkspaceId = options.currentWorkspaceId ?? identity.workspaceId;
+    const bound = options.bound ?? true;
+    const assertDeliverable = (workspaceId: string | null, strict: boolean) => {
+      if (workspaceId === currentWorkspaceId) return;
+      if (!strict && bound) return;
+      throw new Error("Cannot emit an event for a stale Host or Workspace identity");
+    };
     const host = {
       getIdentity: () => ({ ...identity }),
-      currentWorkspaceId: () => identity.workspaceId,
-      isBoundWorkspaceIdentity: () => true,
+      currentWorkspaceId: () => currentWorkspaceId,
+      isBoundWorkspaceIdentity: () => bound,
       emit: (event: string, payload: unknown) => emitCalls.push({ event, payload }),
-      emitForIdentity: (_id: HostIdentity, event: string, payload: unknown) =>
-        emitCalls.push({ event, payload }),
+      emitForIdentity: (id: HostIdentity, event: string, payload: unknown) => {
+        assertDeliverable(id.workspaceId, true);
+        emitCalls.push({ event, payload });
+      },
+      emitForBoundIdentity: (id: HostIdentity, event: string, payload: unknown) => {
+        assertDeliverable(id.workspaceId, false);
+        emitCalls.push({ event, payload });
+      },
       serviceGraphLock: lock,
     };
     const runner = new GitAsyncTaskRunner(service, "git", () => host);
@@ -176,10 +199,11 @@ describe("GitAsyncTaskRunner", () => {
   it("still delivers the failure toast when the workspace was switched away", async () => {
     await writeFile(join(repo, "a.txt"), "dirty local edit\n");
     const emitCalls: Array<{ event: string; payload: unknown }> = [];
-    const { runner, host } = runnerWith(emitCalls);
     // Simulate the user switching to another workspace mid-task: the requesting
     // identity is no longer the active one, but it stays bound (parked).
-    vi.spyOn(host, "currentWorkspaceId").mockReturnValue("00000000-0000-4000-8000-000000000999");
+    const { runner } = runnerWith(emitCalls, {
+      currentWorkspaceId: "00000000-0000-4000-8000-000000000999",
+    });
     runner.start({ kind: "pull", workspaceCwd: repo, identity });
     const payload = await waitForTask(emitCalls);
     expect(payload.ok).toBe(false);
@@ -187,22 +211,36 @@ describe("GitAsyncTaskRunner", () => {
     expect(emitCalls.some((call) => call.event === "git.changed")).toBe(false);
   });
 
+  it("still delivers the success toast when the workspace was switched away", async () => {
+    const emitCalls: Array<{ event: string; payload: unknown }> = [];
+    const { runner } = runnerWith(emitCalls, {
+      currentWorkspaceId: "00000000-0000-4000-8000-000000000999",
+    });
+    runner.start({ kind: "pull", workspaceCwd: repo, identity });
+    const payload = await waitForTask(emitCalls);
+    expect(payload).toMatchObject({ operation: "pull", ok: true, workspaceName: "work" });
+    expect(emitCalls.some((call) => call.event === "git.changed")).toBe(false);
+  });
+
+  it("drops the toast when the workspace was evicted (no longer bound)", async () => {
+    const emitCalls: Array<{ event: string; payload: unknown }> = [];
+    const { runner } = runnerWith(emitCalls, {
+      currentWorkspaceId: "00000000-0000-4000-8000-000000000999",
+      bound: false,
+    });
+    runner.start({ kind: "pull", workspaceCwd: repo, identity });
+    // No live subscriber: the runner swallows the identity rejection and the
+    // task is simply forgotten (no toast, no crash).
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(emitCalls.some((call) => call.event === "git.taskFinished")).toBe(false);
+  });
+
   it("uses the provided git executable", async () => {
     const emitCalls: Array<{ event: string; payload: unknown }> = [];
-    const lock = new TryMutex();
-    const host = {
-      getIdentity: () => ({ ...identity }),
-      currentWorkspaceId: () => identity.workspaceId,
-      isBoundWorkspaceIdentity: () => true,
-      emit: (event: string, payload: unknown) => emitCalls.push({ event, payload }),
-      emitForIdentity: (_id: HostIdentity, event: string, payload: unknown) =>
-        emitCalls.push({ event, payload }),
-      serviceGraphLock: lock,
-    };
+    const { runner } = runnerWith(emitCalls);
     void RUN;
     void RUN_ARGS;
     void gitBin;
-    const runner = new GitAsyncTaskRunner(service, "git", () => host);
     runner.start({ kind: "pull", workspaceCwd: repo, identity });
     const payload = await waitForTask(emitCalls);
     expect(payload.operation).toBe("pull");
