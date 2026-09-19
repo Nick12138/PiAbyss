@@ -71,6 +71,7 @@ describe("piSettings.get model summaries", () => {
         providerName: "OpenAI",
         modelId: "gpt-4o-mini",
         name: "GPT-4o mini",
+        thinkingLevels: ["off"],
         input: ["text", "image"],
       },
       {
@@ -78,6 +79,7 @@ describe("piSettings.get model summaries", () => {
         providerName: undefined,
         modelId: "text-only",
         name: "text-only",
+        thinkingLevels: ["off"],
         input: ["text"],
       },
     ]);

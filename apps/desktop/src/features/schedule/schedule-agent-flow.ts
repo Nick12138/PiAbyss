@@ -14,14 +14,23 @@ import { hostContext } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
 import { markAgentSessionHandled, useScheduleAgentStore } from "./schedule-agent-store";
 
+/** 用户显式选择的分析会话模型（含思考深度）；null = 宿主默认模型。 */
+export type ScheduleModelChoice = {
+  provider: string;
+  id: string;
+  thinkingLevel?: string;
+} | null;
+
 export type ScheduleAgentStartResult = { ok: true } | { ok: false; error: string };
 
 const START_TIMEOUT_MS = 60_000;
 
-/** Start a fresh smart-creation conversation (schedule-owned session). */
+/** Start a fresh smart-creation conversation (schedule-owned session). The
+ *  optional model drives the analysis session itself. */
 export async function startScheduleAgent(
   requirement: string,
   cwd: string,
+  model: ScheduleModelChoice = null,
 ): Promise<ScheduleAgentStartResult> {
   const host = useAppStore.getState().host;
   if (!host) return { ok: false, error: "host not ready" };
@@ -31,7 +40,7 @@ export async function startScheduleAgent(
   const response = await hostClient.request(
     "schedule.agentStart",
     hostContext(host),
-    { cwd, requirement },
+    { cwd, requirement, model },
     START_TIMEOUT_MS,
   );
   if (!response.ok) {

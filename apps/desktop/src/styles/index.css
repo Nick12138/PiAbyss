@@ -1063,6 +1063,20 @@ html[data-theme-family="transparent"] .theme-floating-surface {
   background-color: var(--theme-floating-material) !important;
 }
 
+/* Opaque floating panel: menus under the glass themes stay frosted by design,
+   but nested submenus (e.g. the thinking-depth list inside a model menu) sit
+   on top of the menu's own options and must read solid. The fallback keeps
+   every other theme on the (already opaque) raised surface. */
+html[data-theme-family="transparent"].light {
+  --color-floating-solid: #ffffff;
+}
+html[data-theme-family="transparent"].dark {
+  --color-floating-solid: #2c2c2e;
+}
+.theme-solid-panel {
+  background-color: var(--color-floating-solid, var(--color-surface-raised));
+}
+
 /* Send button: the bare `bg-foreground text-surface` fallback inherited from
    Tailwind paints the send control as a flat black/light-grey chip that
    doubles the foreground color and reads muddy (especially dark mode, where

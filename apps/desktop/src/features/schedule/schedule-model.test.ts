@@ -97,7 +97,6 @@ describe("formToJobInput", () => {
       prompt: "审查 src/",
       triggerType: "cron" as const,
       cron: "0 9 * * 1-5",
-      cronTimezone: "Asia/Shanghai",
       tags: "安全, 每日",
     };
     const parsed = formToJobInput(form);
@@ -108,13 +107,12 @@ describe("formToJobInput", () => {
     expect(parsed.input.trigger).toEqual({
       type: "cron",
       cron: "0 9 * * 1-5",
-      timezone: "Asia/Shanghai",
     });
     expect(parsed.input.tags).toEqual(["安全", "每日"]);
     expect(parsed.input.timeoutMs).toBe(30 * 60 * 1000);
   });
 
-  it("builds a command task with null prompt and no timezone when empty", () => {
+  it("builds a command task with null prompt", () => {
     const form = {
       ...defaultScheduleForm("C:/proj"),
       kind: "command" as const,

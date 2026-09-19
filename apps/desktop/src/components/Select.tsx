@@ -20,6 +20,14 @@ interface SelectProps {
   triggerClassName?: string;
   align?: "left" | "right";
   maxWidth?: number;
+  /** Borderless inline style (for toolbars embedded in another control). */
+  ghost?: boolean;
+  /** Pinned below the option list inside the menu surface (scrolls separately,
+   *  stays visible while the list scrolls). Clicks inside never close the menu. */
+  footer?: ReactNode;
+  /** Overrides the trigger's displayed text (e.g. to append extra state like
+   *  the thinking depth); the menu options are unaffected. */
+  selectedLabel?: ReactNode;
 }
 
 export function Select({
@@ -32,6 +40,9 @@ export function Select({
   triggerClassName = "",
   align = "left",
   maxWidth,
+  ghost = false,
+  footer,
+  selectedLabel,
 }: SelectProps) {
   const [open, setOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState({
@@ -90,6 +101,20 @@ export function Select({
     };
   }, [align, open, options.length]);
 
+  // The list maxHeight is computed before render, but the footer (and its
+  // expandable content) only exists after render — clamp the surface back
+  // inside the viewport once its real height is known.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const surface = menuRef.current;
+    if (!surface) return;
+    const rect = surface.getBoundingClientRect();
+    const overflow = rect.bottom - (window.innerHeight - 8);
+    if (overflow > 0) {
+      setMenuPosition((pos) => ({ ...pos, top: Math.max(8, pos.top - overflow) }));
+    }
+  }, [open, footer, menuPosition.top, menuPosition.maxHeight]);
+
   useEffect(() => {
     if (!open) return;
     const closeOnPointerDown = (event: PointerEvent) => {
@@ -115,7 +140,11 @@ export function Select({
     >
       <button
         type="button"
-        className={`interface-density-control flex h-8 w-full items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs text-foreground outline-none transition-colors hover:bg-surface-overlay/60 focus-visible:border-focus disabled:cursor-default disabled:opacity-40 ${triggerClassName}`}
+        className={`interface-density-control flex h-8 w-full items-center gap-1 rounded-md px-2 text-xs outline-none transition-colors ${
+          ghost
+            ? "text-muted hover:bg-surface-overlay/60 hover:text-foreground"
+            : "border border-border bg-surface text-foreground hover:bg-surface-overlay/60 focus-visible:border-focus"
+        } ${triggerClassName} disabled:cursor-default disabled:opacity-40`}
         ref={triggerRef}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -123,7 +152,7 @@ export function Select({
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="min-w-0 flex-1 truncate text-left">{selected?.label ?? ""}</span>
+        <span className="min-w-0 flex-1 truncate text-left">{selectedLabel ?? selected?.label ?? ""}</span>
         <ChevronDown
           size={13}
           className={`shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`}
@@ -133,17 +162,20 @@ export function Select({
         createPortal(
           <div
             ref={menuRef}
-            role="listbox"
-            aria-label={ariaLabel}
-            className="theme-floating-surface fixed z-[100] max-w-[calc(100vw-16px)] overflow-y-auto overscroll-contain rounded-md border border-border bg-surface-raised py-1 shadow-lg"
+            className="theme-floating-surface fixed z-[100] max-w-[calc(100vw-16px)] overflow-hidden rounded-md border border-border bg-surface-raised shadow-lg"
             style={{
               top: menuPosition.top,
               left: menuPosition.left,
               minWidth: menuPosition.minWidth,
-              maxHeight: menuPosition.maxHeight,
             }}
           >
-            {options.map((option) => {
+            <div
+              role="listbox"
+              aria-label={ariaLabel}
+              className="w-full overflow-y-auto overscroll-contain rounded-t-md py-1"
+              style={{ maxHeight: menuPosition.maxHeight }}
+            >
+              {options.map((option) => {
               const isSelected = option.value === value;
               const header = groupHeaders.get(option.value);
               return (
@@ -178,6 +210,8 @@ export function Select({
                 </Fragment>
               );
             })}
+            </div>
+            {footer && <div className="relative">{footer}</div>}
           </div>,
           document.body,
         )}

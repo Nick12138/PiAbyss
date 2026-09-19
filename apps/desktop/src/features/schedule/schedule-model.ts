@@ -31,12 +31,11 @@ export type ScheduleFormState = {
   intervalValue: number;
   intervalUnit: "s" | "m" | "h" | "d" | "w" | "mo";
   cron: string;
-  cronTimezone: string;
   permission: SchedulePermissionValue;
   /** 按计划推送配置。 */
   notify: "none" | "system" | "tg";
   /** null = 宿主默认模型。 */
-  model: { provider: string; id: string } | null;
+  model: { provider: string; id: string; thinkingLevel?: string } | null;
   missedWindow: "catch_up_one" | "skip";
   timeoutMinutes: number;
   /** "" = 不限制。 */
@@ -60,7 +59,6 @@ export function defaultScheduleForm(cwd: string): ScheduleFormState {
     intervalValue: 30,
     intervalUnit: "m",
     cron: "0 9 * * 1-5",
-    cronTimezone: "",
     permission: "read_only",
     notify: "system",
     model: null,
@@ -99,10 +97,15 @@ export function jobToForm(job: ScheduleJob): ScheduleFormState {
     intervalValue: interval.value,
     intervalUnit: interval.unit,
     cron: trigger.type === "cron" ? trigger.cron : "0 9 * * 1-5",
-    cronTimezone: trigger.type === "cron" && trigger.timezone ? trigger.timezone : "",
     permission: job.permission,
     notify: job.notify ?? "none",
-    model: job.model ? { provider: job.model.provider, id: job.model.id } : null,
+    model: job.model
+      ? {
+          provider: job.model.provider,
+          id: job.model.id,
+          ...(job.model.thinkingLevel ? { thinkingLevel: job.model.thinkingLevel } : {}),
+        }
+      : null,
     missedWindow: job.missedWindow,
     timeoutMinutes: Math.max(1, Math.round(job.timeoutMs / 60_000)),
     maxRuns: job.maxRuns === null ? "" : String(job.maxRuns),
@@ -145,7 +148,6 @@ function buildTrigger(form: ScheduleFormState): ScheduleTrigger | { error: Messa
       return {
         type: "cron",
         cron,
-        ...(form.cronTimezone.trim() ? { timezone: form.cronTimezone.trim() } : {}),
       };
     }
   }
@@ -174,7 +176,13 @@ export function formToJobInput(
       trigger,
       permission: form.permission,
       notify: form.notify,
-      model: form.model ? { provider: form.model.provider, id: form.model.id } : null,
+      model: form.model
+        ? {
+            provider: form.model.provider,
+            id: form.model.id,
+            ...(form.model.thinkingLevel ? { thinkingLevel: form.model.thinkingLevel } : {}),
+          }
+        : null,
       missedWindow: form.missedWindow,
       timeoutMs,
       maxRuns,

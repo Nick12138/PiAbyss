@@ -61,6 +61,7 @@ export function SchedulePage() {
   const t = useT();
   const host = useAppStore((s) => s.host);
   const setPage = useAppStore((s) => s.setPage);
+  const setScheduleOnline = useAppStore((s) => s.setScheduleOnline);
   const [status, setStatus] = useState<StatusState | null>(null);
   const [jobs, setJobs] = useState<ScheduleJob[]>([]);
   const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
@@ -82,6 +83,12 @@ export function SchedulePage() {
     () => jobs.find((job) => job.id === selectedJobId) ?? null,
     [jobs, selectedJobId],
   );
+
+  // Mirror scheduler availability into the app store so the top-bar status dot
+  // stays live; this page is the only poller of schedule.status.
+  useEffect(() => {
+    setScheduleOnline(status?.available ?? null);
+  }, [status, setScheduleOnline]);
 
   const refreshStatusAndJobs = useCallback(async () => {
     if (!host) return;
@@ -325,16 +332,17 @@ export function SchedulePage() {
 
   return (
     <div className="flex h-full min-w-0 flex-col" data-schedule-page>
-      {/* Toolbar — three zones: status | filters | actions. */}
-      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <StatusPill status={status} />
-          {status?.available && status.health && activeCount > 0 && (
+      {/* Toolbar — two zones: health | filters | actions. Health zone is omitted when empty.
+          Scoped padding override (pl-2): aligns the toolbar's left edge with the top bar
+          title (--app-content-gap) instead of the generic .px-4 gutter. */}
+      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border pl-2 pr-4">
+        {status?.available && status.health && activeCount > 0 && (
+          <div className="flex min-w-0 items-center gap-2.5">
             <span className="shrink-0 text-xs text-muted tabular-nums">
               {t("scheduleActiveJobs", { count: activeCount })}
             </span>
-          )}
-        </div>
+          </div>
+        )}
 
         {status?.available && jobs.length > 0 && (
           <div className="flex min-w-0 items-center gap-2">
@@ -420,7 +428,7 @@ export function SchedulePage() {
       ) : (
         <div className="flex min-h-0 flex-1">
           {/* Job list */}
-          <div className="scrollbar-subtle flex w-[300px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-border bg-surface-inset/40 p-3">
+          <div className="scrollbar-subtle flex w-[300px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-border p-3">
             <section className="flex flex-col gap-2">
               <SectionHeading
                 icon={Hourglass}
@@ -602,8 +610,8 @@ export function SchedulePage() {
             setSelectedJobId(job.id);
             void refreshStatusAndJobs();
           }}
-          onStartSmart={async (cwd, requirement) => {
-            const result = await startScheduleAgent(requirement, cwd);
+          onStartSmart={async (cwd, requirement, model) => {
+            const result = await startScheduleAgent(requirement, cwd, model);
             if (result.ok) {
               setDialog(null);
               setPage("schedule-agent");
@@ -677,25 +685,6 @@ function SectionHeading({
 /** Muted one-liner used for the per-section empty states. */
 function EmptyHint({ text }: { text: string }) {
   return <p className="px-0.5 py-1 text-xs leading-5 text-muted">{text}</p>;
-}
-
-function StatusPill({ status }: { status: StatusState | null }) {
-  const t = useT();
-  const online = status?.available === true;
-  return (
-    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-xs">
-      <span
-        className={`size-1.5 rounded-full ${
-          status === null ? "bg-muted" : online ? "bg-success" : "bg-danger"
-        }`}
-      />
-      {status === null
-        ? t("scheduleStatusUnknown")
-        : online
-          ? t("scheduleStatusOnline")
-          : t("scheduleStatusOffline")}
-    </span>
-  );
 }
 
 /** Backlog entry for an unfinished smart-creation session. */
@@ -801,7 +790,9 @@ function JobCard({
             ? t("scheduleTriggerManual")
             : summary.kind === "interval"
               ? t("scheduleEveryValue", { value: formatIntervalEvery(summary.value ?? "") })
-              : summary.value}
+              : summary.kind === "once"
+                ? formatDateTime(summary.value)
+                : summary.value}
         </span>
         {countdown && countdown !== "due" && (
           <span className="shrink-0 text-muted">

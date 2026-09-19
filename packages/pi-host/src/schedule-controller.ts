@@ -214,9 +214,20 @@ export function createScheduleHandlers(agentDir: string): Partial<Record<string,
     },
 
     "schedule.agentStart": async (ctx) => {
-      const params = ctx.params as { cwd: string; requirement: string };
+      const params = ctx.params as {
+        cwd: string;
+        requirement: string;
+        model?: { provider: string; id: string; thinkingLevel?: string } | null;
+      };
       try {
-        return { result: await startAgentConversation({ ...params, agentDir }) };
+        return {
+          result: await startAgentConversation({
+            cwd: params.cwd,
+            requirement: params.requirement,
+            agentDir,
+            model: params.model ?? null,
+          }),
+        };
       } catch (error) {
         return {
           error: createHostError(

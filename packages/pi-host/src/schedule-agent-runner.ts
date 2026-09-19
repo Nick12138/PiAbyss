@@ -174,6 +174,7 @@ async function buildSession(
   cwd: string,
   agentDir: string,
   sessionManager: SessionManager,
+  modelRef?: { provider: string; id: string } | null,
 ): Promise<AgentSession> {
   const settings = SettingsManager.create(cwd, agentDir);
   const resourceLoader = new DefaultResourceLoader({
@@ -193,6 +194,7 @@ async function buildSession(
     resourceLoader,
     settingsManager: settings,
     sessionManager,
+    ...(modelRef ? { modelRef } : {}),
   });
   return created.session;
 }
@@ -203,10 +205,19 @@ export async function startAgentConversation(args: {
   cwd: string;
   requirement: string;
   agentDir: string;
+  /** 分析会话使用的模型（含思考深度）；缺省 = 宿主默认模型。 */
+  model?: { provider: string; id: string; thinkingLevel?: string } | null;
 }): Promise<{ sessionId: string; sessionPath: string }> {
   const dir = agentSessionsDir();
   const sessionManager = SessionManager.create(args.cwd, dir);
-  const session = await buildSession(args.cwd, args.agentDir, sessionManager);
+  const session = await buildSession(args.cwd, args.agentDir, sessionManager, args.model ?? null);
+  if (args.model?.thinkingLevel) {
+    try {
+      session.setThinkingLevel(args.model.thinkingLevel as never);
+    } catch {
+      /* level not supported by the model — keep the session default */
+    }
+  }
   try {
     session.setSessionName("⏰ 周期计划 · 智能创建");
   } catch {

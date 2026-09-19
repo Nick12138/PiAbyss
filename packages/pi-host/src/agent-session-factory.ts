@@ -24,6 +24,9 @@ type HostAgentSessionOptions = Omit<
   modelRuntime: ModelRuntime;
   sessionManager: SessionManager;
   settingsManager: SettingsManager;
+  /** Explicit initial model (provider/id). Resolved against the runtime's
+   *  available models; unknown refs fall back to the default model policy. */
+  modelRef?: { provider: string; id: string } | null;
 };
 
 type InitialModelOption = { model?: never } | { model: Model<Api> | null };
@@ -79,7 +82,17 @@ async function resolveInitialModelOption(
 export async function createHostAgentSession(
   options: HostAgentSessionOptions,
 ): Promise<CreateAgentSessionResult> {
-  const initialModel = await resolveInitialModelOption(options);
+  let initialModel: InitialModelOption = {};
+  if (options.modelRef) {
+    const available = await options.modelRuntime.getAvailable();
+    const match = available.find(
+      (model) =>
+        model.provider === options.modelRef!.provider && model.id === options.modelRef!.id,
+    );
+    initialModel = match ? { model: match as Model<any> } : await resolveInitialModelOption(options);
+  } else {
+    initialModel = await resolveInitialModelOption(options);
+  }
   // SDK accepts `model?: Model<any>` but not `null`; coerce null → omit.
   return createAgentSession({
     ...options,
