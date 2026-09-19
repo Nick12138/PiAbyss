@@ -1863,6 +1863,11 @@ textarea:focus-visible {
   outline: none;
 }
 
+/* 备忘录编辑器纸面化：写字区不加边框/描边，像直接写在页面上。 */
+.memo-editor-input:focus-visible {
+  outline: none;
+}
+
 /* Composer toolbar controls: keep their chrome (border + hover surface) quiet
    until the composer holds focus or the pointer hovers them. Keeps the
    composer's resting state calm and draws the controls forward on demand. */

@@ -49,7 +49,7 @@ import {
   readMemoImageDataUrl,
   updateMemoNote,
 } from "./memo-client";
-import { MEMO_SYNCED_EVENT } from "./MemoSyncHeaderActions";
+import { MEMO_SYNCED_EVENT } from "./memo-sync-status";
 import {
   collectTags,
   collectWorkspaces,
@@ -1026,12 +1026,12 @@ function MemoDetail({
                   key={image.id}
                   src={url}
                   alt={image.fileName}
-                  className="max-h-40 max-w-60 rounded-md border border-border object-contain"
+                  className="size-21 rounded-md border border-border object-cover"
                 />
               ) : (
                 <div
                   key={image.id}
-                  className="flex h-24 w-36 items-center justify-center rounded-md border border-border text-muted"
+                  className="flex size-21 items-center justify-center rounded-md border border-border text-muted"
                 >
                   <Loader2 size={14} className="animate-spin" />
                 </div>
@@ -1068,6 +1068,7 @@ function MemoEditor({
 }) {
   const t = useT();
   const canSave = editor.contentMd.trim().length > 0;
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   /** 只拦截图片粘贴；文本粘贴走默认行为。 */
   function handlePaste(event: ClipboardEvent<HTMLDivElement>) {
@@ -1122,16 +1123,23 @@ function MemoEditor({
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 px-5 py-4">
+      <div
+        className="flex min-h-0 flex-1 flex-col gap-3 px-5 py-4"
+        onClick={(event) => {
+          // 点击输入框下方的空白区域时，把焦点还给输入框（纸面化后输入框不再铺满）。
+          if (event.target === event.currentTarget) textareaRef.current?.focus();
+        }}
+      >
         <textarea
+          ref={textareaRef}
           value={editor.contentMd}
           onChange={(event) => patch({ contentMd: event.target.value })}
           placeholder={t("memoFieldContentPlaceholder")}
           aria-label={t("memoFieldContentPlaceholder")}
-          rows={10}
+          rows={2}
           autoFocus={editor.id === null}
-          className={`scrollbar-subtle min-h-40 flex-1 resize-none rounded-md border bg-transparent px-3 py-2.5 text-[13px] leading-relaxed outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-focus ${
-            dragOver ? "border-accent" : "border-border"
+          className={`memo-editor-input scrollbar-subtle field-sizing-content max-h-[70vh] min-h-32 w-full resize-none rounded-lg border border-dashed bg-transparent px-3 py-2.5 text-[13px] leading-relaxed outline-none caret-focus placeholder:text-muted ${
+            dragOver ? "border-accent" : "border-transparent"
           }`}
         />
 
@@ -1142,7 +1150,7 @@ function MemoEditor({
                 <img
                   src={image.previewUrl}
                   alt={image.fileName}
-                  className="max-h-24 max-w-36 rounded-md border border-border object-contain"
+                  className="size-14 rounded-md border border-border object-cover"
                 />
                 <button
                   type="button"
