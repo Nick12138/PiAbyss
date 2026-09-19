@@ -26,7 +26,7 @@ export type R2RequestOptions = {
   timeoutMs?: number;
 };
 
-export class R2Error extends Error {
+class R2Error extends Error {
   readonly status: number;
   constructor(message: string, status: number) {
     super(message);

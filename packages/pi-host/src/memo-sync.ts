@@ -118,7 +118,7 @@ function parseCloudNotes(body: Buffer | null): MemoNote[] {
  *
  * adoptedNotes = 内容来自云端的记录数（云端新增 + 云端更新胜出）。
  */
-export function mergeNotes(
+function mergeNotes(
   local: MemoNote[],
   cloud: MemoNote[],
 ): { notes: MemoNote[]; adoptedNotes: number } {

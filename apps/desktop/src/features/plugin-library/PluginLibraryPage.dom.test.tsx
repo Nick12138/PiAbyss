@@ -685,7 +685,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     await user.click(trigger);
 
     const listbox = await screen.findByRole("listbox", { name: "Default vision model" });
-    expect(listbox).toHaveClass("fixed", "overflow-y-auto");
+    expect(listbox).toHaveClass("overflow-y-auto", "overscroll-contain");
     expect(listbox.style.maxHeight).toBeTruthy();
     expect(within(listbox).getByRole("option", { name: /Automatic/ })).toBeInTheDocument();
     expect(
