@@ -1,4 +1,11 @@
-import { MessageCirclePlus, CalendarClock, ListTodo, PanelLeftClose, PanelLeftOpen, Settings } from "lucide-react";
+import {
+  MessageCirclePlus,
+  CalendarClock,
+  ListTodo,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings,
+} from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useAppStore, type NavPage } from "../lib/stores/app-store";
 import { SessionList } from "../features/sessions/SessionList";

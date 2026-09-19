@@ -152,7 +152,8 @@ export const zh: Record<MessageKey, string> = {
   appearanceDensityStandard: "标准",
   appearanceDensityComfortable: "宽松",
   appearanceFont: "界面字体",
-  appearanceFontDesc: "默认使用内置鸿蒙黑体 HarmonyOS Sans SC（中英文）；系统跟随 Windows/macOS 界面字体。",
+  appearanceFontDesc:
+    "默认使用内置鸿蒙黑体 HarmonyOS Sans SC（中英文）；系统跟随 Windows/macOS 界面字体。",
   appearanceFontDefault: "默认",
   appearanceFontSystem: "系统",
   appearanceConversationGroup: "会话",
@@ -1777,7 +1778,8 @@ export const zh: Record<MessageKey, string> = {
   scheduleAgentOptimizeHint: "用 AI 优化当前计划配置（确认后覆盖原计划，保留执行历史）",
   scheduleAgentOptimizeOpener: "请帮我优化计划「{name}」。",
   scheduleAgentConfirmUpdate: "确认更新",
-  scheduleAgentConfirmUpdateHint: "确认后更新原计划（保留执行历史）并返回周期计划页；直接返回会保留为待办。",
+  scheduleAgentConfirmUpdateHint:
+    "确认后更新原计划（保留执行历史）并返回周期计划页；直接返回会保留为待办。",
   scheduleAgentThinking: "正在思考…",
   scheduleAgentPlanUpdated: "计划配置已更新（见右侧预览）",
   scheduleAgentPreambleToggle: "提示词注入",
