@@ -1841,21 +1841,8 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 1.5px solid color-mix(in srgb, var(--color-focus) 72%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--color-focus) 72%, transparent);
   outline-offset: 1px;
-}
-
-/* Settings fields: the global 2px outline reads as a thick blue edge;
-   reduce to 1.3px for a thinner but still visible indicator. */
-[data-settings-content]
-  :where(
-    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not(
-        [type="hidden"]
-      ),
-    select,
-    textarea
-  ):focus-visible {
-  outline-width: 1.5px;
 }
 
 .chat-composer-input:focus-visible {
