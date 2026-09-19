@@ -814,6 +814,9 @@ export const zh: Record<MessageKey, string> = {
   workspacesEnterPath: "输入工作区路径",
   workspacesRemoveTitle: "从列表移除（不会删除文件夹）",
   workspacesRemoveAria: "从列表移除 {name}",
+  workspacesCtxCopyPath: "复制工作区路径",
+  workspacesPathCopied: "已复制工作区路径",
+  workspacesCopyPathFailed: "无法复制工作区路径",
   notifSetWorkspaceFailed: "切换工作区失败",
 
   // Bot gateway add (+ menu + Telegram config dialog)

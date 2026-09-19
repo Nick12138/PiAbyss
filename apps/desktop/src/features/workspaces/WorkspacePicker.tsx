@@ -1,6 +1,7 @@
 import {
   Bot,
   ChevronDown,
+  ClipboardCopy,
   Folder,
   FolderPlus,
   LoaderCircle,
@@ -10,7 +11,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -35,6 +36,8 @@ import {
   persistDesktopSettings,
 } from "../../lib/desktop-settings";
 import { sidebarPref, setSidebarPref } from "../../lib/sidebar-prefs";
+import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
+import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import { useT } from "../../lib/i18n/use-t";
 import { workspaceContext } from "../../lib/bridge/host-context";
 import {
@@ -465,6 +468,32 @@ export function WorkspacePicker() {
     }).catch(notifyDesktopSettingsSaveFailure);
   }
 
+  function copyWorkspacePath(path: string) {
+    navigator.clipboard
+      .writeText(path)
+      .then(() => pushNotification(t("workspacesPathCopied"), "info"))
+      .catch(() => pushNotification(t("workspacesCopyPathFailed"), "warning"));
+  }
+
+  function openWorkspaceContextMenu(event: MouseEvent<HTMLLIElement>, path: string) {
+    if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      trigger: contextMenuTrigger(event.target),
+      items: [
+        {
+          id: "workspace.copyPath",
+          label: t("workspacesCtxCopyPath"),
+          icon: ClipboardCopy,
+          onSelect: () => copyWorkspacePath(path),
+        },
+      ],
+    });
+  }
+
   // Render the active workspace even before self-heal persists it. The
   // telegram workspace is rendered by its own row, so folder rows exclude it.
   const listed = (
@@ -611,6 +640,7 @@ export function WorkspacePicker() {
                   className={`interface-density-nav-row group flex h-9 items-center rounded-md text-[13px] ${
                     active ? "bg-surface-overlay font-medium" : "hover:bg-surface-overlay/70"
                   }`}
+                  onContextMenu={(event) => openWorkspaceContextMenu(event, path)}
                 >
                   <button
                     type="button"

@@ -864,6 +864,9 @@ export const en = {
   workspacesEnterPath: "Enter workspace path",
   workspacesRemoveTitle: "Remove from list (folder is not deleted)",
   workspacesRemoveAria: "Remove {name} from list",
+  workspacesCtxCopyPath: "Copy workspace path",
+  workspacesPathCopied: "Workspace path copied",
+  workspacesCopyPathFailed: "Could not copy the workspace path",
   notifSetWorkspaceFailed: "Failed to set workspace",
 
   // Bot gateway add (+ menu + Telegram config dialog)

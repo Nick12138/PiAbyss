@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DesktopSettings, HostStatusSnapshot, WorkspaceSnapshot } from "@piabyss/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
+import { MenuHost } from "../../components/Menu";
 import { WorkspacePicker } from "./WorkspacePicker";
 import { useTelegramViewStore } from "../telegram/telegram-view-store";
 
@@ -215,5 +216,51 @@ describe("WorkspacePicker activity dots", () => {
       }),
     );
     expect(alphaRow?.querySelector("button")?.getAttribute("aria-current")).toBe("true");
+  });
+});
+
+describe("WorkspacePicker context menu", () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      host,
+      workspace,
+      session: null,
+      connecting: false,
+      rehydrating: false,
+      desynchronized: false,
+      hostFatal: null,
+      desktopSettings,
+      sessionTerminalStates: {},
+      workspaceActivities: {},
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("copies the workspace path from the row context menu", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    render(
+      <>
+        <WorkspacePicker />
+        <MenuHost />
+      </>,
+    );
+
+    const betaRow = screen.getByText("beta").closest("li");
+    expect(betaRow).not.toBeNull();
+    fireEvent.contextMenu(betaRow!, {
+      clientX: 10,
+      clientY: 10,
+    });
+
+    const item = await screen.findByRole("menuitem", { name: "Copy workspace path" });
+    fireEvent.click(item);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("/p/beta"));
   });
 });
