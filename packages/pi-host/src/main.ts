@@ -34,6 +34,8 @@ import { createExtensionUiHandlers } from "./extension-ui-bridge.js";
 import { createTelegramHandlers } from "./telegram-controller.js";
 import { createTelegramSessionHandlers } from "./telegram-sessions-controller.js";
 import { createScheduleHandlers } from "./schedule-controller.js";
+import { startScheduleNotifyWatcher } from "./schedule-notify-watcher.js";
+import { createMemoHandlers } from "./memo-controller.js";
 import { configureScheduleAgentRuntime } from "./schedule-agent-runner.js";
 import { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { applyKnownThinkingProfiles } from "./model-thinking.js";
@@ -351,6 +353,7 @@ async function main(): Promise<void> {
     ...createTelegramHandlers(agentDir),
     ...createTelegramSessionHandlers(agentDir),
     ...createScheduleHandlers(agentDir),
+    ...createMemoHandlers(agentDir),
     ...createPiSettingsHandlers(graphFactory, agentDir),
     ...createSkillHandlers(graphFactory),
     ...createPromptHandlers(graphFactory),
@@ -384,6 +387,7 @@ async function main(): Promise<void> {
       }
       await graphFactory.disposeRetainedGraphs();
       await attachmentStore.waitForIdle();
+      stopScheduleNotifyWatcher();
       // Last milestone: only a clean teardown proves the migrated runtime did
       // not leave the agent directory in a state that needs the backup.
       await migrationBackup?.recordMilestone("cleanShutdown");
@@ -391,6 +395,10 @@ async function main(): Promise<void> {
   });
 
   graphFactory.bindServer(server);
+  // Real-time schedule notification signal → push host event to the desktop.
+  const stopScheduleNotifyWatcher = startScheduleNotifyWatcher((event, payload) =>
+    server.emit(event, payload),
+  );
 
   // Re-emit status when model health is refreshed by controllers
   graphFactory.onModelHealthChanged = () => {

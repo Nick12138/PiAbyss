@@ -6,14 +6,21 @@
  * the user is on any page, not just the schedule page. TG delivery will
  * join later as an additional per-plan mode. The plugin queues every
  * terminal state (ok/error/timeout/aborted).
+ *
+ * Delivery is event-driven: the Host watches the plugin's notify-queue file
+ * and emits `schedule.notificationsChanged` on every append; this module
+ * reacts immediately and falls back to a slow interval poll as a safety
+ * net (e.g. missed events while the transport reconnects).
  */
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import type { ScheduleNotification } from "@piabyss/protocol";
 
 const POLL_INTERVAL_MS = 60_000;
+/** Coalesce bursts of file-watch events into one pull. */
+const EVENT_DEBOUNCE_MS = 500;
 const LIST_TIMEOUT_MS = 10_000;
 const CURSOR_KEY = "piabyss.schedule.pushCursor.v1";
 
@@ -42,13 +49,18 @@ function entryCursor(entry: ScheduleNotification): string {
 
 async function deliver(entry: ScheduleNotification): Promise<void> {
   try {
-    const api = await import("@tauri-apps/plugin-notification");
-    if (await api.isPermissionGranted()) {
-      api.sendNotification({
+    // The stock @tauri-apps/plugin-notification JS wrapper is broken on
+    // Windows (WebView2 reports permission "denied" unconditionally; see
+    // system-notifications.ts / tauri-apps/plugins-workspace#3512), so
+    // delivery goes through the app's own Rust command: on Windows it shows
+    // a WinRT toast; other desktop platforms fall back to the plugin's
+    // builder internally. No click-routing `extra`: a click just dismisses.
+    await invoke("system_notify", {
+      options: {
         title: entry.title,
         body: entry.message,
-      });
-    }
+      },
+    });
   } catch {
     /* notification delivery is best-effort */
   }
@@ -88,9 +100,14 @@ async function poll(): Promise<void> {
     const entries = response.result.entries;
     const notifyMap = await loadNotifyMap(host);
     const cursor = readCursor();
-    // First run: adopt the newest entry as the cursor without replaying
-    // history — only runs finishing from now on should notify.
-    const newest = entryCursor(entries[0]);
+    // The plugin's notify-queue is ordered oldest→newest (file order); the
+    // cursor must advance past the NEWEST entry or every poll re-delivers.
+    // First run: adopt it without replaying history — only runs finishing
+    // from now on should notify.
+    const newest = entries.reduce(
+      (acc, entry) => (entryCursor(entry) > acc ? entryCursor(entry) : acc),
+      "",
+    );
     if (cursor === null) {
       writeCursor(newest);
       return;
@@ -99,7 +116,7 @@ async function poll(): Promise<void> {
       .filter((entry) => entryCursor(entry) > cursor)
       .filter((entry) => (notifyMap.get(entry.jobId) ?? "none") === "system");
     if (fresh.length > 0) {
-      for (const entry of fresh.reverse()) await deliver(entry);
+      for (const entry of fresh) await deliver(entry);
     }
     writeCursor(newest);
   } catch {
@@ -108,10 +125,35 @@ async function poll(): Promise<void> {
 }
 
 let started = false;
+let eventDebounce: ReturnType<typeof setTimeout> | null = null;
+let unsubscribeEvents: (() => void) | null = null;
 
-/** Idempotent: mounts the polling interval once per app lifetime. */
-export function startSchedulePushPolling(): void {
-  if (started) return;
+/** Immediate pull after a host-side queue change; debounced to coalesce bursts. */
+function scheduleEventPoll(): void {
+  if (eventDebounce) clearTimeout(eventDebounce);
+  eventDebounce = setTimeout(() => {
+    eventDebounce = null;
+    void poll();
+  }, EVENT_DEBOUNCE_MS);
+}
+
+/** Idempotent: mounts the event subscription + polling interval once per app lifetime. */
+export function startSchedulePushPolling(): () => void {
+  if (started) return () => undefined;
   started = true;
-  setInterval(() => void poll(), POLL_INTERVAL_MS);
+  // Real-time path: the Host emits schedule.notificationsChanged whenever the
+  // plugin's notify-queue grows (file watch on the Host side).
+  unsubscribeEvents = hostClient.onEvent((event) => {
+    if (event.event === "schedule.notificationsChanged") scheduleEventPoll();
+  });
+  // Safety net: covers missed events (transport reconnect, watcher restart).
+  const interval = setInterval(() => void poll(), POLL_INTERVAL_MS);
+  return () => {
+    clearInterval(interval);
+    unsubscribeEvents?.();
+    unsubscribeEvents = null;
+    if (eventDebounce) clearTimeout(eventDebounce);
+    eventDebounce = null;
+    started = false;
+  };
 }
