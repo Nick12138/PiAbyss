@@ -1043,6 +1043,8 @@ export const zh: Record<MessageKey, string> = {
   transcriptThinkingJumpLatest: "⬇️ 跳到最新顿悟",
   transcriptAttachmentAlt: "附件",
   transcriptToolResultAlt: "工具结果",
+  imagePreviewClose: "关闭预览",
+  imagePreviewOpen: "全屏预览",
   transcriptForkHere: "从此处分叉",
   transcriptTraceRunningOne: "🪄 施法中 {count} 个",
   transcriptTraceRunningMany: "🪄 施法中 {count} 个",

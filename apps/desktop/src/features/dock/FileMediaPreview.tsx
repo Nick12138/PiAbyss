@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Maximize, ZoomIn, ZoomOut, Scan } from "lucide-react";
+import { ChevronLeft, ChevronRight, Maximize, Maximize2, ZoomIn, ZoomOut, Scan } from "lucide-react";
 import type { PDFDocumentProxy, RenderTask, TextLayer } from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { useT } from "../../lib/i18n/use-t";
+import { useImageLightbox } from "../../components/ImageLightbox";
 import { FileToolButton } from "./FileToolButton";
 import "./file-preview.css";
 
@@ -24,6 +25,7 @@ export function ImageFilePreview({
   const [url, setUrl] = useState("");
   const [scale, setScale] = useState<number | null>(null);
   const [error, setError] = useState(false);
+  const { open, element: lightbox } = useImageLightbox();
   useEffect(() => {
     const next = URL.createObjectURL(new Blob([previewBytes(data)], { type: mediaType }));
     setUrl(next);
@@ -53,6 +55,14 @@ export function ImageFilePreview({
         <FileToolButton label={t("fileOriginalSize")} onClick={() => setScale(1)}>
           <Scan size={15} />
         </FileToolButton>
+        <FileToolButton
+          label={t("imagePreviewOpen")}
+          disabled={!url || error}
+          onClick={() => url && !error && open(url, name)}
+        >
+          <Maximize2 size={15} />
+        </FileToolButton>
+        {lightbox}
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3">
         {error ? (
@@ -63,8 +73,13 @@ export function ImageFilePreview({
               src={url}
               alt={name}
               onError={() => setError(true)}
-              className={scale === null ? "mx-auto h-full max-w-full object-contain" : "max-w-none"}
+              className={
+                scale === null
+                  ? "mx-auto h-full max-w-full cursor-zoom-in object-contain"
+                  : "max-w-none cursor-zoom-in"
+              }
               style={scale === null ? undefined : { zoom: scale }}
+              onClick={() => open(url, name)}
             />
           )
         )}

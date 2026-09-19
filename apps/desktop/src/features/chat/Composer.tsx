@@ -53,6 +53,7 @@ import {
   TodoPopoverButton,
 } from "./ExtensionWidgets";
 import { PiMark } from "../../components/PiMark";
+import { LightboxImage } from "../../components/ImageLightbox";
 import {
   activeSessionContext,
   captureRequestGeneration,
@@ -1693,8 +1694,8 @@ export function Composer({
             <div className="flex flex-wrap gap-2 px-2 pt-1.5">
               {images.map((image) => (
                 <div key={image.id} className="group relative">
-                  <img
-                    src={`data:${image.mediaType};base64,${image.data}`}
+                  <LightboxImage
+                    url={`data:${image.mediaType};base64,${image.data}`}
                     alt={t("transcriptAttachmentAlt")}
                     className="size-16 rounded-md border border-border object-cover"
                   />

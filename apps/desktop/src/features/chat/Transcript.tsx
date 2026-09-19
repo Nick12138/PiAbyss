@@ -49,6 +49,7 @@ import { useLocale, useT, type Translate } from "../../lib/i18n/use-t";
 import { piWorkingVariants } from "../../lib/i18n";
 import { PiMark } from "../../components/PiMark";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
+import { LightboxImage } from "../../components/ImageLightbox";
 import {
   buildTranscriptRows,
   computeRetryableTurns,
@@ -1026,9 +1027,9 @@ export const TranscriptRowView = memo(function TranscriptRowView({
         {images.length > 0 && (
           <div className="mb-1 flex flex-wrap justify-end gap-1.5">
             {images.map((image, index) => (
-              <img
+              <LightboxImage
                 key={`img:${index}`}
-                src={`data:${image.mimeType};base64,${image.data}`}
+                url={`data:${image.mimeType};base64,${image.data}`}
                 alt={t("transcriptAttachmentAlt")}
                 className="max-h-48 max-w-full rounded-lg border border-border object-contain"
               />
@@ -1701,6 +1702,7 @@ function TurnProcessFold({
   );
 }
 
+
 function AssistantBlock({
   block,
   mode,
@@ -1719,8 +1721,8 @@ function AssistantBlock({
   }
   if (block.kind === "image") {
     return (
-      <img
-        src={`data:${block.mimeType};base64,${block.data}`}
+      <LightboxImage
+        url={`data:${block.mimeType};base64,${block.data}`}
         alt={t("transcriptAttachmentAlt")}
         className="max-h-48 max-w-full rounded-lg border border-border object-contain"
       />
@@ -1790,8 +1792,8 @@ function ContentBlockView({ block }: { block: TranscriptContentBlock }) {
   }
   if (block.kind === "image") {
     return (
-      <img
-        src={`data:${block.mimeType};base64,${block.data}`}
+      <LightboxImage
+        url={`data:${block.mimeType};base64,${block.data}`}
         alt={t("transcriptToolResultAlt")}
         className="max-h-64 max-w-full rounded-md border border-border object-contain"
       />

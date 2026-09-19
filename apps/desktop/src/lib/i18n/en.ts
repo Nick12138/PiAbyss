@@ -1103,6 +1103,8 @@ export const en = {
   transcriptThinkingJumpLatest: "Jump to latest thought",
   transcriptAttachmentAlt: "Attachment",
   transcriptToolResultAlt: "Tool result",
+  imagePreviewClose: "Close preview",
+  imagePreviewOpen: "Open fullscreen preview",
   transcriptForkHere: "Fork from here",
   transcriptTraceRunningOne: "Running {count} action",
   transcriptTraceRunningMany: "Running {count} actions",
