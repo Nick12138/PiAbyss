@@ -136,13 +136,15 @@ function isSchedulePermission(value: unknown): boolean {
 }
 
 function isScheduleModelRef(value: unknown): boolean {
-  return exactObject(value, ["provider", "id"], ["thinkingLevel"]) &&
+  return (
+    exactObject(value, ["provider", "id"], ["thinkingLevel"]) &&
     isNonEmptyString(value.provider) &&
     value.provider.length <= 200 &&
     isNonEmptyString(value.id) &&
     value.id.length <= 200 &&
     (value.thinkingLevel === undefined ||
-      (typeof value.thinkingLevel === "string" && value.thinkingLevel.length <= 16));
+      (typeof value.thinkingLevel === "string" && value.thinkingLevel.length <= 16))
+  );
 }
 
 function isScheduleTrigger(value: unknown): boolean {
@@ -151,19 +153,23 @@ function isScheduleTrigger(value: unknown): boolean {
     case "manual":
       return hasExactKeys(value, ["type"]);
     case "once":
-      return hasExactKeys(value, ["type", "at"]) &&
-        isNonEmptyString(value.at) &&
-        value.at.length <= 40;
+      return (
+        hasExactKeys(value, ["type", "at"]) && isNonEmptyString(value.at) && value.at.length <= 40
+      );
     case "interval":
-      return hasExactKeys(value, ["type", "every"]) &&
+      return (
+        hasExactKeys(value, ["type", "every"]) &&
         isNonEmptyString(value.every) &&
-        value.every.length <= 16;
+        value.every.length <= 16
+      );
     case "cron":
-      return hasExactKeys(value, ["type", "cron"], ["timezone"]) &&
+      return (
+        hasExactKeys(value, ["type", "cron"], ["timezone"]) &&
         isNonEmptyString(value.cron) &&
         value.cron.length <= 100 &&
         (value.timezone === undefined ||
-          (typeof value.timezone === "string" && value.timezone.length <= 64));
+          (typeof value.timezone === "string" && value.timezone.length <= 64))
+      );
     default:
       return false;
   }
@@ -334,12 +340,31 @@ function isMemoImageInput(value: unknown): boolean {
   return /^[A-Za-z0-9+/]*={0,2}$/.test(value.dataBase64);
 }
 
-/** memo.create / memo.update 共用的字段级校验。 */
+/** memo.setSyncConfig / memo.testSync 共用的 R2 配置字段级校验。 */
+function isMemoSyncConfigInput(value: unknown): boolean {
+  if (
+    !exactObject(value, [], ["accountId", "accessKeyId", "secretAccessKey", "bucket", "autoSync"])
+  ) {
+    return false;
+  }
+  return (
+    isNonEmptyString(value.accountId) &&
+    value.accountId.length <= 128 &&
+    isNonEmptyString(value.accessKeyId) &&
+    value.accessKeyId.length <= 256 &&
+    isNonEmptyString(value.secretAccessKey) &&
+    value.secretAccessKey.length <= 256 &&
+    isNonEmptyString(value.bucket) &&
+    value.bucket.length <= 63 &&
+    typeof value.autoSync === "boolean"
+  );
+}
+
+/** memo.update / memo.create 共用的字段级校验。 */
 function isMemoNoteFields(value: Record<string, unknown>): boolean {
   return (
     (value.type === undefined || isMemoNoteType(value.type)) &&
-    (value.title === undefined ||
-      (isNonEmptyString(value.title) && value.title.length <= 300)) &&
+    (value.title === undefined || (isNonEmptyString(value.title) && value.title.length <= 300)) &&
     (value.contentMd === undefined ||
       (isString(value.contentMd) && value.contentMd.length <= 200_000)) &&
     (value.status === undefined || isMemoNoteStatus(value.status)) &&
@@ -1228,7 +1253,11 @@ export function validateRequestParams<M extends HostMethod>(
     case "memo.list":
       return params === null ? ok(null) : fail("params must be null", { method });
     case "memo.create":
-      return exactObject(params, ["type", "title", "contentMd"], ["tags", "workspaceHint", "images"]) &&
+      return exactObject(
+        params,
+        ["type", "title", "contentMd"],
+        ["tags", "workspaceHint", "images"],
+      ) &&
         isMemoNoteType(params.type) &&
         isNonEmptyString(params.title) &&
         params.title.length <= 300 &&
@@ -1251,30 +1280,31 @@ export function validateRequestParams<M extends HostMethod>(
       return exactObject(params, ["id", "patch"]) &&
         isNonEmptyString(params.id) &&
         params.id.length <= 128 &&
-        exactObject(params.patch, [], [
-          "type",
-          "title",
-          "contentMd",
-          "status",
-          "tags",
-          "workspaceHint",
-          "addImages",
-          "removeImageIds",
-        ]) &&
+        exactObject(
+          params.patch,
+          [],
+          [
+            "type",
+            "title",
+            "contentMd",
+            "status",
+            "tags",
+            "workspaceHint",
+            "addImages",
+            "removeImageIds",
+          ],
+        ) &&
         isMemoNoteFields(params.patch) &&
         (params.patch.addImages === undefined ||
           (Array.isArray(params.patch.addImages) &&
             params.patch.addImages.length <= 20 &&
             params.patch.addImages.every(isMemoImageInput))) &&
         (params.patch.removeImageIds === undefined ||
-          (isStringArray(params.patch.removeImageIds) &&
-            params.patch.removeImageIds.length <= 20))
+          (isStringArray(params.patch.removeImageIds) && params.patch.removeImageIds.length <= 20))
         ? ok(params)
         : fail("invalid memo.update params", { method });
     case "memo.delete":
-      return exactObject(params, ["id"]) &&
-        isNonEmptyString(params.id) &&
-        params.id.length <= 128
+      return exactObject(params, ["id"]) && isNonEmptyString(params.id) && params.id.length <= 128
         ? ok(params)
         : fail("invalid memo.delete params", { method });
     case "memo.readImage":
@@ -1285,6 +1315,15 @@ export function validateRequestParams<M extends HostMethod>(
         params.imageId.length <= 128
         ? ok(params)
         : fail("invalid memo.readImage params", { method });
+    case "memo.getSyncConfig":
+      return params === null ? ok(null) : fail("params must be null", { method });
+    case "memo.setSyncConfig":
+    case "memo.testSync":
+      return exactObject(params, ["settings"]) && isMemoSyncConfigInput(params.settings)
+        ? ok(params)
+        : fail("invalid memo sync settings params", { method });
+    case "memo.syncNow":
+      return params === null ? ok(null) : fail("params must be null", { method });
     default:
       // Exhaustiveness guard: adding a HostMethod without a params validator
       // is a compile error here, not a silently-undefined result at runtime.

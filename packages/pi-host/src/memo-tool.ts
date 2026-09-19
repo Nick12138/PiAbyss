@@ -2,7 +2,9 @@
  * PiAbyss 内置备忘录工具 —— 注册 `piabyss_memo` 工具。
  *
  * 「用 Agent 处理」一条备忘录时，桌面端把记录内容以引用块注入会话；
- * agent 处理完后通过本工具把该记录标记为已完成（或重新打开 / 更新正文）。
+ * agent 处理完后通过本工具把该记录标记为已完成（或重新打开 / 更新正文），
+ * complete 时必须提交结果总结（覆盖式写入 MemoNote.result），
+ * 并自动捕获提交时所在的会话（id/路径/标题/cwd）供「继续讨论」跳转。
  * 与 `ask_user_question` 一样是 Host 内置 customTool：磁盘包同名工具无法
  * 遮蔽它。工具直接读写 MemoStore（磁盘权威，无缓存），与协议 handler、
  * 未来的云同步引擎共享同一份数据。
@@ -10,6 +12,7 @@
 import type {
   ExtensionAPI,
   ExtensionFactory,
+  SessionManager,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
@@ -42,13 +45,28 @@ const ParamsSchema = Type.Object({
       description: "New tag list replacing the old one (update action only).",
     }),
   ),
+  result: Type.Optional(
+    Type.String({
+      description:
+        "Required for complete: a concise markdown summary of what was done, the outcome/outputs, and any remaining follow-ups. Overwrites any previous summary on the note.",
+    }),
+  ),
 });
 
 type MemoParams = Static<typeof ParamsSchema>;
 
+/** 工具执行时捕获的当前会话信息（供结果总结与会话关联使用）。 */
+export type MemoSessionInfo = {
+  sessionId: string;
+  sessionPath: string | null;
+  sessionName: string | null;
+  cwd: string | null;
+};
+
 const TOOL_DESCRIPTION = [
   "Access the user's PiAbyss memo board (备忘录).",
   "Use it to list pending notes, and to mark a note as complete (complete) once the task described in it has been handled, or to reopen/update notes.",
+  "complete REQUIRES a `result` parameter: a concise markdown summary of what was done and the outcome; it overwrites any previous summary.",
   "A note id is required for complete/reopen/update; call list first if you don't have one.",
 ].join(" ");
 
@@ -67,7 +85,10 @@ function formatNote(note: MemoNote): string {
   return `- ${parts.join(" | ")}`;
 }
 
-export function buildMemoTool(agentDir: string): ToolDefinition {
+export function buildMemoTool(
+  agentDir: string,
+  getSessionInfo?: () => MemoSessionInfo,
+): ToolDefinition {
   const store = getMemoStore(agentDir);
   return defineTool({
     name: MEMO_TOOL_NAME,
@@ -103,8 +124,42 @@ export function buildMemoTool(agentDir: string): ToolDefinition {
           };
         }
 
-        if (params.action === "complete" || params.action === "reopen") {
-          const note = store.update(id, { status: params.action === "complete" ? "done" : "open" });
+        if (params.action === "complete") {
+          const summary = params.result?.trim();
+          if (!summary) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "Error: complete requires a `result` parameter — a concise markdown summary of what was done, the outcome, and any remaining follow-ups.",
+                },
+              ],
+              details: undefined,
+              isError: true,
+            };
+          }
+          const info = getSessionInfo?.();
+          const note = store.completeWithResult(id, {
+            resultMd: summary,
+            sessionId: info?.sessionId ?? "",
+            sessionPath: info?.sessionPath ?? null,
+            sessionTitle: info?.sessionName ?? null,
+            sessionCwd: info?.cwd ?? null,
+          });
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Memo note ${note.title} is now done; summary recorded.`,
+              },
+            ],
+            details: undefined,
+          };
+        }
+
+        // reopen
+        if (params.action === "reopen") {
+          const note = store.update(id, { status: "open" });
           return {
             content: [
               {
@@ -143,6 +198,18 @@ export function buildMemoTool(agentDir: string): ToolDefinition {
       }
     },
   });
+}
+
+/**
+ * 从 SessionManager 读取当前会话信息（工具执行时调用，供结果总结与会话关联使用）。
+ */
+export function memoSessionInfo(sessionManager: SessionManager): MemoSessionInfo {
+  return {
+    sessionId: sessionManager.getSessionId(),
+    sessionPath: sessionManager.getSessionFile() ?? null,
+    sessionName: sessionManager.getSessionName() ?? null,
+    cwd: sessionManager.getCwd(),
+  };
 }
 
 /**

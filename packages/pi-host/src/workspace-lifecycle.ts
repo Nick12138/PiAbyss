@@ -27,7 +27,7 @@ import { buildPackageSnapshot, type ResourceIdMap } from "./package-snapshot.js"
 import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
 import { createReadAttachmentTool } from "./attachment-tool.js";
-import { buildMemoTool, createMemoActivationExtension } from "./memo-tool.js";
+import { buildMemoTool, createMemoActivationExtension, memoSessionInfo } from "./memo-tool.js";
 import {
   buildAskUserQuestionTool,
   createAskUserQuestionActivationExtension,
@@ -1382,13 +1382,13 @@ export class WorkspaceLifecycle {
                   customTools: [
                     createReadAttachmentTool(this.context.deps.attachmentStore),
                     buildAskUserQuestionTool(),
-                    buildMemoTool(agentDir),
+                    buildMemoTool(agentDir, () => memoSessionInfo(sessionManager)),
                   ],
                 }
               : {
                   customTools: [
                     buildAskUserQuestionTool(),
-                    buildMemoTool(agentDir),
+                    buildMemoTool(agentDir, () => memoSessionInfo(sessionManager)),
                   ],
                 }),
           }),

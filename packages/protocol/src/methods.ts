@@ -147,6 +147,10 @@ export const HOST_METHODS = [
   "memo.update",
   "memo.delete",
   "memo.readImage",
+  "memo.getSyncConfig",
+  "memo.setSyncConfig",
+  "memo.testSync",
+  "memo.syncNow",
 ] as const;
 
 export type HostMethod = (typeof HOST_METHODS)[number];
@@ -510,6 +514,10 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "memo.update": "host",
   "memo.delete": "host",
   "memo.readImage": "host",
+  "memo.getSyncConfig": "host",
+  "memo.setSyncConfig": "host",
+  "memo.testSync": "host",
+  "memo.syncNow": "host",
   "extensionUi.respond": "sessionTarget",
   "extensionUi.customInput": "sessionTarget",
   "extensionUi.customResize": "sessionTarget",

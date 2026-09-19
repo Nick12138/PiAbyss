@@ -222,3 +222,22 @@ export function withMemoPrompt(existingDraft: string, block: string, instruction
   if (existing) parts.push(existing);
   return parts.join("\n\n");
 }
+
+/**
+ * 「继续讨论」的结果总结段：以独立的 XML 块承载最近一次 Agent 处理总结，
+ * 与记录引用块（composeMemoPrompt）拼接后注入草稿。
+ */
+export function composeMemoResultSection(note: MemoNote): string {
+  const result = note.result;
+  if (!result) return "";
+  const attributes = [
+    `noteId="${note.id}"`,
+    `sessionId="${result.sessionId}"`,
+    ...(result.sessionTitle ? [`sessionTitle="${result.sessionTitle}"`] : []),
+  ].join(" ");
+  return [
+    `<piabyss-memo-result ${attributes}>`,
+    result.resultMd.trim(),
+    "</piabyss-memo-result>",
+  ].join("\n");
+}

@@ -105,18 +105,44 @@ describe("MemoStore", () => {
     expect(() => store.readImage(note.id, image.id)).toThrow();
   });
 
-  it("remove deletes the note and its image directory", async () => {
-    const { store } = await tempLayout();
+  it("remove marks a tombstone (kept for sync), purge physically deletes", async () => {
+    const { agentDir, store } = await tempLayout();
     const note = store.create({
       type: "memo",
       title: "t",
       contentMd: "c",
       images: [{ fileName: "a.png", mediaType: "image/png", dataBase64: PNG_BASE64 }],
     });
-    store.remove(note.id);
+    const removed = store.remove(note.id);
+    expect(removed.deletedAt).not.toBeNull();
+    // list 过滤墓碑；listAll / 图片文件保留。
     expect(store.list()).toEqual([]);
+    expect(store.listAll()).toHaveLength(1);
+    expect(existsSync(join(store.rootDir, "images", note.id))).toBe(true);
+    expect(store.get(note.id)).toBeNull();
+
+    // 未过期的墓碑不会被清理（生产调用传 now - 30 天）。
+    expect(store.purgeDeleted(Date.now() - 30 * 24 * 3600 * 1000)).toHaveLength(0);
+    // 过期后物理删除。
+    const purged = store.purgeDeleted(Number.MAX_SAFE_INTEGER);
+    expect(purged.map((entry) => entry.id)).toEqual([note.id]);
+    expect(store.listAll()).toEqual([]);
     expect(existsSync(join(store.rootDir, "images", note.id))).toBe(false);
-    expect(() => store.remove(note.id)).toThrow();
+
+    // 重开实例后墓碑数据兼容（listAll 含 deletedAt 字段）。
+    const reopened = new MemoStore(agentDir);
+    expect(reopened.list()).toEqual([]);
+  });
+
+  it("replaceAll replaces the whole note set without touching image files", async () => {
+    const { store } = await tempLayout();
+    const note = store.create({ type: "memo", title: "a", contentMd: "x" });
+    store.replaceAll([note]);
+    expect(store.list().map((entry) => entry.id)).toEqual([note.id]);
+    store.replaceAll([]);
+    expect(store.list()).toEqual([]);
+    // 图片目录不受 replaceAll 影响。
+    expect(existsSync(store.rootDir)).toBe(true);
   });
 
   it("throws on unknown note ids", async () => {
@@ -125,5 +151,88 @@ describe("MemoStore", () => {
       store.update("00000000-0000-4000-8000-00000000000f", { status: "done" }),
     ).toThrow();
     expect(() => store.remove("00000000-0000-4000-8000-00000000000f")).toThrow();
+    expect(() =>
+      store.completeWithResult("00000000-0000-4000-8000-00000000000f", {
+        resultMd: "x",
+        sessionId: "s1",
+        sessionPath: null,
+        sessionTitle: null,
+        sessionCwd: null,
+      }),
+    ).toThrow();
+  });
+
+  it("completeWithResult marks done and records the summary with session info", async () => {
+    const { store } = await tempLayout();
+    const note = store.create({ type: "task", title: "t", contentMd: "c" });
+
+    const done = store.completeWithResult(note.id, {
+      resultMd: "  已修复，测试通过。  ",
+      sessionId: " session-1 ",
+      sessionPath: "D:/sessions/session-1.jsonl",
+      sessionTitle: " 处理备忘录 ",
+      sessionCwd: "D:/work/PiAbyss",
+    });
+    expect(done.status).toBe("done");
+    expect(done.completedAt).not.toBeNull();
+    expect(done.result).not.toBeNull();
+    expect(done.result?.resultMd).toBe("已修复，测试通过。");
+    expect(done.result?.sessionId).toBe("session-1");
+    expect(done.result?.sessionTitle).toBe("处理备忘录");
+    expect(done.result?.sessionCwd).toBe("D:/work/PiAbyss");
+    expect(typeof done.result?.at).toBe("number");
+
+    // 覆盖式更新：再次 complete 替换旧总结。
+    const again = store.completeWithResult(note.id, {
+      resultMd: "第二轮处理完成。",
+      sessionId: "session-2",
+      sessionPath: null,
+      sessionTitle: null,
+      sessionCwd: null,
+    });
+    expect(again.result?.resultMd).toBe("第二轮处理完成。");
+    expect(again.result?.sessionId).toBe("session-2");
+    expect(again.result?.sessionPath).toBeNull();
+  });
+
+  it("completeWithResult rejects empty summaries and missing session info", async () => {
+    const { store } = await tempLayout();
+    const note = store.create({ type: "memo", title: "t", contentMd: "c" });
+    expect(() =>
+      store.completeWithResult(note.id, {
+        resultMd: "   ",
+        sessionId: "s1",
+        sessionPath: null,
+        sessionTitle: null,
+        sessionCwd: null,
+      }),
+    ).toThrow();
+    expect(() =>
+      store.completeWithResult(note.id, {
+        resultMd: "x",
+        sessionId: "  ",
+        sessionPath: null,
+        sessionTitle: null,
+        sessionCwd: null,
+      }),
+    ).toThrow();
+  });
+
+  it("reads legacy notes without a result field as result: null", async () => {
+    const { agentDir, store } = await tempLayout();
+    const note = store.create({ type: "memo", title: "t", contentMd: "c" });
+
+    // 模拟 v1 旧数据：手工抹去 result 字段后重新读取。
+    const { readFileSync, writeFileSync } = await import("node:fs");
+    const filePath = join(store.rootDir, "notes.json");
+    const raw = JSON.parse(readFileSync(filePath, "utf8")) as {
+      notes: Record<string, unknown>[];
+    };
+    for (const entry of raw.notes) delete entry.result;
+    writeFileSync(filePath, JSON.stringify(raw), "utf8");
+
+    const reopened = new MemoStore(agentDir);
+    const loaded = reopened.list().find((entry) => entry.id === note.id);
+    expect(loaded?.result).toBeNull();
   });
 });

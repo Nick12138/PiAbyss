@@ -4,6 +4,7 @@ import {
   collectTags,
   collectWorkspaces,
   composeMemoPrompt,
+  composeMemoResultSection,
   deriveTitle,
   extractTags,
   filterNotes,
@@ -34,6 +35,8 @@ function note(overrides: Partial<MemoNote> = {}): MemoNote {
     createdAt: 1000 + seq,
     updatedAt: 1000 + seq,
     completedAt: null,
+    result: null,
+    deletedAt: null,
     ...overrides,
   };
 }
@@ -199,5 +202,31 @@ describe("withMemoPrompt", () => {
   });
   it("keeps empty existing drafts out", () => {
     expect(withMemoPrompt("   ", "BLOCK", "INSTRUCTION")).toBe("BLOCK\n\nINSTRUCTION");
+  });
+});
+
+describe("composeMemoResultSection", () => {
+  it("returns empty string for notes without an agent result", () => {
+    expect(composeMemoResultSection(note())).toBe("");
+  });
+
+  it("wraps the latest summary and session metadata", () => {
+    const block = composeMemoResultSection(
+      note({
+        result: {
+          resultMd: "已完成重构，测试全部通过。",
+          sessionId: "session-1",
+          sessionPath: "D:/sessions/session-1.jsonl",
+          sessionTitle: "重构 memo",
+          sessionCwd: "D:/work/PiAbyss",
+          at: 1700000000000,
+        },
+      }),
+    );
+    expect(block).toContain('<piabyss-memo-result noteId="note-');
+    expect(block).toContain('sessionId="session-1"');
+    expect(block).toContain('sessionTitle="重构 memo"');
+    expect(block).toContain("已完成重构，测试全部通过。");
+    expect(block.trim().endsWith("</piabyss-memo-result>")).toBe(true);
   });
 });

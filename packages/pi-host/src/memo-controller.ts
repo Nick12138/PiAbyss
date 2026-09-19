@@ -2,10 +2,15 @@
  * 备忘录协议 handler（memo.* 方法）。
  *
  * v1 纯本地：所有操作直接落在 MemoStore（`<agentDir>/piabyss/memo/`）。
+ * v2 云同步：新增 memo.getSyncConfig / memo.setSyncConfig / memo.testSync /
+ * memo.syncToCloud 四个方法（Cloudflare R2 上传），autoSync 开启时在每次
+ * 变更后防抖触发后台上传。
  * 参数校验在这里做一层，保证桌面端传入的载荷形状可信后再进存储层。
  */
 import type { MethodHandler } from "./server.js";
+import type { MemoSyncConfig } from "@piabyss/protocol";
 import { getMemoStore, type MemoCreateInput, type MemoUpdatePatch } from "./memo-store.js";
+import { getMemoSync, scheduleMemoAutoSync, type MemoSyncStats } from "./memo-sync.js";
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -34,6 +39,8 @@ function asImageInputs(value: unknown): MemoCreateInput["images"] {
 
 export function createMemoHandlers(agentDir: string): Partial<Record<string, MethodHandler>> {
   const store = getMemoStore(agentDir);
+  // Host 启动：autoSync 开启时在后台先同步一次（多设备拉齐 / 补传积压变更）。
+  getMemoSync(agentDir).startupSync();
 
   return {
     "memo.list": async () => ({ result: { notes: store.list() } }),
@@ -49,9 +56,10 @@ export function createMemoHandlers(agentDir: string): Partial<Record<string, Met
           params.workspaceHint === undefined ? undefined : (params.workspaceHint as string | null),
         images: asImageInputs(params.images),
       };
-      return { result: { note: store.create(input) } };
+      const note = store.create(input);
+      scheduleMemoAutoSync(agentDir);
+      return { result: { note } };
     },
-
     "memo.update": async (ctx) => {
       const params = ctx.params as Record<string, unknown>;
       const id = asString(params.id);
@@ -74,12 +82,15 @@ export function createMemoHandlers(agentDir: string): Partial<Record<string, Met
           (entry): entry is string => typeof entry === "string",
         );
       }
-      return { result: { note: store.update(id, patch) } };
+      const note = store.update(id, patch);
+      scheduleMemoAutoSync(agentDir);
+      return { result: { note } };
     },
 
     "memo.delete": async (ctx) => {
       const params = ctx.params as Record<string, unknown>;
       store.remove(asString(params.id));
+      scheduleMemoAutoSync(agentDir);
       return { result: { ok: true } };
     },
 
@@ -88,6 +99,25 @@ export function createMemoHandlers(agentDir: string): Partial<Record<string, Met
       return {
         result: store.readImage(asString(params.noteId), asString(params.imageId)),
       };
+    },
+
+    "memo.getSyncConfig": async () => {
+      return { result: { settings: getMemoSync(agentDir).getSettings() } };
+    },
+
+    "memo.setSyncConfig": async (ctx) => {
+      const params = ctx.params as { settings: MemoSyncConfig };
+      return { result: { settings: getMemoSync(agentDir).setConfig(params.settings) } };
+    },
+
+    "memo.testSync": async (ctx) => {
+      const params = ctx.params as { settings: MemoSyncConfig };
+      return { result: await getMemoSync(agentDir).test(params.settings) };
+    },
+
+    "memo.syncNow": async () => {
+      const stats: MemoSyncStats = await getMemoSync(agentDir).syncNow();
+      return { result: stats };
     },
   };
 }

@@ -2,7 +2,14 @@
  * 备忘录协议客户端：桌面端 → pi-host 的 memo.* 请求封装。
  * Host 上下文取自 app store（备忘录是全局数据，不走会话/工作区上下文）。
  */
-import type { MemoImageInput, MemoNote, MemoNoteStatus, MemoNoteType } from "@piabyss/protocol";
+import type {
+  MemoImageInput,
+  MemoNote,
+  MemoNoteStatus,
+  MemoNoteType,
+  MemoSyncConfig,
+  MemoSyncSettings,
+} from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -80,4 +87,57 @@ export async function readMemoImageDataUrl(noteId: string, imageId: string): Pro
   );
   if (!response.ok) throw new Error(response.error?.message ?? "memo.readImage failed");
   return `data:${response.result.mediaType};base64,${response.result.dataBase64}`;
+}
+
+/** 云同步操作可能携带大量图片，走更长的超时。 */
+const SYNC_TIMEOUT_MS = 300_000;
+
+export async function getMemoSyncSettings(): Promise<MemoSyncSettings> {
+  const response = await hostClient.request(
+    "memo.getSyncConfig",
+    requireHost(),
+    null,
+    DEFAULT_TIMEOUT_MS,
+  );
+  if (!response.ok) throw new Error(response.error?.message ?? "memo.getSyncConfig failed");
+  return response.result.settings;
+}
+
+export async function setMemoSyncConfig(config: MemoSyncConfig): Promise<MemoSyncSettings> {
+  const response = await hostClient.request(
+    "memo.setSyncConfig",
+    requireHost(),
+    { settings: config },
+    DEFAULT_TIMEOUT_MS,
+  );
+  if (!response.ok) throw new Error(response.error?.message ?? "memo.setSyncConfig failed");
+  return response.result.settings;
+}
+
+export async function testMemoSync(
+  config: MemoSyncConfig,
+): Promise<{ ok: boolean; error: string | null }> {
+  const response = await hostClient.request(
+    "memo.testSync",
+    requireHost(),
+    { settings: config },
+    30_000,
+  );
+  if (!response.ok) throw new Error(response.error?.message ?? "memo.testSync failed");
+  return response.result;
+}
+
+export type MemoSyncStats = {
+  uploadedNotes: number;
+  uploadedImages: number;
+  downloadedNotes: number;
+  downloadedImages: number;
+  bytes: number;
+  at: number;
+};
+
+export async function syncMemoNow(): Promise<MemoSyncStats> {
+  const response = await hostClient.request("memo.syncNow", requireHost(), null, SYNC_TIMEOUT_MS);
+  if (!response.ok) throw new Error(response.error?.message ?? "memo.syncNow failed");
+  return response.result;
 }

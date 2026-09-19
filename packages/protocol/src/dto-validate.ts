@@ -2156,33 +2156,35 @@ function isScheduleIsoOrNull(value: unknown): boolean {
 function isScheduleJob(value: unknown): boolean {
   if (!isPlainObject(value)) return false;
   return (
-    hasExactKeys(value, [
-      "id",
-      "name",
-      "prompt",
-      "command",
-      "cwd",
-      "enabled",
-      "permission",
-      "model",
-      "trigger",
-      "missedWindow",
-      "timeoutMs",
-      "maxRuns",
-      "loadExtensions",
-      "tags",
-      "createdAt",
-      "updatedAt",
-      "updatedBy",
-      "nextRunAt",
-      "lastRunAt",
-      "lastRunId",
-      "lastStatus",
-      "runCount",
-      "terminated",
-    ],
-    ["notify"],
-  ) &&
+    hasExactKeys(
+      value,
+      [
+        "id",
+        "name",
+        "prompt",
+        "command",
+        "cwd",
+        "enabled",
+        "permission",
+        "model",
+        "trigger",
+        "missedWindow",
+        "timeoutMs",
+        "maxRuns",
+        "loadExtensions",
+        "tags",
+        "createdAt",
+        "updatedAt",
+        "updatedBy",
+        "nextRunAt",
+        "lastRunAt",
+        "lastRunId",
+        "lastStatus",
+        "runCount",
+        "terminated",
+      ],
+      ["notify"],
+    ) &&
     isString(value.id) &&
     isString(value.name) &&
     isString(value.prompt) &&
@@ -2328,6 +2330,28 @@ function isMemoImage(value: unknown): boolean {
   );
 }
 
+/** 备忘录 Agent 结果总结的 DTO 校验。 */
+function isMemoAgentResult(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "resultMd",
+      "sessionId",
+      "sessionPath",
+      "sessionTitle",
+      "sessionCwd",
+      "at",
+    ]) &&
+    isString(value.resultMd) &&
+    isString(value.sessionId) &&
+    (value.sessionPath === null || isString(value.sessionPath)) &&
+    (value.sessionTitle === null || isString(value.sessionTitle)) &&
+    (value.sessionCwd === null || isString(value.sessionCwd)) &&
+    typeof value.at === "number" &&
+    Number.isSafeInteger(value.at)
+  );
+}
+
 /** 备忘录记录的 DTO 校验。 */
 function isMemoNote(value: unknown): boolean {
   return (
@@ -2344,6 +2368,8 @@ function isMemoNote(value: unknown): boolean {
       "createdAt",
       "updatedAt",
       "completedAt",
+      "result",
+      "deletedAt",
     ]) &&
     isString(value.id) &&
     (value.type === "memo" || value.type === "idea" || value.type === "task") &&
@@ -2359,7 +2385,10 @@ function isMemoNote(value: unknown): boolean {
     typeof value.updatedAt === "number" &&
     Number.isSafeInteger(value.updatedAt) &&
     (value.completedAt === null ||
-      (typeof value.completedAt === "number" && Number.isSafeInteger(value.completedAt)))
+      (typeof value.completedAt === "number" && Number.isSafeInteger(value.completedAt))) &&
+    (value.result === null || isMemoAgentResult(value.result)) &&
+    (value.deletedAt === null ||
+      (typeof value.deletedAt === "number" && Number.isSafeInteger(value.deletedAt)))
   );
 }
 
@@ -3122,6 +3151,69 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         isNonEmptyString(result.mediaType)
         ? null
         : "invalid memo.readImage result";
+    case "memo.getSyncConfig":
+    case "memo.setSyncConfig":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["settings"]) &&
+        isPlainObject(result.settings) &&
+        hasExactKeys(result.settings, [
+          "accountId",
+          "accessKeyId",
+          "secretAccessKey",
+          "bucket",
+          "autoSync",
+          "lastSyncAt",
+          "lastSyncOk",
+          "lastSyncError",
+        ]) &&
+        isString(result.settings.accountId) &&
+        isString(result.settings.accessKeyId) &&
+        isString(result.settings.secretAccessKey) &&
+        isString(result.settings.bucket) &&
+        typeof result.settings.autoSync === "boolean" &&
+        (result.settings.lastSyncAt === null ||
+          (typeof result.settings.lastSyncAt === "number" &&
+            Number.isSafeInteger(result.settings.lastSyncAt))) &&
+        (result.settings.lastSyncOk === null || typeof result.settings.lastSyncOk === "boolean") &&
+        (result.settings.lastSyncError === null || isString(result.settings.lastSyncError))
+        ? null
+        : "invalid memo sync settings result";
+    case "memo.testSync":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["ok", "error"]) &&
+        typeof result.ok === "boolean" &&
+        (result.error === null || isString(result.error))
+        ? null
+        : "invalid memo.testSync result";
+    case "memo.syncNow":
+      return isPlainObject(result) &&
+        hasExactKeys(result, [
+          "uploadedNotes",
+          "uploadedImages",
+          "downloadedNotes",
+          "downloadedImages",
+          "bytes",
+          "at",
+        ]) &&
+        typeof result.uploadedNotes === "number" &&
+        Number.isSafeInteger(result.uploadedNotes) &&
+        result.uploadedNotes >= 0 &&
+        typeof result.uploadedImages === "number" &&
+        Number.isSafeInteger(result.uploadedImages) &&
+        result.uploadedImages >= 0 &&
+        typeof result.downloadedNotes === "number" &&
+        Number.isSafeInteger(result.downloadedNotes) &&
+        result.downloadedNotes >= 0 &&
+        typeof result.downloadedImages === "number" &&
+        Number.isSafeInteger(result.downloadedImages) &&
+        result.downloadedImages >= 0 &&
+        typeof result.bytes === "number" &&
+        Number.isSafeInteger(result.bytes) &&
+        result.bytes >= 0 &&
+        typeof result.at === "number" &&
+        Number.isSafeInteger(result.at)
+        ? null
+        : "invalid memo.syncNow result";
     case "model.list":
       return isPlainObject(result) &&
         hasExactKeys(

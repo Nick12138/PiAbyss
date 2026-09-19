@@ -7,6 +7,7 @@ import { DockToggleButton } from "./DockToggleButton";
 import { AppUpdateButton } from "./AppUpdateButton";
 import { WindowControls, resolveWindowControlsPlatform } from "./WindowControls";
 import { SidebarBrandToggle } from "./Sidebar";
+import { MemoSyncHeaderActions } from "../features/memo/MemoSyncHeaderActions";
 import { SETTINGS_SECTION_META } from "../features/settings/settings-top-bar";
 
 /** Single full-width app-level top bar replacing the three independent header
@@ -196,7 +197,9 @@ export function AppTopBar({
         className="flex shrink-0 items-center gap-2"
         data-settings-header-actions
         ref={actionsSlotRef}
-      />
+      >
+        {page === "memo" && <MemoSyncHeaderActions />}
+      </div>
 
       {/* Right segment: download-and-update (while an update is available) +
           right-panel toggle (chat only) + native window controls. */}

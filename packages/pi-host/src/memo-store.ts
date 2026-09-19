@@ -8,8 +8,11 @@
  * 设计取舍：
  *   - 每次操作都从磁盘读、写回磁盘，不持有内存缓存。备忘录的数据量很小
  *     （个人记录），磁盘读取代价可忽略；换来的好处是多个消费者（协议
- *     handler、agent 工具、未来 v2 的同步引擎）各自持有实例也不会互相
- *     覆盖，天然多实例安全。
+ *     handler、agent 工具、v2 的同步引擎）各自持有实例也不会互相覆盖，
+ *     天然多实例安全。
+ *   - 删除是软删除（墓碑 deletedAt）：记录体与图片保留在磁盘上，供同步
+ *     引擎把删除传播到其他设备；超过 TTL（30 天）的墓碑由 purgeDeleted
+ *     物理清除。
  *   - 写入走「临时文件 + rename」原子替换，进程中断不会留下半截 JSON。
  *   - workspaceHint 只是字符串标签，不与工作区强绑定（目录可能移动/改名）。
  */
@@ -91,6 +94,15 @@ export type MemoUpdatePatch = {
   removeImageIds?: string[];
 };
 
+/** piabyss_memo 工具 complete 时提交的结果总结及会话关联。 */
+export type MemoCompleteResultInput = {
+  resultMd: string;
+  sessionId: string;
+  sessionPath: string | null;
+  sessionTitle: string | null;
+  sessionCwd: string | null;
+};
+
 function normalizeTags(tags: string[] | undefined): string[] {
   if (!tags) return [];
   const seen = new Set<string>();
@@ -124,11 +136,22 @@ export class MemoStore {
     return this.root;
   }
 
+  /** 可见记录（不含墓碑；UI、协议、agent 工具都用这个）。 */
   list(): MemoNote[] {
+    return this.readFile().notes.filter((note) => note.deletedAt === null);
+  }
+
+  /** 全量原始记录（含墓碑；同步引擎专用）。 */
+  listAll(): MemoNote[] {
     return this.readFile().notes;
   }
 
   get(id: string): MemoNote | null {
+    return this.list().find((note) => note.id === id) ?? null;
+  }
+
+  /** 不过滤墓碑的原始查找（同步引擎/图片文件定位用）。 */
+  private getAny(id: string): MemoNote | null {
     return this.readFile().notes.find((note) => note.id === id) ?? null;
   }
 
@@ -148,6 +171,8 @@ export class MemoStore {
       createdAt: now,
       updatedAt: now,
       completedAt: null,
+      result: null,
+      deletedAt: null,
     };
     note.images = this.storeImages(note.id, input.images ?? []);
     const file = this.readFile();
@@ -185,19 +210,87 @@ export class MemoStore {
     return note;
   }
 
-  remove(id: string): void {
+  /**
+   * Agent 处理完成：标记 done 并写入/覆盖结果总结（含会话关联）。
+   * 与手动标记完成（update status）不同，只有本方法会产生总结。
+   */
+  completeWithResult(id: string, input: MemoCompleteResultInput): MemoNote {
+    const file = this.readFile();
+    const note = file.notes.find((entry) => entry.id === id);
+    if (!note) throw memoError("RESOURCE_NOT_FOUND", `备忘录记录不存在：${id}`);
+    const resultMd = input.resultMd.trim();
+    if (!resultMd) throw memoError("INVALID_REQUEST", "结果总结不能为空");
+    if (resultMd.length > MAX_CONTENT_LENGTH) {
+      throw memoError("INVALID_REQUEST", `结果总结过长（上限 ${MAX_CONTENT_LENGTH} 字符）`);
+    }
+    const sessionId = input.sessionId.trim();
+    if (!sessionId) throw memoError("INVALID_REQUEST", "缺少提交总结的会话信息");
+    const now = Date.now();
+    note.status = "done";
+    note.completedAt = note.completedAt ?? now;
+    note.result = {
+      resultMd,
+      sessionId,
+      sessionPath: input.sessionPath?.trim() || null,
+      sessionTitle: input.sessionTitle?.trim() || null,
+      sessionCwd: input.sessionCwd?.trim() || null,
+      at: now,
+    };
+    note.updatedAt = now;
+    this.writeFile(file);
+    return note;
+  }
+
+  /** 删除 = 打墓碑（记录体与图片保留，供同步传播删除；见 purgeDeleted）。 */
+  remove(id: string): MemoNote {
+    const file = this.readFile();
+    const note = file.notes.find((entry) => entry.id === id);
+    if (!note) throw memoError("RESOURCE_NOT_FOUND", `备忘录记录不存在：${id}`);
+    const now = Date.now();
+    note.deletedAt = now;
+    note.updatedAt = now;
+    this.writeFile(file);
+    return note;
+  }
+
+  /** 物理删除：移除记录体与图片目录（墓碑过期清理 / 恢复覆盖前使用）。 */
+  hardRemove(id: string): void {
     const file = this.readFile();
     const index = file.notes.findIndex((entry) => entry.id === id);
-    if (index < 0) throw memoError("RESOURCE_NOT_FOUND", `备忘录记录不存在：${id}`);
+    if (index < 0) return;
     const note = file.notes[index];
-    if (!note) throw memoError("RESOURCE_NOT_FOUND", `备忘录记录不存在：${id}`);
+    if (note) rmSync(join(this.imagesRoot, note.id), { recursive: true, force: true });
     file.notes.splice(index, 1);
     this.writeFile(file);
-    rmSync(join(this.imagesRoot, note.id), { recursive: true, force: true });
+  }
+
+  /**
+   * 清理超过 TTL 的墓碑：物理删除记录与图片目录。
+   * 返回被清理的记录（含图片名列表），供同步引擎删除云端对应对象。
+   */
+  purgeDeleted(cutoff: number): MemoNote[] {
+    const file = this.readFile();
+    const expired = file.notes.filter(
+      (note) => note.deletedAt !== null && note.deletedAt <= cutoff,
+    );
+    for (const note of expired) {
+      rmSync(join(this.imagesRoot, note.id), { recursive: true, force: true });
+    }
+    if (expired.length > 0) {
+      const expiredIds = new Set(expired.map((note) => note.id));
+      file.notes = file.notes.filter((note) => !expiredIds.has(note.id));
+      this.writeFile(file);
+    }
+    return expired;
+  }
+
+  /** 用给定记录集整体替换 notes.json（同步引擎合并结果落盘用；图片文件不动）。 */
+  replaceAll(notes: MemoNote[]): void {
+    this.writeFile({ schemaVersion: 1, notes });
   }
 
   readImage(noteId: string, imageId: string): { dataBase64: string; mediaType: string } {
-    const note = this.get(noteId);
+    const note = this.list().find((entry) => entry.id === noteId);
     const image = note?.images.find((entry) => entry.id === imageId);
     if (!image) throw memoError("RESOURCE_NOT_FOUND", `备忘录图片不存在：${imageId}`);
     const path = join(this.imagesRoot, noteId, image.fileName);
@@ -208,11 +301,43 @@ export class MemoStore {
     }
   }
 
+  /** 读取图片文件原始字节（云同步用；文件缺失抛 RESOURCE_NOT_FOUND）。 */
+  readImageFile(noteId: string, fileName: string): Buffer {
+    if (!this.getAny(noteId)?.images.some((entry) => entry.fileName === fileName)) {
+      throw memoError("RESOURCE_NOT_FOUND", `备忘录图片不存在：${fileName}`);
+    }
+    const path = join(this.imagesRoot, noteId, fileName);
+    try {
+      return readFileSync(path);
+    } catch {
+      throw memoError("RESOURCE_NOT_FOUND", `备忘录图片文件缺失：${fileName}`);
+    }
+  }
+
+  /** 图片文件是否已存在于本地（同步补图判断用）。 */
+  hasImageFile(noteId: string, fileName: string): boolean {
+    return existsSync(join(this.imagesRoot, noteId, fileName));
+  }
+
+  /** 写入图片文件（同步下载补图用；调用方保证 noteId 与 fileName 已在记录中）。 */
+  writeImageFile(noteId: string, fileName: string, body: Buffer): void {
+    const dir = join(this.imagesRoot, noteId);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, fileName), body);
+  }
+
   private readFile(): MemoFile {
     if (!existsSync(this.filePath)) return { schemaVersion: 1, notes: [] };
     try {
       const raw = JSON.parse(readFileSync(this.filePath, "utf8")) as MemoFile;
-      if (raw && raw.schemaVersion === 1 && Array.isArray(raw.notes)) return raw;
+      if (raw && raw.schemaVersion === 1 && Array.isArray(raw.notes)) {
+        // 旧数据兼容：result / deletedAt 缺失时补齐为 null（下次写盘时落定）。
+        for (const note of raw.notes) {
+          if (note.result === undefined) note.result = null;
+          if (note.deletedAt === undefined) note.deletedAt = null;
+        }
+        return raw;
+      }
     } catch {
       // 损坏的 JSON 视为空库（备份损坏原文件，便于事后排查）。
       try {

@@ -1651,6 +1651,22 @@ export type MemoImage = {
   bytes: number;
 };
 
+/** Agent 处理备忘录后的结果总结（由 piabyss_memo 工具写入，覆盖式更新）。 */
+export type MemoAgentResult = {
+  /** 结果总结（Markdown）。 */
+  resultMd: string;
+  /** 提交总结时所在的会话（用于「继续讨论」跳转）。 */
+  sessionId: string;
+  /** 会话文件路径（跨工作区跳转用；可能为 null）。 */
+  sessionPath: string | null;
+  /** 提交时的会话标题（展示用）。 */
+  sessionTitle: string | null;
+  /** 提交时的工作区 cwd（跨工作区跳转用）。 */
+  sessionCwd: string | null;
+  /** 提交时间。 */
+  at: number;
+};
+
 /** 备忘录记录（全局共享，不随工作区隔离；workspaceHint 仅作关联标签）。 */
 export type MemoNote = {
   id: string;
@@ -1666,6 +1682,33 @@ export type MemoNote = {
   updatedAt: number;
   /** 状态变为 done 的时间；非 done 恒为 null。 */
   completedAt: number | null;
+  /** 最近一次 Agent 处理的结果总结；手动标记完成不产生总结。重新处理会覆盖旧总结。 */
+  result: MemoAgentResult | null;
+  /**
+   * 删除墓碑（多设备同步用）：删除时置为时间戳并保留记录体，同步引擎据此
+   * 把删除传播到其他设备（编辑时间晚于墓碑可复活）；超过 TTL 后物理清除。
+   */
+  deletedAt: number | null;
+};
+
+/** 备忘录云同步（Cloudflare R2，S3 兼容 API）的连接配置。 */
+export type MemoSyncConfig = {
+  /** R2 账户 ID（端点为 https://<accountId>.r2.cloudflarestorage.com）。 */
+  accountId: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  /** R2 桶名。 */
+  bucket: string;
+  /** 备忘录变更后自动上传。 */
+  autoSync: boolean;
+};
+
+/** 备忘录云同步配置 + 最近一次同步状态（Host 持久化）。 */
+export type MemoSyncSettings = MemoSyncConfig & {
+  /** 最近一次同步（含手动与自动）时间；从未同步为 null。 */
+  lastSyncAt: number | null;
+  lastSyncOk: boolean | null;
+  lastSyncError: string | null;
 };
 
 /** 上传图片的输入载荷：base64 不含 `data:` 前缀。 */

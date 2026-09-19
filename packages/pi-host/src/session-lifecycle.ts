@@ -31,7 +31,7 @@ import {
 } from "./session-list-projection.js";
 import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { createReadAttachmentTool } from "./attachment-tool.js";
-import { buildMemoTool, createMemoActivationExtension } from "./memo-tool.js";
+import { buildMemoTool, createMemoActivationExtension, memoSessionInfo } from "./memo-tool.js";
 import {
   buildAskUserQuestionTool,
   createAskUserQuestionActivationExtension,
@@ -643,11 +643,14 @@ export async function createSession(
             customTools: [
               createReadAttachmentTool(factory.deps.attachmentStore),
               buildAskUserQuestionTool(),
-              buildMemoTool(factory.deps.agentDir),
+              buildMemoTool(factory.deps.agentDir, () => memoSessionInfo(sessionManager)),
             ],
           }
         : {
-            customTools: [buildAskUserQuestionTool(), buildMemoTool(factory.deps.agentDir)],
+            customTools: [
+              buildAskUserQuestionTool(),
+              buildMemoTool(factory.deps.agentDir, () => memoSessionInfo(sessionManager)),
+            ],
           }),
     });
     const session = created.session;
@@ -988,11 +991,14 @@ export async function openSession(
               customTools: [
                 createReadAttachmentTool(factory.deps.attachmentStore),
                 buildAskUserQuestionTool(),
-                buildMemoTool(factory.deps.agentDir),
+                buildMemoTool(factory.deps.agentDir, () => memoSessionInfo(sessionManager)),
               ],
             }
           : {
-              customTools: [buildAskUserQuestionTool(), buildMemoTool(factory.deps.agentDir)],
+              customTools: [
+                buildAskUserQuestionTool(),
+                buildMemoTool(factory.deps.agentDir, () => memoSessionInfo(sessionManager)),
+              ],
             }),
       });
       candidateSession = created.session;

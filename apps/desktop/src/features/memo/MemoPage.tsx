@@ -18,6 +18,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  ScrollText,
   StickyNote,
   Trash2,
   X,
@@ -27,16 +28,19 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ClipboardEvent,
   type ReactNode,
 } from "react";
 import type { MemoNote, MemoNoteStatus, MemoNoteType } from "@piabyss/protocol";
-import { primaryButton, secondaryButton } from "../../components/Dialog";
+import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
 import { Select } from "../../components/Select";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 import { draftKeyForTarget, draftTargetFor } from "../../lib/draft-target";
 import { isDesktopRuntime, readDesktopSmallFile } from "../../lib/desktop-file-access";
+import { openSessionAcrossWorkspaces } from "../../lib/bridge/session-navigation";
+import { createNewSession } from "../../lib/commands/actions";
 import { useAppStore } from "../../lib/stores/app-store";
 import {
   createMemoNote,
@@ -45,10 +49,12 @@ import {
   readMemoImageDataUrl,
   updateMemoNote,
 } from "./memo-client";
+import { MEMO_SYNCED_EVENT } from "./MemoSyncHeaderActions";
 import {
   collectTags,
   collectWorkspaces,
   composeMemoPrompt,
+  composeMemoResultSection,
   deriveTitle,
   extractTags,
   filterNotes,
@@ -136,6 +142,16 @@ export function MemoPage() {
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
   const [dragOver, setDragOver] = useState(false);
+  const [resultModalOpen, setResultModalOpen] = useState(false);
+
+  // 云同步发生在顶栏（MemoSyncHeaderActions）；同步成功后刷新本页列表。
+  useEffect(() => {
+    const onSynced = () => {
+      void refreshRef.current?.();
+    };
+    window.addEventListener(MEMO_SYNCED_EVENT, onSynced);
+    return () => window.removeEventListener(MEMO_SYNCED_EVENT, onSynced);
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -151,6 +167,8 @@ export function MemoPage() {
       return [];
     }
   }, [pushNotification, t]);
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
 
   useEffect(() => {
     void refresh();
@@ -363,6 +381,48 @@ export function MemoPage() {
       t("memoAgentPrompt"),
     );
     state.setDraftTextLocal(target, merged);
+    state.setPage("chat");
+  }
+
+  /**
+   * 「继续讨论」：优先跳转提交总结时的原会话（跨工作区，复用全局搜索同款导航）；
+   * 原会话已删除/不可达时新建会话，然后把引用块 + 最新总结 + 指令注入草稿。
+   */
+  async function continueWithAgent(note: MemoNote) {
+    let opened = false;
+    if (note.result?.sessionPath) {
+      const cwd = note.result.sessionCwd ?? useAppStore.getState().workspace?.canonicalCwd ?? null;
+      if (cwd) {
+        const outcome = await openSessionAcrossWorkspaces({
+          cwd,
+          sessionId: note.result.sessionId,
+          sessionPath: note.result.sessionPath,
+          optimistic: false,
+          quiet: true,
+        });
+        opened = outcome.status === "opened" || outcome.status === "already-active";
+      }
+    }
+    if (!opened) {
+      const created = await createNewSession();
+      if (!created) {
+        pushNotification(t("memoContinueFailed"), "error");
+        return;
+      }
+    }
+    const state = useAppStore.getState();
+    const target = draftTargetFor(state.workspace, state.session);
+    if (!target) {
+      pushNotification(t("memoAgentNoWorkspace"), "warning");
+      return;
+    }
+    const block = [composeMemoPrompt(note), composeMemoResultSection(note)]
+      .filter(Boolean)
+      .join("\n\n");
+    const key = draftKeyForTarget(target);
+    const merged = withMemoPrompt(state.draftTexts[key] ?? "", block, t("memoFollowupPrompt"));
+    state.setDraftTextLocal(target, merged);
+    setResultModalOpen(false);
     state.setPage("chat");
   }
 
@@ -621,6 +681,7 @@ export function MemoPage() {
               confirmingDelete={confirmingDelete}
               onEdit={() => startEdit(selectedNote)}
               onAgent={() => openWithAgent(selectedNote)}
+              onResult={() => setResultModalOpen(true)}
               onDelete={() => void removeNote(selectedNote)}
               onCreate={resetToCreate}
             />
@@ -647,6 +708,34 @@ export function MemoPage() {
           )}
         </div>
       </div>
+
+      {/* Agent 完成总结弹窗（轻量临时浮层）：查看总结 + 继续讨论。 */}
+      {resultModalOpen && selectedNote?.result && (
+        <Dialog
+          title={t("memoResultTitle")}
+          icon={ScrollText}
+          showCancel={false}
+          showCloseIcon
+          confirmLabel={t("memoActionContinue")}
+          onCancel={() => setResultModalOpen(false)}
+          onConfirm={() => void continueWithAgent(selectedNote)}
+        >
+          <div className="flex flex-col gap-3 text-left">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
+              <span>
+                {t("memoResultFromSession", {
+                  name: selectedNote.result.sessionTitle ?? selectedNote.result.sessionId,
+                })}
+              </span>
+              <span>·</span>
+              <span>{t("memoResultAt", { time: formatMemoDateTime(selectedNote.result.at) })}</span>
+            </div>
+            <div className="scrollbar-subtle max-h-80 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-surface-overlay px-3 py-2.5 text-[13px] leading-relaxed text-foreground">
+              {selectedNote.result.resultMd}
+            </div>
+          </div>
+        </Dialog>
+      )}
     </div>
   );
 }
@@ -827,6 +916,7 @@ function MemoDetail({
   confirmingDelete,
   onEdit,
   onAgent,
+  onResult,
   onDelete,
   onCreate,
 }: {
@@ -836,23 +926,40 @@ function MemoDetail({
   confirmingDelete: boolean;
   onEdit: () => void;
   onAgent: () => void;
+  onResult: () => void;
   onDelete: () => void;
   onCreate: () => void;
 }) {
   const t = useT();
   const TypeIcon = TYPE_ICONS[note.type];
+  // 已完成/已归档且有 Agent 总结 → 展示「Agent完成总结」；
+  // 进行中或无总结（手动标记完成）→ 保持「用 Agent 处理」。
+  const showResult = note.status !== "open" && note.result !== null;
   return (
     <div className="flex h-full flex-col" data-testid="memo-detail">
       <div className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2">
-        <button
-          type="button"
-          onClick={onAgent}
-          className={`${primaryButton} h-8 gap-1.5 px-3 text-[12px]`}
-          title={t("memoAgentPrompt")}
-        >
-          <Bot size={14} className="shrink-0" />
-          <span>{t("memoActionAgent")}</span>
-        </button>
+        {showResult ? (
+          <button
+            type="button"
+            onClick={onResult}
+            className={`${primaryButton} h-8 gap-1.5 px-3 text-[12px]`}
+            title={t("memoResultTitle")}
+            data-testid="memo-detail-result"
+          >
+            <ScrollText size={14} className="shrink-0" />
+            <span>{t("memoActionResult")}</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onAgent}
+            className={`${primaryButton} h-8 gap-1.5 px-3 text-[12px]`}
+            title={t("memoAgentPrompt")}
+          >
+            <Bot size={14} className="shrink-0" />
+            <span>{t("memoActionAgent")}</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={onEdit}

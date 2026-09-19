@@ -295,6 +295,26 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
     noteId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150",
     imageId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150",
   },
+  "memo.getSyncConfig": null,
+  "memo.setSyncConfig": {
+    settings: {
+      accountId: "abc123",
+      accessKeyId: "AKID",
+      secretAccessKey: "secret",
+      bucket: "memos",
+      autoSync: true,
+    },
+  },
+  "memo.testSync": {
+    settings: {
+      accountId: "abc123",
+      accessKeyId: "AKID",
+      secretAccessKey: "secret",
+      bucket: "memos",
+      autoSync: false,
+    },
+  },
+  "memo.syncNow": null,
 };
 
 function contextFor(method: HostMethod): Record<string, unknown> {
@@ -568,6 +588,12 @@ function invalidParams(method: HostMethod): unknown {
       return { id: "" };
     case "memo.readImage":
       return { noteId: "", imageId: "" };
+    case "memo.getSyncConfig":
+    case "memo.syncNow":
+      return { unexpected: true };
+    case "memo.setSyncConfig":
+    case "memo.testSync":
+      return { settings: { accountId: "", bucket: 42 } };
     case "schedule.agentTranscript":
       return { sessionPath: "" };
     default:

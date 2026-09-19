@@ -101,6 +101,8 @@ import type {
   MemoNoteStatus,
   MemoNoteType,
   MemoImageInput,
+  MemoSyncConfig,
+  MemoSyncSettings,
 } from "./types.js";
 
 export type HostContextMap = {
@@ -251,6 +253,10 @@ export type HostContextMap = {
   "memo.update": HostContext;
   "memo.delete": HostContext;
   "memo.readImage": HostContext;
+  "memo.getSyncConfig": HostContext;
+  "memo.setSyncConfig": HostContext;
+  "memo.testSync": HostContext;
+  "memo.syncNow": HostContext;
 };
 
 export type HostRequestParams = {
@@ -485,6 +491,10 @@ export type HostRequestParams = {
   };
   "memo.delete": { id: string };
   "memo.readImage": { noteId: string; imageId: string };
+  "memo.getSyncConfig": null;
+  "memo.setSyncConfig": { settings: MemoSyncConfig };
+  "memo.testSync": { settings: MemoSyncConfig };
+  "memo.syncNow": null;
 };
 
 export type HostResultMap = {
@@ -700,6 +710,17 @@ export type HostResultMap = {
   "memo.update": { note: MemoNote };
   "memo.delete": { ok: boolean };
   "memo.readImage": { dataBase64: string; mediaType: string };
+  "memo.getSyncConfig": { settings: MemoSyncSettings };
+  "memo.setSyncConfig": { settings: MemoSyncSettings };
+  "memo.testSync": { ok: boolean; error: string | null };
+  "memo.syncNow": {
+    uploadedNotes: number;
+    uploadedImages: number;
+    downloadedNotes: number;
+    downloadedImages: number;
+    bytes: number;
+    at: number;
+  };
 };
 
 export type HostEventPayloadMap = {
