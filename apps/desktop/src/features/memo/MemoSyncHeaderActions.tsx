@@ -6,7 +6,7 @@
  * 同步成功后广播 MEMO_SYNCED_EVENT，备忘录页据此刷新列表。
  */
 import { Check, CheckCircle2, CircleAlert, CloudUpload, Loader2, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { MemoSyncConfig, MemoSyncSettings } from "@piabyss/protocol";
 import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
 import { Switch } from "../../components/Switch";
@@ -14,9 +14,7 @@ import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 import { getMemoSyncSettings, setMemoSyncConfig, syncMemoNow, testMemoSync } from "./memo-client";
 import { formatMemoDateTime } from "./memo-model";
-
-/** 同步完成后广播的事件名（备忘录页监听后刷新列表）。 */
-export const MEMO_SYNCED_EVENT = "piabyss:memo-synced";
+import { MEMO_SYNCED_EVENT, refreshMemoSyncStatus, useMemoSyncStatus } from "./memo-sync-status";
 
 const EMPTY_FORM: MemoSyncConfig = {
   accountId: "",
@@ -37,35 +35,9 @@ export function MemoSyncHeaderActions() {
   const [syncForm, setSyncForm] = useState<MemoSyncConfig>(EMPTY_FORM);
   const [syncBusy, setSyncBusy] = useState<"test" | "sync" | "save" | null>(null);
   const [syncMessage, setSyncMessage] = useState<SyncFeedback | null>(null);
-  // 工具栏状态点用的最近配置/状态（独立于弹窗内编辑中的 syncSettings）。
-  const [syncStatus, setSyncStatus] = useState<MemoSyncSettings | null>(null);
+  // 状态点/配置判断用共享订阅（标题旁的点与本按钮共用一个 30s 轮询）。
+  const syncStatus = useMemoSyncStatus();
   const [toolbarSyncing, setToolbarSyncing] = useState(false);
-
-  const lastSeenSyncAtRef = useRef<number | null>(null);
-
-  /** 状态点数据：挂载时 + 每 30s 轮询（捕获后台 autoSync 的结果）。 */
-  const loadSyncStatus = useCallback(() => {
-    getMemoSyncSettings()
-      .then((settings) => {
-        setSyncStatus(settings);
-        // lastSyncAt 变化 = 后台（autoSync/启动同步）刚发生过一次同步：
-        // 广播事件让备忘录列表也刷新，否则其他设备拉入的变更不会上屏。
-        if (
-          lastSeenSyncAtRef.current !== null &&
-          settings.lastSyncAt !== null &&
-          settings.lastSyncAt !== lastSeenSyncAtRef.current
-        ) {
-          window.dispatchEvent(new Event(MEMO_SYNCED_EVENT));
-        }
-        lastSeenSyncAtRef.current = settings.lastSyncAt;
-      })
-      .catch(() => setSyncStatus(null));
-  }, []);
-  useEffect(() => {
-    loadSyncStatus();
-    const timer = window.setInterval(loadSyncStatus, 30_000);
-    return () => window.clearInterval(timer);
-  }, [loadSyncStatus]);
 
   const syncConfigured =
     syncStatus !== null &&
@@ -73,19 +45,6 @@ export function MemoSyncHeaderActions() {
     syncStatus.bucket !== "" &&
     syncStatus.accessKeyId !== "" &&
     syncStatus.secretAccessKey !== "";
-  const syncDotClass =
-    !syncConfigured || syncStatus?.lastSyncOk === null
-      ? "bg-muted"
-      : syncStatus?.lastSyncOk === true
-        ? "bg-success"
-        : "bg-danger";
-  const syncDotKey = !syncConfigured
-    ? "memoSyncDotDisabled"
-    : syncStatus?.lastSyncOk === true
-      ? "memoSyncDotOk"
-      : syncStatus?.lastSyncOk === false
-        ? "memoSyncDotFail"
-        : "memoSyncDotNone";
 
   /** 打开云同步配置弹窗：加载 Host 端已保存的配置与同步状态。 */
   async function openSyncModal() {
@@ -120,7 +79,7 @@ export function MemoSyncHeaderActions() {
     setToolbarSyncing(true);
     try {
       const stats = await syncMemoNow();
-      loadSyncStatus();
+      refreshMemoSyncStatus();
       window.dispatchEvent(new Event(MEMO_SYNCED_EVENT));
       pushNotification(
         t("memoSyncSuccess", {
@@ -132,7 +91,7 @@ export function MemoSyncHeaderActions() {
         "success",
       );
     } catch (error) {
-      loadSyncStatus();
+      refreshMemoSyncStatus();
       pushNotification(
         `${t("memoSyncNowFail")}: ${error instanceof Error ? error.message : String(error)}`,
         "error",
@@ -173,9 +132,8 @@ export function MemoSyncHeaderActions() {
       // 打开自动同步后保存 → 立即同步一次（拉齐云端 / 补传积压变更）。
       if (syncForm.autoSync) {
         const stats = await syncMemoNow();
-        const latest = await getMemoSyncSettings();
-        setSyncSettings(latest);
-        setSyncStatus(latest);
+        setSyncSettings(await getMemoSyncSettings());
+        refreshMemoSyncStatus();
         setSyncMessage({
           tone: "success",
           text: t("memoSyncSuccess", {
@@ -208,9 +166,8 @@ export function MemoSyncHeaderActions() {
       const settings = await setMemoSyncConfig(syncForm);
       setSyncSettings(settings);
       const stats = await syncMemoNow();
-      const latest = await getMemoSyncSettings();
-      setSyncSettings(latest);
-      setSyncStatus(latest);
+      setSyncSettings(await getMemoSyncSettings());
+      refreshMemoSyncStatus();
       setSyncMessage({
         tone: "success",
         text: t("memoSyncSuccess", {
@@ -229,6 +186,7 @@ export function MemoSyncHeaderActions() {
       void getMemoSyncSettings()
         .then(setSyncSettings)
         .catch(() => undefined);
+      refreshMemoSyncStatus();
     } finally {
       setSyncBusy(null);
     }
@@ -250,17 +208,12 @@ export function MemoSyncHeaderActions() {
       <button
         type="button"
         onClick={() => void openSyncModal()}
-        title={`${t("memoSyncTitle")} · ${t(syncDotKey)}`}
-        aria-label={`${t("memoSyncTitle")} · ${t(syncDotKey)}`}
+        title={t("memoSyncTitle")}
+        aria-label={t("memoSyncTitle")}
         data-testid="memo-sync-open"
-        data-sync-state={syncDotKey}
-        className="relative flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
+        className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
       >
         <CloudUpload size={15} className="shrink-0" />
-        <span
-          aria-hidden
-          className={`absolute -right-0.5 -top-0.5 size-2 rounded-full ring-2 ring-background ${syncDotClass}`}
-        />
       </button>
 
       {/* 云同步配置弹窗（轻量临时浮层）：R2 密钥配置 + 立即同步。 */}

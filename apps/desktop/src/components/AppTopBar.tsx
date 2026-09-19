@@ -8,6 +8,7 @@ import { AppUpdateButton } from "./AppUpdateButton";
 import { WindowControls, resolveWindowControlsPlatform } from "./WindowControls";
 import { SidebarBrandToggle } from "./Sidebar";
 import { MemoSyncHeaderActions } from "../features/memo/MemoSyncHeaderActions";
+import { MemoSyncStatusDot } from "../features/memo/memo-sync-status";
 import { SETTINGS_SECTION_META } from "../features/settings/settings-top-bar";
 
 /** Single full-width app-level top bar replacing the three independent header
@@ -171,6 +172,7 @@ export function AppTopBar({
               aria-hidden="true"
             />
             <h1 className="min-w-0 truncate text-base font-semibold leading-5">{t("memoTitle")}</h1>
+            <MemoSyncStatusDot />
           </div>
         ) : page === "settings" || page === "packages" ? (
           <div
