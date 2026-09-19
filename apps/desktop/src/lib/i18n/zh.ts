@@ -1819,7 +1819,7 @@ export const zh: Record<MessageKey, string> = {
   memoActionUnarchive: "取消归档",
   memoClearArchived: "清空归档",
   memoClearArchivedHint: "永久删除全部已归档记录",
-  memoActionAgent: "用 Agent 处理",
+  memoActionAgent: "现在处理",
   memoActionCreate: "写一条新的",
   memoAgentPrompt:
     "请处理上面引用的备忘录记录；完成其中描述的事情后，调用 piabyss_memo 工具的 complete 动作把该记录标记为完成，并必须在 result 参数中提交结果总结（做了什么、结论或产出、遗留事项）。",
