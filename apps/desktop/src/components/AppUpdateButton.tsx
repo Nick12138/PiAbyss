@@ -74,7 +74,7 @@ export function AppUpdateButton() {
       aria-label={label}
       aria-live="polite"
       data-app-update-button
-      className="interface-density-control flex h-6 shrink-0 items-center justify-center rounded-md bg-accent px-2 text-[11px] font-medium leading-none text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+      className="flex h-6 shrink-0 items-center justify-center rounded-md bg-accent px-2 text-[11px] font-medium leading-none text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
       onClick={() => void downloadAndInstall()}
     >
       {downloading && percent === null && (
