@@ -453,15 +453,6 @@ export function SchedulePage() {
           <CalendarClock size={28} className="text-muted" />
           <p className="text-sm font-medium">{t("scheduleEmptyTitle")}</p>
           <p className="max-w-md text-xs text-muted">{t("scheduleEmptyBody")}</p>
-          <button
-            type="button"
-            className={`mt-2 flex size-8 items-center justify-center rounded-md theme-primary-control bg-accent text-accent-foreground transition-colors hover:bg-accent-hover`}
-            title={t("scheduleNewJob")}
-            aria-label={t("scheduleNewJob")}
-            onClick={() => setDialog({ mode: "create" })}
-          >
-            <Plus size={14} />
-          </button>
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
