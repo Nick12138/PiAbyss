@@ -2,12 +2,14 @@
  * 备忘录页：主对话区内的一个常驻视图（遵守「单界面、不叠覆盖层」原则）。
  *
  * 布局：工具栏（状态归类页签 + 搜索 + 标签/工作区筛选 + 新建）
- *       左列表（卡片摘要）+ 右详情（查看/编辑一体）。
+ *       宽屏（容器 ≥ @2xl/672px）左列表（卡片摘要）+ 右详情（查看/编辑一体）；
+ *       窄屏自动切单栏：列表与详情互斥显示，详情左上角返回列表。
  * 数据全部经 pi-host 的 memo.* 协议方法落盘（v1 纯本地）。
  */
 import {
   Archive,
   ArchiveRestore,
+  ArrowLeft,
   Bot,
   Check,
   CheckCircle2,
@@ -40,6 +42,7 @@ import { Select } from "../../components/Select";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 import { draftKeyForTarget, draftTargetFor } from "../../lib/draft-target";
 import { isDesktopRuntime, readDesktopSmallFile } from "../../lib/desktop-file-access";
+import { useContainerWide } from "../../lib/use-container-wide";
 import { openSessionAcrossWorkspaces } from "../../lib/bridge/session-navigation";
 import { createNewSession } from "../../lib/commands/actions";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -146,6 +149,11 @@ export function MemoPage() {
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
   const [dragOver, setDragOver] = useState(false);
   const [resultModalOpen, setResultModalOpen] = useState(false);
+  // 窄屏（<@2xl）单栏模式下当前显示哪栏：列表或详情/编辑器；宽屏下两栏常驻，此状态不生效。
+  const [pane, setPane] = useState<"list" | "detail">("list");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const isWide = useContainerWide(rootRef);
+  const backToList = useCallback(() => setPane("list"), []);
 
   // 云同步发生在顶栏（MemoSyncHeaderActions）；同步成功后刷新本页列表。
   useEffect(() => {
@@ -232,17 +240,19 @@ export function MemoPage() {
     };
   }
 
-  /** 保存/取消查看后回到全新的新建表单（epoch 变化触发重新挂载以 autofocus）。 */
+  /** 保存/取消查看后回到全新的新建表单（epoch 变化触发重新挂载以 autofocus）；窄屏下同时回到列表栏。 */
   function resetToCreate() {
     setConfirmingDelete(false);
     setConfirmingClear(false);
     setSelectedId(null);
+    setPane("list");
     setDraftEpoch((epoch) => epoch + 1);
     setEditor(newEditorState(useAppStore.getState().workspace?.canonicalCwd));
   }
 
   function startEdit(note: MemoNote) {
     setConfirmingDelete(false);
+    setPane("detail");
     // 旧数据标题独立存储：若正文首行不是标题，补一行作为标题种子。
     const seeded =
       deriveTitle(note.contentMd) === note.title
@@ -583,10 +593,20 @@ export function MemoPage() {
     ? workspaceMismatch(selectedNote, workspace?.canonicalCwd ?? null)
     : null;
   return (
-    <div className="flex h-full min-w-0 flex-col" data-testid="memo-page" data-memo-page>
-      {/* 工具栏：归类页签 | 搜索与筛选。页面标题由 AppTopBar 承载。 */}
-      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
-        <div className="flex min-w-0 items-center gap-1" role="tablist" aria-label={t("memoTitle")}>
+    <div
+      ref={rootRef}
+      className="@container flex h-full min-w-0 flex-col"
+      data-testid="memo-page"
+      data-memo-page
+    >
+      {/* 工具栏：归类页签 | 搜索与筛选。窄屏分两行（页签行 + 筛选行），宽屏合为一行。
+          页面标题由 AppTopBar 承载。 */}
+      <div className="flex shrink-0 flex-col gap-2 border-b border-border px-4 py-2 @2xl:h-12 @2xl:flex-row @2xl:items-center @2xl:gap-3 @2xl:py-0">
+        <div
+          className="flex min-w-0 items-center gap-1 overflow-x-auto @2xl:overflow-visible"
+          role="tablist"
+          aria-label={t("memoTitle")}
+        >
           {STATUS_TABS.map((tab) => (
             <button
               key={tab}
@@ -597,7 +617,7 @@ export function MemoPage() {
                 setConfirmingClear(false);
                 setStatusFilter(tab);
               }}
-              className={`flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[12px] transition-colors ${
+              className={`flex h-[28px] shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12px] transition-colors ${
                 statusFilter === tab
                   ? "bg-nav-active text-nav-active-foreground"
                   : "text-muted hover:bg-surface-overlay hover:text-foreground"
@@ -608,14 +628,14 @@ export function MemoPage() {
             </button>
           ))}
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex items-center gap-2 @2xl:ml-auto">
           <input
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t("memoSearchPlaceholder")}
             aria-label={t("memoSearchPlaceholder")}
-            className="h-8 w-44 rounded-md border border-border bg-transparent px-2.5 text-[12px] outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-focus"
+            className="h-8 min-w-0 flex-1 rounded-md border border-border bg-transparent px-2.5 text-[12px] outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-focus @2xl:w-44 @2xl:flex-none"
           />
           <SelectFilter
             value={tagFilter ?? ""}
@@ -647,7 +667,10 @@ export function MemoPage() {
           )}
           <button
             type="button"
-            onClick={resetToCreate}
+            onClick={() => {
+              resetToCreate();
+              setPane("detail");
+            }}
             title={t("memoActionCreate")}
             aria-label={t("memoActionCreate")}
             className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-foreground transition-colors hover:bg-surface-overlay"
@@ -658,10 +681,12 @@ export function MemoPage() {
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {/* 列表 */}
+        {/* 列表：窄屏单栏只显示列表（与详情互斥），宽屏恢复左列表右详情。 */}
         <div
           data-testid="memo-list"
-          className="scrollbar-subtle w-80 min-w-64 shrink-0 overflow-y-auto border-r border-border p-2"
+          className={`scrollbar-subtle overflow-y-auto border-border p-2 @2xl:w-80 @2xl:min-w-64 @2xl:shrink-0 @2xl:border-r ${
+            pane === "detail" ? "hidden @2xl:block" : "w-full"
+          }`}
         >
           {notes === null ? (
             <div className="flex h-full items-center justify-center text-muted">
@@ -681,21 +706,27 @@ export function MemoPage() {
                   note={note}
                   selected={note.id === (editor?.id ?? selectedId)}
                   onSelect={() => {
-                    // 再点一次已选中的记录：回到新建表单。
+                    // 再点一次已选中的记录：宽屏回到新建表单；窄屏重新打开详情。
                     if (editor === null && selectedId === note.id) {
-                      resetToCreate();
+                      if (isWide) {
+                        resetToCreate();
+                      } else {
+                        setPane("detail");
+                      }
                       return;
                     }
                     // 正在编辑该条：切到详情。
                     if (editor?.id === note.id) {
                       setEditor(null);
                       setConfirmingDelete(false);
+                      setPane("detail");
                       return;
                     }
                     // 查看历史：收起新建表单，展示详情。
                     setEditor(null);
                     setConfirmingDelete(false);
                     setSelectedId(note.id);
+                    setPane("detail");
                   }}
                   onToggleStatus={(target) =>
                     void setStatus(target, target.status === "done" ? "open" : "done")
@@ -708,8 +739,12 @@ export function MemoPage() {
           )}
         </div>
 
-        {/* 详情 / 编辑器 */}
-        <div className="scrollbar-subtle min-w-0 flex-1 overflow-y-auto">
+        {/* 详情 / 编辑器：窄屏单栏下与列表互斥显示。 */}
+        <div
+          className={`scrollbar-subtle min-w-0 flex-1 overflow-y-auto ${
+            pane === "list" ? "hidden @2xl:block" : ""
+          }`}
+        >
           {editor ? (
             <MemoEditor
               key={editor.id ?? `new-${draftEpoch}`}
@@ -720,6 +755,7 @@ export function MemoPage() {
               onAddImages={addImages}
               dragOver={dragOver}
               onRemoveImage={removePendingImage}
+              onBack={backToList}
             />
           ) : selectedNote ? (
             <MemoDetail
@@ -727,6 +763,7 @@ export function MemoPage() {
               imageUrls={imageUrls}
               workspaceMismatchHint={mismatch}
               confirmingDelete={confirmingDelete}
+              onBack={backToList}
               onEdit={() => startEdit(selectedNote)}
               onAgent={() => openWithAgent(selectedNote)}
               onResult={() => setResultModalOpen(true)}
@@ -742,6 +779,7 @@ export function MemoPage() {
               onAddImages={addImages}
               dragOver={dragOver}
               onRemoveImage={removePendingImage}
+              onBack={backToList}
             />
           )}
         </div>
@@ -946,12 +984,30 @@ function MemoListItem({
   );
 }
 
+/** 窄屏单栏模式的返回列表按钮（宽屏自动隐藏）。 */
+function BackToListButton({ onClick }: { onClick: () => void }) {
+  const t = useT();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={t("memoBackToList")}
+      aria-label={t("memoBackToList")}
+      data-testid="memo-back-to-list"
+      className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-foreground transition-colors hover:bg-surface-overlay @2xl:hidden"
+    >
+      <ArrowLeft size={14} />
+    </button>
+  );
+}
+
 /** 详情只读视图。 */
 function MemoDetail({
   note,
   imageUrls,
   workspaceMismatchHint,
   confirmingDelete,
+  onBack,
   onEdit,
   onAgent,
   onResult,
@@ -961,6 +1017,7 @@ function MemoDetail({
   imageUrls: Record<string, string>;
   workspaceMismatchHint: string | null;
   confirmingDelete: boolean;
+  onBack: () => void;
   onEdit: () => void;
   onAgent: () => void;
   onResult: () => void;
@@ -973,8 +1030,9 @@ function MemoDetail({
   const showResult = note.status !== "open" && note.result !== null;
   return (
     <div className="flex h-full flex-col" data-testid="memo-detail">
-      {/* 标题行：图标 + 单行标题（溢出省略），右侧常驻 Agent/编辑/删除。 */}
+      {/* 标题行：返回（窄屏）+ 图标 + 单行标题（溢出省略），右侧常驻 Agent/编辑/删除。 */}
       <div className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+        <BackToListButton onClick={onBack} />
         <TypeIcon size={18} className="shrink-0 text-muted" aria-hidden />
         <h2 className="min-w-0 flex-1 truncate text-[16px] font-semibold text-foreground">
           {note.title}
@@ -1082,6 +1140,7 @@ function MemoEditor({
   onAddImages,
   onRemoveImage,
   dragOver,
+  onBack,
 }: {
   editor: EditorState;
   saving: boolean;
@@ -1090,6 +1149,7 @@ function MemoEditor({
   onAddImages: (files: File[]) => void;
   onRemoveImage: (key: string) => void;
   dragOver: boolean;
+  onBack: () => void;
 }) {
   const t = useT();
   const canSave = editor.contentMd.trim().length > 0;
@@ -1114,6 +1174,7 @@ function MemoEditor({
   return (
     <div className="flex h-full flex-col" data-testid="memo-editor" onPaste={handlePaste}>
       <div className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+        <BackToListButton onClick={onBack} />
         <Select
           value={editor.type}
           onChange={(value) => patch({ type: value as MemoNoteType })}
@@ -1125,7 +1186,8 @@ function MemoEditor({
           ariaLabel={t("memoFieldType")}
           className="w-28 shrink-0"
         />
-        <span className="min-w-0 flex-1 truncate text-[11px] text-muted">
+        {/* 粘贴提示：窄屏隐藏，宽屏用 flex-1 把工作区输入和保存按钮推到右侧。 */}
+        <span className="hidden min-w-0 flex-1 truncate text-[11px] text-muted @2xl:block">
           {t("memoImagePasteHint")}
         </span>
         <input
@@ -1133,7 +1195,7 @@ function MemoEditor({
           onChange={(event) => patch({ workspaceHint: event.target.value })}
           placeholder={t("memoFieldWorkspacePlaceholder")}
           aria-label={t("memoFieldWorkspace")}
-          className="h-8 w-44 shrink-0 rounded-md border border-border bg-transparent px-2.5 text-[12px] outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-focus"
+          className="h-8 w-28 shrink-0 rounded-md border border-border bg-transparent px-2.5 text-[12px] outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-focus @2xl:w-44"
         />
         <button
           type="button"
@@ -1200,7 +1262,7 @@ function MemoEditor({
   );
 }
 
-/** 工具栏的可清空下拉筛选（值为空 = 不过滤）。 */
+/** 工具栏的可清空下拉筛选（值为空 = 不过滤）。窄屏允许收缩，宽屏固定宽度。 */
 function SelectFilter({
   value,
   options,
@@ -1220,7 +1282,7 @@ function SelectFilter({
       value={value}
       onChange={onChange}
       ariaLabel={ariaLabel}
-      className="w-36 shrink-0"
+      className="w-28 min-w-0 @2xl:w-36 @2xl:shrink-0"
       options={[{ value: "", label: `${placeholder}: ${t("memoFilterAll")}` }, ...options]}
     />
   );

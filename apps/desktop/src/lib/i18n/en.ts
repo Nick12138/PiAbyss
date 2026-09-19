@@ -1705,6 +1705,7 @@ export const en = {
   scheduleEmptyBody:
     "Create a plan to let the agent run on a schedule in its own separate session.",
   scheduleSelectJob: "Select a task to see details and history",
+  scheduleBackToList: "Back to list",
   scheduleUntitledJob: "Untitled plan",
   scheduleLoadFailed: "Request failed",
   scheduleAgentTranscriptMissing:
@@ -1890,6 +1891,7 @@ export const en = {
   memoEmptyListHint: "Click “New note” to capture an idea at any time.",
   memoNoSelection: "Select a note",
   memoNoSelectionHint: "Pick a note from the list to view and edit it.",
+  memoBackToList: "Back to list",
   memoLoadFailed: "Failed to load memos",
   memoSaveFailed: "Failed to save the note",
   memoDeleteFailed: "Failed to delete the note",

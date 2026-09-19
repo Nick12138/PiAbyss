@@ -258,6 +258,8 @@ export function ScheduleAgentPage() {
   const lastMessageCountRef = useRef(0);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [preambleOpen, setPreambleOpen] = useState(false);
+  // 窄屏（<@3xl）下预览面板折叠；宽屏右侧常驻，此状态不生效。
+  const [previewOpen, setPreviewOpen] = useState(false);
   /**
    * Resolved host default model, for the preview's `model` row. Read from
    * `piSettings.get` — the same host-scoped snapshot the create dialog and the
@@ -563,7 +565,7 @@ export function ScheduleAgentPage() {
   const planReady = missingFields.length === 0;
 
   return (
-    <div className="flex h-full min-w-0 flex-col" data-schedule-agent-page>
+    <div className="@container flex h-full min-w-0 flex-col" data-schedule-agent-page>
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
         <button
           type="button"
@@ -575,9 +577,9 @@ export function ScheduleAgentPage() {
         </button>
         <span className="text-xs text-muted">{t("scheduleAgentHint")}</span>
       </div>
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col @3xl:flex-row">
         {/* Conversation (70%) */}
-        <div className="flex min-w-0 flex-[7] flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col @3xl:flex-[7]">
           {/* isolate: the button's z-10 stays inside this container, so the
               composer (later sibling) always paints above the scroll area. */}
           <div className="relative isolate min-h-0 flex-1">
@@ -703,13 +705,45 @@ export function ScheduleAgentPage() {
           </div>
         </div>
 
-        {/* Preview */}
+        {/* Preview：窄屏折叠成一条可展开的面板（确认按钮常驻头部）；宽屏右侧常驻。 */}
         <aside
-          className="scrollbar-subtle flex min-w-0 flex-[3] flex-col gap-3 overflow-y-auto p-3"
+          className="scrollbar-subtle flex max-h-[55vh] min-w-0 shrink-0 flex-col gap-3 overflow-y-auto border-t border-border p-3 @3xl:max-h-none @3xl:min-w-0 @3xl:flex-[3] @3xl:shrink @3xl:border-t-0"
           data-testid="schedule-agent-preview"
         >
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-sm font-semibold">{t("scheduleAgentPreviewTitle")}</div>
+          <div className="flex items-center gap-2">
+            {/* 窄屏：整行折叠开关 */}
+            <button
+              type="button"
+              onClick={() => setPreviewOpen((open) => !open)}
+              aria-expanded={previewOpen}
+              className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-sm font-semibold @3xl:hidden"
+            >
+              {previewOpen ? (
+                <ChevronUp size={13} className="shrink-0 text-muted" />
+              ) : (
+                <ChevronDown size={13} className="shrink-0 text-muted" />
+              )}
+              <span className="truncate">{t("scheduleAgentPreviewTitle")}</span>
+            </button>
+            <div className="hidden min-w-0 flex-1 text-sm font-semibold @3xl:block">
+              {t("scheduleAgentPreviewTitle")}
+            </div>
+            {/* 窄屏：确认创建常驻头部，折叠时也能直接确认 */}
+            {plan && (
+              <button
+                type="button"
+                className="flex h-8 shrink-0 items-center gap-1 rounded-md bg-accent px-2.5 text-xs text-accent-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40 @3xl:hidden"
+                disabled={!planReady || creating}
+                onClick={() => void handleConfirm()}
+              >
+                <Check size={13} />
+                {creating
+                  ? t("scheduleSaving")
+                  : editingJob
+                    ? t("scheduleAgentConfirmUpdate")
+                    : t("scheduleAgentConfirm")}
+              </button>
+            )}
             {plan && planForm && (
               <button
                 type="button"
@@ -723,6 +757,7 @@ export function ScheduleAgentPage() {
               </button>
             )}
           </div>
+          <div className={`min-h-0 flex-col gap-3 ${previewOpen ? "flex" : "hidden"} @3xl:flex`}>
           {!plan ? (
             <div className="flex flex-col items-center gap-2 rounded-md border border-dashed border-border p-6 text-center">
               <CircleDashed size={20} className="text-muted" />
@@ -792,7 +827,7 @@ export function ScheduleAgentPage() {
 
               <button
                 type="button"
-                className="interface-density-control flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-xs text-accent-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+                className="interface-density-control hidden h-9 w-full items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-xs text-accent-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40 @3xl:flex"
                 disabled={!planReady || creating}
                 onClick={() => void handleConfirm()}
               >
@@ -808,6 +843,7 @@ export function ScheduleAgentPage() {
               </p>
             </>
           )}
+          </div>
         </aside>
       </div>
 

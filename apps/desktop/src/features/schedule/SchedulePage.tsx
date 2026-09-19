@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Archive,
+  ArrowLeft,
   ArrowRight,
   CalendarClock,
   ChevronRight,
@@ -33,6 +34,7 @@ import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { Select } from "../../components/Select";
 import { Switch } from "../../components/Switch";
 import { setSidebarPref, sidebarPref } from "../../lib/sidebar-prefs";
+import { useContainerWide } from "../../lib/use-container-wide";
 
 import { ScheduleJobDialog } from "./ScheduleJobDialog";
 import { ScheduleRuns } from "./ScheduleRuns";
@@ -57,7 +59,7 @@ type StatusState = {
   error: string | null;
 };
 
-/** 全屏「周期计划」页：左侧任务列表，右侧详情 + 执行历史。 */
+/** 全屏「周期计划」页：宽屏左任务列表右详情，窄屏单栏互斥显示。 */
 export function SchedulePage() {
   const t = useT();
   const host = useAppStore((s) => s.host);
@@ -79,6 +81,10 @@ export function SchedulePage() {
   const [now, setNow] = useState(() => Date.now());
   const requestIdRef = useRef(0);
   const runsRequestIdRef = useRef(0);
+  // 窄屏（<@2xl）单栏模式下当前显示哪栏；宽屏两栏常驻，此状态不生效。
+  const rootRef = useRef<HTMLDivElement>(null);
+  const isWide = useContainerWide(rootRef);
+  const [pane, setPane] = useState<"list" | "detail">("list");
 
   const selectedJob = useMemo(
     () => jobs.find((job) => job.id === selectedJobId) ?? null,
@@ -290,7 +296,11 @@ export function SchedulePage() {
         LIST_TIMEOUT_MS,
       );
       if (response.ok) {
-        if (selectedJobId === target.id) setSelectedJobId(null);
+        // 删除的是当前选中的任务：窄屏单栏下回列表（宽屏无影响）。
+        if (selectedJobId === target.id) {
+          setSelectedJobId(null);
+          if (!isWide) setPane("list");
+        }
         void refreshStatusAndJobs();
       } else if (response.error) {
         setLoadError(response.error.message);
@@ -367,11 +377,12 @@ export function SchedulePage() {
   }, []);
 
   return (
-    <div className="flex h-full min-w-0 flex-col" data-schedule-page>
+    <div ref={rootRef} className="@container flex h-full min-w-0 flex-col" data-schedule-page>
       {/* Toolbar — two zones: health | filters | actions. Health zone is omitted when empty.
           Scoped padding override (pl-2): aligns the toolbar's left edge with the top bar
-          title (--app-content-gap) instead of the generic .px-4 gutter. */}
-      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border pl-2 pr-4">
+          title (--app-content-gap) instead of the generic .px-4 gutter.
+          窄屏分两行（状态行 + 筛选/操作行）；宽屏用 contents 让筛选与操作回到同一行。 */}
+      <div className="flex shrink-0 flex-col gap-2 border-b border-border pb-2 pl-2 pr-4 pt-2 @2xl:h-12 @2xl:flex-row @2xl:items-center @2xl:gap-3 @2xl:pb-0 @2xl:pt-0">
         {status?.available && status.health && activeCount > 0 && (
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="shrink-0 text-xs text-muted tabular-nums">
@@ -380,37 +391,38 @@ export function SchedulePage() {
           </div>
         )}
 
-        {status?.available && jobs.length > 0 && (
-          <div className="flex min-w-0 items-center gap-2">
-            <Select
-              value={workspaceFilter}
-              onChange={setWorkspaceFilter}
-              ariaLabel={t("scheduleFilterWorkspace")}
-              triggerClassName="w-40"
-              options={[
-                { value: "__all__", label: t("scheduleFilterAllWorkspaces") },
-                ...workspaceOptions.map((cwd) => ({
-                  value: cwd,
-                  label: workspaceFilterLabel(cwd),
-                })),
-              ]}
-            />
-            {tagOptions.length > 0 && (
+        <div className="flex min-w-0 items-center gap-2 @2xl:contents">
+          {status?.available && jobs.length > 0 && (
+            <>
               <Select
-                value={tagFilter}
-                onChange={setTagFilter}
-                ariaLabel={t("scheduleFilterTag")}
-                triggerClassName="w-32"
+                value={workspaceFilter}
+                onChange={setWorkspaceFilter}
+                ariaLabel={t("scheduleFilterWorkspace")}
+                className="w-28 shrink @2xl:w-40 @2xl:shrink-0"
                 options={[
-                  { value: "__all__", label: t("scheduleFilterAllTags") },
-                  ...tagOptions.map((tag) => ({ value: tag, label: tag })),
+                  { value: "__all__", label: t("scheduleFilterAllWorkspaces") },
+                  ...workspaceOptions.map((cwd) => ({
+                    value: cwd,
+                    label: workspaceFilterLabel(cwd),
+                  })),
                 ]}
               />
-            )}
-          </div>
-        )}
+              {tagOptions.length > 0 && (
+                <Select
+                  value={tagFilter}
+                  onChange={setTagFilter}
+                  ariaLabel={t("scheduleFilterTag")}
+                  className="w-24 shrink @2xl:w-32 @2xl:shrink-0"
+                  options={[
+                    { value: "__all__", label: t("scheduleFilterAllTags") },
+                    ...tagOptions.map((tag) => ({ value: tag, label: tag })),
+                  ]}
+                />
+              )}
+            </>
+          )}
 
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
           <button
             type="button"
             className="flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
@@ -433,6 +445,7 @@ export function SchedulePage() {
           >
             <Plus size={14} />
           </button>
+          </div>
         </div>
       </div>
 
@@ -456,8 +469,12 @@ export function SchedulePage() {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
-          {/* Job list */}
-          <div className="scrollbar-subtle flex w-[300px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-border p-3">
+          {/* Job list：窄屏单栏只显示列表（与详情互斥），宽屏恢复左列表右详情。 */}
+          <div
+            className={`scrollbar-subtle flex-col gap-4 overflow-y-auto border-border p-3 @2xl:flex @2xl:w-[300px] @2xl:shrink-0 @2xl:border-r ${
+              pane === "detail" ? "hidden @2xl:flex" : "flex w-full"
+            }`}
+          >
             {/* 待落实分组只在确有待落实会话时渲染——空分组只会增加噪音。 */}
             {agentSessions.length > 0 && (
               <section className="flex flex-col gap-2">
@@ -511,7 +528,10 @@ export function SchedulePage() {
                         running={activeJobIds.includes(job.id) || runningJobId === job.id}
                         selected={job.id === selectedJobId}
                         now={now}
-                        onSelect={() => setSelectedJobId(job.id)}
+                        onSelect={() => {
+                          setSelectedJobId(job.id);
+                          setPane("detail");
+                        }}
                         onToggle={(enabled) => void toggleJob(job, enabled)}
                       />
                     ))}
@@ -540,7 +560,10 @@ export function SchedulePage() {
                         running={activeJobIds.includes(job.id) || runningJobId === job.id}
                         selected={job.id === selectedJobId}
                         now={now}
-                        onSelect={() => setSelectedJobId(job.id)}
+                        onSelect={() => {
+                          setSelectedJobId(job.id);
+                          setPane("detail");
+                        }}
                         onToggle={(enabled) => void toggleJob(job, enabled)}
                       />
                     ))}
@@ -550,11 +573,24 @@ export function SchedulePage() {
             </section>
           </div>
 
-          {/* Detail */}
-          <div className="scrollbar-subtle min-w-0 flex-1 overflow-y-auto">
+          {/* Detail：窄屏单栏下与列表互斥显示。 */}
+          <div
+            className={`scrollbar-subtle min-w-0 flex-1 overflow-y-auto ${
+              pane === "list" ? "hidden @2xl:block" : ""
+            }`}
+          >
             {selectedJob ? (
               <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 p-5">
                 <div className="flex items-start gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPane("list")}
+                    title={t("scheduleBackToList")}
+                    aria-label={t("scheduleBackToList")}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border transition-colors hover:bg-surface-overlay @2xl:hidden"
+                  >
+                    <ArrowLeft size={14} />
+                  </button>
                   <div className="min-w-0 flex-1">
                     <h2 className="truncate text-lg font-semibold">{selectedJob.name}</h2>
                     <p
