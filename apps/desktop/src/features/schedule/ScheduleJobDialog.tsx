@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
+  Bot,
   Brain,
   CalendarClock,
   Check,
@@ -272,16 +273,33 @@ function quoteIfNeeded(path: string): string {
 
 /** Create/edit dialog for a schedule plan. Prompt plans and command plans are
  *  mutually exclusive; command plans skip permission/model (the plugin ignores
- *  them there). */
+ *  them there).
+ *
+ *  `prefill` (with `job === null`) opens the manual form prefilled. With
+ *  `onSaveDraft` the save button only hands the validated form back to the
+ *  caller — no job is created (the smart-creation preview's manual edit);
+ *  without it the save creates the plan through schedule.createJob. */
 export function ScheduleJobDialog({
   job,
+  prefill,
   onClose,
   onSaved,
+  onSaveDraft,
+  onOptimize,
   onStartSmart,
 }: {
   job: ScheduleJob | null;
+  /** Manual-form initial values when creating without an existing job. */
+  prefill?: ScheduleFormState;
   onClose: () => void;
-  onSaved: (job: ScheduleJob) => void;
+  /** Called after the plan was actually created/updated on the host. */
+  onSaved?: (job: ScheduleJob) => void;
+  /** Draft-only mode: submit returns the validated form instead of creating
+   *  a job — the caller decides what "saving" means. */
+  onSaveDraft?: (form: ScheduleFormState) => void;
+  /** AI-optimize an existing plan: (job) → null on success (the dialog
+   *  unmounts as the app navigates to the agent page) or an error message. */
+  onOptimize?: (job: ScheduleJob) => Promise<string | null>;
   /** Smart mode: (cwd, requirement) → null on success (the dialog unmounts
    *  as the app navigates to the agent page) or an error message to display. */
   onStartSmart?: (
@@ -294,16 +312,20 @@ export function ScheduleJobDialog({
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
   const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces);
+  const prefilled = !job && prefill !== undefined;
   const [form, setForm] = useState<ScheduleFormState>(() =>
-    job ? jobToForm(job) : defaultScheduleForm(workspace?.cwd ?? ""),
+    job
+      ? jobToForm(job)
+      : (prefill ?? defaultScheduleForm(workspace?.cwd ?? "")),
   );
   const [pending, setPending] = useState(false);
-  const [mode, setMode] = useState<"smart" | "manual">("smart");
+  const [mode, setMode] = useState<"smart" | "manual">(prefilled ? "manual" : "smart");
   const [smartCwd, setSmartCwd] = useState(workspace?.cwd ?? "");
   const [smartRequirement, setSmartRequirement] = useState("");
   const [smartPending, setSmartPending] = useState(false);
   const [smartModel, setSmartModel] = useState<ScheduleModelChoice>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [optimizePending, setOptimizePending] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [cronCheck, setCronCheck] = useState<{ valid: boolean; reason: string | null } | null>(
     null,
@@ -403,12 +425,20 @@ export function ScheduleJobDialog({
   }
 
   async function submit() {
-    if (!host || pending || Object.keys(errors).length > 0) return;
+    if (pending || Object.keys(errors).length > 0) return;
     const parsed = formToJobInput(form);
     if (!parsed.ok) {
       setSaveError(t(parsed.errorKey));
       return;
     }
+    // Draft-only mode: hand the validated form back without touching the
+    // host — the plan is created exclusively by the preview's 确认创建.
+    if (!job && onSaveDraft) {
+      onSaveDraft(form);
+      onClose();
+      return;
+    }
+    if (!host) return;
     setPending(true);
     setSaveError(null);
     try {
@@ -426,7 +456,7 @@ export function ScheduleJobDialog({
             CREATE_TIMEOUT_MS,
           );
       if (response.ok) {
-        onSaved(response.result.job);
+        onSaved?.(response.result.job);
       } else {
         setSaveError(response.error?.message ?? t("scheduleLoadFailed"));
       }
@@ -489,7 +519,7 @@ export function ScheduleJobDialog({
   return (
     <Dialog
       title={
-        job
+        job || prefilled
           ? t("scheduleFormTitleEdit")
           : mode === "smart"
             ? t("scheduleFormTitleSmart")
@@ -502,7 +532,40 @@ export function ScheduleJobDialog({
       showCancel={false}
       hideActions
       headerExtra={
-        !job && (
+        job ? (
+          onOptimize ? (
+            <button
+              type="button"
+              data-testid="schedule-form-optimize"
+              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+              title={t("scheduleAgentOptimizeHint")}
+              disabled={optimizePending}
+              onClick={() => {
+                if (!onOptimize) return;
+                setOptimizePending(true);
+                setSaveError(null);
+                void onOptimize(job)
+                  .then((error) => {
+                    if (error) setSaveError(error);
+                  })
+                  .catch((error: unknown) => {
+                    setSaveError(
+                      error instanceof Error ? error.message : t("scheduleLoadFailed"),
+                    );
+                  })
+                  .finally(() => setOptimizePending(false));
+              }}
+            >
+              {optimizePending ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Bot size={12} aria-hidden="true" />
+              )}
+              {t("scheduleAgentOptimize")}
+            </button>
+          ) : undefined
+        ) : (
+          !prefilled && (
           <div
             data-ui="segmented"
             role="group"
@@ -539,6 +602,7 @@ export function ScheduleJobDialog({
               </button>
             ))}
           </div>
+          )
         )
       }
       onCancel={onClose}

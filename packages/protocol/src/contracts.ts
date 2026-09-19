@@ -95,6 +95,7 @@ import type {
   ScheduleTranscriptEntry,
   ScheduleNotification,
   ScheduleAgentSessionSummary,
+  ScheduleAgentEditJob,
   ScheduleAgentState,
   ScheduleAgentTranscript,
   MemoNote,
@@ -248,6 +249,7 @@ export type HostContextMap = {
   "schedule.agentState": HostContext;
   "schedule.agentTranscript": HostContext;
   "schedule.agentAbort": HostContext;
+  "schedule.agentDelete": HostContext;
   "memo.list": HostContext;
   "memo.create": HostContext;
   "memo.update": HostContext;
@@ -460,6 +462,8 @@ export type HostRequestParams = {
     requirement: string;
     /** 分析会话使用的模型（含思考深度）；缺省 = 宿主默认模型。 */
     model?: { provider: string; id: string; thinkingLevel?: string } | null;
+    /** AI 优化现有计划时携带的原计划上下文；缺省 = 普通智能创建。 */
+    job?: ScheduleAgentEditJob | null;
   };
   "schedule.agentList": null;
   "schedule.agentSend": { sessionId: string; text: string };
@@ -467,6 +471,7 @@ export type HostRequestParams = {
   "schedule.agentState": { sessionId: string };
   "schedule.agentTranscript": { sessionPath: string };
   "schedule.agentAbort": { sessionId: string };
+  "schedule.agentDelete": { sessionPath: string };
   "memo.list": null;
   "memo.create": {
     type: MemoNoteType;
@@ -705,6 +710,7 @@ export type HostResultMap = {
   "schedule.agentState": ScheduleAgentState;
   "schedule.agentTranscript": ScheduleAgentTranscript;
   "schedule.agentAbort": { ok: boolean };
+  "schedule.agentDelete": { ok: boolean };
   "memo.list": { notes: MemoNote[] };
   "memo.create": { note: MemoNote };
   "memo.update": { note: MemoNote };

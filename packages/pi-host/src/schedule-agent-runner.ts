@@ -8,7 +8,7 @@
  * `createHostAgentSession` on the Host-owned ModelRuntime (see
  * `model-runtime-refresh.test.ts`) so provider/auth state is never duplicated.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   DefaultResourceLoader,
@@ -17,6 +17,7 @@ import {
   type AgentSession,
   type ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
+import type { ScheduleAgentEditJob } from "@piabyss/protocol";
 import { createHostAgentSession } from "./agent-session-factory.js";
 import { scheduleRoot } from "./schedule-api.js";
 
@@ -200,13 +201,18 @@ async function buildSession(
 }
 
 /** Start a fresh conversation: create the session and run the analysis
- *  prompt in the background (the frontend polls schedule.agentState). */
+ *  prompt in the background (the frontend polls schedule.agentState).
+ *  With `job` the session becomes an AI-optimization conversation seeded
+ *  with the existing plan's config; the user's confirm then updates that
+ *  plan in place instead of creating a new one. */
 export async function startAgentConversation(args: {
   cwd: string;
   requirement: string;
   agentDir: string;
   /** 分析会话使用的模型（含思考深度）；缺省 = 宿主默认模型。 */
   model?: { provider: string; id: string; thinkingLevel?: string } | null;
+  /** AI 优化的原计划上下文；缺省 = 普通智能创建。 */
+  job?: ScheduleAgentEditJob | null;
 }): Promise<{ sessionId: string; sessionPath: string }> {
   const dir = agentSessionsDir();
   const sessionManager = SessionManager.create(args.cwd, dir);
@@ -219,7 +225,7 @@ export async function startAgentConversation(args: {
     }
   }
   try {
-    session.setSessionName("⏰ 周期计划 · 智能创建");
+    session.setSessionName(args.job ? "⏰ 周期计划 · AI 优化" : "⏰ 周期计划 · 智能创建");
   } catch {
     /* name is cosmetic */
   }
@@ -228,36 +234,96 @@ export async function startAgentConversation(args: {
   const entry: AgentEntry = { session, sessionPath, cwd: args.cwd, lastError: null };
   sessions.set(sessionId, entry);
   entry.lastError = null;
+  // 原计划上下文：作为 <schedule-job> 块随首条用户消息发给模型（前端会在
+  // 展示时剥去该块），确认更新时也从中恢复 enabled/loadExtensions。
+  const jobPayload: Record<string, unknown> | null = args.job
+    ? {
+        id: args.job.id,
+        name: args.job.name ?? "",
+        kind: args.job.command ? "command" : "prompt",
+        prompt: args.job.prompt ?? "",
+        command: args.job.command ?? null,
+        cwd: args.job.cwd || args.cwd,
+        trigger: args.job.trigger ?? { type: "manual" },
+        permission: args.job.permission ?? "read_only",
+        model: args.job.model ?? null,
+        missedWindow: args.job.missedWindow ?? "catch_up_one",
+        timeoutMs: args.job.timeoutMs,
+        maxRuns: args.job.maxRuns ?? null,
+        tags: args.job.tags ?? [],
+        notify: args.job.notify ?? "none",
+        enabled: args.job.enabled,
+        loadExtensions: args.job.loadExtensions,
+      }
+    : null;
   void session
     .prompt(
       [
         // <schedule-preamble> sentinels: the frontend splits this injected
         // preamble from the user's requirement for separate rendering.
-        "<schedule-preamble>",
-        "你是「周期计划」智能创建助手，帮用户把需求变成一个定时任务（计划）配置。",
-        "",
-        "规则：",
-        "1. 通过对话逐步确认配置；信息足够时可直接给出完整配置让用户确认。",
-        "2. 每当你确定或更新了任何配置，都在回复里输出一个 ```schedule-plan 代码块，内容为完整配置的 JSON（未确定的字段用 null）。每次都输出完整配置，不要只输出增量。",
-        "3. 配置 JSON 字段：",
-        "   name: string 计划名；",
-        '   kind: "prompt" | "command"（prompt=走模型的计划书任务；command=直接执行 shell 命令）；',
-        '   prompt: string（kind=prompt 时的计划书，kind=command 时为 ""）；',
-        "   command: string | null（kind=command 时的 shell 命令，否则 null）；",
-        "   cwd: string 工作目录绝对路径；",
-        '   trigger: { "type": "manual" } | { "type": "once", "at": "<ISO时间>" } | { "type": "interval", "every": "<数字><s|m|h|d|w|mo>" } | { "type": "cron", "cron": "<5段表达式>", "timezone"?: string }；',
-        '   permission: "read_only" | "write" | "full"（仅 kind=prompt 有意义）；',
-        '   model: { "provider": string, "id": string } | null（null=宿主默认模型）；',
-        '   missedWindow: "catch_up_one" | "skip"；',
-        "   timeoutMs: number（毫秒，默认 1800000）；",
-        "   maxRuns: number | null；",
-        "   tags: string[]；",
-        '   notify: "none" | "system" | "tg"（运行结束的推送方式）。',
-        "4. 用户没有明确表达的字段保持 null，不要臆造。",
-        "5. 最终创建由用户在预览面板点「确认创建」完成，你不要声称已经创建成功。",
-        "",
-        `计划的默认工作目录（cwd）：${args.cwd}`,
-        "</schedule-preamble>",
+        args.job
+          ? [
+              "<schedule-preamble>",
+              "你是「周期计划」AI 优化助手。<schedule-job> 块内是现有计划的完整配置；计划身份保持不变，你帮用户在这个配置的基础上做优化，而不是新建计划。",
+              "",
+              "规则：",
+              "1. 收到本条消息后，先把现有配置原样输出为一个 ```schedule-plan 代码块（完整 JSON），让用户在预览面板看到当前状态。",
+              "2. 每当你确定或更新了任何配置，都输出一个完整配置的 ```schedule-plan JSON 块。每次都输出完整配置；用户没有提到的字段保持原值，不要重置或臆造。",
+              "3. 配置 JSON 字段：",
+              "   name: string 计划名；",
+              '   kind: "prompt" | "command"（prompt=走模型的计划书任务；command=直接执行 shell 命令）；',
+              '   prompt: string（kind=prompt 时的计划书，kind=command 时为 ""）；',
+              "   command: string | null（kind=command 时的 shell 命令，否则 null）；",
+              "   cwd: string 工作目录绝对路径；",
+              '   trigger: { "type": "manual" } | { "type": "once", "at": "<ISO时间>" } | { "type": "interval", "every": "<数字><s|m|h|d|w|mo>" } | { "type": "cron", "cron": "<5段表达式>", "timezone"?: string }；',
+              '   permission: "read_only" | "write" | "full"（仅 kind=prompt 有意义）；',
+              '   model: { "provider": string, "id": string } | null（null=宿主默认模型）；',
+              '   missedWindow: "catch_up_one" | "skip"；',
+              "   timeoutMs: number（毫秒）；",
+              "   maxRuns: number | null；",
+              "   tags: string[]；",
+              '   notify: "none" | "system" | "tg"（运行结束的推送方式）。',
+              "4. 通过对话逐步确认优化内容；信息足够时可直接给出优化后的完整配置。",
+              "5. 最终更新由用户在预览面板点「确认更新」完成，你不要声称已经更新成功。",
+              "",
+              `计划的默认工作目录（cwd）：${args.cwd}`,
+              "</schedule-preamble>",
+            ].join("\n")
+          : [
+              "<schedule-preamble>",
+              "你是「周期计划」智能创建助手，帮用户把需求变成一个定时任务（计划）配置。",
+              "",
+              "规则：",
+              "1. 通过对话逐步确认配置；信息足够时可直接给出完整配置让用户确认。",
+              "2. 每当你确定或更新了任何配置，都在回复里输出一个 ```schedule-plan 代码块，内容为完整配置的 JSON（未确定的字段用 null）。每次都输出完整配置，不要只输出增量。",
+              "3. 配置 JSON 字段：",
+              "   name: string 计划名；",
+              '   kind: "prompt" | "command"（prompt=走模型的计划书任务；command=直接执行 shell 命令）；',
+              '   prompt: string（kind=prompt 时的计划书，kind=command 时为 ""）；',
+              "   command: string | null（kind=command 时的 shell 命令，否则 null）；",
+              "   cwd: string 工作目录绝对路径；",
+              '   trigger: { "type": "manual" } | { "type": "once", "at": "<ISO时间>" } | { "type": "interval", "every": "<数字><s|m|h|d|w|mo>" } | { "type": "cron", "cron": "<5段表达式>", "timezone"?: string }；',
+              '   permission: "read_only" | "write" | "full"（仅 kind=prompt 有意义）；',
+              '   model: { "provider": string, "id": string } | null（null=宿主默认模型）；',
+              '   missedWindow: "catch_up_one" | "skip"；',
+              "   timeoutMs: number（毫秒，默认 1800000）；",
+              "   maxRuns: number | null；",
+              "   tags: string[]；",
+              '   notify: "none" | "system" | "tg"（运行结束的推送方式）。',
+              "4. 用户没有明确表达的字段保持 null，不要臆造。",
+              "5. 最终创建由用户在预览面板点「确认创建」完成，你不要声称已经创建成功。",
+              "",
+              `计划的默认工作目录（cwd）：${args.cwd}`,
+              "</schedule-preamble>",
+            ].join("\n"),
+        // 原计划上下文：<schedule-job id="..."> 包裹完整配置 JSON，前端展示时剥去。
+        ...(jobPayload
+          ? [
+              `<schedule-job id="${String(jobPayload.id)}">`,
+              JSON.stringify(jobPayload, null, 2),
+              "</schedule-job>",
+            ]
+          : []),
         "用户需求：",
         args.requirement,
       ].join("\n"),
@@ -454,4 +520,25 @@ export function abortAgent(sessionId: string): boolean {
   if (!entry) return false;
   void entry.session.abort().catch(() => undefined);
   return true;
+}
+
+/** Delete a smart-creation session for good: abort and forget any resident
+ *  conversation backing the file, then remove the .jsonl transcript from
+ *  disk. Used once the plan was confirmed & created — the session is over,
+ *  so it must not resurface in the backlog. */
+export function deleteAgentSession(sessionPath: string): boolean {
+  if (!sessionPath) return false;
+  for (const [sessionId, entry] of sessions) {
+    if (entry.sessionPath !== sessionPath) continue;
+    if (entry.session.isStreaming) {
+      void entry.session.abort().catch(() => undefined);
+    }
+    sessions.delete(sessionId);
+  }
+  try {
+    if (existsSync(sessionPath)) rmSync(sessionPath, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -228,6 +228,21 @@ function isScheduleJobFields(params: Record<string, unknown>): boolean {
   );
 }
 
+/** schedule.agentStart 可选的「AI 优化」原计划上下文：必填字段 + 复用
+ *  isScheduleJobFields 校验可选字段。刻意不限制额外键 —— 桌面端直接传
+ *  完整的 ScheduleJob（含 createdAt/runCount 等运行统计），宿主只取需要
+ *  的字段。 */
+function isScheduleAgentEditJob(value: unknown): boolean {
+  if (!isPlainObject(value)) return false;
+  return (
+    isNonEmptyString(value.id) &&
+    value.id.length <= 128 &&
+    typeof value.enabled === "boolean" &&
+    typeof value.loadExtensions === "boolean" &&
+    isScheduleJobFields(value)
+  );
+}
+
 const SCHEDULE_JOB_OPTIONAL_KEYS = [
   "name",
   "prompt",
@@ -1201,13 +1216,14 @@ export function validateRequestParams<M extends HostMethod>(
         ? ok(params)
         : fail("invalid schedule.listNotifications params", { method });
     case "schedule.agentStart":
-      return exactObject(params, ["cwd", "requirement"], ["model"]) &&
+      return exactObject(params, ["cwd", "requirement"], ["model", "job"]) &&
         isNonEmptyString(params.cwd) &&
         params.cwd.length <= 1_024 &&
         isNonEmptyString(params.requirement) &&
         params.requirement.trim().length > 0 &&
         params.requirement.length <= 20_000 &&
-        (params.model === undefined || params.model === null || isScheduleModelRef(params.model))
+        (params.model === undefined || params.model === null || isScheduleModelRef(params.model)) &&
+        (params.job === undefined || params.job === null || isScheduleAgentEditJob(params.job))
         ? ok(params)
         : fail("invalid schedule.agentStart params", { method });
     case "schedule.agentList":
@@ -1250,6 +1266,12 @@ export function validateRequestParams<M extends HostMethod>(
         params.sessionId.length <= 128
         ? ok(params)
         : fail("invalid schedule.agentAbort params", { method });
+    case "schedule.agentDelete":
+      return exactObject(params, ["sessionPath"]) &&
+        isNonEmptyString(params.sessionPath) &&
+        params.sessionPath.length <= 1_024
+        ? ok(params)
+        : fail("invalid schedule.agentDelete params", { method });
     case "memo.list":
       return params === null ? ok(null) : fail("params must be null", { method });
     case "memo.create":

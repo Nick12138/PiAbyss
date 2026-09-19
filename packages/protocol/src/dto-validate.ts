@@ -3128,6 +3128,10 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
       return isPlainObject(result) && hasExactKeys(result, ["ok"]) && isBoolean(result.ok)
         ? null
         : "invalid schedule.agentAbort result";
+    case "schedule.agentDelete":
+      return isPlainObject(result) && hasExactKeys(result, ["ok"]) && isBoolean(result.ok)
+        ? null
+        : "invalid schedule.agentDelete result";
     case "memo.list":
       return isPlainObject(result) &&
         hasExactKeys(result, ["notes"]) &&

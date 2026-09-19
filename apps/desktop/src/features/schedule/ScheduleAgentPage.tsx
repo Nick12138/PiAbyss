@@ -8,6 +8,7 @@ import {
   ChevronUp,
   CircleDashed,
   Loader2,
+  Pencil,
   Sparkles,
 } from "lucide-react";
 import type {
@@ -29,6 +30,8 @@ import {
 import { ModelControls } from "../chat/ModelControls";
 import { TranscriptRowView } from "../chat/Transcript";
 import { buildTranscriptRows, type TranscriptRow } from "../chat/transcript-model";
+import { ScheduleJobDialog } from "./ScheduleJobDialog";
+import { formToPlan, planToForm } from "./schedule-model";
 
 const AGENT_TIMEOUT_MS = 60_000;
 const SEND_TIMEOUT_MS = 30_000;
@@ -166,6 +169,8 @@ export type SplitUserMessage = {
   preamble: string | null;
   /** What the user actually typed. */
   requirement: string;
+  /** AI 优化会话的目标计划上下文；普通智能创建为 null。 */
+  editingJob: { id: string; enabled: boolean; loadExtensions: boolean } | null;
 };
 
 /** The first user message of a smart-creation session bundles the injected
@@ -174,18 +179,41 @@ export type SplitUserMessage = {
  *  <schedule-preamble>...</schedule-preamble> sentinels; older persisted
  *  transcripts fall back to the "用户需求：" separator. */
 export function splitUserMessage(text: string): SplitUserMessage {
+  const split: SplitUserMessage = { preamble: null, requirement: text, editingJob: null };
   const open = text.indexOf("<schedule-preamble>");
   if (open >= 0) {
     const close = text.indexOf("</schedule-preamble>", open);
     if (close >= 0) {
       const before = text.slice(0, open).trim();
       const preamble = text.slice(open + "<schedule-preamble>".length, close).trim();
-      const after = text
+      let after = text
         .slice(close + "</schedule-preamble>".length)
         .replace(/^\s*用户需求[:：]\s*\n?/, "")
         .trim();
+      // AI 优化会话：首条消息携带 <schedule-job id="...">JSON</schedule-job>
+      // 原计划上下文；展示时剥去，但解析出 id / enabled / loadExtensions 供
+      // 确认更新时恢复原计划的不可编辑字段。
+      const jobMatch = after.match(/<schedule-job id="([^"]*)">([\s\S]*?)<\/schedule-job>/);
+      if (jobMatch) {
+        let enabled = true;
+        let loadExtensions = false;
+        try {
+          const parsed = JSON.parse(jobMatch[2]) as {
+            enabled?: unknown;
+            loadExtensions?: unknown;
+          };
+          if (typeof parsed.enabled === "boolean") enabled = parsed.enabled;
+          if (typeof parsed.loadExtensions === "boolean") loadExtensions = parsed.loadExtensions;
+        } catch {
+          /* malformed context: fall back to the safe defaults */
+        }
+        split.editingJob = { id: jobMatch[1], enabled, loadExtensions };
+        after = after.replace(/<schedule-job[\s\S]*?<\/schedule-job>/, "").trim();
+      }
       const requirement = [before, after].filter(Boolean).join("\n").trim();
-      return { preamble: preamble || null, requirement: requirement || text.trim() };
+      split.preamble = preamble || null;
+      split.requirement = requirement || text.trim();
+      return split;
     }
   }
   const marker = "用户需求：";
@@ -193,9 +221,12 @@ export function splitUserMessage(text: string): SplitUserMessage {
   if (at >= 0) {
     const preamble = text.slice(0, at).trim();
     const requirement = text.slice(at + marker.length).trim();
-    if (preamble && requirement) return { preamble, requirement };
+    if (preamble && requirement) {
+      split.preamble = preamble;
+      split.requirement = requirement;
+    }
   }
-  return { preamble: null, requirement: text };
+  return split;
 }
 
 /** 二级智能创建页：左侧为周期计划自有的对话区（独立会话，不进工作区会话
@@ -213,6 +244,14 @@ export function ScheduleAgentPage() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [creating, setCreating] = useState(false);
+  /** 手动编辑弹窗：把当前预览草稿预填进创建/编辑弹窗。 */
+  const [editOpen, setEditOpen] = useState(false);
+  /** 手动编辑保存的草稿覆盖：只在 AI 未再更新计划（baseAiPlan 未变）时生效，
+   *  AI 继续对话给出新计划后自动失效。保存不创建，创建仍由确认创建负责。 */
+  const [draftOverride, setDraftOverride] = useState<{
+    baseAiPlan: string;
+    plan: SchedulePlanDraft;
+  } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
@@ -347,7 +386,21 @@ export function ScheduleAgentPage() {
     return () => el.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const plan = useMemo(() => extractPlanDraft(messages), [messages]);
+  const aiPlan = useMemo(() => extractPlanDraft(messages), [messages]);
+  const aiPlanKey = useMemo(() => (aiPlan ? JSON.stringify(aiPlan) : ""), [aiPlan]);
+  /** AI 优化会话的目标计划：从首条用户消息的 <schedule-job> 块解析。 */
+  const editingJob = useMemo(() => {
+    const first = messages[0];
+    return first?.role === "user" ? splitUserMessage(first.text).editingJob : null;
+  }, [messages]);
+  const rawPlan =
+    draftOverride && draftOverride.baseAiPlan === aiPlanKey ? draftOverride.plan : aiPlan;
+  // 优化会话：不可编辑字段（loadExtensions 等）以原计划为准，AI 草稿不覆盖。
+  const plan = useMemo(
+    () =>
+      editingJob && rawPlan ? { ...rawPlan, loadExtensions: editingJob.loadExtensions } : rawPlan,
+    [editingJob, rawPlan],
+  );
   /** Injected preamble of the first user turn (null when the session has none). */
   const preamble = useMemo(() => {
     const first = messages[0];
@@ -426,6 +479,28 @@ export function ScheduleAgentPage() {
     }
   }
 
+  /** 会话已结束（计划已创建）：删除智能创建会话（常驻状态 + 会话文件），
+   *  返回周期计划页。确认创建和手动编辑保存共用。 */
+  async function finishCreated() {
+    useScheduleAgentStore.getState().markCreated();
+    const host = useAppStore.getState().host;
+    const path = useScheduleAgentStore.getState().sessionPath;
+    if (host && path) {
+      try {
+        await hostClient.request(
+          "schedule.agentDelete",
+          hostContext(host),
+          { sessionPath: path },
+          CREATE_TIMEOUT_MS,
+        );
+      } catch {
+        /* handled mark below still hides it */
+      }
+    }
+    leaveScheduleAgent();
+    setPage("schedule");
+  }
+
   async function handleConfirm() {
     if (!plan || !planReady || creating) return;
     setCreating(true);
@@ -444,24 +519,31 @@ export function ScheduleAgentPage() {
         missedWindow: (plan.missedWindow ?? undefined) as ScheduleJobInput["missedWindow"],
         timeoutMs: (plan.timeoutMs ?? undefined) as ScheduleJobInput["timeoutMs"],
         maxRuns: (plan.maxRuns ?? null) as ScheduleJobInput["maxRuns"],
-        loadExtensions: false,
+        loadExtensions: editingJob ? editingJob.loadExtensions : false,
         tags: Array.isArray(plan.tags) ? plan.tags.map(String) : [],
-        enabled: true,
+        enabled: editingJob ? editingJob.enabled : true,
         notify: (plan.notify ?? undefined) as ScheduleJobInput["notify"],
       };
-      const response = await hostClient.request(
-        "schedule.createJob",
-        hostContext(host),
-        input,
-        CREATE_TIMEOUT_MS,
-      );
+      // 优化会话：按 id 覆盖原计划（插件 PATCH 只改提交的字段，执行历史、
+      // 运行计数等都保留），普通智能创建则新建计划。
+      const response = editingJob
+        ? await hostClient.request(
+            "schedule.updateJob",
+            hostContext(host),
+            { id: editingJob.id, ...input },
+            CREATE_TIMEOUT_MS,
+          )
+        : await hostClient.request(
+            "schedule.createJob",
+            hostContext(host),
+            input,
+            CREATE_TIMEOUT_MS,
+          );
       if (!response.ok) {
         pushNotification(response.error?.message ?? t("scheduleLoadFailed"), "error");
         return;
       }
-      useScheduleAgentStore.getState().markCreated();
-      leaveScheduleAgent();
-      setPage("schedule");
+      await finishCreated();
     } catch (error) {
       pushNotification(error instanceof Error ? error.message : t("scheduleLoadFailed"), "error");
     } finally {
@@ -470,6 +552,11 @@ export function ScheduleAgentPage() {
   }
 
   const previewRows = plan ? schedulePlanPreviewRows(plan, t, hostDefaultModelLabel) : [];
+  /** 手动编辑弹窗的预填表单：AI 草稿 → 表单状态（未定字段回落到表单默认值）。 */
+  const planForm = useMemo(
+    () => (plan ? planToForm(plan, workspace?.cwd ?? "") : null),
+    [plan, workspace],
+  );
   // One required-field check drives both the missing-fields banner and the
   // confirm button, so they can never disagree about whether creation is ready.
   const missingFields = plan ? schedulePlanMissingFields(plan) : [];
@@ -621,7 +708,21 @@ export function ScheduleAgentPage() {
           className="scrollbar-subtle flex min-w-0 flex-[3] flex-col gap-3 overflow-y-auto p-3"
           data-testid="schedule-agent-preview"
         >
-          <div className="text-sm font-semibold">{t("scheduleAgentPreviewTitle")}</div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm font-semibold">{t("scheduleAgentPreviewTitle")}</div>
+            {plan && planForm && (
+              <button
+                type="button"
+                className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
+                title={t("scheduleEdit")}
+                aria-label={t("scheduleEdit")}
+                data-testid="schedule-agent-edit"
+                onClick={() => setEditOpen(true)}
+              >
+                <Pencil size={13} />
+              </button>
+            )}
+          </div>
           {!plan ? (
             <div className="flex flex-col items-center gap-2 rounded-md border border-dashed border-border p-6 text-center">
               <CircleDashed size={20} className="text-muted" />
@@ -696,13 +797,35 @@ export function ScheduleAgentPage() {
                 onClick={() => void handleConfirm()}
               >
                 <Check size={13} />
-                {creating ? t("scheduleSaving") : t("scheduleAgentConfirm")}
+                {creating
+                  ? t("scheduleSaving")
+                  : editingJob
+                    ? t("scheduleAgentConfirmUpdate")
+                    : t("scheduleAgentConfirm")}
               </button>
-              <p className="text-xs text-muted">{t("scheduleAgentConfirmHint")}</p>
+              <p className="text-xs text-muted">
+                {editingJob ? t("scheduleAgentConfirmUpdateHint") : t("scheduleAgentConfirmHint")}
+              </p>
             </>
           )}
         </aside>
       </div>
+
+      {/* 手动编辑弹窗：复用创建/编辑弹窗，预填当前预览草稿。保存只回写
+          配置预览（不创建），正式创建仍由「确认创建」负责。 */}
+      {editOpen && planForm && (
+        <ScheduleJobDialog
+          job={null}
+          prefill={planForm}
+          onClose={() => setEditOpen(false)}
+          onSaveDraft={(form) => {
+            const next = formToPlan(form);
+            if (!next) return;
+            setDraftOverride({ baseAiPlan: aiPlanKey, plan: next });
+            setEditOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

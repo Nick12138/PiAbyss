@@ -1847,6 +1847,13 @@ export const en = {
   scheduleAgentConfirm: "Confirm & create",
   scheduleAgentConfirmHint:
     "Confirming creates the plan and returns to the plans page; leaving early keeps it as a backlog item.",
+  scheduleAgentOptimize: "Optimize",
+  scheduleAgentOptimizeHint:
+    "Improve this plan's config with AI (confirming overwrites the plan; run history is kept)",
+  scheduleAgentOptimizeOpener: 'Please help me improve the plan "{name}".',
+  scheduleAgentConfirmUpdate: "Confirm & update",
+  scheduleAgentConfirmUpdateHint:
+    "Confirming updates the original plan (run history is kept) and returns to the plans page; leaving early keeps it as a backlog item.",
   scheduleAgentThinking: "Thinking…",
   scheduleAgentPlanUpdated: "Plan config updated (see preview)",
   scheduleAgentPreambleToggle: "Injected prompt",

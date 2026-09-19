@@ -12,6 +12,7 @@
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
+import type { ScheduleAgentEditJob } from "@piabyss/protocol";
 import { markAgentSessionHandled, useScheduleAgentStore } from "./schedule-agent-store";
 
 /** 用户显式选择的分析会话模型（含思考深度）；null = 宿主默认模型。 */
@@ -26,11 +27,15 @@ export type ScheduleAgentStartResult = { ok: true } | { ok: false; error: string
 const START_TIMEOUT_MS = 60_000;
 
 /** Start a fresh smart-creation conversation (schedule-owned session). The
- *  optional model drives the analysis session itself. */
+ *  optional model drives the analysis session itself; with `editJob` the
+ *  conversation becomes an AI-optimization of that existing plan — the user's
+ *  confirm then updates the plan in place (run history kept) instead of
+ *  creating a new one. */
 export async function startScheduleAgent(
   requirement: string,
   cwd: string,
   model: ScheduleModelChoice = null,
+  editJob?: ScheduleAgentEditJob | null,
 ): Promise<ScheduleAgentStartResult> {
   const host = useAppStore.getState().host;
   if (!host) return { ok: false, error: "host not ready" };
@@ -40,7 +45,7 @@ export async function startScheduleAgent(
   const response = await hostClient.request(
     "schedule.agentStart",
     hostContext(host),
-    { cwd, requirement, model },
+    { cwd, requirement, model, ...(editJob ? { job: editJob } : {}) },
     START_TIMEOUT_MS,
   );
   if (!response.ok) {

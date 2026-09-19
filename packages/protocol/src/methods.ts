@@ -142,6 +142,7 @@ export const HOST_METHODS = [
   "schedule.agentState",
   "schedule.agentTranscript",
   "schedule.agentAbort",
+  "schedule.agentDelete",
   "memo.list",
   "memo.create",
   "memo.update",
@@ -247,7 +248,8 @@ export type HostOnlyMethod =
   | "schedule.agentContinue"
   | "schedule.agentState"
   | "schedule.agentTranscript"
-  | "schedule.agentAbort";
+  | "schedule.agentAbort"
+  | "schedule.agentDelete";
 export type WorkspaceOnlyMethod =
   | "workspace.setCurrent"
   | "workspace.getCurrent"
@@ -509,6 +511,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "schedule.agentState": "host",
   "schedule.agentTranscript": "host",
   "schedule.agentAbort": "host",
+  "schedule.agentDelete": "host",
   "memo.list": "host",
   "memo.create": "host",
   "memo.update": "host",

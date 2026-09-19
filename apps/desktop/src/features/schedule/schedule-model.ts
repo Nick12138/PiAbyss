@@ -448,6 +448,72 @@ export function schedulePlanPreviewRows(
   return rows;
 }
 
+/** Convert a smart-creation plan draft into a form state for manual
+ *  editing. Undetermined (null) fields fall back to the same defaults the
+ *  manual form uses, so the dialog opens with everything the AI decided
+ *  already filled in and the rest at their sane defaults. */
+export function planToForm(plan: SchedulePlanDraft, fallbackCwd: string): ScheduleFormState {
+  const trigger = plan.trigger && typeof plan.trigger.type === "string" ? plan.trigger : null;
+  const interval =
+    trigger?.type === "interval"
+      ? parseIntervalEvery(trigger.every)
+      : { value: 30, unit: "m" as const };
+  return {
+    name: plan.name?.trim() ?? "",
+    kind: plan.kind === "command" ? "command" : "prompt",
+    prompt: plan.prompt ?? "",
+    command: plan.command ?? "",
+    cwd: plan.cwd?.trim() || fallbackCwd,
+    triggerType: trigger ? trigger.type : "manual",
+    onceAt: trigger?.type === "once" ? toDatetimeLocalValue(trigger.at) : "",
+    intervalValue: interval.value,
+    intervalUnit: interval.unit,
+    cron: trigger?.type === "cron" ? trigger.cron : "0 9 * * 1-5",
+    permission:
+      plan.permission === "write" || plan.permission === "full" ? plan.permission : "read_only",
+    notify: plan.notify === "none" || plan.notify === "tg" ? plan.notify : "system",
+    model: plan.model ? { provider: plan.model.provider, id: plan.model.id } : null,
+    missedWindow: plan.missedWindow === "skip" ? "skip" : "catch_up_one",
+    timeoutMinutes: Math.max(
+      1,
+      Math.round(
+        (typeof plan.timeoutMs === "number" && plan.timeoutMs > 0
+          ? plan.timeoutMs
+          : SCHEDULE_DEFAULT_TIMEOUT_MS) / 60_000,
+      ),
+    ),
+    maxRuns: typeof plan.maxRuns === "number" && plan.maxRuns > 0 ? String(plan.maxRuns) : "",
+    tags: Array.isArray(plan.tags) ? plan.tags.join(", ") : "",
+    enabled: true,
+  };
+}
+
+/** Convert an edited form back into a plan draft, without creating anything.
+ *  Returns null when the form fails validation. Used by the smart-creation
+ *  preview's manual edit: saving there only rewrites the preview, the plan is
+ *  still created exclusively by 确认创建. */
+export function formToPlan(form: ScheduleFormState): SchedulePlanDraft | null {
+  if (Object.keys(scheduleFormErrors(form)).length > 0) return null;
+  const parsed = formToJobInput(form);
+  if (!parsed.ok) return null;
+  const { trigger, ...input } = parsed.input;
+  return {
+    name: input.name,
+    kind: input.command ? "command" : "prompt",
+    prompt: input.prompt,
+    command: input.command,
+    cwd: input.cwd,
+    trigger,
+    permission: input.permission ?? null,
+    model: input.model ? { provider: input.model.provider, id: input.model.id } : null,
+    missedWindow: input.missedWindow ?? null,
+    timeoutMs: input.timeoutMs,
+    maxRuns: input.maxRuns,
+    tags: input.tags,
+    notify: input.notify ?? null,
+  };
+}
+
 export function formatDurationMs(ms: number | null): string {
   if (ms === null) return "—";
   if (ms < 1000) return `${ms}ms`;

@@ -1615,6 +1615,27 @@ export type ScheduleAgentSessionSummary = {
   resident: boolean;
 };
 
+/** 智能创建「AI 优化」会话携带的原计划上下文：确认时按 id 覆盖原计划
+ *  （保留执行历史），而不是新建计划。id/enabled/loadExtensions 必填，
+ *  其余字段与 ScheduleJobInput 对齐、可缺省。 */
+export type ScheduleAgentEditJob = {
+  id: string;
+  enabled: boolean;
+  loadExtensions: boolean;
+  name?: string;
+  prompt?: string;
+  command?: string | null;
+  cwd?: string;
+  trigger?: ScheduleTrigger;
+  permission?: SchedulePermission;
+  model?: ScheduleModelRef | null;
+  missedWindow?: ScheduleMissedWindow;
+  timeoutMs?: number;
+  maxRuns?: number | null;
+  tags?: string[];
+  notify?: ScheduleNotifyMode;
+};
+
 /** schedule.agentState 结果：会话不在宿主内存时 found=false。 */
 export type ScheduleAgentState = {
   found: boolean;

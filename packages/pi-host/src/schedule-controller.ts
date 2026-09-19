@@ -7,7 +7,7 @@
  * loopback port is closed and schedule.status reports available:false
  * instead of failing the whole request.
  */
-import { createHostError, type HostError } from "@piabyss/protocol";
+import { createHostError, type HostError, type ScheduleAgentEditJob } from "@piabyss/protocol";
 import type { MethodHandler } from "./server.js";
 import { scheduleApi, type ScheduleApiOutcome } from "./schedule-api.js";
 import {
@@ -15,6 +15,7 @@ import {
   agentState,
   agentTranscriptFrom,
   continueAgentConversation,
+  deleteAgentSession,
   listAgentSessions,
   sendAgentMessage,
   startAgentConversation,
@@ -43,7 +44,10 @@ function mapHttpError(outcome: { status: number | null; error: string }): HostEr
       // Single-flight conflict: the job is already running.
       return createHostError("AGENT_BUSY", outcome.error, { retryable: true });
     default:
-      return createHostError("INTERNAL_ERROR", `定时任务控制面错误（HTTP ${outcome.status}）：${outcome.error}`);
+      return createHostError(
+        "INTERNAL_ERROR",
+        `定时任务控制面错误（HTTP ${outcome.status}）：${outcome.error}`,
+      );
   }
 }
 
@@ -162,9 +166,7 @@ export function createScheduleHandlers(agentDir: string): Partial<Record<string,
       if (params.jobId) search.set("jobId", params.jobId);
       if (params.limit !== undefined) search.set("limit", String(params.limit));
       const query = search.toString();
-      const base = params.jobId
-        ? `/api/jobs/${params.jobId}/runs`
-        : "/api/runs";
+      const base = params.jobId ? `/api/jobs/${params.jobId}/runs` : "/api/runs";
       const outcome = await scheduleApi<{ runs: unknown[] }>(
         query ? `${base}?${query}` : base,
         "GET",
@@ -218,6 +220,7 @@ export function createScheduleHandlers(agentDir: string): Partial<Record<string,
         cwd: string;
         requirement: string;
         model?: { provider: string; id: string; thinkingLevel?: string } | null;
+        job?: ScheduleAgentEditJob | null;
       };
       try {
         return {
@@ -226,6 +229,7 @@ export function createScheduleHandlers(agentDir: string): Partial<Record<string,
             requirement: params.requirement,
             agentDir,
             model: params.model ?? null,
+            job: params.job ?? null,
           }),
         };
       } catch (error) {
@@ -290,6 +294,11 @@ export function createScheduleHandlers(agentDir: string): Partial<Record<string,
     "schedule.agentAbort": async (ctx) => {
       const params = ctx.params as { sessionId: string };
       return { result: { ok: abortAgent(params.sessionId) } };
+    },
+
+    "schedule.agentDelete": async (ctx) => {
+      const params = ctx.params as { sessionPath: string };
+      return { result: { ok: deleteAgentSession(params.sessionPath) } };
     },
   };
 }

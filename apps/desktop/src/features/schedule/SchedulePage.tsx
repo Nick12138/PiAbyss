@@ -467,17 +467,16 @@ export function SchedulePage() {
         <div className="flex min-h-0 flex-1">
           {/* Job list */}
           <div className="scrollbar-subtle flex w-[300px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-border p-3">
-            <section className="flex flex-col gap-2">
-              <SectionHeading
-                icon={Hourglass}
-                title={t("scheduleAgentPendingTitle")}
-                count={agentSessions.length}
-                collapsed={collapsedSections.pending === true}
-                onToggle={() => toggleSection("pending")}
-              />
-              {agentSessions.length === 0 ? (
-                <EmptyHint text={t("scheduleSectionPendingEmpty")} />
-              ) : (
+            {/* 待落实分组只在确有待落实会话时渲染——空分组只会增加噪音。 */}
+            {agentSessions.length > 0 && (
+              <section className="flex flex-col gap-2">
+                <SectionHeading
+                  icon={Hourglass}
+                  title={t("scheduleAgentPendingTitle")}
+                  count={agentSessions.length}
+                  collapsed={collapsedSections.pending === true}
+                  onToggle={() => toggleSection("pending")}
+                />
                 <CollapsibleRegion open={collapsedSections.pending !== true}>
                   <div className="flex flex-col gap-2">
                     {agentSessions.map((entry) => (
@@ -490,8 +489,8 @@ export function SchedulePage() {
                     ))}
                   </div>
                 </CollapsibleRegion>
-              )}
-            </section>
+              </section>
+            )}
 
             <section className="flex flex-col gap-2">
               <SectionHeading
@@ -661,6 +660,22 @@ export function SchedulePage() {
           }}
           onStartSmart={async (cwd, requirement, model) => {
             const result = await startScheduleAgent(requirement, cwd, model);
+            if (result.ok) {
+              setDialog(null);
+              setPage("schedule-agent");
+              return null;
+            }
+            return result.error;
+          }}
+          onOptimize={async (job) => {
+            // AI 优化现有计划：以该计划为上下文新建待落实会话；确认时按 id
+            // 覆盖原计划（保留执行历史），而不是新建。
+            const result = await startScheduleAgent(
+              t("scheduleAgentOptimizeOpener", { name: job.name }),
+              job.cwd,
+              null,
+              job,
+            );
             if (result.ok) {
               setDialog(null);
               setPage("schedule-agent");
