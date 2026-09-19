@@ -35,6 +35,7 @@ import {
 } from "react";
 import type { MemoNote, MemoNoteStatus, MemoNoteType } from "@piabyss/protocol";
 import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
+import { LightboxImage } from "../../components/ImageLightbox";
 import { Select } from "../../components/Select";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 import { draftKeyForTarget, draftTargetFor } from "../../lib/draft-target";
@@ -644,6 +645,15 @@ export function MemoPage() {
               <span>{confirmingClear ? t("memoActionDeleteConfirm") : t("memoClearArchived")}</span>
             </button>
           )}
+          <button
+            type="button"
+            onClick={resetToCreate}
+            title={t("memoActionCreate")}
+            aria-label={t("memoActionCreate")}
+            className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-foreground transition-colors hover:bg-surface-overlay"
+          >
+            <Plus size={16} />
+          </button>
         </div>
       </div>
 
@@ -721,7 +731,6 @@ export function MemoPage() {
               onAgent={() => openWithAgent(selectedNote)}
               onResult={() => setResultModalOpen(true)}
               onDelete={() => void removeNote(selectedNote)}
-              onCreate={resetToCreate}
             />
           ) : (
             <MemoEditor
@@ -947,7 +956,6 @@ function MemoDetail({
   onAgent,
   onResult,
   onDelete,
-  onCreate,
 }: {
   note: MemoNote;
   imageUrls: Record<string, string>;
@@ -957,7 +965,6 @@ function MemoDetail({
   onAgent: () => void;
   onResult: () => void;
   onDelete: () => void;
-  onCreate: () => void;
 }) {
   const t = useT();
   const TypeIcon = TYPE_ICONS[note.type];
@@ -1012,15 +1019,6 @@ function MemoDetail({
         >
           <Trash2 size={14} className="shrink-0" />
         </button>
-        <button
-          type="button"
-          onClick={onCreate}
-          title={t("memoActionCreate")}
-          aria-label={t("memoActionCreate")}
-          className="ml-auto flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-foreground transition-colors hover:bg-surface-overlay"
-        >
-          <Plus size={16} />
-        </button>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 px-5 py-4">
@@ -1051,9 +1049,9 @@ function MemoDetail({
             {note.images.map((image) => {
               const url = imageUrls[`${note.id}:${image.id}`];
               return url ? (
-                <img
+                <LightboxImage
                   key={image.id}
-                  src={url}
+                  url={url}
                   alt={image.fileName}
                   className="size-21 rounded-md border border-border object-cover"
                 />
@@ -1177,8 +1175,8 @@ function MemoEditor({
             {editor.pendingImages.map((image) => (
               <div key={image.key} className="group relative">
                 {image.previewUrl ? (
-                  <img
-                    src={image.previewUrl}
+                  <LightboxImage
+                    url={image.previewUrl}
                     alt={image.fileName}
                     className="size-14 rounded-md border border-border object-cover"
                   />
