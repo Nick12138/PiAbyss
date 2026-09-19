@@ -1,4 +1,4 @@
-import { Search, CalendarClock } from "lucide-react";
+import { Search, CalendarClock, NotebookPen } from "lucide-react";
 import { useAppStore } from "../lib/stores/app-store";
 import { useT } from "../lib/i18n/use-t";
 import { requestGlobalSearchOpen } from "../lib/commands/events";
@@ -32,6 +32,7 @@ export function AppTopBar({
   const session = useAppStore((s) => s.session);
   const sessionTreeNavigated = useAppStore((s) => s.sessionTreeNavigated);
   const host = useAppStore((s) => s.host);
+  const scheduleOnline = useAppStore((s) => s.scheduleOnline);
   const platform = resolveWindowControlsPlatform();
 
   const section = settingsSection ?? "general";
@@ -145,11 +146,30 @@ export function AppTopBar({
               className="pointer-events-none shrink-0 text-muted"
               aria-hidden="true"
             />
-            <div className="min-w-0 flex-1 truncate">
-              <h1 className="truncate text-base font-semibold leading-5">
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              <h1 className="min-w-0 truncate text-base font-semibold leading-5">
                 {page === "schedule" ? t("scheduleTitle") : t("scheduleAgentTitle")}
               </h1>
+              {/* Scheduler liveness dot: green = online, red = offline, muted = not polled yet. */}
+              <span
+                aria-hidden="true"
+                className={`size-1.5 shrink-0 rounded-full ${
+                  scheduleOnline === null ? "bg-muted" : scheduleOnline ? "bg-success" : "bg-danger"
+                }`}
+              />
             </div>
+          </div>
+        ) : page === "memo" ? (
+          <div
+            className="pointer-events-none flex min-w-0 flex-1 items-center gap-2"
+            data-tauri-drag-region
+          >
+            <NotebookPen
+              size={16}
+              className="pointer-events-none shrink-0 text-muted"
+              aria-hidden="true"
+            />
+            <h1 className="min-w-0 truncate text-base font-semibold leading-5">{t("memoTitle")}</h1>
           </div>
         ) : page === "settings" || page === "packages" ? (
           <div

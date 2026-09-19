@@ -1,4 +1,4 @@
-import { MessageCirclePlus, CalendarClock, PanelLeftClose, PanelLeftOpen, Settings } from "lucide-react";
+import { MessageCirclePlus, CalendarClock, NotebookPen, PanelLeftClose, PanelLeftOpen, Settings } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useAppStore, type NavPage } from "../lib/stores/app-store";
 import { SessionList } from "../features/sessions/SessionList";
@@ -354,6 +354,27 @@ export function SidebarLayout({
                 </button>
               </div>
             )}
+
+            <div className="px-2 pb-2">
+              <button
+                type="button"
+                onClick={() => setPage(page === "memo" ? "chat" : "memo")}
+                data-ui="nav-item"
+                data-testid="sidebar-memo-entry"
+                data-state={page === "memo" ? "active" : "inactive"}
+                title={t("memoTitle")}
+                aria-label={t("memoTitle")}
+                aria-pressed={page === "memo"}
+                className={`flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] transition-colors ${
+                  page === "memo"
+                    ? "theme-nav-active bg-nav-active text-nav-active-foreground"
+                    : "text-foreground hover:bg-surface-overlay"
+                }`}
+              >
+                <NotebookPen size={18} className="shrink-0" />
+                <span>{t("memoTitle")}</span>
+              </button>
+            </div>
 
             <div className="border-t border-border px-2 py-3">
               <WorkspacePicker />

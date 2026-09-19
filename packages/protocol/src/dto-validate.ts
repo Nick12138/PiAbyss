@@ -2180,7 +2180,9 @@ function isScheduleJob(value: unknown): boolean {
       "lastStatus",
       "runCount",
       "terminated",
-    ]) &&
+    ],
+    ["notify"],
+  ) &&
     isString(value.id) &&
     isString(value.name) &&
     isString(value.prompt) &&
@@ -2309,6 +2311,55 @@ function isScheduleAgentMessage(value: unknown): boolean {
     (value.toolCallId === undefined || isString(value.toolCallId)) &&
     (value.toolName === undefined || isString(value.toolName)) &&
     (value.isError === undefined || isBoolean(value.isError))
+  );
+}
+
+/** 备忘录图片引用的 DTO 校验。 */
+function isMemoImage(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["id", "fileName", "mediaType", "bytes"]) &&
+    isString(value.id) &&
+    isString(value.fileName) &&
+    isString(value.mediaType) &&
+    typeof value.bytes === "number" &&
+    Number.isSafeInteger(value.bytes) &&
+    value.bytes >= 0
+  );
+}
+
+/** 备忘录记录的 DTO 校验。 */
+function isMemoNote(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "id",
+      "type",
+      "title",
+      "contentMd",
+      "status",
+      "tags",
+      "workspaceHint",
+      "images",
+      "createdAt",
+      "updatedAt",
+      "completedAt",
+    ]) &&
+    isString(value.id) &&
+    (value.type === "memo" || value.type === "idea" || value.type === "task") &&
+    isString(value.title) &&
+    isString(value.contentMd) &&
+    (value.status === "open" || value.status === "done" || value.status === "archived") &&
+    isStringArray(value.tags) &&
+    (value.workspaceHint === null || isString(value.workspaceHint)) &&
+    Array.isArray(value.images) &&
+    value.images.every(isMemoImage) &&
+    typeof value.createdAt === "number" &&
+    Number.isSafeInteger(value.createdAt) &&
+    typeof value.updatedAt === "number" &&
+    Number.isSafeInteger(value.updatedAt) &&
+    (value.completedAt === null ||
+      (typeof value.completedAt === "number" && Number.isSafeInteger(value.completedAt)))
   );
 }
 
@@ -3048,6 +3099,29 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
       return isPlainObject(result) && hasExactKeys(result, ["ok"]) && isBoolean(result.ok)
         ? null
         : "invalid schedule.agentAbort result";
+    case "memo.list":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["notes"]) &&
+        Array.isArray(result.notes) &&
+        result.notes.every(isMemoNote)
+        ? null
+        : "invalid memo.list result";
+    case "memo.create":
+    case "memo.update":
+      return isPlainObject(result) && hasExactKeys(result, ["note"]) && isMemoNote(result.note)
+        ? null
+        : "invalid memo.create result";
+    case "memo.delete":
+      return isPlainObject(result) && hasExactKeys(result, ["ok"]) && isBoolean(result.ok)
+        ? null
+        : "invalid memo.delete result";
+    case "memo.readImage":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["dataBase64", "mediaType"]) &&
+        isString(result.dataBase64) &&
+        isNonEmptyString(result.mediaType)
+        ? null
+        : "invalid memo.readImage result";
     case "model.list":
       return isPlainObject(result) &&
         hasExactKeys(
@@ -3163,6 +3237,12 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
         : "invalid git.changed payload";
     case "git.taskFinished":
       return isGitTaskFinishedPayload(payload) ? null : "invalid git.taskFinished payload";
+    case "schedule.notificationsChanged":
+      return isPlainObject(payload) &&
+        hasExactKeys(payload, ["total"]) &&
+        isSafeRevision(payload.total)
+        ? null
+        : "invalid schedule.notificationsChanged payload";
     case "attachment.changed":
       return isPlainObject(payload) &&
         hasExactKeys(payload, ["attachment"]) &&

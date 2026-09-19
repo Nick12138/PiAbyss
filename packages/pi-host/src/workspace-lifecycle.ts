@@ -27,6 +27,7 @@ import { buildPackageSnapshot, type ResourceIdMap } from "./package-snapshot.js"
 import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
 import { createReadAttachmentTool } from "./attachment-tool.js";
+import { buildMemoTool, createMemoActivationExtension } from "./memo-tool.js";
 import {
   buildAskUserQuestionTool,
   createAskUserQuestionActivationExtension,
@@ -1317,6 +1318,7 @@ export class WorkspaceLifecycle {
         extensionFactories: [
           ...(statusBridge ? [statusBridge.extension] : []),
           createAskUserQuestionActivationExtension(() => isAskUserQuestionEnabled(agentDir)),
+          createMemoActivationExtension(),
         ],
       });
       // Workspace selection (including the startup preload) must not reach the
@@ -1380,9 +1382,15 @@ export class WorkspaceLifecycle {
                   customTools: [
                     createReadAttachmentTool(this.context.deps.attachmentStore),
                     buildAskUserQuestionTool(),
+                    buildMemoTool(agentDir),
                   ],
                 }
-              : { customTools: [buildAskUserQuestionTool()] }),
+              : {
+                  customTools: [
+                    buildAskUserQuestionTool(),
+                    buildMemoTool(agentDir),
+                  ],
+                }),
           }),
       );
       candidateSession = session;

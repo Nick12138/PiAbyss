@@ -278,6 +278,23 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "schedule.agentState": { sessionId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150" },
   "schedule.agentTranscript": { sessionPath: "C:/s.jsonl" },
   "schedule.agentAbort": { sessionId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150" },
+  "memo.list": null,
+  "memo.create": {
+    type: "task",
+    title: "重构 memo 模块",
+    contentMd: "给 memo 页面补充分类筛选",
+    tags: ["#refactor"],
+    workspaceHint: "PiAbyss",
+  },
+  "memo.update": {
+    id: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150",
+    patch: { status: "done" },
+  },
+  "memo.delete": { id: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150" },
+  "memo.readImage": {
+    noteId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150",
+    imageId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150",
+  },
 };
 
 function contextFor(method: HostMethod): Record<string, unknown> {
@@ -541,6 +558,16 @@ function invalidParams(method: HostMethod): unknown {
     case "schedule.agentState":
     case "schedule.agentAbort":
       return { sessionId: "" };
+    case "memo.list":
+      return {}; // must be null
+    case "memo.create":
+      return { type: "nope", title: "", contentMd: 42 };
+    case "memo.update":
+      return { id: "", patch: { status: "bogus" } };
+    case "memo.delete":
+      return { id: "" };
+    case "memo.readImage":
+      return { noteId: "", imageId: "" };
     case "schedule.agentTranscript":
       return { sessionPath: "" };
     default:
@@ -844,6 +871,7 @@ describe("protocol coverage — events", () => {
       workspaceName: "PiAbyss",
       ok: true,
     },
+    "schedule.notificationsChanged": { total: 1 },
     "attachment.changed": {
       attachment: {
         id: RUN_ID,

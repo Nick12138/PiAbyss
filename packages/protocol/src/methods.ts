@@ -142,6 +142,11 @@ export const HOST_METHODS = [
   "schedule.agentState",
   "schedule.agentTranscript",
   "schedule.agentAbort",
+  "memo.list",
+  "memo.create",
+  "memo.update",
+  "memo.delete",
+  "memo.readImage",
 ] as const;
 
 export type HostMethod = (typeof HOST_METHODS)[number];
@@ -500,6 +505,11 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "schedule.agentState": "host",
   "schedule.agentTranscript": "host",
   "schedule.agentAbort": "host",
+  "memo.list": "host",
+  "memo.create": "host",
+  "memo.update": "host",
+  "memo.delete": "host",
+  "memo.readImage": "host",
   "extensionUi.respond": "sessionTarget",
   "extensionUi.customInput": "sessionTarget",
   "extensionUi.customResize": "sessionTarget",

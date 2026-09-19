@@ -31,6 +31,7 @@ import {
 } from "./session-list-projection.js";
 import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { createReadAttachmentTool } from "./attachment-tool.js";
+import { buildMemoTool, createMemoActivationExtension } from "./memo-tool.js";
 import {
   buildAskUserQuestionTool,
   createAskUserQuestionActivationExtension,
@@ -489,6 +490,7 @@ async function createSessionResourceLoader(
       createAskUserQuestionActivationExtension(() =>
         isAskUserQuestionEnabled(factory.deps.agentDir),
       ),
+      createMemoActivationExtension(),
     ],
   });
   // Session create/open must not reach the network. Without this the SDK would
@@ -641,9 +643,12 @@ export async function createSession(
             customTools: [
               createReadAttachmentTool(factory.deps.attachmentStore),
               buildAskUserQuestionTool(),
+              buildMemoTool(factory.deps.agentDir),
             ],
           }
-        : { customTools: [buildAskUserQuestionTool()] }),
+        : {
+            customTools: [buildAskUserQuestionTool(), buildMemoTool(factory.deps.agentDir)],
+          }),
     });
     const session = created.session;
     const extensionsResult = created.extensionsResult;
@@ -983,9 +988,12 @@ export async function openSession(
               customTools: [
                 createReadAttachmentTool(factory.deps.attachmentStore),
                 buildAskUserQuestionTool(),
+                buildMemoTool(factory.deps.agentDir),
               ],
             }
-          : { customTools: [buildAskUserQuestionTool()] }),
+          : {
+              customTools: [buildAskUserQuestionTool(), buildMemoTool(factory.deps.agentDir)],
+            }),
       });
       candidateSession = created.session;
       const session = created.session;

@@ -97,6 +97,10 @@ import type {
   ScheduleAgentSessionSummary,
   ScheduleAgentState,
   ScheduleAgentTranscript,
+  MemoNote,
+  MemoNoteStatus,
+  MemoNoteType,
+  MemoImageInput,
 } from "./types.js";
 
 export type HostContextMap = {
@@ -242,6 +246,11 @@ export type HostContextMap = {
   "schedule.agentState": HostContext;
   "schedule.agentTranscript": HostContext;
   "schedule.agentAbort": HostContext;
+  "memo.list": HostContext;
+  "memo.create": HostContext;
+  "memo.update": HostContext;
+  "memo.delete": HostContext;
+  "memo.readImage": HostContext;
 };
 
 export type HostRequestParams = {
@@ -440,13 +449,42 @@ export type HostRequestParams = {
   "schedule.replyToRun": { runId: string; text: string };
   "schedule.validateCron": { cron: string; timezone?: string };
   "schedule.listNotifications": { limit?: number };
-  "schedule.agentStart": { cwd: string; requirement: string };
+  "schedule.agentStart": {
+    cwd: string;
+    requirement: string;
+    /** 分析会话使用的模型（含思考深度）；缺省 = 宿主默认模型。 */
+    model?: { provider: string; id: string; thinkingLevel?: string } | null;
+  };
   "schedule.agentList": null;
   "schedule.agentSend": { sessionId: string; text: string };
   "schedule.agentContinue": { sessionPath: string; cwd: string; text: string };
   "schedule.agentState": { sessionId: string };
   "schedule.agentTranscript": { sessionPath: string };
   "schedule.agentAbort": { sessionId: string };
+  "memo.list": null;
+  "memo.create": {
+    type: MemoNoteType;
+    title: string;
+    contentMd: string;
+    tags?: string[];
+    workspaceHint?: string | null;
+    images?: MemoImageInput[];
+  };
+  "memo.update": {
+    id: string;
+    patch: {
+      type?: MemoNoteType;
+      title?: string;
+      contentMd?: string;
+      status?: MemoNoteStatus;
+      tags?: string[];
+      workspaceHint?: string | null;
+      addImages?: MemoImageInput[];
+      removeImageIds?: string[];
+    };
+  };
+  "memo.delete": { id: string };
+  "memo.readImage": { noteId: string; imageId: string };
 };
 
 export type HostResultMap = {
@@ -657,6 +695,11 @@ export type HostResultMap = {
   "schedule.agentState": ScheduleAgentState;
   "schedule.agentTranscript": ScheduleAgentTranscript;
   "schedule.agentAbort": { ok: boolean };
+  "memo.list": { notes: MemoNote[] };
+  "memo.create": { note: MemoNote };
+  "memo.update": { note: MemoNote };
+  "memo.delete": { ok: boolean };
+  "memo.readImage": { dataBase64: string; mediaType: string };
 };
 
 export type HostEventPayloadMap = {
@@ -667,6 +710,7 @@ export type HostEventPayloadMap = {
   "workspace.filesChanged": { directories: string[] };
   "git.changed": { snapshot: GitStatusSnapshot };
   "git.taskFinished": GitTaskFinishedPayload;
+  "schedule.notificationsChanged": { total: number };
   "attachment.changed": { attachment: AttachmentSnapshot };
   "session.snapshot": SessionSnapshot | null;
   "session.infoChanged": { sessionId: string; name?: string };

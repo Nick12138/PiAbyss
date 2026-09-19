@@ -312,6 +312,47 @@ function base64DecodedByteLength(data: string): number | null {
   return Math.floor((contentLength * 3) / 4);
 }
 
+/** 备忘录记录类型白名单。 */
+function isMemoNoteType(value: unknown): boolean {
+  return value === "memo" || value === "idea" || value === "task";
+}
+
+/** 备忘录状态白名单。 */
+function isMemoNoteStatus(value: unknown): boolean {
+  return value === "open" || value === "done" || value === "archived";
+}
+
+/** 备忘录图片载荷：base64 解码后不超过 8 MiB。 */
+function isMemoImageInput(value: unknown): boolean {
+  if (!exactObject(value, [], ["fileName", "mediaType", "dataBase64"])) return false;
+  if (value.fileName !== undefined && (!isString(value.fileName) || value.fileName.length > 260)) {
+    return false;
+  }
+  if (!isNonEmptyString(value.mediaType) || value.mediaType.length > 100) return false;
+  if (!value.mediaType.startsWith("image/")) return false;
+  if (!isString(value.dataBase64) || value.dataBase64.length > 12_000_000) return false;
+  return /^[A-Za-z0-9+/]*={0,2}$/.test(value.dataBase64);
+}
+
+/** memo.create / memo.update 共用的字段级校验。 */
+function isMemoNoteFields(value: Record<string, unknown>): boolean {
+  return (
+    (value.type === undefined || isMemoNoteType(value.type)) &&
+    (value.title === undefined ||
+      (isNonEmptyString(value.title) && value.title.length <= 300)) &&
+    (value.contentMd === undefined ||
+      (isString(value.contentMd) && value.contentMd.length <= 200_000)) &&
+    (value.status === undefined || isMemoNoteStatus(value.status)) &&
+    (value.tags === undefined ||
+      (isStringArray(value.tags) &&
+        value.tags.length <= 20 &&
+        value.tags.every((tag) => tag.length <= 60))) &&
+    (value.workspaceHint === undefined ||
+      value.workspaceHint === null ||
+      (isString(value.workspaceHint) && value.workspaceHint.length <= 300))
+  );
+}
+
 function isResourcePreferenceUpdate(value: unknown): boolean {
   if (
     !exactObject(value, ["resourceId", "targetScope", "preference"]) ||
@@ -1135,12 +1176,13 @@ export function validateRequestParams<M extends HostMethod>(
         ? ok(params)
         : fail("invalid schedule.listNotifications params", { method });
     case "schedule.agentStart":
-      return exactObject(params, ["cwd", "requirement"]) &&
+      return exactObject(params, ["cwd", "requirement"], ["model"]) &&
         isNonEmptyString(params.cwd) &&
         params.cwd.length <= 1_024 &&
         isNonEmptyString(params.requirement) &&
         params.requirement.trim().length > 0 &&
-        params.requirement.length <= 20_000
+        params.requirement.length <= 20_000 &&
+        (params.model === undefined || params.model === null || isScheduleModelRef(params.model))
         ? ok(params)
         : fail("invalid schedule.agentStart params", { method });
     case "schedule.agentList":
@@ -1183,6 +1225,66 @@ export function validateRequestParams<M extends HostMethod>(
         params.sessionId.length <= 128
         ? ok(params)
         : fail("invalid schedule.agentAbort params", { method });
+    case "memo.list":
+      return params === null ? ok(null) : fail("params must be null", { method });
+    case "memo.create":
+      return exactObject(params, ["type", "title", "contentMd"], ["tags", "workspaceHint", "images"]) &&
+        isMemoNoteType(params.type) &&
+        isNonEmptyString(params.title) &&
+        params.title.length <= 300 &&
+        isString(params.contentMd) &&
+        params.contentMd.length <= 200_000 &&
+        (params.tags === undefined ||
+          (isStringArray(params.tags) &&
+            params.tags.length <= 20 &&
+            params.tags.every((tag) => tag.length <= 60))) &&
+        (params.workspaceHint === undefined ||
+          params.workspaceHint === null ||
+          (isString(params.workspaceHint) && params.workspaceHint.length <= 300)) &&
+        (params.images === undefined ||
+          (Array.isArray(params.images) &&
+            params.images.length <= 20 &&
+            params.images.every(isMemoImageInput)))
+        ? ok(params)
+        : fail("invalid memo.create params", { method });
+    case "memo.update":
+      return exactObject(params, ["id", "patch"]) &&
+        isNonEmptyString(params.id) &&
+        params.id.length <= 128 &&
+        exactObject(params.patch, [], [
+          "type",
+          "title",
+          "contentMd",
+          "status",
+          "tags",
+          "workspaceHint",
+          "addImages",
+          "removeImageIds",
+        ]) &&
+        isMemoNoteFields(params.patch) &&
+        (params.patch.addImages === undefined ||
+          (Array.isArray(params.patch.addImages) &&
+            params.patch.addImages.length <= 20 &&
+            params.patch.addImages.every(isMemoImageInput))) &&
+        (params.patch.removeImageIds === undefined ||
+          (isStringArray(params.patch.removeImageIds) &&
+            params.patch.removeImageIds.length <= 20))
+        ? ok(params)
+        : fail("invalid memo.update params", { method });
+    case "memo.delete":
+      return exactObject(params, ["id"]) &&
+        isNonEmptyString(params.id) &&
+        params.id.length <= 128
+        ? ok(params)
+        : fail("invalid memo.delete params", { method });
+    case "memo.readImage":
+      return exactObject(params, ["noteId", "imageId"]) &&
+        isNonEmptyString(params.noteId) &&
+        params.noteId.length <= 128 &&
+        isNonEmptyString(params.imageId) &&
+        params.imageId.length <= 128
+        ? ok(params)
+        : fail("invalid memo.readImage params", { method });
     default:
       // Exhaustiveness guard: adding a HostMethod without a params validator
       // is a compile error here, not a silently-undefined result at runtime.

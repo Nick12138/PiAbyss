@@ -1635,3 +1635,42 @@ export type ScheduleStatus = {
   health: ScheduleHealth | null;
   error: string | null;
 };
+
+/** 备忘录记录类型。 */
+export type MemoNoteType = "memo" | "idea" | "task";
+
+/** 备忘录状态：进行中 / 已完成 / 已归档。 */
+export type MemoNoteStatus = "open" | "done" | "archived";
+
+/** 备忘录记录的图片引用（图片文件由 Host 存储在备忘录目录下）。 */
+export type MemoImage = {
+  id: string;
+  /** 原始文件名（仅用于展示与扩展名推断）。 */
+  fileName: string;
+  mediaType: string;
+  bytes: number;
+};
+
+/** 备忘录记录（全局共享，不随工作区隔离；workspaceHint 仅作关联标签）。 */
+export type MemoNote = {
+  id: string;
+  type: MemoNoteType;
+  title: string;
+  contentMd: string;
+  status: MemoNoteStatus;
+  tags: string[];
+  /** 可空的工作区关联标签（目录名或路径），仅用于过滤与提示。 */
+  workspaceHint: string | null;
+  images: MemoImage[];
+  createdAt: number;
+  updatedAt: number;
+  /** 状态变为 done 的时间；非 done 恒为 null。 */
+  completedAt: number | null;
+};
+
+/** 上传图片的输入载荷：base64 不含 `data:` 前缀。 */
+export type MemoImageInput = {
+  fileName: string;
+  mediaType: string;
+  dataBase64: string;
+};

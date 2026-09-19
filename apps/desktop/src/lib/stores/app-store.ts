@@ -72,6 +72,7 @@ export type NavPage =
   | "packages"
   | "schedule"
   | "schedule-agent"
+  | "memo"
   | "settings";
 
 /** Frozen empty map shared as the initial `providerNames` value so unrelated
@@ -430,6 +431,8 @@ function restoreSettingsNavCache(state: {
 
 export type AppState = EpochState & {
   page: NavPage;
+  /** Scheduler availability from the periodic-tasks page poll (null = not checked yet). */
+  scheduleOnline: boolean | null;
   /** Section the Settings overlay should open on (null = default "general"). */
   settingsSection: SettingsSection | null;
   /** Last visited Settings position for the current workspace (see SettingsNavCache). */
@@ -517,6 +520,7 @@ export type AppState = EpochState & {
   applyProviderLoginEvent: (payload: HostEventPayloadMap["provider.loginEvent"]) => void;
   clearProviderLogin: () => void;
   setPage: (page: NavPage) => void;
+  setScheduleOnline: (online: boolean | null) => void;
   openSettingsSection: (section: SettingsSection) => void;
   setSettingsSection: (section: SettingsSection) => void;
   setSettingsNavCache: (cache: SettingsNavCache) => void;
@@ -662,6 +666,7 @@ function epochSlice(s: AppState): EpochState {
 
 export const useAppStore = create<AppState>((set, get) => ({
   page: "chat",
+  scheduleOnline: null,
   settingsSection: null,
   settingsNavCache: null,
   authBlocked: null,
@@ -783,6 +788,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }),
   clearProviderLogin: () => set({ providerLogin: null }),
+  setScheduleOnline: (online) => set({ scheduleOnline: online }),
   setPage: (page) =>
     set((state) => ({
       page,
