@@ -90,13 +90,15 @@ function typeOptionLabel(type: MemoNoteType, t: Translate): ReactNode {
   );
 }
 
-/** 新增图片的本地暂存（保存时随请求上传）。 */
+/** 编辑器内图片：新上传的（保存时随请求上传）或已有图片的回显（existingId 非空）。 */
 type PendingImage = {
   key: string;
   fileName: string;
   mediaType: string;
   dataBase64: string;
   previewUrl: string;
+  /** 已保存图片的 id：删除时记入 removedImageIds，保存时不重复上传。 */
+  existingId?: string;
 };
 
 type EditorState = {
@@ -250,10 +252,53 @@ export function MemoPage() {
       type: note.type,
       contentMd: seeded,
       workspaceHint: note.workspaceHint ?? "",
-      pendingImages: [],
+      pendingImages: note.images.map((image) => ({
+        key: `existing:${image.id}`,
+        fileName: image.fileName,
+        mediaType: image.mediaType,
+        dataBase64: "",
+        previewUrl: imageUrls[`${note.id}:${image.id}`] ?? "",
+        existingId: image.id,
+      })),
       removedImageIds: [],
     });
     setSelectedId(note.id);
+    // 已有图片的 data URL 可能尚未加载：补拉并回填到编辑器状态。
+    for (const image of note.images) {
+      const key = `${note.id}:${image.id}`;
+      if (imageUrls[key]) continue;
+      void readMemoImageDataUrl(note.id, image.id)
+        .then((url) => {
+          setImageUrls((current) => ({ ...current, [key]: url }));
+          setEditor((current) =>
+            current?.id === note.id
+              ? {
+                  ...current,
+                  pendingImages: current.pendingImages.map((entry) =>
+                    entry.key === `existing:${image.id}` ? { ...entry, previewUrl: url } : entry,
+                  ),
+                }
+              : current,
+          );
+        })
+        .catch(() => {});
+    }
+  }
+
+  /** 删除编辑器里的图片：新上传的直接移除，已有图片同时记入 removedImageIds。 */
+  function removePendingImage(key: string) {
+    setEditor((current) => {
+      if (!current) return current;
+      const target = current.pendingImages.find((image) => image.key === key);
+      return {
+        ...current,
+        pendingImages: current.pendingImages.filter((image) => image.key !== key),
+        removedImageIds:
+          target?.existingId && !current.removedImageIds.includes(target.existingId)
+            ? [...current.removedImageIds, target.existingId]
+            : current.removedImageIds,
+      };
+    });
   }
 
   async function saveEditor() {
@@ -285,11 +330,13 @@ export function MemoPage() {
           contentMd: editor.contentMd,
           tags,
           workspaceHint: hint,
-          addImages: editor.pendingImages.map(({ fileName, mediaType, dataBase64 }) => ({
-            fileName,
-            mediaType,
-            dataBase64,
-          })),
+          addImages: editor.pendingImages
+            .filter((image) => image.existingId === undefined)
+            .map(({ fileName, mediaType, dataBase64 }) => ({
+              fileName,
+              mediaType,
+              dataBase64,
+            })),
           removeImageIds: editor.removedImageIds,
         });
       }
@@ -662,16 +709,7 @@ export function MemoPage() {
               onSave={saveEditor}
               onAddImages={addImages}
               dragOver={dragOver}
-              onRemovePendingImage={(key) =>
-                setEditor((current) =>
-                  current
-                    ? {
-                        ...current,
-                        pendingImages: current.pendingImages.filter((image) => image.key !== key),
-                      }
-                    : current,
-                )
-              }
+              onRemoveImage={removePendingImage}
             />
           ) : selectedNote ? (
             <MemoDetail
@@ -694,16 +732,7 @@ export function MemoPage() {
               onSave={saveEditor}
               onAddImages={addImages}
               dragOver={dragOver}
-              onRemovePendingImage={(key) =>
-                setEditor((current) =>
-                  current
-                    ? {
-                        ...current,
-                        pendingImages: current.pendingImages.filter((image) => image.key !== key),
-                      }
-                    : current,
-                )
-              }
+              onRemoveImage={removePendingImage}
             />
           )}
         </div>
@@ -1055,7 +1084,7 @@ function MemoEditor({
   onChange,
   onSave,
   onAddImages,
-  onRemovePendingImage,
+  onRemoveImage,
   dragOver,
 }: {
   editor: EditorState;
@@ -1063,7 +1092,7 @@ function MemoEditor({
   onChange: (next: EditorState) => void;
   onSave: () => void;
   onAddImages: (files: File[]) => void;
-  onRemovePendingImage: (key: string) => void;
+  onRemoveImage: (key: string) => void;
   dragOver: boolean;
 }) {
   const t = useT();
@@ -1147,14 +1176,20 @@ function MemoEditor({
           <div className="flex flex-wrap gap-2">
             {editor.pendingImages.map((image) => (
               <div key={image.key} className="group relative">
-                <img
-                  src={image.previewUrl}
-                  alt={image.fileName}
-                  className="size-14 rounded-md border border-border object-cover"
-                />
+                {image.previewUrl ? (
+                  <img
+                    src={image.previewUrl}
+                    alt={image.fileName}
+                    className="size-14 rounded-md border border-border object-cover"
+                  />
+                ) : (
+                  <div className="flex size-14 items-center justify-center rounded-md border border-border text-muted">
+                    <Loader2 size={14} className="animate-spin" />
+                  </div>
+                )}
                 <button
                   type="button"
-                  onClick={() => onRemovePendingImage(image.key)}
+                  onClick={() => onRemoveImage(image.key)}
                   aria-label={t("memoActionDelete")}
                   className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted hover:text-destructive"
                 >
