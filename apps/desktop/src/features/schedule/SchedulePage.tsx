@@ -4,6 +4,7 @@ import {
   ArrowRight,
   CalendarClock,
   ChevronRight,
+  Copy,
   Folder,
   Hourglass,
   ListChecks,
@@ -27,7 +28,7 @@ import type { MessageKey } from "../../lib/i18n";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
-import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
+import { Dialog, primaryButton } from "../../components/Dialog";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { Select } from "../../components/Select";
 import { Switch } from "../../components/Switch";
@@ -242,6 +243,41 @@ export function SchedulePage() {
     }
   }
 
+  async function duplicateJob(job: ScheduleJob) {
+    if (!host) return;
+    try {
+      const response = await hostClient.request(
+        "schedule.createJob",
+        hostContext(host),
+        {
+          name: t("scheduleCopyName", { name: job.name }),
+          prompt: job.prompt,
+          command: job.command,
+          cwd: job.cwd,
+          trigger: job.trigger,
+          permission: job.permission,
+          model: job.model,
+          missedWindow: job.missedWindow,
+          timeoutMs: job.timeoutMs,
+          maxRuns: job.maxRuns,
+          loadExtensions: job.loadExtensions,
+          tags: job.tags,
+          notify: job.notify,
+          enabled: false,
+        },
+        LIST_TIMEOUT_MS,
+      );
+      if (response.ok) {
+        await refreshStatusAndJobs();
+        setSelectedJobId(response.result.job.id);
+      } else if (response.error) {
+        setLoadError(response.error.message);
+      }
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : null);
+    }
+  }
+
   async function confirmDelete() {
     if (!host || !deleteTarget) return;
     const target = deleteTarget;
@@ -389,12 +425,13 @@ export function SchedulePage() {
           </button>
           <button
             type="button"
-            className={primaryButton}
+            className="flex size-8 items-center justify-center rounded-md theme-primary-control bg-accent text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+            title={t("scheduleNewJob")}
+            aria-label={t("scheduleNewJob")}
             disabled={!status?.available}
             onClick={() => setDialog({ mode: "create" })}
           >
             <Plus size={14} />
-            {t("scheduleNewJob")}
           </button>
         </div>
       </div>
@@ -418,11 +455,12 @@ export function SchedulePage() {
           <p className="max-w-md text-xs text-muted">{t("scheduleEmptyBody")}</p>
           <button
             type="button"
-            className={`mt-2 ${primaryButton}`}
+            className={`mt-2 flex size-8 items-center justify-center rounded-md theme-primary-control bg-accent text-accent-foreground transition-colors hover:bg-accent-hover`}
+            title={t("scheduleNewJob")}
+            aria-label={t("scheduleNewJob")}
             onClick={() => setDialog({ mode: "create" })}
           >
             <Plus size={14} />
-            {t("scheduleNewJob")}
           </button>
         </div>
       ) : (
@@ -544,27 +582,38 @@ export function SchedulePage() {
                       onClick={() => void runNow(selectedJob)}
                     >
                       {runningJobId === selectedJob.id ? (
-                        <Loader2 size={13} className="animate-spin" />
+                        <Loader2 size={14} className="animate-spin" />
                       ) : (
-                        <Play size={13} />
+                        <Play size={14} />
                       )}
                       {runningJobId === selectedJob.id ? t("scheduleRunning") : t("scheduleRunNow")}
                     </button>
                     <button
                       type="button"
-                      className={secondaryButton}
-                      onClick={() => setDialog({ mode: "edit", job: selectedJob })}
+                      className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border transition-colors hover:bg-surface-overlay"
+                      title={t("scheduleCopy")}
+                      aria-label={t("scheduleCopy")}
+                      onClick={() => void duplicateJob(selectedJob)}
                     >
-                      <Pencil size={13} />
-                      {t("scheduleEdit")}
+                      <Copy size={14} className="shrink-0" />
                     </button>
                     <button
                       type="button"
-                      className={`${secondaryButton} text-danger`}
+                      className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border transition-colors hover:bg-surface-overlay"
+                      title={t("scheduleEdit")}
+                      aria-label={t("scheduleEdit")}
+                      onClick={() => setDialog({ mode: "edit", job: selectedJob })}
+                    >
+                      <Pencil size={14} className="shrink-0" />
+                    </button>
+                    <button
+                      type="button"
+                      className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-danger transition-colors hover:bg-surface-overlay"
+                      title={t("scheduleDelete")}
+                      aria-label={t("scheduleDelete")}
                       onClick={() => setDeleteTarget(selectedJob)}
                     >
-                      <Trash2 size={13} />
-                      {t("scheduleDelete")}
+                      <Trash2 size={14} className="shrink-0" />
                     </button>
                   </div>
                 </div>
