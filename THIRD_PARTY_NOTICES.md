@@ -59,3 +59,13 @@ lucide-react, and transitive packages) are MIT or similarly permissive; see
 each package's `package.json` and the root `pnpm-lock.yaml` for exact versions
 and license fields. Rust dependencies are recorded in
 `apps/desktop/src-tauri/Cargo.lock`.
+
+## Bundled fonts
+
+- **HarmonyOS Sans SC** (Regular / Medium / Bold, `woff2` in
+  `apps/desktop/src/assets/fonts/harmonyos-sans-sc/`) — bundled as the default
+  interface typeface for both Latin and CJK text. Source: official Huawei
+  HarmonyOS Sans release (<https://developer.huawei.com/>). License text ships
+  alongside the font files (`LICENSE.txt`); the license permits free use and
+  redistribution, including commercial use, but forbids modifying the font
+  files or selling them standalone.

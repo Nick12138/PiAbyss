@@ -62,11 +62,13 @@ pub enum DesktopInterfaceDensity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DesktopInterfaceFont {
-    /// Theme default stack (Inter + bundled PingFang). Aliases keep older
-    /// settings files (which stored the removed "pingfang"/"inter" entries)
-    /// loading instead of failing to parse.
+    /// Theme default stack (bundled HarmonyOS Sans SC for Latin & CJK).
+    /// Aliases keep older settings files (which stored the removed
+    /// "pingfang"/"inter"/"harmonyos" entries) loading instead of failing to
+    /// parse.
     #[serde(alias = "pingfang")]
     #[serde(alias = "inter")]
+    #[serde(alias = "harmonyos")]
     Default,
     /// OS UI font stack (Segoe UI / Microsoft YaHei). Alias maps the removed
     /// explicit "yahei" entry here.

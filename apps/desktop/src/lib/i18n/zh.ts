@@ -152,7 +152,7 @@ export const zh: Record<MessageKey, string> = {
   appearanceDensityStandard: "标准",
   appearanceDensityComfortable: "宽松",
   appearanceFont: "界面字体",
-  appearanceFontDesc: "默认为 Inter + 苹方；系统跟随 Windows/macOS 界面字体。",
+  appearanceFontDesc: "默认使用内置鸿蒙黑体 HarmonyOS Sans SC（中英文）；系统跟随 Windows/macOS 界面字体。",
   appearanceFontDefault: "默认",
   appearanceFontSystem: "系统",
   appearanceConversationGroup: "会话",
