@@ -310,28 +310,6 @@ export function SidebarLayout({
               </div>
             )}
 
-            <div className="px-2 pb-2">
-              <button
-                type="button"
-                onClick={() =>
-                  setPage(page === "settings" || page === "packages" ? "chat" : "settings")
-                }
-                data-ui="nav-item"
-                data-state={page === "settings" || page === "packages" ? "active" : "inactive"}
-                title={t("settingsTitle")}
-                aria-label={t("settingsTitle")}
-                aria-pressed={page === "settings" || page === "packages"}
-                className={`flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] transition-colors ${
-                  page === "settings" || page === "packages"
-                    ? "theme-nav-active bg-nav-active text-nav-active-foreground"
-                    : "text-foreground hover:bg-surface-overlay"
-                }`}
-              >
-                <Settings size={18} className="shrink-0" />
-                <span>{t("settingsTitle")}</span>
-              </button>
-            </div>
-
             {scheduleEnabled && (
               <div className="px-2 pb-2">
                 <button
@@ -373,6 +351,28 @@ export function SidebarLayout({
               >
                 <ListTodo size={18} className="shrink-0" />
                 <span>{t("memoTitle")}</span>
+              </button>
+            </div>
+
+            <div className="px-2 pb-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setPage(page === "settings" || page === "packages" ? "chat" : "settings")
+                }
+                data-ui="nav-item"
+                data-state={page === "settings" || page === "packages" ? "active" : "inactive"}
+                title={t("settingsTitle")}
+                aria-label={t("settingsTitle")}
+                aria-pressed={page === "settings" || page === "packages"}
+                className={`flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] transition-colors ${
+                  page === "settings" || page === "packages"
+                    ? "theme-nav-active bg-nav-active text-nav-active-foreground"
+                    : "text-foreground hover:bg-surface-overlay"
+                }`}
+              >
+                <Settings size={18} className="shrink-0" />
+                <span>{t("settingsTitle")}</span>
               </button>
             </div>
 
