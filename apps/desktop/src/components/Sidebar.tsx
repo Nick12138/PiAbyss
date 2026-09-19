@@ -1,4 +1,4 @@
-import { MessageCirclePlus, CalendarClock, NotebookPen, PanelLeftClose, PanelLeftOpen, Settings } from "lucide-react";
+import { MessageCirclePlus, CalendarClock, ListTodo, PanelLeftClose, PanelLeftOpen, Settings } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useAppStore, type NavPage } from "../lib/stores/app-store";
 import { SessionList } from "../features/sessions/SessionList";
@@ -371,7 +371,7 @@ export function SidebarLayout({
                     : "text-foreground hover:bg-surface-overlay"
                 }`}
               >
-                <NotebookPen size={18} className="shrink-0" />
+                <ListTodo size={18} className="shrink-0" />
                 <span>{t("memoTitle")}</span>
               </button>
             </div>

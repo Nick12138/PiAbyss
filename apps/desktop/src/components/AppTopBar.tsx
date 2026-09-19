@@ -1,4 +1,4 @@
-import { Search, CalendarClock, NotebookPen } from "lucide-react";
+import { Search, CalendarClock, ListTodo } from "lucide-react";
 import { useAppStore } from "../lib/stores/app-store";
 import { useT } from "../lib/i18n/use-t";
 import { requestGlobalSearchOpen } from "../lib/commands/events";
@@ -166,7 +166,7 @@ export function AppTopBar({
             className="pointer-events-none flex min-w-0 flex-1 items-center gap-2"
             data-tauri-drag-region
           >
-            <NotebookPen
+            <ListTodo
               size={16}
               className="pointer-events-none shrink-0 text-muted"
               aria-hidden="true"
