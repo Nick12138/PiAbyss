@@ -298,12 +298,10 @@ describe("SettingsPage navigation guard", () => {
 
     await user.click(screen.getByRole("button", { name: "Host" }));
     expect(
-      screen.getByRole("heading", { name: "Pi Host runtime, capabilities, and app info" }),
+      screen.getByRole("heading", { name: "Pi Host runtime and app info" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Auto-restart Pi Host")).toBeInTheDocument();
     expect(screen.getByText("Shared Host process")).toBeInTheDocument();
-    expect(screen.getByText("Capabilities")).toBeInTheDocument();
-    expect(screen.getByText("Host not connected.")).toBeInTheDocument();
   });
 
   it("offers a persistent Shortcuts section generated from the command registry", async () => {

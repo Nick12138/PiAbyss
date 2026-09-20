@@ -74,17 +74,6 @@ afterEach(() => {
 });
 
 describe("HostSettings", () => {
-  it("renders capabilities as human-readable states, covering every advertised key", () => {
-    render(<HostSettings />);
-
-    expect(screen.getByText("Package update checks")).toBeInTheDocument();
-    expect(screen.getByText("Extension UI")).toBeInTheDocument();
-    expect(screen.getByText("Session export")).toBeInTheDocument();
-    expect(screen.getAllByText("Enabled")).toHaveLength(2);
-    expect(screen.getByText("Unavailable")).toBeInTheDocument();
-    expect(screen.queryByText(/packageUpdateCheck:/)).not.toBeInTheDocument();
-  });
-
   it("shows the app version in the About block", async () => {
     render(<HostSettings />);
     expect(await screen.findByText("9.9.9")).toBeInTheDocument();

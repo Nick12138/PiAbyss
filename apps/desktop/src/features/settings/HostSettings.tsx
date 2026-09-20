@@ -10,14 +10,7 @@ import {
   type DesktopSettingsUpdate,
 } from "../../lib/desktop-settings";
 import { useT } from "../../lib/i18n/use-t";
-import type { MessageKey } from "../../lib/i18n";
 import { RestartHostButton } from "./restart-host";
-
-const CAPABILITY_LABELS: Record<string, MessageKey> = {
-  packageUpdateCheck: "hostCapPackageUpdateCheck",
-  extensionUi: "hostCapExtensionUi",
-  sessionExport: "hostCapSessionExport",
-};
 
 export function HostSettings() {
   const t = useT();
@@ -234,26 +227,6 @@ export function HostSettings() {
                   onChange={(next) => void patchDesktop({ sharedHostMode: next })}
                 />
               </div>
-            </div>
-          </section>
-
-          <section>
-            <h2 className="mb-2 text-sm font-medium text-muted">{t("hostCapabilitiesGroup")}</h2>
-            <div className="flex flex-col gap-2 rounded-lg border border-border p-4 text-sm">
-              {host ? (
-                Object.entries(host.capabilities).map(([key, enabled]) => (
-                  <div key={key} className="flex justify-between">
-                    <span className="text-muted">
-                      {CAPABILITY_LABELS[key] ? t(CAPABILITY_LABELS[key]) : key}
-                    </span>
-                    <span className={enabled ? "text-success" : "text-muted"}>
-                      {enabled ? t("commonEnabled") : t("commonUnavailable")}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <p className="text-xs text-muted">{t("hostNotConnected")}</p>
-              )}
             </div>
           </section>
 

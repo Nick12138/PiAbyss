@@ -33,6 +33,7 @@ import {
   useRef,
   useState,
   type ClipboardEvent,
+  type KeyboardEvent,
   type ReactNode,
 } from "react";
 import type { MemoNote, MemoNoteStatus, MemoNoteType } from "@piabyss/protocol";
@@ -1181,8 +1182,21 @@ function MemoEditor({
   function patch(partial: Partial<EditorState>) {
     onChange({ ...editor, ...partial });
   }
+
+  /** Ctrl+S / ⌘S 快捷保存：输入框（正文/工作区）聚焦时也能触发，拦截浏览器默认保存。 */
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      if (canSave && !saving) onSave();
+    }
+  }
   return (
-    <div className="flex h-full flex-col" data-testid="memo-editor" onPaste={handlePaste}>
+    <div
+      className="flex h-full flex-col"
+      data-testid="memo-editor"
+      onPaste={handlePaste}
+      onKeyDown={handleKeyDown}
+    >
       <div className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border px-4 py-2">
         <BackToListButton onClick={onBack} />
         <Select
@@ -1211,8 +1225,8 @@ function MemoEditor({
           type="button"
           onClick={onSave}
           disabled={saving || !canSave}
-          title={t("memoActionSave")}
-          aria-label={t("memoActionSave")}
+          title={t("memoActionSaveHint")}
+          aria-label={t("memoActionSaveHint")}
           data-testid="memo-editor-save"
           className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-success transition-colors hover:border-success hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
         >

@@ -52,9 +52,7 @@ export const en = {
   commonCopied: "Copied",
   commonSave: "Save",
   commonDelete: "Delete",
-  commonEnabled: "Enabled",
   commonDisabled: "Disabled",
-  commonUnavailable: "Unavailable",
   commonAuto: "Auto",
   commonCustom: "Custom",
   commonSystem: "System",
@@ -274,7 +272,7 @@ export const en = {
   notifSettingsFileOpenFailed: "Couldn't open the settings file",
 
   // Host section
-  hostSubtitle: "Pi Host runtime, capabilities, and app info",
+  hostSubtitle: "Pi Host runtime and app info",
   hostProcessGroup: "Process",
   hostAutoRestart: "Auto-restart Pi Host",
   hostAutoRestartDesc:
@@ -295,11 +293,6 @@ export const en = {
   hostRestartDialogTitle: "Restart Pi Host?",
   hostRestartDialogBody:
     "Any running agent turn is stopped immediately. Sessions reconnect once the Host is ready again.",
-  hostCapabilitiesGroup: "Capabilities",
-  hostCapPackageUpdateCheck: "Package update checks",
-  hostCapExtensionUi: "Extension UI",
-  hostCapSessionExport: "Session export",
-  hostNotConnected: "Host not connected.",
   hostAboutGroup: "About",
   hostUpdateCheck: "Check for updates",
   hostUpdateChecking: "Checking…",
@@ -1898,6 +1891,7 @@ export const en = {
   memoDeleteFailed: "Failed to delete the note",
   memoActionEdit: "Edit",
   memoActionSave: "Save",
+  memoActionSaveHint: "Save (Ctrl+S)",
   memoActionDelete: "Delete",
   memoActionDeleteConfirm: "Click again to confirm",
   memoActionDone: "Mark done",
@@ -1951,7 +1945,7 @@ export const en = {
   memoFieldWorkspace: "Workspace",
   memoFieldWorkspacePlaceholder: "Workspace name (optional)",
   memoFieldType: "Type",
-  memoImagePasteHint: "Paste (Ctrl+V) or drop images anywhere in the editor",
+  memoImagePasteHint: "Paste (Ctrl+V), save (Ctrl+S), or drop images in the editor",
   memoDropIgnored: "Skipped non-image file {name}",
   memoImageTooLarge: "Image exceeds the 8 MiB limit",
   memoWorkspaceMismatch:
