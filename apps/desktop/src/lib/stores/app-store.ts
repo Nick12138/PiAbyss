@@ -54,6 +54,7 @@ import {
   draftTargetFromRecord,
   type DraftKey,
   type DraftRecord,
+  type DraftReference,
   type DraftTarget,
 } from "../draft-target";
 import {
@@ -67,13 +68,7 @@ import {
   type ExtensionUiRequestState,
 } from "./extension-ui-state";
 
-export type NavPage =
-  | "chat"
-  | "packages"
-  | "schedule"
-  | "schedule-agent"
-  | "memo"
-  | "settings";
+export type NavPage = "chat" | "packages" | "schedule" | "schedule-agent" | "memo" | "settings";
 
 /** Frozen empty map shared as the initial `providerNames` value so unrelated
  *  sessions don't reallocate a new Map on every reset. */
@@ -496,6 +491,8 @@ export type AppState = EpochState & {
    *  transcript at the start of a branch is not mistaken for a new conversation. */
   sessionTreeNavigated: boolean;
   draftTexts: Record<DraftKey, string>;
+  /** Injected prompt references per draft, rendered as `@` chips in the composer. */
+  draftReferences: Record<DraftKey, DraftReference[]>;
   draftTargets: Record<DraftKey, DraftTarget>;
   draftEditVersions: Record<DraftKey, number>;
   draftHydratedWorkspace: string | null;
@@ -612,6 +609,8 @@ export type AppState = EpochState & {
   workspaceActivities: Record<string, WorkspaceActivity>;
   setWorkspaceActivities: (activities: Record<string, WorkspaceActivity>) => void;
   setDraftTextLocal: (target: DraftTarget, text: string) => number;
+  /** Replace the injected references of one draft (empty array clears them). */
+  setDraftReferences: (target: DraftTarget, references: readonly DraftReference[]) => void;
   mergeHydratedDrafts: (
     canonicalCwd: string,
     drafts: readonly DraftRecord[],
@@ -699,6 +698,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   workspaceActivities: {},
   sessionTreeNavigated: false,
   draftTexts: {},
+  draftReferences: {},
   draftTargets: {},
   draftEditVersions: {},
   draftHydratedWorkspace: null,
@@ -1512,6 +1512,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     return version;
   },
+  setDraftReferences: (target, references) =>
+    set((state) => {
+      const key = draftKeyForTarget(target);
+      const draftReferences = { ...state.draftReferences };
+      if (references.length > 0) draftReferences[key] = [...references];
+      else delete draftReferences[key];
+      return { draftReferences };
+    }),
   mergeHydratedDrafts: (canonicalCwd, drafts, baselineVersions) =>
     set((state) => {
       if (state.workspace?.canonicalCwd !== canonicalCwd) return {};
@@ -1533,16 +1541,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearDraftWorkspace: (canonicalCwd) =>
     set((state) => {
       const draftTexts = { ...state.draftTexts };
+      const draftReferences = { ...state.draftReferences };
       const draftTargets = { ...state.draftTargets };
       const draftEditVersions = { ...state.draftEditVersions };
       for (const [key, target] of Object.entries(state.draftTargets)) {
         if (target.canonicalCwd !== canonicalCwd) continue;
         delete draftTexts[key];
+        delete draftReferences[key];
         delete draftTargets[key];
         delete draftEditVersions[key];
       }
       return {
         draftTexts,
+        draftReferences,
         draftTargets,
         draftEditVersions,
         draftHydratedWorkspace:

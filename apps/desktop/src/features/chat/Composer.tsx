@@ -16,6 +16,7 @@ import {
   FileText,
   Folder,
   LoaderCircle,
+  ListTodo,
   MessageCircleQuestion,
   Paperclip,
   Puzzle,
@@ -45,6 +46,7 @@ import {
   buildAttachedImageBlock,
   buildAttachedPathBlock,
 } from "./transcript-model";
+import { joinOutgoingParts } from "./injected-references";
 import { ContextUsageRing, ModelControls } from "./ModelControls";
 import { QueuePanel } from "./QueuePanel";
 import {
@@ -86,7 +88,7 @@ import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import { buildTextContextMenuItems } from "../../lib/text-context-menu";
 import { readClipboardText } from "../../lib/desktop-clipboard";
-import { draftKeyForTarget, draftTargetFor } from "../../lib/draft-target";
+import { draftKeyForTarget, draftTargetFor, type DraftReference } from "../../lib/draft-target";
 import {
   commitDraftSend,
   deleteDraft,
@@ -97,6 +99,9 @@ import {
 
 const MAX_FILES = 4;
 const MAX_FILE_BYTES = 256 * 1024;
+
+/** Stable empty slice: keeps the store selector referentially stable. */
+const NO_DRAFT_REFERENCES: DraftReference[] = [];
 
 function ExtensionStatusStrip() {
   const statuses = useAppStore((state) => state.extensionStatuses);
@@ -367,6 +372,12 @@ export function Composer({
   const draftTarget = draftTargetFor(workspace, session);
   const draftKey = draftTarget ? draftKeyForTarget(draftTarget) : null;
   const text = useAppStore((s) => (draftKey ? (s.draftTexts[draftKey] ?? "") : ""));
+  // Injected prompt references (memo "handle now"): rendered as `@` chips and
+  // expanded into the outgoing text at send time, never shown as raw prompt.
+  const references = useAppStore((s) =>
+    draftKey ? (s.draftReferences[draftKey] ?? NO_DRAFT_REFERENCES) : NO_DRAFT_REFERENCES,
+  );
+  const setDraftReferences = useAppStore((s) => s.setDraftReferences);
   const extensionWidgetsOpen = useAppStore((s) => s.extensionWidgetsOpen);
   const setExtensionWidgetsOpen = useAppStore((s) => s.setExtensionWidgetsOpen);
   const setSession = useAppStore((s) => s.applySessionSnapshot);
@@ -447,6 +458,18 @@ export function Composer({
     completionGeneration.current += 1;
     setCompletion(null);
   }, []);
+
+  /** Drop one injected reference chip from the active draft. */
+  function removeReference(id: string) {
+    const state = useAppStore.getState();
+    const target = draftTargetFor(state.workspace, state.session);
+    if (!target) return;
+    const current = state.draftReferences[draftKeyForTarget(target)] ?? [];
+    state.setDraftReferences(
+      target,
+      current.filter((item) => item.id !== id),
+    );
+  }
 
   function updateDocuments(
     updater: (current: PendingDocument[]) => PendingDocument[],
@@ -1266,7 +1289,11 @@ export function Composer({
     if (!host || !workspace || !session || !draftTarget || disabled || decisionBlocked) return;
     if (
       documents.some((document) => !isDocumentSendable(document.status)) ||
-      (!text.trim() && images.length === 0 && files.length === 0 && documents.length === 0)
+      (!text.trim() &&
+        images.length === 0 &&
+        files.length === 0 &&
+        documents.length === 0 &&
+        references.length === 0)
     ) {
       return;
     }
@@ -1325,12 +1352,14 @@ export function Composer({
     const sentImages = images;
     const sentFiles = files;
     const sentDocuments = documents;
+    const sentReferences = references;
     const sendReceipt = stageDraftSend(draftTarget);
     dismissCompletion();
     setImages([]);
     setFiles([]);
     documentsRef.current = [];
     setDocuments([]);
+    setDraftReferences(draftTarget, []);
     const context = activeSessionContext(host, workspace, session);
     const attachmentBlocks: string[] = sentFiles.map((f) =>
       f.kind === "path"
@@ -1342,10 +1371,11 @@ export function Composer({
         attachmentBlocks.push(buildAttachedImageBlock(image.name, image.sourcePath));
       }
     }
-    const outgoingText =
-      attachmentBlocks.length > 0
-        ? [value.trimEnd(), ...attachmentBlocks].filter(Boolean).join("\n\n")
-        : value;
+    const outgoingText = joinOutgoingParts([
+      ...sentReferences.map((reference) => reference.payload),
+      value.trimEnd(),
+      ...attachmentBlocks,
+    ]);
     const imageParams =
       sentImages.length > 0
         ? { images: sentImages.map(({ mediaType, data }) => ({ mediaType, data })) }
@@ -1360,6 +1390,7 @@ export function Composer({
       setFiles(sentFiles);
       documentsRef.current = sentDocuments;
       setDocuments(sentDocuments);
+      setDraftReferences(draftTarget, sentReferences);
     };
     // Optimistic echo (idle prompt path only): show the user's bubble
     // immediately instead of waiting for the Host to echo message_start (which
@@ -1466,7 +1497,11 @@ export function Composer({
   }
 
   const hasDraftContent =
-    Boolean(text.trim()) || images.length > 0 || files.length > 0 || documents.length > 0;
+    Boolean(text.trim()) ||
+    images.length > 0 ||
+    files.length > 0 ||
+    documents.length > 0 ||
+    references.length > 0;
   const documentsReady = documents.every((document) => isDocumentSendable(document.status));
   const canSend = !disabled && !decisionBlocked && documentsReady && hasDraftContent;
 
@@ -1653,6 +1688,35 @@ export function Composer({
                   </div>
                 );
               })}
+            </div>
+          )}
+          {references.length > 0 && (
+            <div
+              className="flex flex-wrap gap-1.5 px-2 pt-1.5"
+              aria-label={t("composerReferences")}
+              data-composer-references
+            >
+              {references.map((reference) => (
+                <div
+                  key={reference.id}
+                  className="group flex h-7 items-center gap-1.5 rounded-md border border-accent/35 bg-accent/5 px-2 text-xs"
+                  title={`@${t("injectedRefMemo")} · ${reference.label}`}
+                >
+                  <ListTodo size={12} className="shrink-0 text-accent" />
+                  <span className="max-w-40 truncate">
+                    @{t("injectedRefMemo")} · {reference.label}
+                  </span>
+                  <button
+                    type="button"
+                    title={t("composerReferenceRemove")}
+                    aria-label={t("composerReferenceRemoveNamed", { name: reference.label })}
+                    className="text-muted hover:text-danger"
+                    onClick={() => removeReference(reference.id)}
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              ))}
             </div>
           )}
           {files.length > 0 && (

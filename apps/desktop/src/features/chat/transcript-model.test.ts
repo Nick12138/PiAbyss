@@ -60,7 +60,31 @@ describe("attached file blocks", () => {
 
   it("passes through plain text untouched", () => {
     const parsed = parseUserAttachments("just a message");
-    expect(parsed).toEqual({ text: "just a message", files: [], documents: [] });
+    expect(parsed).toEqual({ text: "just a message", files: [], documents: [], references: [] });
+  });
+
+  it("folds an injected reference envelope into a chip and keeps the user's text", () => {
+    const raw = [
+      '<piabyss-ref kind="memo" title="修复登录">',
+      '<piabyss-memo id="note-1" type="memo" status="open">',
+      "# 修复登录",
+      "",
+      "按钮没反应。",
+      "</piabyss-memo>",
+      "",
+      "请处理上面引用的备忘录记录。",
+      "</piabyss-ref>",
+      "",
+      "先看登录页",
+    ].join("\n");
+
+    const parsed = parseUserAttachments(raw);
+    expect(parsed.text).toBe("先看登录页");
+    expect(parsed.references).toHaveLength(1);
+    expect(parsed.references[0]?.kind).toBe("memo");
+    expect(parsed.references[0]?.title).toBe("修复登录");
+    // `raw` round-trips the payload so a retry re-sends the memo context.
+    expect(parsed.references[0]?.raw).toContain("请处理上面引用的备忘录记录。");
   });
 
   it("hides managed attachment markers and returns document cards", () => {
@@ -2084,7 +2108,12 @@ describe("tail alignment with state/entry gaps (pi removed retried messages)", (
   // the live state holds, and a count-based tail alignment swallowed the live
   // tail — the optimistic user bubble and, for gap >= 2, the whole next turn.
   const buildEntries = () => {
-    const user1 = { id: "e1", parentId: null, type: "message", message: { role: "user", content: "hello" } };
+    const user1 = {
+      id: "e1",
+      parentId: null,
+      type: "message",
+      message: { role: "user", content: "hello" },
+    };
     const answer1 = {
       id: "e2",
       parentId: "e1",

@@ -9,7 +9,6 @@ import {
   CircleDashed,
   Loader2,
   Pencil,
-  Sparkles,
 } from "lucide-react";
 import type {
   ScheduleJobInput,
@@ -28,6 +27,7 @@ import {
   type SchedulePlanDraft,
 } from "./schedule-model";
 import { ModelControls } from "../chat/ModelControls";
+import { InjectedReferenceChip } from "../chat/InjectedReferenceChip";
 import { TranscriptRowView } from "../chat/Transcript";
 import { buildTranscriptRows, type TranscriptRow } from "../chat/transcript-model";
 import { ScheduleJobDialog } from "./ScheduleJobDialog";
@@ -257,7 +257,6 @@ export function ScheduleAgentPage() {
   const userScrolledRef = useRef(false);
   const lastMessageCountRef = useRef(0);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
-  const [preambleOpen, setPreambleOpen] = useState(false);
   // 窄屏（<@3xl）下预览面板折叠；宽屏右侧常驻，此状态不生效。
   const [previewOpen, setPreviewOpen] = useState(false);
   /**
@@ -598,25 +597,19 @@ export function ScheduleAgentPage() {
                 )}
                 {rows.map((row, index) => (
                   <div className="transcript-row" data-row-key={row.key} key={row.key}>
-                    {/* The injected preamble rides the first user turn, as a
-                        disclosure centered on the conversation column. */}
+                    {/* The injected preamble rides the first user turn; it is
+                        folded into the same `@` chip the chat transcript uses
+                        so the raw prompt never shows inline. */}
                     {index === 0 && row.role === "user" && preamble && (
-                      <div className="flex w-full flex-col items-center">
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-1 rounded-md border border-border bg-surface px-2.5 py-1 text-[11px] leading-5 text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
-                          aria-expanded={preambleOpen}
-                          onClick={() => setPreambleOpen((open) => !open)}
-                        >
-                          <Sparkles size={11} />
-                          {t("scheduleAgentPreambleToggle")}
-                          {preambleOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-                        </button>
-                        {preambleOpen && (
-                          <div className="mb-1.5 w-full whitespace-pre-wrap break-words rounded-md border border-dashed border-border bg-surface px-3 py-2 text-xs leading-6 text-muted">
-                            {preamble}
-                          </div>
-                        )}
+                      <div className="mb-1.5 flex w-full flex-col items-center">
+                        <InjectedReferenceChip
+                          reference={{
+                            kind: "schedule-preamble",
+                            title: "",
+                            body: preamble,
+                            raw: `<schedule-preamble>\n${preamble}\n</schedule-preamble>`,
+                          }}
+                        />
                       </div>
                     )}
                     <TranscriptRowView
@@ -758,91 +751,93 @@ export function ScheduleAgentPage() {
             )}
           </div>
           <div className={`min-h-0 flex-col gap-3 ${previewOpen ? "flex" : "hidden"} @3xl:flex`}>
-          {!plan ? (
-            <div className="flex flex-col items-center gap-2 rounded-md border border-dashed border-border p-6 text-center">
-              <CircleDashed size={20} className="text-muted" />
-              <p className="text-xs text-muted">{t("scheduleAgentPreviewEmpty")}</p>
-            </div>
-          ) : (
-            <>
-              {/* Required-but-open fields are named once, above the table,
+            {!plan ? (
+              <div className="flex flex-col items-center gap-2 rounded-md border border-dashed border-border p-6 text-center">
+                <CircleDashed size={20} className="text-muted" />
+                <p className="text-xs text-muted">{t("scheduleAgentPreviewEmpty")}</p>
+              </div>
+            ) : (
+              <>
+                {/* Required-but-open fields are named once, above the table,
                   instead of repeating "undetermined" on every row. */}
-              {missingFields.length > 0 && (
-                <p className="rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-xs text-warning">
-                  {t("scheduleAgentMissing", {
-                    fields: missingFields.map((field) => t(field)).join("、"),
-                  })}
-                </p>
-              )}
-              <div className="flex flex-col gap-1.5 rounded-md border border-border p-2.5">
-                {previewRows.map(({ label, value, fallback }) => (
-                  <div key={label} className="flex items-start gap-2 text-xs">
-                    <span className="w-20 shrink-0 text-muted">{t(label)}</span>
-                    {/* The banner above already names every open field, so an
+                {missingFields.length > 0 && (
+                  <p className="rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-xs text-warning">
+                    {t("scheduleAgentMissing", {
+                      fields: missingFields.map((field) => t(field)).join("、"),
+                    })}
+                  </p>
+                )}
+                <div className="flex flex-col gap-1.5 rounded-md border border-border p-2.5">
+                  {previewRows.map(({ label, value, fallback }) => (
+                    <div key={label} className="flex items-start gap-2 text-xs">
+                      <span className="w-20 shrink-0 text-muted">{t(label)}</span>
+                      {/* The banner above already names every open field, so an
                         open row only carries a quiet placeholder — repeating
                         "undetermined" on the row said the same thing twice. */}
-                    {value !== null ? (
-                      // A defaulted value stays readable but is dimmed, so the
-                      // fields the AI actually decided stand out from the ones
-                      // the plugin will fill in.
-                      <span className={`min-w-0 flex-1 break-all ${fallback ? "text-muted" : ""}`}>
-                        {value}
-                      </span>
-                    ) : (
-                      <span className="min-w-0 flex-1 text-warning/70">—</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {previewRows.some((row) => row.fallback) && (
-                <p className="text-[11px] text-muted/75">{t("scheduleAgentDefaultsNote")}</p>
-              )}
-
-              {/* 提示词或命令预览 */}
-              {plan.kind === "prompt" &&
-              plan.prompt &&
-              typeof plan.prompt === "string" &&
-              plan.prompt.trim() ? (
-                <div className="flex flex-col gap-1.5 rounded-md border border-border p-2.5">
-                  <div className="text-xs font-medium text-foreground">
-                    {t("scheduleFormPrompt")}
-                  </div>
-                  <div className="max-h-48 overflow-y-auto rounded bg-surface p-2 text-xs leading-relaxed whitespace-pre-wrap break-words">
-                    {plan.prompt}
-                  </div>
+                      {value !== null ? (
+                        // A defaulted value stays readable but is dimmed, so the
+                        // fields the AI actually decided stand out from the ones
+                        // the plugin will fill in.
+                        <span
+                          className={`min-w-0 flex-1 break-all ${fallback ? "text-muted" : ""}`}
+                        >
+                          {value}
+                        </span>
+                      ) : (
+                        <span className="min-w-0 flex-1 text-warning/70">—</span>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ) : plan.kind === "command" &&
-                plan.command &&
-                typeof plan.command === "string" &&
-                plan.command.trim() ? (
-                <div className="flex flex-col gap-1.5 rounded-md border border-border p-2.5">
-                  <div className="text-xs font-medium text-foreground">
-                    {t("scheduleFormCommand")}
-                  </div>
-                  <div className="rounded bg-surface p-2 text-xs font-mono leading-relaxed whitespace-pre-wrap break-all">
-                    {plan.command}
-                  </div>
-                </div>
-              ) : null}
+                {previewRows.some((row) => row.fallback) && (
+                  <p className="text-[11px] text-muted/75">{t("scheduleAgentDefaultsNote")}</p>
+                )}
 
-              <button
-                type="button"
-                className="interface-density-control hidden h-9 w-full items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-xs text-accent-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40 @3xl:flex"
-                disabled={!planReady || creating}
-                onClick={() => void handleConfirm()}
-              >
-                <Check size={13} />
-                {creating
-                  ? t("scheduleSaving")
-                  : editingJob
-                    ? t("scheduleAgentConfirmUpdate")
-                    : t("scheduleAgentConfirm")}
-              </button>
-              <p className="text-xs text-muted">
-                {editingJob ? t("scheduleAgentConfirmUpdateHint") : t("scheduleAgentConfirmHint")}
-              </p>
-            </>
-          )}
+                {/* 提示词或命令预览 */}
+                {plan.kind === "prompt" &&
+                plan.prompt &&
+                typeof plan.prompt === "string" &&
+                plan.prompt.trim() ? (
+                  <div className="flex flex-col gap-1.5 rounded-md border border-border p-2.5">
+                    <div className="text-xs font-medium text-foreground">
+                      {t("scheduleFormPrompt")}
+                    </div>
+                    <div className="max-h-48 overflow-y-auto rounded bg-surface p-2 text-xs leading-relaxed whitespace-pre-wrap break-words">
+                      {plan.prompt}
+                    </div>
+                  </div>
+                ) : plan.kind === "command" &&
+                  plan.command &&
+                  typeof plan.command === "string" &&
+                  plan.command.trim() ? (
+                  <div className="flex flex-col gap-1.5 rounded-md border border-border p-2.5">
+                    <div className="text-xs font-medium text-foreground">
+                      {t("scheduleFormCommand")}
+                    </div>
+                    <div className="rounded bg-surface p-2 text-xs font-mono leading-relaxed whitespace-pre-wrap break-all">
+                      {plan.command}
+                    </div>
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  className="interface-density-control hidden h-9 w-full items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-xs text-accent-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40 @3xl:flex"
+                  disabled={!planReady || creating}
+                  onClick={() => void handleConfirm()}
+                >
+                  <Check size={13} />
+                  {creating
+                    ? t("scheduleSaving")
+                    : editingJob
+                      ? t("scheduleAgentConfirmUpdate")
+                      : t("scheduleAgentConfirm")}
+                </button>
+                <p className="text-xs text-muted">
+                  {editingJob ? t("scheduleAgentConfirmUpdateHint") : t("scheduleAgentConfirmHint")}
+                </p>
+              </>
+            )}
           </div>
         </aside>
       </div>

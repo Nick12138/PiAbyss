@@ -5,6 +5,7 @@ import {
   parseAttachmentReferences,
   preserveAttachmentReferenceBlocks,
   stripAttachmentReferenceBlocks,
+  stripPiabyssInjectedBlocks,
 } from "./attachment-references.js";
 
 const attachment = {
@@ -94,5 +95,53 @@ describe("attachment reference blocks", () => {
     );
     expect(next).toContain("wpscli first");
     expect(parseAttachmentReferences(next)).toHaveLength(1);
+  });
+});
+
+const ENVELOPE = [
+  '<piabyss-ref kind="memo" title="修复登录">',
+  '<piabyss-memo id="note-1" type="memo" status="open">',
+  "# 修复登录",
+  "",
+  "按钮没反应。",
+  "</piabyss-memo>",
+  "",
+  "请处理上面引用的备忘录记录。",
+  "</piabyss-ref>",
+].join("\n");
+
+describe("PiAbyss-injected reference blocks", () => {
+  it("strips the envelope together with the user's own text", () => {
+    expect(stripAttachmentReferenceBlocks(`${ENVELOPE}\n\n帮我看看`)).toBe("帮我看看");
+    expect(stripPiabyssInjectedBlocks(`${ENVELOPE}\n\n帮我看看`)).toBe("帮我看看");
+  });
+
+  it("strips bare injected blocks from legacy transcripts", () => {
+    const memo = '<piabyss-memo id="note-1" type="memo" status="open">\n# t\n</piabyss-memo>';
+    const result =
+      '<piabyss-memo-result noteId="note-1" sessionId="s-1">\nok\n</piabyss-memo-result>';
+    const preamble = "<schedule-preamble>\n你是助手。\n</schedule-preamble>";
+    const job = '<schedule-job id="job-1">\n{}\n</schedule-job>';
+    const text = [memo, result, preamble, job, "用户需求：\n定时备份"].join("\n\n");
+
+    expect(stripPiabyssInjectedBlocks(text)).toBe("用户需求：\n定时备份");
+    expect(stripPiabyssInjectedBlocks(preamble)).toBe("");
+  });
+
+  it("leaves plain text and attachment blocks untouched", () => {
+    const text = `<attached-path name="a.ts" path="/w/a.ts"/>\n\n看下这个`;
+    expect(stripPiabyssInjectedBlocks(text)).toBe(text);
+    const reference = buildAttachmentReferenceBlock([attachment]);
+    expect(stripAttachmentReferenceBlocks(`看下这个\n\n${text}\n\n${reference}`)).toBe(
+      `看下这个\n\n${text}`,
+    );
+  });
+
+  it("preserves the envelope once, not the nested blocks it contains", () => {
+    const next = preserveAttachmentReferenceBlocks(`${ENVELOPE}\n\n旧文本`, "新文本");
+    expect(next.startsWith("新文本")).toBe(true);
+    expect(next.match(/<piabyss-ref/g)).toHaveLength(1);
+    expect(next.match(/<piabyss-memo /g)).toHaveLength(1);
+    expect(stripAttachmentReferenceBlocks(next)).toBe("新文本");
   });
 });

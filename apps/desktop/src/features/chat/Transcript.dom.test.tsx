@@ -299,6 +299,48 @@ describe("Transcript Session-open scrolling", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("First Session"));
   });
 
+  it("folds an injected memo prompt into an @ chip and copies only the user's text", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const raw = [
+      '<piabyss-ref kind="memo" title="修复登录按钮">',
+      '<piabyss-memo id="note-1" type="memo" status="open">',
+      "# 修复登录按钮",
+      "",
+      "点击没反应。",
+      "</piabyss-memo>",
+      "",
+      "请处理上面引用的备忘录记录。",
+      "</piabyss-ref>",
+      "",
+      "先看登录页",
+    ].join("\n");
+    useAppStore.setState({ session: session(SESSION_A, raw) });
+
+    const { container } = render(
+      <>
+        <Transcript />
+        <MenuHost />
+      </>,
+    );
+
+    expect(await screen.findByText("@Memo · 修复登录按钮")).toBeVisible();
+    expect(screen.queryByText(/piabyss-memo id/)).toBeNull();
+    expect(screen.queryByText(/请处理上面引用的备忘录记录/)).toBeNull();
+    expect(screen.getByText("先看登录页")).toBeVisible();
+
+    fireEvent.contextMenu(container.querySelector(".transcript-row")!, {
+      clientX: 24,
+      clientY: 32,
+    });
+    await user.click(await screen.findByRole("menuitem", { name: "Copy message" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("先看登录页"));
+  });
+
   it("adds external-browser and copy actions when right-clicking a link", async () => {
     const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);

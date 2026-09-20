@@ -64,6 +64,7 @@ import {
   type TranscriptRow,
 } from "./transcript-model";
 import { stripAttachmentReferenceBlocks } from "@piabyss/protocol";
+import { InjectedReferenceChip } from "./InjectedReferenceChip";
 import { BranchNavigator } from "../tree/BranchNavigator";
 import { branchAlternatives, type TreeBranchPoint } from "../tree/tree-model";
 import { useSessionTree } from "../tree/tree-data";
@@ -94,6 +95,14 @@ import {
 const MarkdownMessage = lazy(() =>
   import("./MarkdownMessage").then((module) => ({ default: module.MarkdownMessage })),
 );
+
+/**
+ * Clipboard text for a row: hidden attachment and injected-prompt blocks never
+ * reach the clipboard, so copying a memo turn yields the user's own words.
+ */
+function copyableText(row: TranscriptRow): string {
+  return stripAttachmentReferenceBlocks(row.copyText);
+}
 
 function MarkdownFallback({ content, className = "" }: { content: string; className?: string }) {
   return (
@@ -763,7 +772,7 @@ export function Transcript() {
                         icon: Copy,
                         separatorBefore: linkUrl ? !selectionInside : selectionInside,
                         disabled: !row.copyText,
-                        onSelect: () => navigator.clipboard.writeText(row.copyText),
+                        onSelect: () => navigator.clipboard.writeText(copyableText(row)),
                       },
                     ],
                   });
@@ -1036,6 +1045,13 @@ export const TranscriptRowView = memo(function TranscriptRowView({
             ))}
           </div>
         )}
+        {parsed.references.length > 0 && (
+          <div className="mb-1 flex w-full flex-col items-end gap-1.5">
+            {parsed.references.map((reference, index) => (
+              <InjectedReferenceChip key={`ref:${index}`} reference={reference} align="end" />
+            ))}
+          </div>
+        )}
         {parsed.files.length > 0 && (
           <div className="mb-1 flex flex-wrap justify-end gap-1.5">
             {parsed.files.map((file, index) => (
@@ -1099,7 +1115,7 @@ export const TranscriptRowView = memo(function TranscriptRowView({
             />
           )}
           <CopyMessageButton
-            text={stripAttachmentReferenceBlocks(row.copyText)}
+            text={copyableText(row)}
             className="opacity-0 group-hover:opacity-100"
           />
         </div>
@@ -1701,7 +1717,6 @@ function TurnProcessFold({
     </div>
   );
 }
-
 
 function AssistantBlock({
   block,

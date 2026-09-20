@@ -11,6 +11,7 @@ import {
   parseUserAttachments,
   type TranscriptRow,
 } from "../features/chat/transcript-model";
+import { joinOutgoingParts } from "../features/chat/injected-references";
 
 type ActiveSessionPromptParams = {
   text: string;
@@ -92,12 +93,18 @@ async function promptActiveSession(params: ActiveSessionPromptParams): Promise<b
  */
 export async function requestRetry(row: TranscriptRow): Promise<boolean> {
   const parsed = parseUserAttachments(row.copyText);
-  const outgoingText = parsed.files.reduce((text, file) => {
+  const rebuilt = parsed.files.reduce((text, file) => {
     const block = file.pathOnly
       ? buildAttachedPathBlock(file.name, file.path ?? "")
       : buildAttachedFileBlock(file.name, file.content, file.path);
     return `${text}${text ? "\n\n" : ""}${block}`;
   }, parsed.text);
+  // Injected payloads keep their original leading position: a memo turn must
+  // still carry the memo block and its instruction on retry.
+  const outgoingText = joinOutgoingParts([
+    ...parsed.references.map((reference) => reference.raw),
+    rebuilt,
+  ]);
   const images: SerializableImage[] = row.blocks.flatMap((block) =>
     block.kind === "image" ? [{ mediaType: block.mimeType, data: block.data }] : [],
   );

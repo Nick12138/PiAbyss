@@ -26,6 +26,22 @@ export type DraftWorkspaceSnapshot = {
 export type DraftMutation =
   { op: "upsert"; target: DraftTarget; text: string } | { op: "delete"; target: DraftTarget };
 
+/**
+ * Prompt payload the app injected into a draft on the user's behalf (e.g. the
+ * memo "handle now" action). The composer renders it as an `@` chip and only
+ * expands `payload` into the outgoing text at send time, so the prompt never
+ * shows up in the input box.
+ */
+export type DraftReference = {
+  /** Unique within one draft; used as the React key and for removal. */
+  id: string;
+  kind: "memo";
+  /** Chip caption: the memo title. */
+  label: string;
+  /** Full prompt text prepended to the message (reference block + instruction). */
+  payload: string;
+};
+
 export function draftKeyForTarget(target: DraftTarget): DraftKey {
   return target.kind === "session"
     ? `session:${target.sessionId ?? ""}`

@@ -14,6 +14,7 @@ import {
 } from "@piabyss/protocol";
 import { isAbortedToolResult } from "../../lib/chat/tool-result-status";
 import { withFriendlyErrorHint } from "./error-hints";
+import { parseInjectedReferences, type InjectedReference } from "./injected-references";
 
 export type ToolTraceStatus = "waiting" | "running" | "done" | "error" | "aborted";
 
@@ -1026,7 +1027,10 @@ function alignedPersistedMessageCount(
   let persistedIndex = 0;
   let skips = 0;
   while (messageIndex < messages.length && persistedIndex < persisted.length) {
-    if (messageAlignmentKey(messages[messageIndex]!) === messageAlignmentKey(persisted[persistedIndex]!)) {
+    if (
+      messageAlignmentKey(messages[messageIndex]!) ===
+      messageAlignmentKey(persisted[persistedIndex]!)
+    ) {
       messageIndex += 1;
       persistedIndex += 1;
       skips = 0;
@@ -1684,6 +1688,8 @@ export type ParsedUserText = {
   text: string;
   files: ParsedFileAttachment[];
   documents: AttachmentReference[];
+  /** Injected prompts folded into `@`-style chips; `raw` re-sends on retry. */
+  references: InjectedReference[];
 };
 
 // Builders always emit `name` first, then an optional `path="..."` attribute.
@@ -1694,8 +1700,11 @@ const ATTACHED_IMAGE_PATTERN = /<attached-image name="([^"]*)"(?: path="([^"]*)"
 
 export function parseUserAttachments(raw: string): ParsedUserText {
   const files: ParsedUserText["files"] = [];
-  const documents = parseAttachmentReferences(raw);
-  const text = stripAttachmentReferenceBlocks(raw)
+  // Injected blocks are parsed first: the protocol strip below removes them
+  // too, and a chip must survive even when the block is the whole message.
+  const injected = parseInjectedReferences(raw);
+  const documents = parseAttachmentReferences(injected.text);
+  const text = stripAttachmentReferenceBlocks(injected.text)
     .replace(
       ATTACHED_FILE_PATTERN,
       (_match, name: string, path: string | undefined, content: string) => {
@@ -1710,7 +1719,7 @@ export function parseUserAttachments(raw: string): ParsedUserText {
     // Image content travels via the images channel; the marker is display-only.
     .replace(ATTACHED_IMAGE_PATTERN, () => "")
     .trim();
-  return { text, files, documents };
+  return { text, files, documents, references: injected.references };
 }
 
 /**

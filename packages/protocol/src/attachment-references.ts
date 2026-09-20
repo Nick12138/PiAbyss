@@ -8,6 +8,33 @@ const GUIDE_CLOSE_TAG = "</piabyss-attachment-guide>";
 const GUIDE_PATTERN =
   /<piabyss-attachment-guide version="1">\s*([\s\S]*?)\s*<\/piabyss-attachment-guide>/gu;
 
+/**
+ * PiAbyss-injected reference blocks: prompts the app composes on the user's
+ * behalf (memo handling, schedule smart-creation preamble, plan context).
+ * They must reach the model verbatim but are display noise everywhere else —
+ * session titles, search indexing, the queue row, the copy button — so they
+ * are stripped alongside the attachment blocks. The desktop app folds them
+ * back into `@`-style reference chips when rendering the transcript.
+ */
+const INJECTED_BLOCK_PATTERNS: readonly RegExp[] = [
+  // Envelope the app wraps around a whole injected payload (reference block
+  // plus its instruction). Stripped first: it contains the blocks below.
+  /<piabyss-ref\s[^>]*>[\s\S]*?<\/piabyss-ref>/gu,
+  /<piabyss-memo\s[^>]*>[\s\S]*?<\/piabyss-memo>/gu,
+  /<piabyss-memo-result\s[^>]*>[\s\S]*?<\/piabyss-memo-result>/gu,
+  /<schedule-preamble>[\s\S]*?<\/schedule-preamble>/gu,
+  /<schedule-job\s[^>]*>[\s\S]*?<\/schedule-job>/gu,
+];
+
+/** Remove PiAbyss-injected reference blocks, keeping the user's own text. */
+export function stripPiabyssInjectedBlocks(text: string): string {
+  let out = text;
+  for (const pattern of INJECTED_BLOCK_PATTERNS) out = out.replace(pattern, "");
+  // A prepended envelope leaves a blank-line seam behind; drop it so titles and
+  // previews never start with an empty line.
+  return out.replace(/^[ \t]*\n+/, "");
+}
+
 export type AttachmentReference = {
   id: string;
   name: string;
@@ -65,13 +92,32 @@ export function buildAttachmentGuideBlock(text: string): string {
 }
 
 export function stripAttachmentReferenceBlocks(text: string): string {
-  return text.replace(BLOCK_PATTERN, "").replace(GUIDE_PATTERN, "").trimEnd();
+  return stripPiabyssInjectedBlocks(
+    text.replace(BLOCK_PATTERN, "").replace(GUIDE_PATTERN, ""),
+  ).trimEnd();
 }
 
 export function preserveAttachmentReferenceBlocks(original: string, visibleText: string): string {
-  const blocks = [...original.matchAll(BLOCK_PATTERN), ...original.matchAll(GUIDE_PATTERN)]
-    .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
-    .map((match) => match[0]);
+  // Outermost matches win: an injected envelope contains reference blocks, and
+  // re-appending both would duplicate the payload.
+  const spans = [
+    ...original.matchAll(BLOCK_PATTERN),
+    ...original.matchAll(GUIDE_PATTERN),
+    ...INJECTED_BLOCK_PATTERNS.flatMap((pattern) => [...original.matchAll(pattern)]),
+  ]
+    .map((match) => ({
+      start: match.index ?? 0,
+      end: (match.index ?? 0) + match[0].length,
+      text: match[0],
+    }))
+    .sort((a, b) => a.start - b.start || b.end - a.end);
+  const blocks: string[] = [];
+  let covered = -1;
+  for (const span of spans) {
+    if (span.start < covered) continue;
+    covered = span.end;
+    blocks.push(span.text);
+  }
   if (blocks.length === 0) return visibleText;
   return [visibleText.trimEnd(), ...blocks].filter(Boolean).join("\n\n");
 }
