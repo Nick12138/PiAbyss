@@ -1,6 +1,7 @@
 import {
   Activity,
   AlertTriangle,
+  ArrowLeft,
   Brain,
   Check,
   CircleCheck,
@@ -216,6 +217,10 @@ export function ProvidersSettings() {
   const ime = useImeComposition();
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
   const [oauthOpen, setOauthOpen] = useState(false);
+  // Narrow-window single-pane navigation: the two-pane master/detail layout
+  // collapses (container query, @min-[44rem]) to one pane at a time. Wide
+  // windows always render both panes regardless of this state.
+  const [pane, setPane] = useState<"list" | "detail">("list");
   const [pendingSwitch, setPendingSwitch] = useState<
     { kind: "select"; id: string } | { kind: "new" } | { kind: "oauth" } | null
   >(null);
@@ -248,6 +253,13 @@ export function ProvidersSettings() {
     setProvidersDirty(dirty);
   }, [dirty, setProvidersDirty]);
   useEffect(() => () => setProvidersDirty(false), [setProvidersDirty]);
+
+  // When the detail target disappears (OAuth page closed, provider deleted,
+  // selection cleared), fall back to the list pane so a narrow single-pane
+  // view never strands the user on an orphan empty detail pane.
+  useEffect(() => {
+    if (!oauthOpen && !draft) setPane("list");
+  }, [oauthOpen, draft]);
 
   // Load the masked preview of the stored key whenever the selected provider
   // changes or its stored credential may have changed (nonce bumped on save).
@@ -373,6 +385,7 @@ export function ProvidersSettings() {
     const nextDraft = snapshotToDraft(provider);
     setOauthOpen(false);
     setSelectedId(provider.id);
+    setPane("detail");
     setDraft(nextDraft);
     baselineRef.current = draftFingerprint(nextDraft);
     draftEpochRef.current += 1;
@@ -390,6 +403,7 @@ export function ProvidersSettings() {
     const nextDraft = { ...emptyDraft(), id: nextProviderId(providers.map((p) => p.id)) };
     setOauthOpen(false);
     setSelectedId(null);
+    setPane("detail");
     setDraft(nextDraft);
     baselineRef.current = draftFingerprint(nextDraft);
     draftEpochRef.current += 1;
@@ -440,6 +454,7 @@ export function ProvidersSettings() {
   function openOauthLogin() {
     // The OAuth page replaces the draft editor; drop any (non-dirty) draft so
     // closing the page lands back on the neutral hint or a clean selection.
+    setPane("detail");
     setSelectedId(null);
     setDraft(null);
     baselineRef.current = null;
@@ -793,9 +808,11 @@ export function ProvidersSettings() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-surface-raised/40">
+        <aside
+          className={`${pane === "detail" ? "hidden @min-[44rem]:flex" : "flex"} w-full shrink-0 flex-col border-r border-border bg-surface-raised/40 @min-[44rem]:w-64`}
+        >
           <div className="flex items-center gap-2 border-b border-border p-3">
             <div className="relative min-w-0 flex-1">
               <Search className="absolute left-2 top-2 text-muted" size={14} />
@@ -904,9 +921,15 @@ export function ProvidersSettings() {
         </aside>
 
         {oauthOpen ? (
-          <ProviderLoginPage onClose={() => setOauthOpen(false)} />
+          <div
+            className={`${pane === "list" ? "hidden @min-[44rem]:flex" : "flex"} min-h-0 min-w-0 flex-1 flex-col`}
+          >
+            <ProviderLoginPage onClose={() => setOauthOpen(false)} />
+          </div>
         ) : !draft ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-muted">
+          <div
+            className={`${pane === "list" ? "hidden @min-[44rem]:flex" : "flex"} min-w-0 flex-1 flex-col items-center justify-center gap-3 text-sm text-muted`}
+          >
             {loading && providers.length === 0 ? (
               <span role="status" className="flex items-center gap-2">
                 <RefreshCw className="animate-spin motion-reduce:animate-none" size={15} />
@@ -945,18 +968,31 @@ export function ProvidersSettings() {
             )}
           </div>
         ) : (
-          <div className="min-w-0 flex-1 overflow-auto">
+          <div
+            className={`${pane === "list" ? "hidden @min-[44rem]:block" : "block"} min-w-0 flex-1 overflow-auto`}
+          >
             <div className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
-              <header className="flex items-start justify-between gap-4">
-                <div>
-                  <h1 className="text-lg font-semibold">
-                    {draft.originalId ? t("providersEditTitle") : t("providersAddTitle")}
-                  </h1>
-                  <p className="mt-1 text-xs text-muted">
-                    {draft.originalId ?? t("providersCustom")}
-                  </p>
+              <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                <div className="flex min-w-0 items-start gap-2">
+                  <button
+                    type="button"
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border hover:bg-surface-overlay @min-[44rem]:hidden"
+                    aria-label={t("commonBack")}
+                    title={t("commonBack")}
+                    onClick={() => setPane("list")}
+                  >
+                    <ArrowLeft size={14} />
+                  </button>
+                  <div className="min-w-0">
+                    <h1 className="text-lg font-semibold">
+                      {draft.originalId ? t("providersEditTitle") : t("providersAddTitle")}
+                    </h1>
+                    <p className="mt-1 text-xs text-muted">
+                      {draft.originalId ?? t("providersCustom")}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {dirty && (
                     <span className="flex items-center gap-1 text-[11px] text-warning">
                       <AlertTriangle size={12} /> {t("providersUnsaved")}
@@ -1076,7 +1112,7 @@ export function ProvidersSettings() {
                 </div>
               )}
 
-              <section className="grid grid-cols-2 gap-4">
+              <section className="grid grid-cols-1 gap-4 @min-[36rem]:grid-cols-2">
                 <label className="flex flex-col gap-1.5 text-xs text-muted">
                   <span>
                     {t("providersVendorName")} <span className="text-danger">*</span>
@@ -1106,7 +1142,7 @@ export function ProvidersSettings() {
                     }))}
                   />
                 </label>
-                <label className="col-span-2 flex flex-col gap-1.5 text-xs text-muted">
+                <label className="flex flex-col gap-1.5 text-xs text-muted @min-[36rem]:col-span-2">
                   <span>
                     {t("providersBaseUrl")} <span className="text-danger">*</span>
                   </span>
@@ -1342,8 +1378,8 @@ export function ProvidersSettings() {
                           </button>
                         </div>
                         {editingModelId === model.id && (
-                          <div className="grid grid-cols-2 gap-3 border-t border-border bg-surface-raised/60 p-3">
-                            <div className="col-span-2 flex items-center justify-between">
+                          <div className="grid grid-cols-1 gap-3 border-t border-border bg-surface-raised/60 p-3 @min-[36rem]:grid-cols-2">
+                            <div className="flex items-center justify-between @min-[36rem]:col-span-2">
                               <span className="font-mono text-xs">{model.id}</span>
                               <button
                                 type="button"
@@ -1425,11 +1461,11 @@ export function ProvidersSettings() {
                                 {t("providersImages")}
                               </label>
                             </div>
-                            <p className="col-span-2 text-[11px] text-muted">
+                            <p className="text-[11px] text-muted @min-[36rem]:col-span-2">
                               {thinkingSourceLabel(t, model)}
                             </p>
                             {thinkingMode(model) === "custom" && (
-                              <div className="col-span-2 grid grid-cols-4 gap-2 border-t border-border pt-2">
+                              <div className="grid grid-cols-2 gap-2 border-t border-border pt-2 @min-[36rem]:col-span-2 @min-[36rem]:grid-cols-4">
                                 {THINKING_LEVELS.map((level) => {
                                   const enabled = model.thinkingLevelMap?.[level] !== null;
                                   const enabledCount = THINKING_LEVELS.filter(

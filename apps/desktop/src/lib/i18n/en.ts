@@ -1461,6 +1461,7 @@ export const en = {
   extWidgetsTitle: "Extension widgets: {names}",
 
   // Fork modal
+  commonBack: "Back",
   commonClose: "Close",
   forkTitle: "Fork session",
   forkIntro:

@@ -1485,7 +1485,7 @@ export function Composer({
       {welcomeWorkspaceName && welcomeKey && (
         <div className="conversation-content-width new-conversation-copy mx-auto mb-10 flex flex-col items-center text-center">
           <PiMark className="mb-4 size-20" />
-          <h2 className="max-w-full truncate text-3xl font-medium text-foreground">
+          <h2 className="max-w-full truncate text-[clamp(1.25rem,4.5vw,1.875rem)] font-medium text-foreground">
             {t(welcomeKey)}
           </h2>
           <p className="h-4" aria-hidden />

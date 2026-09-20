@@ -1396,6 +1396,7 @@ export const zh: Record<MessageKey, string> = {
   extWidgetsTitle: "扩展组件：{names}",
 
   // Fork modal
+  commonBack: "返回",
   commonClose: "关闭",
   forkTitle: "分叉会话",
   forkIntro: "选择一条用户消息：新会话保留该消息之前的历史，消息文本会回填到输入框。",

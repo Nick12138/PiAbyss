@@ -141,7 +141,7 @@ export function HostSettings() {
       : updateStatusText;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-auto p-6" data-settings-scroll>
         <div className="mx-auto flex max-w-2xl flex-col gap-8">
           <section>

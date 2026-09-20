@@ -246,13 +246,13 @@ export function ProviderLoginPage({ onClose }: { onClose: () => void }) {
               const panelOpen = modelPanel?.providerId === provider.providerId;
               return (
                 <div key={provider.providerId} className="border-b border-border last:border-b-0">
-                  <div className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
                     <span
                       className={`size-2 shrink-0 rounded-full ${
                         provider.configured ? "bg-success" : "bg-muted/50"
                       }`}
                     />
-                    <span className="min-w-0 flex-1">
+                    <span className="min-w-0 flex-1 basis-48">
                       <span className="block truncate text-sm font-medium text-foreground">
                         {provider.oauthLabel ?? provider.name}
                       </span>

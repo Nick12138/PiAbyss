@@ -274,12 +274,12 @@ function SettingRow({
   return (
     // flex-wrap + basis on the label stacks the control below the text when the
     // settings column is too narrow for a side-by-side row (container query).
-    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-      <span className="min-w-0 flex-1 basis-52">
+    <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
+      <span className="min-w-0">
         <span className="block text-sm">{label}</span>
         <span className="block text-xs text-muted">{description}</span>
       </span>
-      <div className={`max-w-full shrink-0 ${saving ? "opacity-60" : ""}`}>{children}</div>
+      <div className={`min-w-0 max-w-full ${saving ? "opacity-60" : ""}`}>{children}</div>
     </div>
   );
 }

@@ -517,7 +517,7 @@ export function UsageSettings() {
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <SettingsTopBarActions title={t("navUsage")} subtitle={t("usageSubtitle")}>
         <div
           className="flex items-center gap-1 rounded-lg border border-border bg-surface-raised p-0.5"

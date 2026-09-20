@@ -991,7 +991,7 @@ export function PackagesPage() {
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col bg-surface"
+      className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface"
       aria-busy={pendingPreferenceUpdates.length > 0 || undefined}
     >
       {review && (
@@ -1222,7 +1222,7 @@ export function PackagesPage() {
       )}
 
       {tab === "market" ? (
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4">
             <label className="relative min-w-48 flex-1">
               <Search

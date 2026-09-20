@@ -195,7 +195,7 @@ export function AppearanceSettings() {
   } as CSSProperties;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-auto p-6" data-settings-scroll>
         <div className="interface-density-stack mx-auto flex max-w-2xl flex-col gap-8">
           <section>
@@ -208,7 +208,7 @@ export function AppearanceSettings() {
                 </span>
                 <div
                   data-ui="theme-family-selector"
-                  className="grid grid-cols-4 gap-2"
+                  className="grid grid-cols-2 gap-2 @min-[32rem]:grid-cols-4"
                   role="group"
                   aria-label={t("appearanceThemeFamily")}
                 >

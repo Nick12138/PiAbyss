@@ -207,14 +207,14 @@ function GeneralSettings() {
   ];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-auto p-6" data-settings-scroll>
         <div className="mx-auto flex max-w-2xl flex-col gap-8">
           <section>
             <h2 className="mb-2 text-[13px] font-medium text-muted">{t("generalStartupGroup")}</h2>
             <div className="flex flex-col gap-4 rounded-lg border border-border p-4">
-              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                <span className="min-w-0 flex-1 basis-52">
+              <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
+                <span className="min-w-0">
                   <span className="block text-sm">{t("generalAutoStartOnBoot")}</span>
                   <span className="block text-xs text-muted">
                     {t("generalAutoStartOnBootDesc")}
@@ -226,8 +226,8 @@ function GeneralSettings() {
                   onChange={(next) => void patchDesktop({ autoStartOnBoot: next })}
                 />
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                <span className="min-w-0 flex-1 basis-52">
+              <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
+                <span className="min-w-0">
                   <span className="block text-sm">{t("generalSystemNotifications")}</span>
                   <span className="block text-xs text-muted">
                     {t("generalSystemNotificationsDesc")}
@@ -247,8 +247,8 @@ function GeneralSettings() {
           <section>
             <h2 className="mb-2 text-[13px] font-medium text-muted">{t("generalBusySendGroup")}</h2>
             <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                <label htmlFor="busy-send-behavior" className="min-w-0 flex-1 basis-52 text-sm">
+              <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
+                <label htmlFor="busy-send-behavior" className="min-w-0 text-sm">
                   <span className="block">{t("generalBusySend")}</span>
                   <span id="busy-send-behavior-help" className="block text-xs text-muted">
                     {t("generalBusySendDesc")}
@@ -269,8 +269,8 @@ function GeneralSettings() {
                   ]}
                 />
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                <span className="min-w-0 flex-1 basis-52">
+              <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
+                <span className="min-w-0">
                   <span className="block text-sm">{t("generalAskUserQuestion")}</span>
                   <span className="block text-xs text-muted">
                     {t("generalAskUserQuestionDesc")}
@@ -348,8 +348,8 @@ function GeneralSettings() {
           <section>
             <h2 className="mb-2 text-[13px] font-medium text-muted">{t("generalTerminalGroup")}</h2>
             <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                <label htmlFor="default-shell" className="min-w-0 flex-1 basis-52 text-sm">
+              <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
+                <label htmlFor="default-shell" className="min-w-0 text-sm">
                   <span className="block">{t("generalDefaultShell")}</span>
                   <span className="block text-xs text-muted">{t("generalDefaultShellDesc")}</span>
                 </label>
