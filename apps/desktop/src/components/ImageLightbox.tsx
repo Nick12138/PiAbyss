@@ -70,7 +70,8 @@ export function ImageLightbox({ url, alt, onClose }: { url: string; alt: string;
       baseX: offset.x,
       baseY: offset.y,
     };
-    event.currentTarget.setPointerCapture(event.pointerId);
+    // jsdom 等环境可能未实现 Pointer Capture API，做可选调用兜底。
+    event.currentTarget.setPointerCapture?.(event.pointerId);
   }, [offset]);
   const onPointerMove = useCallback((event: ReactPointerEvent<HTMLImageElement>) => {
     const state = drag.current;
@@ -80,7 +81,7 @@ export function ImageLightbox({ url, alt, onClose }: { url: string; alt: string;
   const onPointerUp = useCallback((event: ReactPointerEvent<HTMLImageElement>) => {
     if (drag.current?.pointerId !== event.pointerId) return;
     drag.current = null;
-    event.currentTarget.releasePointerCapture(event.pointerId);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
   }, []);
 
   function onKeyDown(event: ReactKeyboardEvent) {
@@ -96,11 +97,16 @@ export function ImageLightbox({ url, alt, onClose }: { url: string; alt: string;
       className="fixed inset-0 z-[60] flex flex-col bg-black/85"
       onKeyDown={onKeyDown}
       onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        // 点击图片、工具栏以外的任何位置（遮罩 / 图片四周留白 / 错误提示）都关闭预览。
+        // 注意用 Element 判断：按钮内的 lucide 图标是 SVGElement，不是 HTMLElement。
+        if (!(event.target instanceof Element) || !event.target.closest("[data-lightbox-interactive]")) onClose();
       }}
       data-testid="image-lightbox"
     >
-      <div className="flex h-12 shrink-0 items-center gap-1 px-3 text-foreground">
+      <div
+        data-lightbox-interactive
+        className="flex h-12 shrink-0 items-center gap-1 px-3 text-foreground"
+      >
         <button
           type="button"
           title={t("fileZoomOut")}
@@ -166,6 +172,7 @@ export function ImageLightbox({ url, alt, onClose }: { url: string; alt: string;
             alt={alt}
             draggable={false}
             onError={() => setError(true)}
+            data-lightbox-interactive
             data-testid="image-lightbox-image"
             className={`touch-none select-none ${scale === null ? "max-h-full max-w-full object-contain" : ""}`}
             style={

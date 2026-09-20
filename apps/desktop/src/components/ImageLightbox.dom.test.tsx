@@ -46,9 +46,18 @@ describe("ImageLightbox", () => {
     await user.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalledOnce();
 
-    // 点击工具栏/图片区域不关闭，只有点击最外层遮罩本身才关闭。
+    // 点击遮罩、图片四周留白等非图片区域都关闭；点击图片本身不关闭。
     await user.click(screen.getByTestId("image-lightbox"));
     expect(onClose).toHaveBeenCalledTimes(2);
+
+    onClose.mockClear();
+    await user.click(screen.getByTestId("image-lightbox-image"));
+    expect(onClose).not.toHaveBeenCalled();
+
+    // 点击工具栏按钮（含 SVG 图标）不应关闭预览；SVGElement 的 target 曾因 instanceof HTMLElement 判断失误而误关。
+    await user.click(screen.getByRole("button", { name: "Zoom out" }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId("image-lightbox")).toBeInTheDocument();
   });
 
   it("zooms with keyboard shortcuts and clamps to the minimum scale", async () => {
