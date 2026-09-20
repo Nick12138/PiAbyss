@@ -255,7 +255,7 @@ export const en = {
   generalDetectShells: "Detect shells again",
   generalAdvancedGroup: "More settings",
   generalAdvancedDesc:
-    "Pi reads advanced options from settings.json in the agent directory — for example httpProxy, compaction, retry, and npmCommand. Open the file to edit it by hand.",
+    "Advanced options live in settings.json in the agent directory. Open the file to edit them by hand.",
   generalAdvancedOpenFile: "Open settings.json",
   generalAdvancedRestartHint: "Changes take effect after restarting the Host.",
   generalDefaultTools: "Default tools",

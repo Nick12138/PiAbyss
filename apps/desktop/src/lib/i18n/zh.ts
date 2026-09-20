@@ -239,7 +239,7 @@ export const zh: Record<MessageKey, string> = {
   generalDetectShells: "重新检测 Shell",
   generalAdvancedGroup: "更多设置",
   generalAdvancedDesc:
-    "Pi 会从 agent 目录下的 settings.json 读取高级选项，例如 httpProxy、compaction、retry、npmCommand。可打开文件手动编辑。",
+    "高级选项存放于 agent 目录下的 settings.json，可打开手动编辑。",
   generalAdvancedOpenFile: "打开 settings.json",
   generalAdvancedRestartHint: "更改将在重启 Host 后生效。",
   generalDefaultTools: "默认工具",
