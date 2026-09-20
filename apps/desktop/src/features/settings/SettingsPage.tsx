@@ -592,10 +592,10 @@ export function SettingsPage({
         )}
         <div className="@container grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)]">
           <aside
-            className="flex w-[150px] shrink-0 flex-col border-r border-border bg-surface @max-sm:w-12"
+            className="flex w-[150px] shrink-0 flex-col border-r border-border bg-surface @max-[36rem]:w-12"
             data-settings-sidebar
           >
-            <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-2 @max-sm:px-2">
+            <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-2 @max-[36rem]:px-2">
               {SETTINGS_NAV.map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
@@ -603,7 +603,7 @@ export function SettingsPage({
                   title={t(label)}
                   data-ui="nav-item"
                   data-state={localSection === id ? "active" : "inactive"}
-                  className={`theme-nav-item interface-density-nav-row mb-0.5 flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors @max-sm:justify-center @max-sm:gap-0 @max-sm:px-0 ${
+                  className={`theme-nav-item interface-density-nav-row mb-0.5 flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors @max-[36rem]:justify-center @max-[36rem]:gap-0 @max-[36rem]:px-0 ${
                     localSection === id
                       ? "theme-nav-active bg-nav-active font-medium text-nav-active-foreground"
                       : "text-muted hover:bg-surface-overlay/70 hover:text-foreground"
@@ -612,7 +612,7 @@ export function SettingsPage({
                   onClick={() => requestSection(id)}
                 >
                   <Icon size={16} className="shrink-0" />
-                  <span className="truncate @max-sm:hidden">{t(label)}</span>
+                  <span className="truncate @max-[36rem]:hidden">{t(label)}</span>
                 </button>
               ))}
             </nav>
