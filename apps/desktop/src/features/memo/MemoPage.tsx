@@ -13,7 +13,6 @@ import {
   Bot,
   Check,
   CheckCircle2,
-  Circle,
   CircleAlert,
   Lightbulb,
   ListChecks,
@@ -914,8 +913,8 @@ function MemoListItem({
           <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
             {note.title}
           </span>
-          {/* 右上角状态图标区（悬浮行时显示归档/恢复入口）：
-              进行中=圆圈(点击完成)；已完成=对勾(点击恢复)+归档(悬浮)；
+          {/* 右上角状态图标区：进行中=平时不显示，悬浮行时出现打勾图标(点击完成)；
+              已完成=常显绿色对勾(点击恢复)+归档(悬浮)；
               已归档=静态归档图标，悬浮换为恢复(点击取消归档)。 */}
           {note.status === "done" && (
             <button
@@ -963,17 +962,17 @@ function MemoListItem({
               title={note.status === "done" ? t("memoActionReopen") : t("memoActionDone")}
               aria-label={note.status === "done" ? t("memoActionReopen") : t("memoActionDone")}
               data-testid="memo-list-item-status"
-              className="flex shrink-0 cursor-pointer items-center rounded transition-colors hover:opacity-100"
+              className={
+                note.status === "done"
+                  ? "flex shrink-0 cursor-pointer items-center rounded transition-colors"
+                  : "hidden shrink-0 cursor-pointer items-center rounded text-muted transition-colors hover:text-success group-hover:flex group-focus-within:flex"
+              }
             >
-              {note.status === "done" ? (
-                <CheckCircle2 size={14} className="text-success" aria-hidden />
-              ) : (
-                <Circle
-                  size={14}
-                  className="text-muted opacity-50 hover:text-success hover:opacity-100"
-                  aria-hidden
-                />
-              )}
+              <CheckCircle2
+                size={14}
+                className={note.status === "done" ? "text-success" : undefined}
+                aria-hidden
+              />
             </button>
           )}
         </span>
