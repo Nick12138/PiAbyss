@@ -1843,6 +1843,7 @@ export const zh: Record<MessageKey, string> = {
   memoFollowupPrompt:
     "上面引用的是一条备忘录记录及其最近一次 Agent 处理的结果总结。请在此基础上继续讨论或继续处理；得出新的结论后，再次调用 piabyss_memo 的 complete 动作，并在 result 中提交更新后的总结（会覆盖旧总结）。",
   memoContinueFailed: "继续讨论失败：无法打开或创建会话",
+  memoAgentCreateFailed: "打开新会话失败，未能注入备忘录提示词",
   memoSyncTitle: "云同步设置（Cloudflare R2）",
   memoSyncDesc:
     "通过 Cloudflare R2（S3 兼容）在多台设备间同步备忘录：每次同步 = 拉取云端 → 逐条合并（较新者胜）→ 推送合并结果；删除也会通过墓碑同步。密钥仅保存在本机。",

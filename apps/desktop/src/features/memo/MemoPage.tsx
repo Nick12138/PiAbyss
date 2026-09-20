@@ -424,8 +424,18 @@ export function MemoPage() {
     }
   }
 
-  /** 把记录以引用块注入会话草稿，并切到对话页。 */
-  function openWithAgent(note: MemoNote) {
+  /** 把记录以引用块注入新会话草稿，并切到对话页（总是新开会话，不影响当前选中的会话）。 */
+  async function openWithAgent(note: MemoNote) {
+    const before = useAppStore.getState();
+    if (!before.workspace) {
+      pushNotification(t("memoAgentNoWorkspace"), "warning");
+      return;
+    }
+    const created = await createNewSession();
+    if (!created) {
+      pushNotification(t("memoAgentCreateFailed"), "error");
+      return;
+    }
     const state = useAppStore.getState();
     const target = draftTargetFor(state.workspace, state.session);
     if (!target) {
@@ -765,7 +775,7 @@ export function MemoPage() {
               confirmingDelete={confirmingDelete}
               onBack={backToList}
               onEdit={() => startEdit(selectedNote)}
-              onAgent={() => openWithAgent(selectedNote)}
+              onAgent={() => void openWithAgent(selectedNote)}
               onResult={() => setResultModalOpen(true)}
               onDelete={() => void removeNote(selectedNote)}
             />

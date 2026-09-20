@@ -1918,6 +1918,7 @@ export const en = {
   memoFollowupPrompt:
     "Referenced above is a memo note together with the latest Agent completion summary. Please continue the discussion or the work based on it; once you reach a new conclusion, call the complete action of piabyss_memo again and pass an updated summary in `result` (it overwrites the previous one).",
   memoContinueFailed: "Failed to continue: could not open or create a session",
+  memoAgentCreateFailed: "Failed to open a new session — memo prompt was not injected",
   memoSyncTitle: "Cloud sync (Cloudflare R2)",
   memoSyncDesc:
     "Sync memos across devices via Cloudflare R2 (S3-compatible): each sync downloads the cloud copy, merges note-by-note (newest wins) and pushes the result; deletions propagate via tombstones. Keys stay on this device.",
