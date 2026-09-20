@@ -191,9 +191,9 @@ export const en = {
   generalPiSettingsGroup: "Pi defaults",
   generalAskUserQuestion: "Ask user question tool",
   generalAskUserQuestionDesc:
-    "Let the model ask a structured question with typed options when it would otherwise have to guess.",
+    "Let the model invoke the popup question tool.",
   generalDefaultModel: "Default model",
-  generalDefaultModelDesc: "Choose the provider and model used for new sessions.",
+  generalDefaultModelDesc: "Choose the default provider and model for new sessions.",
   generalDefaultProvider: "Default provider",
   generalDefaultThinkingLevel: "Default thinking level",
   generalDefaultThinkingLevelDesc: "Thinking depth used when a new session starts.",
@@ -207,12 +207,12 @@ export const en = {
   generalProjectTrustNever: "Never trust",
   generalSteeringMode: "Steering messages",
   generalSteeringModeDesc:
-    "Messages sent while the agent is working: deliver one and wait, or deliver the whole queue.",
+    "Messages sent while the agent is working: deliver one at a time or the whole queue.",
   generalSteeringOneAtATime: "One at a time",
   generalSteeringAll: "All",
   generalFollowUpMode: "Follow-up messages",
   generalFollowUpModeDesc:
-    "Messages waiting for the current task to finish: deliver one and wait, or deliver the whole queue.",
+    "Queued messages handled after the task finishes: deliver one at a time or the whole queue.",
   generalFollowUpOneAtATime: "One at a time",
   generalFollowUpAll: "All",
   thinkingLevelOff: "Off",
@@ -224,13 +224,13 @@ export const en = {
   thinkingLevelMax: "Maximum",
   generalAutoStartOnBoot: "Launch at startup",
   generalAutoStartOnBootDesc:
-    "Launch PiAbyss when you sign in to Windows and keep it minimized to the system tray.",
+    "Launch PiAbyss automatically and keep it minimized.",
   generalSystemNotifications: "System notifications",
   generalSystemNotificationsDesc:
-    "Show OS notifications for background completions, failures, input requests and host crashes, with click-to-session.",
+    "Get notified via system notifications.",
   generalBusySendGroup: "While the agent is running",
   generalBusySend: "Send while running",
-  generalBusySendDesc: "What happens when you send another message during a turn.",
+  generalBusySendDesc: "How a message sent while a turn is still running is handled.",
   generalBusySendFollowUp: "Send after it finishes",
   generalBusySendFollowUpDesc: "Wait until this turn finishes, then send.",
   generalBusySendSteer: "Send immediately",
