@@ -124,9 +124,9 @@ export function PiSettings() {
           description={t("generalDefaultModelDesc")}
           saving={saving === "defaultModel"}
         >
-          <div className="flex min-w-0 gap-1.5">
+          <div className="flex min-w-0 flex-wrap gap-1.5">
             <Select
-              className="min-w-32 max-w-48"
+              className="w-32 max-w-full"
               ariaLabel={t("generalDefaultProvider")}
               value={selectedProvider}
               disabled={loading || providers.length === 0}
@@ -139,7 +139,7 @@ export function PiSettings() {
               }))}
             />
             <Select
-              className="min-w-44 max-w-64"
+              className="w-44 max-w-full"
               ariaLabel={t("generalDefaultModel")}
               value={selectedModel}
               disabled={loading || modelsForProvider.length === 0}
@@ -272,12 +272,14 @@ function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4">
-      <span className="min-w-0">
+    // flex-wrap + basis on the label stacks the control below the text when the
+    // settings column is too narrow for a side-by-side row (container query).
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <span className="min-w-0 flex-1 basis-52">
         <span className="block text-sm">{label}</span>
         <span className="block text-xs text-muted">{description}</span>
       </span>
-      <div className={saving ? "shrink-0 opacity-60" : "shrink-0"}>{children}</div>
+      <div className={`max-w-full shrink-0 ${saving ? "opacity-60" : ""}`}>{children}</div>
     </div>
   );
 }

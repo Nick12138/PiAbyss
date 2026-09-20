@@ -213,8 +213,8 @@ function GeneralSettings() {
           <section>
             <h2 className="mb-2 text-[13px] font-medium text-muted">{t("generalStartupGroup")}</h2>
             <div className="flex flex-col gap-4 rounded-lg border border-border p-4">
-              <div className="flex items-center justify-between gap-4">
-                <span className="min-w-0">
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <span className="min-w-0 flex-1 basis-52">
                   <span className="block text-sm">{t("generalAutoStartOnBoot")}</span>
                   <span className="block text-xs text-muted">
                     {t("generalAutoStartOnBootDesc")}
@@ -226,8 +226,8 @@ function GeneralSettings() {
                   onChange={(next) => void patchDesktop({ autoStartOnBoot: next })}
                 />
               </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="min-w-0">
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <span className="min-w-0 flex-1 basis-52">
                   <span className="block text-sm">{t("generalSystemNotifications")}</span>
                   <span className="block text-xs text-muted">
                     {t("generalSystemNotificationsDesc")}
@@ -247,8 +247,8 @@ function GeneralSettings() {
           <section>
             <h2 className="mb-2 text-[13px] font-medium text-muted">{t("generalBusySendGroup")}</h2>
             <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-              <div className="flex items-center justify-between gap-4">
-                <label htmlFor="busy-send-behavior" className="min-w-0 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <label htmlFor="busy-send-behavior" className="min-w-0 flex-1 basis-52 text-sm">
                   <span className="block">{t("generalBusySend")}</span>
                   <span id="busy-send-behavior-help" className="block text-xs text-muted">
                     {t("generalBusySendDesc")}
@@ -269,8 +269,8 @@ function GeneralSettings() {
                   ]}
                 />
               </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="min-w-0">
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <span className="min-w-0 flex-1 basis-52">
                   <span className="block text-sm">{t("generalAskUserQuestion")}</span>
                   <span className="block text-xs text-muted">
                     {t("generalAskUserQuestionDesc")}
@@ -348,8 +348,8 @@ function GeneralSettings() {
           <section>
             <h2 className="mb-2 text-[13px] font-medium text-muted">{t("generalTerminalGroup")}</h2>
             <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-              <div className="flex items-center justify-between gap-4">
-                <label htmlFor="default-shell" className="min-w-0 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <label htmlFor="default-shell" className="min-w-0 flex-1 basis-52 text-sm">
                   <span className="block">{t("generalDefaultShell")}</span>
                   <span className="block text-xs text-muted">{t("generalDefaultShellDesc")}</span>
                 </label>
@@ -590,19 +590,20 @@ export function SettingsPage({
             />
           </header>
         )}
-        <div className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)]">
+        <div className="@container grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)]">
           <aside
-            className="flex w-[150px] shrink-0 flex-col border-r border-border bg-surface"
+            className="flex w-[150px] shrink-0 flex-col border-r border-border bg-surface @max-sm:w-12"
             data-settings-sidebar
           >
-            <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+            <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-2 @max-sm:px-2">
               {SETTINGS_NAV.map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
                   type="button"
+                  title={t(label)}
                   data-ui="nav-item"
                   data-state={localSection === id ? "active" : "inactive"}
-                  className={`theme-nav-item interface-density-nav-row mb-0.5 flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors ${
+                  className={`theme-nav-item interface-density-nav-row mb-0.5 flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors @max-sm:justify-center @max-sm:gap-0 @max-sm:px-0 ${
                     localSection === id
                       ? "theme-nav-active bg-nav-active font-medium text-nav-active-foreground"
                       : "text-muted hover:bg-surface-overlay/70 hover:text-foreground"
@@ -610,15 +611,15 @@ export function SettingsPage({
                   aria-current={localSection === id ? "page" : undefined}
                   onClick={() => requestSection(id)}
                 >
-                  <Icon size={16} />
-                  <span className="truncate">{t(label)}</span>
+                  <Icon size={16} className="shrink-0" />
+                  <span className="truncate @max-sm:hidden">{t(label)}</span>
                 </button>
               ))}
             </nav>
           </aside>
 
           <main
-            className="flex min-h-0 min-w-0 flex-1"
+            className="@container flex min-h-0 min-w-0 flex-1"
             data-settings-content
             ref={contentRef}
             onScrollCapture={(event) => {
