@@ -92,6 +92,8 @@ export type MemoUpdatePatch = {
   workspaceHint?: string | null;
   addImages?: MemoImageInput[];
   removeImageIds?: string[];
+  /** 清空 Agent 结果总结（进行中恢复后重跑时使用）。 */
+  clearResult?: boolean;
 };
 
 /** piabyss_memo 工具 complete 时提交的结果总结及会话关联。 */
@@ -198,6 +200,7 @@ export class MemoStore {
       note.status = status;
       note.completedAt = status === "done" ? (note.completedAt ?? Date.now()) : null;
     }
+    if (patch.clearResult) note.result = null;
     if (patch.removeImageIds?.length) {
       for (const imageId of patch.removeImageIds) this.removeImageFile(note, imageId);
       note.images = note.images.filter((image) => !patch.removeImageIds?.includes(image.id));

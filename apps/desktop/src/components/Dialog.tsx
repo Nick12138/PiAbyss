@@ -34,6 +34,7 @@ export function Dialog({
   /** Extra content (e.g. small mode toggles) rendered in the header row,
    *  between the title and the close icon. */
   headerExtra,
+  footerExtra,
   maxWidthClass = "max-w-lg",
   onCancel,
   onConfirm,
@@ -50,6 +51,9 @@ export function Dialog({
   hideActions?: boolean;
   /** Header-right slot: between the title and the close icon. */
   headerExtra?: ReactNode;
+  /** Footer-left slot (e.g. destructive secondary actions); rendered before
+   *  the right-aligned cancel/confirm group. */
+  footerExtra?: ReactNode;
   /** Override the dialog's max-width Tailwind class (default 512px / max-w-lg). */
   maxWidthClass?: string;
   onCancel: () => void;
@@ -134,15 +138,18 @@ export function Dialog({
         {/* Body: full width below the header row. */}
         <div className="mt-3 text-sm text-muted">{children}</div>
         {!hideActions && (
-          <div className="mt-5 flex justify-end gap-2">
-            {showCancel && (
-              <button type="button" className={secondaryButton} onClick={onCancel}>
-                {t("commonCancel")}
+          <div className="mt-5 flex items-center justify-between gap-2">
+            <div className="min-w-0">{footerExtra}</div>
+            <div className="flex shrink-0 justify-end gap-2">
+              {showCancel && (
+                <button type="button" className={secondaryButton} onClick={onCancel}>
+                  {t("commonCancel")}
+                </button>
+              )}
+              <button type="button" className={CONFIRM_BUTTON[tone]} onClick={onConfirm}>
+                {confirmLabel}
               </button>
-            )}
-            <button type="button" className={CONFIRM_BUTTON[tone]} onClick={onConfirm}>
-              {confirmLabel}
-            </button>
+            </div>
           </div>
         )}
       </div>

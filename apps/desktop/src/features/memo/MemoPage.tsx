@@ -40,10 +40,16 @@ import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog"
 import { LightboxImage } from "../../components/ImageLightbox";
 import { Select } from "../../components/Select";
 import { useT, type Translate } from "../../lib/i18n/use-t";
-import { draftKeyForTarget, draftTargetFor } from "../../lib/draft-target";
+import {
+  draftKeyForTarget,
+  draftTargetFor,
+  type DraftReference,
+  type DraftTarget,
+} from "../../lib/draft-target";
 import { isDesktopRuntime, readDesktopSmallFile } from "../../lib/desktop-file-access";
 import { useContainerWide } from "../../lib/use-container-wide";
 import { openSessionAcrossWorkspaces } from "../../lib/bridge/session-navigation";
+import { buildInjectedReferenceEnvelope } from "../chat/injected-references";
 import { createNewSession } from "../../lib/commands/actions";
 import { useAppStore } from "../../lib/stores/app-store";
 import {
@@ -146,6 +152,7 @@ export function MemoPage() {
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [confirmingClear, setConfirmingClear] = useState(false);
+  const [confirmingClearResult, setConfirmingClearResult] = useState(false);
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
   const [dragOver, setDragOver] = useState(false);
   const [resultModalOpen, setResultModalOpen] = useState(false);
@@ -424,7 +431,56 @@ export function MemoPage() {
     }
   }
 
-  /** 把记录以引用块注入新会话草稿，并切到对话页（总是新开会话，不影响当前选中的会话）。 */
+  /**
+   * 把一条备忘录引用注入指定草稿：composer 只显示 `@备忘录 · 标题` 胶囊，
+   * 提示词原文（引用块 + 指令）在发送时才展开进消息。
+   */
+  function injectMemoReference(target: DraftTarget, note: MemoNote, payload: string) {
+    const state = useAppStore.getState();
+    const key = draftKeyForTarget(target);
+    const reference: DraftReference = {
+      id: `memo:${note.id}`,
+      kind: "memo",
+      label: note.title,
+      payload: buildInjectedReferenceEnvelope({
+        kind: "memo",
+        title: note.title,
+        body: payload,
+      }),
+    };
+    const existing = state.draftReferences[key] ?? [];
+    state.setDraftReferences(target, [
+      ...existing.filter((item) => item.id !== reference.id),
+      reference,
+    ]);
+  }
+
+  /** 清空 Agent 结果总结（弹窗内二次确认后执行）；成功后关闭弹窗并刷新详情。 */
+  async function clearResult(note: MemoNote) {
+    if (!confirmingClearResult) {
+      setConfirmingClearResult(true);
+      return;
+    }
+    try {
+      const updated = await updateMemoNote(note.id, { clearResult: true });
+      setConfirmingClearResult(false);
+      setResultModalOpen(false);
+      setNotes((current) =>
+        current ? current.map((entry) => (entry.id === updated.id ? updated : entry)) : current,
+      );
+    } catch (error) {
+      pushNotification(
+        `${t("memoResultClearFail")}: ${error instanceof Error ? error.message : String(error)}`,
+        "error",
+      );
+    }
+  }
+
+  /**
+   * 把记录以引用胶囊注入新会话草稿，并切到对话页（总是新开会话，不影响当前选中的会话）。
+   * 注入的是结构化引用（composer 渲染成 `@备忘录` 胶囊），提示词原文只在发送时展开，
+   * 不会显示在输入框里。
+   */
   async function openWithAgent(note: MemoNote) {
     const before = useAppStore.getState();
     if (!before.workspace) {
@@ -442,13 +498,11 @@ export function MemoPage() {
       pushNotification(t("memoAgentNoWorkspace"), "warning");
       return;
     }
-    const key = draftKeyForTarget(target);
-    const merged = withMemoPrompt(
-      state.draftTexts[key] ?? "",
-      composeMemoPrompt(note),
-      t("memoAgentPrompt"),
+    injectMemoReference(
+      target,
+      note,
+      withMemoPrompt("", composeMemoPrompt(note), t("memoAgentPrompt")),
     );
-    state.setDraftTextLocal(target, merged);
     state.setPage("chat");
   }
 
@@ -487,9 +541,7 @@ export function MemoPage() {
     const block = [composeMemoPrompt(note), composeMemoResultSection(note)]
       .filter(Boolean)
       .join("\n\n");
-    const key = draftKeyForTarget(target);
-    const merged = withMemoPrompt(state.draftTexts[key] ?? "", block, t("memoFollowupPrompt"));
-    state.setDraftTextLocal(target, merged);
+    injectMemoReference(target, note, withMemoPrompt("", block, t("memoFollowupPrompt")));
     setResultModalOpen(false);
     state.setPage("chat");
   }
@@ -776,7 +828,10 @@ export function MemoPage() {
               onBack={backToList}
               onEdit={() => startEdit(selectedNote)}
               onAgent={() => void openWithAgent(selectedNote)}
-              onResult={() => setResultModalOpen(true)}
+              onResult={() => {
+                setConfirmingClearResult(false);
+                setResultModalOpen(true);
+              }}
               onDelete={() => void removeNote(selectedNote)}
             />
           ) : (
@@ -803,6 +858,25 @@ export function MemoPage() {
           showCancel={false}
           showCloseIcon
           confirmLabel={t("memoActionContinue")}
+          footerExtra={
+            <button
+              type="button"
+              onClick={() => void clearResult(selectedNote)}
+              title={t("memoResultClearHint")}
+              aria-label={t("memoResultClearHint")}
+              data-testid="memo-result-clear"
+              className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs ${
+                confirmingClearResult
+                  ? "border border-danger bg-danger/10 text-danger"
+                  : "border border-border text-muted hover:border-danger hover:text-danger"
+              }`}
+            >
+              <Trash2 size={14} className="shrink-0" />
+              <span>
+                {confirmingClearResult ? t("memoActionDeleteConfirm") : t("memoResultClear")}
+              </span>
+            </button>
+          }
           onCancel={() => setResultModalOpen(false)}
           onConfirm={() => void continueWithAgent(selectedNote)}
         >

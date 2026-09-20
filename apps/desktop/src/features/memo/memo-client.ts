@@ -42,6 +42,8 @@ export type MemoUpdateRequest = {
   workspaceHint?: string | null;
   addImages?: MemoImageInput[];
   removeImageIds?: string[];
+  /** 清空 Agent 结果总结。 */
+  clearResult?: boolean;
 };
 
 export async function listMemoNotes(): Promise<MemoNote[]> {

@@ -1314,6 +1314,7 @@ export function validateRequestParams<M extends HostMethod>(
             "workspaceHint",
             "addImages",
             "removeImageIds",
+            "clearResult",
           ],
         ) &&
         isMemoNoteFields(params.patch) &&
@@ -1322,7 +1323,9 @@ export function validateRequestParams<M extends HostMethod>(
             params.patch.addImages.length <= 20 &&
             params.patch.addImages.every(isMemoImageInput))) &&
         (params.patch.removeImageIds === undefined ||
-          (isStringArray(params.patch.removeImageIds) && params.patch.removeImageIds.length <= 20))
+          (isStringArray(params.patch.removeImageIds) &&
+            params.patch.removeImageIds.length <= 20)) &&
+        (params.patch.clearResult === undefined || typeof params.patch.clearResult === "boolean")
         ? ok(params)
         : fail("invalid memo.update params", { method });
     case "memo.delete":

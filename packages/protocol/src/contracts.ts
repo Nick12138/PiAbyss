@@ -492,6 +492,7 @@ export type HostRequestParams = {
       workspaceHint?: string | null;
       addImages?: MemoImageInput[];
       removeImageIds?: string[];
+      clearResult?: boolean;
     };
   };
   "memo.delete": { id: string };

@@ -82,6 +82,7 @@ export function createMemoHandlers(agentDir: string): Partial<Record<string, Met
           (entry): entry is string => typeof entry === "string",
         );
       }
+      if (rawPatch.clearResult !== undefined) patch.clearResult = rawPatch.clearResult === true;
       const note = store.update(id, patch);
       scheduleMemoAutoSync(agentDir);
       return { result: { note } };
