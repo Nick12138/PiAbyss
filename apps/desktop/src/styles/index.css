@@ -288,6 +288,21 @@ body,
   min-width: var(--conversation-min-width, 35rem);
 }
 
+/* Same contract as the chat page for the other full-page views: keep a usable
+   floor width and let the app sidebar push them out of the window instead of
+   squeezing them into unreadability. Floors sit below the collapsed-sidebar
+   frame width (~404px at the window minimum) so everyday narrow use is
+   unaffected; only an expanded sidebar triggers the push-out. */
+[data-settings-shell] {
+  min-width: 22rem;
+}
+
+[data-schedule-page],
+[data-schedule-agent-page],
+[data-memo-page] {
+  min-width: 25rem;
+}
+
 .conversation-content-width {
   width: 100%;
   max-width: var(--conversation-max-width, 600px);
