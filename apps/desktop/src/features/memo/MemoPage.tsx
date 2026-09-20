@@ -1322,7 +1322,7 @@ function MemoEditor({
           aria-label={t("memoFieldContentPlaceholder")}
           rows={2}
           autoFocus={editor.id === null}
-          className={`memo-editor-input scrollbar-subtle field-sizing-content max-h-[70vh] min-h-32 w-full resize-none rounded-lg border border-dashed bg-transparent px-3 py-2.5 text-[13px] leading-relaxed outline-none caret-focus placeholder:text-muted ${
+          className={`memo-editor-input scrollbar-subtle field-sizing-content max-h-[70vh] min-h-[84px] w-full resize-none rounded-lg border border-dashed bg-transparent px-3 py-2.5 text-[13px] leading-relaxed outline-none caret-focus placeholder:text-muted ${
             dragOver ? "border-accent" : "border-transparent"
           }`}
         />
