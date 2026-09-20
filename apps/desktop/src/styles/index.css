@@ -187,6 +187,13 @@ body,
 [data-piabyss-app][data-has-topbar] [data-app-topbar] {
   background-color: var(--app-shell-bg);
 }
+
+/* Empty header segments (e.g. the settings actions portal target on pages
+   with no section actions) must not occupy a flex slot: the top bar's own
+   gap-2 would otherwise leave dead space on both sides of an invisible box. */
+[data-settings-header-actions]:empty {
+  display: none;
+}
 [data-piabyss-app][data-has-topbar] [data-sidebar] {
   background-color: var(--app-shell-bg);
 }

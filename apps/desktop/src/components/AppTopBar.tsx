@@ -68,7 +68,9 @@ export function AppTopBar({
           Its min width tracks the live sidebar width so the center column above
           begins exactly where the content card below begins. */}
       <div
-        className="flex shrink-0 items-center gap-3 px-4"
+        className={`flex shrink-0 items-center ${
+          sidebarCollapsed ? "gap-1.5 pl-4 pr-1.5" : "gap-3 px-4"
+        }`}
         data-sidebar-header
         data-tauri-drag-region
         style={{ minWidth: "var(--sidebar-width, 0px)" }}
@@ -106,7 +108,11 @@ export function AppTopBar({
           so the section nav offset is intentionally not added here. */}
       <div
         className="flex min-w-0 flex-1 items-center justify-start gap-3 pr-2"
-        style={{ paddingLeft: "var(--app-content-gap, 8px)" }}
+        style={{
+          paddingLeft: sidebarCollapsed
+            ? "calc(var(--app-content-gap, 8px) / 2)"
+            : "var(--app-content-gap, 8px)",
+        }}
       >
         {page === "chat" ? (
           <div
