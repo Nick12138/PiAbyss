@@ -514,6 +514,12 @@ export const zh: Record<MessageKey, string> = {
   skillsRefresh: "刷新",
   skillsSummary: "已加载 {loaded} 个技能 · {configured} 个已配置路径",
   skillsNoWorkspace: "打开工作区后才能查看技能。技能发现依赖于工作区目录。",
+  skillsWorkspaceFilter: "工作区",
+  skillsWorkspaceActive: "当前工作区",
+  skillsWorkspaceTargetHint:
+    "正在管理所选工作区：技能目录的添加/移除与启用开关都作用于该工作区（写入其 .pi/settings.json）。",
+  skillsWorkspaceTargetBusy:
+    "有会话正在运行，无法修改所选工作区的技能；请先停止相关会话。",
   skillsGroupUser: "全局（用户）",
   skillsGroupProject: "项目",
   skillsGroupBundle: "包与扩展",

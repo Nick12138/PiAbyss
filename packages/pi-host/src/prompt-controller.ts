@@ -9,6 +9,11 @@ import {
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import type { WorkspaceGraph } from "./workspace-graph-types.js";
 import type { MethodHandler } from "./server.js";
+import {
+  getTransientWorkspaceView,
+  resolveWorkspaceTarget,
+} from "./workspace-skills-context.js";
+import type { WorkspaceTargetRef } from "@piabyss/protocol";
 
 interface ScannedPrompt {
   name: string;
@@ -23,15 +28,20 @@ const PROMPT_FILES: ScannedPrompt[] = [
   { name: "CLAUDE.md", kind: "context", fileName: "CLAUDE.md" },
 ];
 
+/** Structural subset of a graph (or transient view) for prompt snapshots. */
+type PromptSnapshotSource = Pick<
+  WorkspaceGraph,
+  "workspaceId" | "canonicalCwd" | "settingsManager"
+>;
+
 function buildPromptSnapshot(
   factory: WorkspaceGraphFactory,
-  g: WorkspaceGraph,
+  source: PromptSnapshotSource,
   revision: number,
-  workspaceId: string,
 ): PromptSnapshot {
   const agentDir = factory.deps.agentDir;
-  const cwd = g.canonicalCwd;
-  const projectTrusted = g.settingsManager?.isProjectTrusted() ?? false;
+  const cwd = source.canonicalCwd;
+  const projectTrusted = source.settingsManager?.isProjectTrusted() ?? false;
 
   // Precompute which project-side system/append override files exist, since a
   // project file (when trusted) shadows the global one.
@@ -86,7 +96,7 @@ function buildPromptSnapshot(
 
   return {
     revision,
-    workspaceId,
+    workspaceId: source.workspaceId,
     cwd,
     agentDir,
     projectTrusted,
@@ -103,6 +113,29 @@ export function createPromptHandlers(
       if (!server) {
         return { error: createHostError("HOST_NOT_READY", "Server not bound") };
       }
+      const resolved = resolveWorkspaceTarget(
+        factory,
+        (ctx.params ?? null) as WorkspaceTargetRef | null,
+      );
+      if ("code" in resolved) return { error: resolved };
+      if (!resolved.isActive) {
+        const staleHost = factory.checkIdentity(ctx.context, {});
+        if (staleHost) return { error: staleHost };
+        try {
+          const view = await getTransientWorkspaceView(factory, resolved.canonicalCwd);
+          return {
+            result: buildPromptSnapshot(factory, view, server.identity.workspaceRevision),
+            identity: server.identity.snapshot(),
+          };
+        } catch (error) {
+          return {
+            error: createHostError(
+              "INTERNAL_ERROR",
+              error instanceof Error ? error.message : String(error),
+            ),
+          };
+        }
+      }
       const { withStableGraphRead } = await import("./stable-graph-read.js");
       const out = await withStableGraphRead({
         requestId: ctx.id,
@@ -114,7 +147,7 @@ export function createPromptHandlers(
           if (!g) {
             throw new Error("Workspace services not ready");
           }
-          return buildPromptSnapshot(factory, g, server.identity.workspaceRevision, g.workspaceId);
+          return buildPromptSnapshot(factory, g, server.identity.workspaceRevision);
         },
       });
       if (!out.ok) return { error: out.error, identity: out.identity };

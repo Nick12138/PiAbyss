@@ -28,6 +28,15 @@ import {
   type PackageSourceObject,
 } from "./package-filters.js";
 import { logger } from "./logger.js";
+import {
+  buildFreshTransientWorkspaceView,
+  getTransientWorkspaceView,
+  invalidateTransientWorkspaceViews,
+  refreshBoundGraphSettings,
+  resolveWorkspaceTarget,
+  withTransientWorkspaceLock,
+  workspaceMutationBusyError,
+} from "./workspace-skills-context.js";
 
 const NPM_INSTALL_MARKER = "/npm/node_modules/";
 const GIT_INSTALL_MARKER = "/git/";
@@ -289,7 +298,41 @@ export function createPackageHandlers(
       const params = ctx.params as {
         scope: "user" | "project" | "all";
         includeResources?: boolean;
+        targetWorkspaceId?: string;
+        targetWorkspaceCwd?: string;
       };
+      const resolved = resolveWorkspaceTarget(factory, params);
+      if ("code" in resolved) return { error: resolved };
+      if (!resolved.isActive) {
+        const staleHost = factory.checkIdentity(ctx.context, {});
+        if (staleHost) return { error: staleHost };
+        try {
+          const view = await getTransientWorkspaceView(factory, resolved.canonicalCwd);
+          // Reads are scoped projections only, mirroring the active path.
+          const projectionResourceIds: ResourceIdMap = new Map();
+          const snapshot = await buildPackageSnapshot({
+            revision: server.identity.packageRevision,
+            workspaceId: view.workspaceId,
+            scope: params.scope,
+            packageManager: view.packageManager,
+            settingsManager: view.settingsManager,
+            resourceLoader: view.resourceLoader,
+            cwd: view.canonicalCwd,
+            agentDir: factory.deps.agentDir,
+            packageUpdateCheck: false,
+            resourceIdMap: projectionResourceIds,
+            resourceReloadRequired: false,
+          });
+          return { result: snapshot, identity: server.identity.snapshot() };
+        } catch (error) {
+          return {
+            error: createHostError(
+              "INTERNAL_ERROR",
+              error instanceof Error ? error.message : String(error),
+            ),
+          };
+        }
+      }
       const { withStableGraphRead } = await import("./stable-graph-read.js");
       const out = await withStableGraphRead({
         requestId: ctx.id,
@@ -484,6 +527,18 @@ async function mutatePackage(
   if (!server) {
     return { error: createHostError("HOST_NOT_READY", "Server not bound") };
   }
+  // Cross-workspace skill toggles: route to the transient-context path before
+  // claiming the global graph operation — they never touch the active graph.
+  if (kind === "setPreferences") {
+    const resolved = resolveWorkspaceTarget(
+      factory,
+      (ctx.params ?? {}) as { targetWorkspaceId?: string; targetWorkspaceCwd?: string },
+    );
+    if ("code" in resolved) return { error: resolved };
+    if (!resolved.isActive) {
+      return mutateResourcePreferencesForWorkspace(factory, ctx, resolved);
+    }
+  }
   const operationId = randomUUID();
   const operationHandle = server.graphOperations.begin({
     operationKind: operationKindForPackageMutation(kind),
@@ -541,6 +596,124 @@ async function mutatePackage(
       },
     ),
   };
+}
+
+/**
+ * Cross-workspace resource preferences (skill toggles in the Skills settings
+ * page): applies preferences onto a fresh transient context for the target
+ * workspace, flushes settings to disk, reloads the transient loader, and
+ * returns a self-contained PackageMutationResult. The active workspace's
+ * global revisions, snapshot events, and locks are intentionally untouched —
+ * the target workspace's parked graph (if any) gets a settings reload so
+ * switch-back observes the change, with fingerprint drift as the backstop.
+ */
+async function mutateResourcePreferencesForWorkspace(
+  factory: WorkspaceGraphFactory,
+  ctx: {
+    id: string;
+    params: unknown;
+    context: Record<string, unknown>;
+  },
+  resolved: { canonicalCwd: string },
+): Promise<{ result: unknown } | { error: ReturnType<typeof createHostError> }> {
+  const server = factory.getServer();
+  if (!server) {
+    return { error: createHostError("HOST_NOT_READY", "Server not bound") };
+  }
+  const staleHost = factory.checkIdentity(ctx.context, {});
+  if (staleHost) return { error: staleHost };
+  const busy = workspaceMutationBusyError(factory);
+  if (busy) return { error: busy };
+  const operationId = randomUUID();
+  const updates = Array.isArray(ctx.params)
+    ? (ctx.params as ResourcePreferenceUpdate[])
+    : ((ctx.params as { updates?: ResourcePreferenceUpdate[] }).updates ?? [
+        ctx.params as ResourcePreferenceUpdate,
+      ]);
+  try {
+    return await withTransientWorkspaceLock(async () => {
+      // Fresh view: preferences must apply to current on-disk settings state.
+      const view = await buildFreshTransientWorkspaceView(factory, resolved.canonicalCwd);
+      const warnings: PackageMutationResult["warnings"] = [];
+      let reconcileRequired = false;
+      try {
+        applyResourcePreferences(view, updates);
+      } catch (err) {
+        const coded = err as Error & { code?: string };
+        if (coded.code === "RESOURCE_NOT_FOUND" || coded.code === "RESOURCE_NOT_CONFIGURABLE") {
+          return { error: createHostError(coded.code, coded.message) };
+        }
+        throw err;
+      }
+      try {
+        await view.settingsManager.flush();
+        const errors = view.settingsManager.drainErrors();
+        if (errors?.length) {
+          reconcileRequired = true;
+          warnings.push(
+            createHostError(
+              "PACKAGE_PARTIAL_FAILURE",
+              errors.map((e) => e.error?.message ?? String(e.error ?? e)).join("; "),
+            ),
+          );
+        }
+      } catch (err) {
+        reconcileRequired = true;
+        warnings.push(
+          createHostError(
+            "PACKAGE_PARTIAL_FAILURE",
+            err instanceof Error ? err.message : String(err),
+          ),
+        );
+      }
+      try {
+        await view.resourceLoader.reload();
+      } catch (err) {
+        reconcileRequired = true;
+        warnings.push(
+          createHostError(
+            "RESOURCE_RELOAD_FAILED",
+            err instanceof Error ? err.message : String(err),
+          ),
+        );
+      }
+      // Views are built from disk; our own writes invalidate the cache.
+      invalidateTransientWorkspaceViews();
+      await refreshBoundGraphSettings(factory, resolved.canonicalCwd);
+      const packageSnapshot = await buildPackageSnapshot({
+        revision: server.identity.packageRevision,
+        workspaceId: view.workspaceId,
+        scope: "all",
+        packageManager: view.packageManager,
+        settingsManager: view.settingsManager,
+        resourceLoader: view.resourceLoader,
+        cwd: view.canonicalCwd,
+        agentDir: factory.deps.agentDir,
+        packageUpdateCheck: false,
+        resourceIdMap: view.resourceIdMap,
+        resourceReloadRequired: reconcileRequired,
+      });
+      const result: PackageMutationResult = {
+        operationId,
+        status: reconcileRequired ? "partialFailure" : "committed",
+        packageSnapshot,
+        warnings,
+        reconcileRequired,
+      };
+      return { result };
+    });
+  } catch (err) {
+    const coded = err as Error & { code?: string };
+    if (coded.code === "RESOURCE_NOT_FOUND" || coded.code === "RESOURCE_NOT_CONFIGURABLE") {
+      return { error: createHostError(coded.code, coded.message) };
+    }
+    return {
+      error: createHostError(
+        "PACKAGE_PARTIAL_FAILURE",
+        err instanceof Error ? err.message : String(err),
+      ),
+    };
+  }
 }
 
 async function mutatePackageUnderLock(
@@ -1040,13 +1213,18 @@ function setSettingsPaths(
   setter(paths);
 }
 
+export type ResourcePreferencesTarget = Pick<
+  WorkspaceGraph,
+  "settingsManager" | "resourceIdMap" | "canonicalCwd"
+>;
+
 export function applyResourcePreferences(
-  g: WorkspaceGraph,
+  target: ResourcePreferencesTarget,
   updates: ResourcePreferenceUpdate[],
 ): void {
-  const sm = g.settingsManager!;
+  const sm = target.settingsManager!;
   const resolved = updates.map((update) => {
-    const metadata = g.resourceIdMap.get(update.resourceId);
+    const metadata = target.resourceIdMap.get(update.resourceId);
     if (!metadata) {
       throw Object.assign(new Error(`Resource not found: ${update.resourceId}`), {
         code: "RESOURCE_NOT_FOUND",
@@ -1128,7 +1306,7 @@ export function applyResourcePreferences(
       const candidates = new Set([
         pattern,
         metadata.relativePath.replace(/\\/g, "/"),
-        relative(join(g.canonicalCwd, ".pi"), metadata.path).replace(/\\/g, "/"),
+        relative(join(target.canonicalCwd, ".pi"), metadata.path).replace(/\\/g, "/"),
       ]);
       paths = paths.filter((entry) => {
         const target = /^[!+-]/.test(entry) ? entry.slice(1) : entry;

@@ -27,6 +27,7 @@ import type {
   SkillInfo,
   SkillSettingsScope,
   SkillSnapshot,
+  WorkspaceTargetRef,
 } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import {
@@ -39,6 +40,8 @@ import { useT, type Translate } from "../../lib/i18n/use-t";
 import { SkillPreviewModal } from "./SkillPreviewModal";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
+
+const NO_WORKSPACES: string[] = [];
 
 type SkillGroupId = "user" | "project" | "bundle";
 
@@ -128,6 +131,11 @@ function groupIcon(id: SkillGroupId) {
   return id === "user" ? User : id === "project" ? Folder : Boxes;
 }
 
+/** Last path segment for workspace picker labels (POSIX and Windows). */
+function workspaceBasename(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
+}
+
 /**
  * Prompts are shown alongside skills inside the user/project group cards
  * (never in the bundle group). Non-existent files are already filtered by the
@@ -157,6 +165,11 @@ export function SkillsSettings() {
   const host = useAppStore((state) => state.host);
   const workspace = useAppStore((state) => state.workspace);
   const pushNotification = useAppStore((state) => state.pushNotification);
+  // All user-known workspace paths; the filter lets any of them be managed
+  // without switching the active workspace.
+  const knownWorkspaces = useAppStore(
+    (state) => state.desktopSettings?.knownWorkspaces ?? NO_WORKSPACES,
+  );
 
   const [snapshot, setSnapshot] = useState<SkillSnapshot | null>(null);
   const [promptSnapshot, setPromptSnapshot] = useState<PromptSnapshot | null>(null);
@@ -168,6 +181,11 @@ export function SkillsSettings() {
   const [newScope, setNewScope] = useState<SkillSettingsScope>("project");
   const [previewSkill, setPreviewSkill] = useState<{ name: string; filePath: string } | null>(null);
   const [showPromptHelp, setShowPromptHelp] = useState(false);
+  // "" = active workspace; otherwise the selected workspace's raw path.
+  const [selectedWorkspacePath, setSelectedWorkspacePath] = useState("");
+  // Tracks which workspace the rendered snapshots belong to, so a selection
+  // change drops the previous workspace's data while the new one loads.
+  const snapshotSourceRef = useRef("");
   // 全局/项目 default expanded; bundle (packages & extensions) default collapsed.
   const [collapsed, setCollapsed] = useState<Record<SkillGroupId, boolean>>({
     user: false,
@@ -175,6 +193,13 @@ export function SkillsSettings() {
     bundle: true,
   });
   const refreshRequest = useRef(0);
+
+  /** Cross-workspace targeting for host requests; undefined = active workspace. */
+  function targetParams(): WorkspaceTargetRef | undefined {
+    const selected = selectedWorkspacePath;
+    if (!selected || selected === workspace?.cwd) return undefined;
+    return { targetWorkspaceCwd: selected };
+  }
 
   async function applyResponse<T extends { hostInstanceId?: string }>(response: T) {
     const current = useAppStore.getState();
@@ -190,32 +215,39 @@ export function SkillsSettings() {
       setLoadState("idle");
       return;
     }
+    const target = targetParams();
+    const sourceKey = target ? `cwd:${selectedWorkspacePath}` : `id:${workspace.id}`;
     const request = ++refreshRequest.current;
     setLoadState("loading");
     setLoadError("");
-    // Workspace switched: drop the previous workspace's snapshot so stale
-    // project skills do not linger while the new workspace loads.
-    if (snapshot && workspace && snapshot.workspaceId !== workspace.id) {
+    if (snapshot && snapshotSourceRef.current !== sourceKey) {
+      // Workspace or filter selection switched: drop the previous workspace's
+      // snapshot so stale project skills do not linger while the new loads.
       setSnapshot(null);
       setPromptSnapshot(null);
       setResources([]);
     }
     try {
       const [skillResponse, packageResponse, promptResponse] = await Promise.all([
-        hostClient.request("skill.list", workspaceContext(host, workspace), null, 30_000),
+        hostClient.request("skill.list", workspaceContext(host, workspace), target ?? null, 30_000),
         hostClient.request(
           "package.list",
           workspaceContext(host, workspace),
-          { scope: "all", includeResources: true } satisfies HostRequestParams["package.list"],
+          {
+            scope: "all",
+            includeResources: true,
+            ...(target ?? {}),
+          } satisfies HostRequestParams["package.list"],
           60_000,
         ),
-        hostClient.request("prompt.list", workspaceContext(host, workspace), null, 30_000),
+        hostClient.request("prompt.list", workspaceContext(host, workspace), target ?? null, 30_000),
       ]);
       if (refreshRequest.current !== request) return;
       if (!skillResponse.ok) {
         throw new Error(skillResponse.error?.message ?? t("notifSkillsLoadFailed"));
       }
       setSnapshot(skillResponse.result);
+      snapshotSourceRef.current = sourceKey;
       // prompt.list is best-effort: a failure must not block the skills view.
       if (promptResponse.ok) {
         setPromptSnapshot(promptResponse.result);
@@ -242,7 +274,7 @@ export function SkillsSettings() {
       refreshRequest.current += 1;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [host?.hostInstanceId, workspace?.id, workspace?.revision]);
+  }, [host?.hostInstanceId, workspace?.id, workspace?.revision, selectedWorkspacePath]);
 
   async function mutatePath(
     method: "skill.addPath" | "skill.removePath",
@@ -255,7 +287,7 @@ export function SkillsSettings() {
       const response = await hostClient.request(
         method,
         workspaceContext(host, workspace),
-        { path, scope },
+        { path, scope, ...(targetParams() ?? {}) } satisfies HostRequestParams[typeof method],
         30_000,
       );
       if (!response.ok) {
@@ -294,14 +326,24 @@ export function SkillsSettings() {
       targetScope,
       preference: effectiveEnabled(resource) ? "disabled" : "enabled",
     };
+    // Cross-workspace toggles go through resource.setPreferences which carries
+    // the optional workspace target; the active path stays on setPreference.
+    const target = targetParams();
     setBusy(true);
     try {
-      const response = await hostClient.request(
-        "resource.setPreference",
-        sessionPackageContext(host, workspace),
-        params,
-        null,
-      );
+      const response = target
+        ? await hostClient.request(
+            "resource.setPreferences",
+            sessionPackageContext(host, workspace),
+            { updates: [params], ...target } satisfies HostRequestParams["resource.setPreferences"],
+            null,
+          )
+        : await hostClient.request(
+            "resource.setPreference",
+            sessionPackageContext(host, workspace),
+            params,
+            null,
+          );
       if (!response.ok) {
         throw new Error(response.error?.message ?? t("notifSkillToggleFailed"));
       }
@@ -309,7 +351,11 @@ export function SkillsSettings() {
       setResources(
         result.packageSnapshot.resources.filter((resource) => resource.type === "skill"),
       );
-      useAppStore.getState().applyPackageMutationResult(result);
+      // Only the active workspace's result feeds the global package store;
+      // cross-workspace results stay local to this page.
+      if (!target) {
+        useAppStore.getState().applyPackageMutationResult(result);
+      }
       await applyResponse(response);
       // Reload flips which skills the loader reports as loaded; resync.
       void refresh();
@@ -393,7 +439,7 @@ export function SkillsSettings() {
                     loaded: String(rows.length),
                     configured: String(snapshot.configuredPaths.length),
                   })
-                : " "}
+                : " "}
             </p>
             <button
               type="button"
@@ -406,6 +452,36 @@ export function SkillsSettings() {
               <RefreshCw size={14} className={loadState === "loading" ? "animate-spin" : ""} />
             </button>
           </div>
+
+          {knownWorkspaces.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 text-xs text-muted">{t("skillsWorkspaceFilter")}</span>
+                <Select
+                  className="max-w-md min-w-56 flex-1"
+                  ariaLabel={t("skillsWorkspaceFilter")}
+                  value={selectedWorkspacePath}
+                  disabled={busy || loadState === "loading"}
+                  onChange={(value) => setSelectedWorkspacePath(value)}
+                  options={[
+                    { value: "", label: t("skillsWorkspaceActive") },
+                    ...knownWorkspaces.map((path) => ({
+                      value: path,
+                      label:
+                        path === workspace?.cwd
+                          ? `${workspaceBasename(path)} · ${t("skillsWorkspaceActive")}`
+                          : workspaceBasename(path),
+                    })),
+                  ]}
+                />
+              </div>
+              {targetParams() && (
+                <p className="rounded-lg border border-border bg-surface p-3 text-xs text-muted">
+                  {t("skillsWorkspaceTargetHint")}
+                </p>
+              )}
+            </div>
+          )}
 
           {snapshot?.resourceReloadRequired && (
             <p

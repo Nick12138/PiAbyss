@@ -15,6 +15,7 @@ import { createExtensionCommandContextActions } from "./extension-command-action
 import { SessionRuntimeCache, type ActiveSessionState } from "./session-runtime-cache.js";
 import type { AgentOperationLock } from "./locks.js";
 import { WorkspaceLifecycle } from "./workspace-lifecycle.js";
+import { invalidateTransientWorkspaceViews } from "./workspace-skills-context.js";
 export * from "./workspace-graph-types.js";
 import {
   type BackgroundSessionRuntime,
@@ -74,6 +75,11 @@ export class WorkspaceGraphFactory {
           // fakes may not implement the full server surface; status is
           // best-effort and must never break the switch itself.
           try {
+            invalidateTransientWorkspaceViews();
+          } catch {
+            /* ignore */
+          }
+          try {
             this.server?.emit("host.statusChanged", this.server.buildStatus());
           } catch {
             /* ignore */
@@ -113,6 +119,13 @@ export class WorkspaceGraphFactory {
 
   getGraph(): WorkspaceGraph | null {
     return this.graph;
+  }
+
+  /** Bound graph (active or parked) whose canonical cwd matches, if any. */
+  findBoundGraph(canonicalCwd: string): WorkspaceGraph | null {
+    return (
+      this.workspaceLifecycle.boundGraphs().find((g) => g.canonicalCwd === canonicalCwd) ?? null
+    );
   }
 
   getServer(): PiHostServer | null {

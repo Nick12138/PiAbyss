@@ -7,11 +7,20 @@ import {
   type SkillInfo,
   type SkillPathMutation,
   type SkillSnapshot,
+  type WorkspaceTargetRef,
 } from "@piabyss/protocol";
 import type { Skill } from "@earendil-works/pi-coding-agent";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import type { WorkspaceGraph } from "./workspace-graph-types.js";
 import type { MethodHandler } from "./server.js";
+import {
+  getTransientWorkspaceView,
+  invalidateTransientWorkspaceViews,
+  refreshBoundGraphSettings,
+  resolveWorkspaceTarget,
+  withTransientWorkspaceLock,
+  workspaceMutationBusyError,
+} from "./workspace-skills-context.js";
 import { logger } from "./logger.js";
 
 function globalSettingsPath(agentDir: string): string {
@@ -126,18 +135,27 @@ function isNameValidationDiagnostic(diagnostic: { message: string }): boolean {
   );
 }
 
+/**
+ * Structural subset of a workspace graph (or transient view) needed to build
+ * a skill snapshot. Lets the same builder serve the active graph and
+ * cross-workspace transient contexts.
+ */
+export type SkillSnapshotSource = Pick<
+  WorkspaceGraph,
+  "workspaceId" | "canonicalCwd" | "settingsManager" | "resourceLoader" | "resourceReloadRequired"
+>;
+
 function buildSkillSnapshot(
   factory: WorkspaceGraphFactory,
-  g: WorkspaceGraph,
+  source: SkillSnapshotSource,
   revision: number,
-  workspaceId: string,
 ): SkillSnapshot {
-  const loaded = g.resourceLoader?.getSkills() ?? { skills: [], diagnostics: [] };
+  const loaded = source.resourceLoader?.getSkills() ?? { skills: [], diagnostics: [] };
   return {
     revision,
-    workspaceId,
-    cwd: g.canonicalCwd,
-    projectTrusted: g.settingsManager?.isProjectTrusted() ?? false,
+    workspaceId: source.workspaceId,
+    cwd: source.canonicalCwd,
+    projectTrusted: source.settingsManager?.isProjectTrusted() ?? false,
     skills: loaded.skills.map(toSkillInfo),
     diagnostics: loaded.diagnostics
       .filter((diagnostic) => !isNameValidationDiagnostic(diagnostic))
@@ -149,8 +167,8 @@ function buildSkillSnapshot(
         if (diagnostic.path !== undefined) entry.path = diagnostic.path;
         return entry;
       }),
-    configuredPaths: collectConfiguredPaths(factory.deps.agentDir, g.canonicalCwd),
-    resourceReloadRequired: g.resourceReloadRequired === true,
+    configuredPaths: collectConfiguredPaths(factory.deps.agentDir, source.canonicalCwd),
+    resourceReloadRequired: source.resourceReloadRequired === true,
   };
 }
 
@@ -163,7 +181,12 @@ async function mutateSkillPaths(
   if (!server) {
     return { error: createHostError("HOST_NOT_READY", "Server not bound") };
   }
-  const params = ctx.params as SkillPathMutation;
+  const params = ctx.params as SkillPathMutation & WorkspaceTargetRef;
+  const resolved = resolveWorkspaceTarget(factory, params);
+  if ("code" in resolved) return { error: resolved };
+  if (!resolved.isActive) {
+    return mutateSkillPathsForWorkspace(factory, ctx, action, params, resolved);
+  }
   const { withStableGraphRead } = await import("./stable-graph-read.js");
   const out = await withStableGraphRead({
     requestId: ctx.id,
@@ -235,11 +258,65 @@ async function mutateSkillPaths(
           });
         }
       }
-      return buildSkillSnapshot(factory, g, server.identity.workspaceRevision, g.workspaceId);
+      return buildSkillSnapshot(factory, g, server.identity.workspaceRevision);
     },
   });
   if (!out.ok) return { error: out.error, identity: out.identity };
   return { result: out.result, identity: out.identity };
+}
+
+/**
+ * Cross-workspace skill path mutation: writes the target workspace's settings
+ * file directly (no live graph involved), keeps any parked graph's in-memory
+ * settings consistent, and returns a snapshot from a fresh transient context.
+ */
+async function mutateSkillPathsForWorkspace(
+  factory: WorkspaceGraphFactory,
+  ctx: Parameters<MethodHandler>[0],
+  action: "add" | "remove",
+  params: SkillPathMutation,
+  resolved: { canonicalCwd: string },
+): ReturnType<MethodHandler> {
+  const server = factory.getServer();
+  if (!server) {
+    return { error: createHostError("HOST_NOT_READY", "Server not bound") };
+  }
+  const staleHost = factory.checkIdentity(ctx.context, {});
+  if (staleHost) return { error: staleHost };
+  const busy = workspaceMutationBusyError(factory);
+  if (busy) return { error: busy };
+  try {
+    const result = await withTransientWorkspaceLock(async () => {
+      const settingsFile =
+        params.scope === "user"
+          ? globalSettingsPath(factory.deps.agentDir)
+          : projectSettingsPath(resolved.canonicalCwd);
+      const current = readSkillEntries(settingsFile);
+      const next =
+        action === "add"
+          ? current.includes(params.path)
+            ? current
+            : [...current, params.path]
+          : current.filter((entry) => entry !== params.path);
+      if (next.length !== current.length || action === "add") {
+        writeSkillEntries(settingsFile, next);
+      }
+      // Shared user-scope entries and the target's project settings both live
+      // on disk; drop cached transient views and sync parked graph state.
+      invalidateTransientWorkspaceViews();
+      await refreshBoundGraphSettings(factory, resolved.canonicalCwd);
+      const view = await getTransientWorkspaceView(factory, resolved.canonicalCwd);
+      return buildSkillSnapshot(factory, view, server.identity.workspaceRevision);
+    });
+    return { result, identity: server.identity.snapshot() };
+  } catch (error) {
+    return {
+      error: createHostError(
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      ),
+    };
+  }
 }
 
 export function createSkillHandlers(
@@ -250,6 +327,31 @@ export function createSkillHandlers(
       const server = factory.getServer();
       if (!server) {
         return { error: createHostError("HOST_NOT_READY", "Server not bound") };
+      }
+      const resolved = resolveWorkspaceTarget(
+        factory,
+        (ctx.params ?? null) as WorkspaceTargetRef | null,
+      );
+      if ("code" in resolved) return { error: resolved };
+      if (!resolved.isActive) {
+        // Cross-workspace read: served from a transient context, never the
+        // active graph; host-instance identity is still verified.
+        const staleHost = factory.checkIdentity(ctx.context, {});
+        if (staleHost) return { error: staleHost };
+        try {
+          const view = await getTransientWorkspaceView(factory, resolved.canonicalCwd);
+          return {
+            result: buildSkillSnapshot(factory, view, server.identity.workspaceRevision),
+            identity: server.identity.snapshot(),
+          };
+        } catch (error) {
+          return {
+            error: createHostError(
+              "INTERNAL_ERROR",
+              error instanceof Error ? error.message : String(error),
+            ),
+          };
+        }
       }
       const { withStableGraphRead } = await import("./stable-graph-read.js");
       const out = await withStableGraphRead({
@@ -262,7 +364,7 @@ export function createSkillHandlers(
           if (!g) {
             throw new Error("Workspace services not ready");
           }
-          return buildSkillSnapshot(factory, g, server.identity.workspaceRevision, g.workspaceId);
+          return buildSkillSnapshot(factory, g, server.identity.workspaceRevision);
         },
       });
       if (!out.ok) return { error: out.error, identity: out.identity };

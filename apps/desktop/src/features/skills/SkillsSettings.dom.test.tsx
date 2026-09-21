@@ -189,6 +189,9 @@ describe("SkillsSettings", () => {
       if (method === "resource.setPreference") {
         return envelope(method, mutationResult(currentResources));
       }
+      if (method === "resource.setPreferences") {
+        return envelope(method, mutationResult(currentResources));
+      }
       if (method === "skill.addPath" || method === "skill.removePath") {
         return envelope(method, currentSkills);
       }
@@ -548,5 +551,94 @@ describe("SkillsSettings", () => {
     expect(screen.getByText(/Merge \(AGENTS.md \/ CLAUDE.md\)/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  describe("workspace filter", () => {
+    beforeEach(() => {
+      useAppStore.getState().setDesktopSettings({
+        theme: "system",
+        autoRestartHostOnce: true,
+        extensionDecisionPresentation: "legacy-modal",
+        terminalProfile: "auto",
+        knownWorkspaces: ["C:/workspace", "C:/other"],
+      });
+    });
+
+    afterEach(() => {
+      useAppStore.getState().setDesktopSettings(null);
+    });
+
+    async function selectWorkspace(
+      user: ReturnType<typeof userEvent.setup>,
+      label: string,
+    ) {
+      await user.click(screen.getByRole("button", { name: "Workspace" }));
+      await user.click(await screen.findByRole("option", { name: label }));
+    }
+
+    it("targets list requests at the selected workspace", async () => {
+      const user = userEvent.setup();
+      render(<SkillsSettings />);
+      await screen.findByText("Global (user)");
+      request.mockClear();
+      await selectWorkspace(user, "other");
+      await waitFor(() => {
+        expect(request.mock.calls.find(([method]) => method === "skill.list")?.[2]).toEqual({
+          targetWorkspaceCwd: "C:/other",
+        });
+      });
+      expect(
+        request.mock.calls.find(([method]) => method === "package.list")?.[2],
+      ).toMatchObject({ scope: "all", targetWorkspaceCwd: "C:/other" });
+      expect(
+        request.mock.calls.find(([method]) => method === "prompt.list")?.[2],
+      ).toEqual({ targetWorkspaceCwd: "C:/other" });
+      expect(screen.getByText(/Managing the selected workspace/)).toBeInTheDocument();
+    });
+
+    it("adds a skill directory into the selected workspace's settings", async () => {
+      dialogMock.open.mockResolvedValue("C:/team/skills");
+      const user = userEvent.setup();
+      render(<SkillsSettings />);
+      await screen.findByText("Global (user)");
+      await selectWorkspace(user, "other");
+      await waitFor(() =>
+        expect(request.mock.calls.some(([method]) => method === "skill.list")).toBeTruthy(),
+      );
+      await user.click(screen.getByRole("button", { name: "Choose folder…" }));
+      await user.click(screen.getByRole("button", { name: "Add" }));
+      await waitFor(() => {
+        const call = request.mock.calls.find(([method]) => method === "skill.addPath");
+        expect(call?.[2]).toEqual({
+          path: "C:/team/skills",
+          scope: "project",
+          targetWorkspaceCwd: "C:/other",
+        });
+      });
+    });
+
+    it("routes cross-workspace skill toggles through resource.setPreferences", async () => {
+      const user = userEvent.setup();
+      render(<SkillsSettings />);
+      await screen.findByRole("switch", { name: "Toggle skill review" });
+      await selectWorkspace(user, "other");
+      const targetToggle = await screen.findByRole("switch", { name: "Toggle skill review" });
+      await user.click(targetToggle);
+      await waitFor(() => {
+        const call = request.mock.calls.find(([method]) => method === "resource.setPreferences");
+        expect(call?.[2]).toEqual({
+          updates: [
+            {
+              resourceId: "resource:skill:review",
+              targetScope: "user",
+              preference: "disabled",
+            },
+          ],
+          targetWorkspaceCwd: "C:/other",
+        });
+      });
+      // Cross-workspace results must not feed the global package store.
+      expect(useAppStore.getState().packages).toBeNull();
+    });
   });
 });

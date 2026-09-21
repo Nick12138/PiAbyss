@@ -545,6 +545,12 @@ export const en = {
   skillsSummary: "{loaded} skills loaded · {configured} configured paths",
   skillsNoWorkspace:
     "Open a workspace to inspect skills. Discovery depends on the workspace directory.",
+  skillsWorkspaceFilter: "Workspace",
+  skillsWorkspaceActive: "Current workspace",
+  skillsWorkspaceTargetHint:
+    "Managing the selected workspace: skill directory add/remove and enable toggles apply to it (written to its .pi/settings.json).",
+  skillsWorkspaceTargetBusy:
+    "A session is running; stop it before modifying the selected workspace's skills.",
   skillsGroupUser: "Global (user)",
   skillsGroupProject: "Project",
   skillsGroupBundle: "Packages & Extensions",
