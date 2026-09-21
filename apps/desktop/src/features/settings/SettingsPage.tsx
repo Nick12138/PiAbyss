@@ -43,6 +43,9 @@ import { hostContext } from "../../lib/bridge/host-context";
 import { notifyOperationFailure } from "../../lib/notify-operation-error";
 import { SettingsTopBarActionsContext, SETTINGS_SECTION_META } from "./settings-top-bar";
 
+/** Fire-and-forget prefetch budget for the plugin-library registry warmup. */
+const PLUGIN_LIBRARY_PREFETCH_TIMEOUT_MS = 30_000;
+
 type ShellProfileSummary = {
   id: TerminalProfileId;
   label: string;
@@ -498,6 +501,25 @@ export function SettingsPage({
   useEffect(() => {
     setSettingsSection(localSection);
   }, [localSection, setSettingsSection]);
+
+  // Opening Settings silently warms the plugin-library registry cache on the
+  // host (host-scoped, TTL-cached), so switching to the plugin library section
+  // later renders from cache instead of waiting on a network fetch.
+  const prefetchHost = useAppStore((s) => s.host);
+  useEffect(() => {
+    if (!prefetchHost) return;
+    void hostClient
+      .request(
+        "pluginLibrary.catalog",
+        hostContext(prefetchHost),
+        {},
+        PLUGIN_LIBRARY_PREFETCH_TIMEOUT_MS,
+      )
+      .catch(() => {
+        // Fire-and-forget: a failed prefetch is harmless — the plugin library
+        // page retries with its own error surface when actually opened.
+      });
+  }, [prefetchHost]);
 
   // Remember where the user left off (section + per-section scroll offsets)
   // when Settings unmounts, so the next generic open restores it while the

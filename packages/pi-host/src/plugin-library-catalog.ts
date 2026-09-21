@@ -32,7 +32,9 @@ export const SUPERSEDED_PLUGIN_SOURCES: readonly string[] = [
   "npm:@juicesharp/rpiv-ask-user-question",
 ];
 
-const CATALOG_TTL_MS = 10 * 60_000;
+/** Registry entries change rarely; serve the in-memory catalog for a day and
+ *  rely on the explicit refresh button (or a host restart) for updates. */
+const CATALOG_TTL_MS = 24 * 60 * 60_000;
 const FETCH_TIMEOUT_MS = 15_000;
 const MAX_REGISTRY_BYTES = 512 * 1024;
 
