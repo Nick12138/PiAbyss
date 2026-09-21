@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Brain, Check, ChevronRight } from "lucide-react";
 import type { PiSettingsPatch, PiSettingsSnapshot, ThinkingLevel } from "@piabyss/protocol";
 import { Select } from "../../components/Select";
 import { useT } from "../../lib/i18n/use-t";
@@ -96,23 +97,21 @@ export function PiSettings() {
     }
   }
 
-  const providers = useMemo(
-    () => [...new Set(settings.models.map((model) => model.provider))].sort(),
-    [settings.models],
-  );
-  const selectedProvider = settings.defaultProvider ?? "";
-  const modelsForProvider = settings.models.filter((model) => model.provider === selectedProvider);
-  const selectedModel = settings.defaultModel ?? "";
+  const selectedModelKey =
+    settings.defaultProvider && settings.defaultModel
+      ? `${settings.defaultProvider}/${settings.defaultModel}`
+      : "";
+  const selectedModelName =
+    settings.models.find(
+      (model) =>
+        model.provider === settings.defaultProvider && model.modelId === settings.defaultModel,
+    )?.name ?? settings.defaultModel;
 
-  function selectProvider(provider: string) {
-    const firstModel = settings.models.find((model) => model.provider === provider);
-    if (!firstModel) return;
-    void patch("defaultModel", { defaultProvider: provider, defaultModel: firstModel.modelId });
-  }
-
-  function selectModel(modelId: string) {
-    if (!selectedProvider) return;
-    void patch("defaultModel", { defaultProvider: selectedProvider, defaultModel: modelId });
+  function selectModel(key: string) {
+    const separator = key.indexOf("/");
+    const provider = key.slice(0, separator);
+    const modelId = key.slice(separator + 1);
+    void patch("defaultModel", { defaultProvider: provider, defaultModel: modelId });
   }
 
   return (
@@ -122,53 +121,37 @@ export function PiSettings() {
         <SettingRow
           label={t("generalDefaultModel")}
           description={t("generalDefaultModelDesc")}
-          saving={saving === "defaultModel"}
-        >
-          <div className="flex min-w-0 flex-wrap gap-1.5">
-            <Select
-              className="w-32 max-w-full"
-              ariaLabel={t("generalDefaultProvider")}
-              value={selectedProvider}
-              disabled={loading || providers.length === 0}
-              onChange={selectProvider}
-              options={providers.map((provider) => ({
-                value: provider,
-                label:
-                  settings.models.find((model) => model.provider === provider)?.providerName ??
-                  provider,
-              }))}
-            />
-            <Select
-              className="w-44 max-w-full"
-              ariaLabel={t("generalDefaultModel")}
-              value={selectedModel}
-              disabled={loading || modelsForProvider.length === 0}
-              onChange={selectModel}
-              options={modelsForProvider.map((model) => ({
-                value: model.modelId,
-                label: model.name,
-              }))}
-            />
-          </div>
-        </SettingRow>
-
-        <SettingRow
-          label={t("generalDefaultThinkingLevel")}
-          description={t("generalDefaultThinkingLevelDesc")}
-          saving={saving === "defaultThinkingLevel"}
+          saving={saving === "defaultModel" || saving === "defaultThinkingLevel"}
         >
           <Select
-            className="min-w-36"
-            ariaLabel={t("generalDefaultThinkingLevel")}
-            value={settings.defaultThinkingLevel}
-            disabled={loading}
-            onChange={(value) =>
-              void patch("defaultThinkingLevel", { defaultThinkingLevel: value as ThinkingLevel })
+            className="w-56 max-w-full"
+            ariaLabel={t("generalDefaultModel")}
+            value={selectedModelKey}
+            disabled={loading || settings.models.length === 0}
+            onChange={selectModel}
+            selectedLabel={
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate">{selectedModelName || t("modelNone")}</span>
+                <span className="shrink-0 whitespace-nowrap text-muted">
+                  {THINKING_LABELS[settings.defaultThinkingLevel]}
+                </span>
+              </span>
             }
-            options={THINKING_LEVELS.map((level) => ({
-              value: level,
-              label: THINKING_LABELS[level],
+            options={settings.models.map((model) => ({
+              value: `${model.provider}/${model.modelId}`,
+              label: model.name || model.modelId,
+              group: model.providerName || model.provider,
             }))}
+            footer={
+              <ThinkingDepthFooter
+                label={t("modelThinkingDepth")}
+                value={settings.defaultThinkingLevel}
+                disabled={loading}
+                onSelect={(level) =>
+                  void patch("defaultThinkingLevel", { defaultThinkingLevel: level })
+                }
+              />
+            }
           />
         </SettingRow>
 
@@ -257,6 +240,77 @@ export function PiSettings() {
         </SettingRow>
       </div>
     </section>
+  );
+}
+
+/** Footer of the default-model dropdown: a pinned "thinking depth" entry that
+ *  expands a nested level list, mirroring the chat composer's model menu. */
+function ThinkingDepthFooter({
+  label,
+  value,
+  disabled,
+  onSelect,
+}: {
+  label: string;
+  value: ThinkingLevel;
+  disabled: boolean;
+  onSelect: (level: ThinkingLevel) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      {open && (
+        <div
+          role="listbox"
+          aria-label={label}
+          className="theme-floating-surface absolute bottom-full left-0 right-0 z-10 mb-1 max-h-44 overflow-y-auto rounded-md border border-border bg-surface-raised py-1 shadow-lg"
+        >
+          {THINKING_LEVELS.map((level) => {
+            const active = level === value;
+            return (
+              <button
+                key={level}
+                type="button"
+                role="option"
+                aria-selected={active}
+                className={`flex h-8 w-full items-center gap-1.5 whitespace-nowrap px-2.5 text-left text-xs transition-colors hover:bg-surface-overlay ${
+                  active ? "font-medium text-foreground" : "text-muted"
+                }`}
+                onClick={() => {
+                  setOpen(false);
+                  onSelect(level);
+                }}
+              >
+                <span className="min-w-0 flex-1 truncate">{THINKING_LABELS[level]}</span>
+                {active && (
+                  <span className="flex shrink-0 items-center justify-center">
+                    <Check size={16} strokeWidth={2.5} />
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <button
+        type="button"
+        className="flex h-8 w-full items-center gap-1.5 rounded-b-md border-t border-border px-2.5 text-left text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-default disabled:opacity-40"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <Brain size={13} className="shrink-0" />
+        <span className="whitespace-nowrap">{label}</span>
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          <span className="whitespace-nowrap text-foreground">{THINKING_LABELS[value]}</span>
+          <ChevronRight
+            size={13}
+            className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+          />
+        </span>
+      </button>
+    </>
   );
 }
 

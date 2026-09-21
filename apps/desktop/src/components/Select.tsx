@@ -188,7 +188,7 @@ export function Select({
         createPortal(
           <div
             ref={menuRef}
-            className="theme-floating-surface fixed z-[100] max-w-[calc(100vw-16px)] overflow-hidden rounded-md border border-border bg-surface-raised shadow-lg"
+            className="theme-floating-surface fixed z-[100] max-w-[calc(100vw-16px)] rounded-md border border-border bg-surface-raised shadow-lg"
             style={{
               top: menuPosition.top,
               left: menuPosition.left,
@@ -198,7 +198,9 @@ export function Select({
             <div
               role="listbox"
               aria-label={ariaLabel}
-              className="w-full overflow-y-auto overscroll-contain rounded-t-md py-1"
+              className={`w-full overflow-y-auto overscroll-contain rounded-t-md py-1 ${
+                footer ? "" : "rounded-b-md"
+              }`}
               style={{ maxHeight: menuPosition.maxHeight }}
             >
               {options.map((option) => {

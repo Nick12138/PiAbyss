@@ -97,16 +97,14 @@ describe("PiSettings", () => {
     );
   });
 
-  it("patches thinking, retry, trust, and queue modes", async () => {
+  it("patches thinking via the model menu footer, retry, trust, and queue modes", async () => {
     const user = userEvent.setup();
     render(<PiSettings />);
     await screen.findByRole("button", { name: "Default model" });
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Default thinking level" })).toBeEnabled(),
-    );
 
-    await user.click(screen.getByRole("button", { name: "Default thinking level" }));
-    await user.click(within(screen.getByRole("listbox")).getByRole("option", { name: "High" }));
+    await user.click(screen.getByRole("button", { name: "Default model" }));
+    await user.click(screen.getByRole("button", { name: /Thinking depth/ }));
+    await user.click(screen.getByRole("option", { name: "High" }));
     await user.click(screen.getByRole("button", { name: "Project trust" }));
     await user.click(
       within(screen.getByRole("listbox")).getByRole("option", { name: "Always trust" }),
