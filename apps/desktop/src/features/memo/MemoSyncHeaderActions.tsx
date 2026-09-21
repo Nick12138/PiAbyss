@@ -69,7 +69,7 @@ export function MemoSyncHeaderActions() {
     }
   }
 
-  /** 顶栏刷新按钮：立即双向同步一次。 */
+  /** 顶栏刷新按钮：立即双向同步一次（成功不弹全局通知，失败才提示）。 */
   async function handleToolbarSync() {
     if (toolbarSyncing) return;
     if (!syncConfigured) {
@@ -78,18 +78,9 @@ export function MemoSyncHeaderActions() {
     }
     setToolbarSyncing(true);
     try {
-      const stats = await syncMemoNow();
+      await syncMemoNow();
       refreshMemoSyncStatus();
       window.dispatchEvent(new Event(MEMO_SYNCED_EVENT));
-      pushNotification(
-        t("memoSyncSuccess", {
-          uploadedNotes: stats.uploadedNotes,
-          downloadedNotes: stats.downloadedNotes,
-          uploadedImages: stats.uploadedImages,
-          downloadedImages: stats.downloadedImages,
-        }),
-        "success",
-      );
     } catch (error) {
       refreshMemoSyncStatus();
       pushNotification(
