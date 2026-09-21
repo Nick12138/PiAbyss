@@ -32,7 +32,7 @@ import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import { buildTranscriptRows, type TranscriptRow } from "../chat/transcript-model";
 import { TranscriptRowView } from "../chat/Transcript";
 
-export function subagentStateLabel(
+function subagentStateLabel(
   state: SubagentStatusNode["state"],
   t: ReturnType<typeof useT>,
 ): string {
@@ -54,7 +54,7 @@ export function subagentStateLabel(
   }
 }
 
-export function subagentStateClass(state: SubagentStatusNode["state"]): string {
+function subagentStateClass(state: SubagentStatusNode["state"]): string {
   if (state === "running") return "text-accent";
   if (state === "complete") return "text-success";
   if (state === "failed" || state === "rejected") return "text-danger";
@@ -62,7 +62,7 @@ export function subagentStateClass(state: SubagentStatusNode["state"]): string {
   return "text-muted";
 }
 
-export function subagentRoleLabel(
+function subagentRoleLabel(
   role: string | undefined,
   t: ReturnType<typeof useT>,
 ): string | undefined {
@@ -87,7 +87,7 @@ export function subagentRoleLabel(
 
 /** Badge glyphs: emoji for the built-in roles, undefined (fall back to the
  * localized text label) for anything else. */
-export function subagentRoleEmoji(role: string | undefined): string | undefined {
+function subagentRoleEmoji(role: string | undefined): string | undefined {
   switch (role?.trim().toLowerCase()) {
     case "scout":
     case "researcher":
@@ -101,7 +101,7 @@ export function subagentRoleEmoji(role: string | undefined): string | undefined 
   }
 }
 
-export function flattenNodes(
+function flattenNodes(
   nodes: SubagentStatusNode[],
   depth = 0,
 ): Array<{ node: SubagentStatusNode; depth: number }> {

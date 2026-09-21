@@ -140,7 +140,7 @@ function isNameValidationDiagnostic(diagnostic: { message: string }): boolean {
  * a skill snapshot. Lets the same builder serve the active graph and
  * cross-workspace transient contexts.
  */
-export type SkillSnapshotSource = Pick<
+type SkillSnapshotSource = Pick<
   WorkspaceGraph,
   "workspaceId" | "canonicalCwd" | "settingsManager" | "resourceLoader" | "resourceReloadRequired"
 >;

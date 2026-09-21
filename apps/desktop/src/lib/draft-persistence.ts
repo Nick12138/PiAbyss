@@ -146,7 +146,7 @@ export function deleteDraft(target: DraftTarget): number {
 }
 
 /** Drop every persisted field (text + attachments + references) of a draft. */
-export function deleteDraftEntirely(target: DraftTarget): void {
+function deleteDraftEntirely(target: DraftTarget): void {
   useAppStore.getState().clearDraftState(target);
   markDraftDirty(draftKeyForTarget(target));
 }
