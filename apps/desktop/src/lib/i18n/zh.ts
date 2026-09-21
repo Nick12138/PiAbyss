@@ -1831,11 +1831,11 @@ export const zh: Record<MessageKey, string> = {
   memoActionUnarchive: "取消归档",
   memoClearArchived: "清空归档",
   memoClearArchivedHint: "永久删除全部已归档记录",
-  memoActionAgent: "现在处理",
+  memoActionAgent: "执行",
   memoActionCreate: "写一条新的",
   memoAgentPrompt:
     "请处理上面引用的备忘录记录；完成其中描述的事情后，调用 piabyss_memo 工具的 complete 动作把该记录标记为完成，并必须在 result 参数中提交结果总结（做了什么、结论或产出、遗留事项）。",
-  memoActionResult: "Agent完成总结",
+  memoActionResult: "完成总结",
   memoResultTitle: "Agent 完成总结",
   memoResultEmpty: "这条记录还没有 Agent 总结。",
   memoResultFromSession: "来自会话：{name}",
