@@ -35,7 +35,7 @@ import {
   refreshBoundGraphSettings,
   resolveWorkspaceTarget,
   withTransientWorkspaceLock,
-  workspaceMutationBusyError,
+  targetWorkspaceMutationBusyError,
 } from "./workspace-skills-context.js";
 
 const NPM_INSTALL_MARKER = "/npm/node_modules/";
@@ -636,7 +636,11 @@ async function mutateResourcePreferencesForWorkspace(
   }
   const staleHost = factory.checkIdentity(ctx.context, {});
   if (staleHost) return { error: staleHost };
-  const busy = workspaceMutationBusyError(factory);
+  // Settings-file-only writes: scoped to the target workspace, same policy as
+  // skill path mutations — a busy session in another workspace must not block
+  // cross-workspace skill toggles (package mutations keep the host-wide gate;
+  // they pull resources out from under running sessions).
+  const busy = targetWorkspaceMutationBusyError(factory, resolved.canonicalCwd);
   if (busy) return { error: busy };
   const operationId = randomUUID();
   const updates = Array.isArray(ctx.params)

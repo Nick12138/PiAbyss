@@ -18,8 +18,8 @@ import {
   invalidateTransientWorkspaceViews,
   refreshBoundGraphSettings,
   resolveWorkspaceTarget,
+  targetWorkspaceMutationBusyError,
   withTransientWorkspaceLock,
-  workspaceMutationBusyError,
 } from "./workspace-skills-context.js";
 import { logger } from "./logger.js";
 
@@ -283,7 +283,9 @@ async function mutateSkillPathsForWorkspace(
   }
   const staleHost = factory.checkIdentity(ctx.context, {});
   if (staleHost) return { error: staleHost };
-  const busy = workspaceMutationBusyError(factory);
+  // Scoped to the target workspace: a busy session elsewhere (e.g. the active
+  // workspace) must not block cross-workspace skill path management.
+  const busy = targetWorkspaceMutationBusyError(factory, resolved.canonicalCwd);
   if (busy) return { error: busy };
   try {
     const result = await withTransientWorkspaceLock(async () => {

@@ -28,10 +28,28 @@ const ACTIVE_WORKSPACE_ID = identity.workspaceId as string;
 
 type SkillHandlerResponse = {
   result?: unknown;
-  error?: { code: string; message: string };
+  error?: {
+    code: string;
+    message: string;
+    retryable?: boolean;
+    details?: unknown;
+  };
 };
 
-function fixture(layout: TempAgentLayout, otherDir: string | null) {
+function fixture(
+  layout: TempAgentLayout,
+  otherDir: string | null,
+  overrides: {
+    hasAnyBusySessions?: () => boolean;
+    /** When set, findBoundGraph resolves to this fake bound graph. */
+    targetGraph?: {
+      workspaceId: string;
+      canonicalCwd: string;
+      isGraphBusy: () => boolean;
+      isGraphTransitioning: () => boolean;
+    };
+  } = {},
+) {
   const graph = {
     canonicalCwd: pathResolve(layout.projectDir),
     workspaceId: identity.workspaceId,
@@ -59,7 +77,10 @@ function fixture(layout: TempAgentLayout, otherDir: string | null) {
     getServer: () => server,
     checkIdentity: vi.fn(() => null),
     buildBoundWorkspaces: () => boundWorkspaces,
-    findBoundGraph: () => null,
+    findBoundGraph: () => overrides.targetGraph ?? null,
+    isGraphBusy: (graph: { isGraphBusy: () => boolean }) => graph.isGraphBusy(),
+    isGraphTransitioning: (graph: { isGraphTransitioning: () => boolean }) =>
+      graph.isGraphTransitioning(),
     canonicalizeCwd: (cwd: string) => {
       // Mirror the real lifecycle: missing directories throw a HostError.
       const resolved = pathResolve(cwd);
@@ -68,7 +89,7 @@ function fixture(layout: TempAgentLayout, otherDir: string | null) {
       }
       return resolved;
     },
-    hasAnyBusySessions: () => false,
+    hasAnyBusySessions: overrides.hasAnyBusySessions ?? (() => false),
     deps: { agentDir: layout.agentDir, packageUpdateCheck: false },
   } as unknown as WorkspaceGraphFactory;
   return { factory };
@@ -209,6 +230,96 @@ describe("workspace-skills-context", () => {
       // The returned snapshot belongs to the target workspace.
       const snapshot = response.result as { cwd: string };
       expect(snapshot.cwd).toBe(pathResolve(other.projectDir));
+    });
+
+    it("removes the path again and leaves no stale entry", async () => {
+      const { factory } = fixture(layout, other.projectDir);
+      const handlers = createSkillHandlers(factory);
+      await handlers["skill.addPath"]!(
+        context("skill.addPath", {
+          path: "C:/team/skills",
+          scope: "project",
+          targetWorkspaceCwd: other.projectDir,
+        }),
+      );
+      const response = (await handlers["skill.removePath"]!(
+        context("skill.removePath", {
+          path: "C:/team/skills",
+          scope: "project",
+          targetWorkspaceCwd: other.projectDir,
+        }),
+      )) as SkillHandlerResponse;
+      expect(response.error).toBeUndefined();
+      const settings = JSON.parse(
+        readFileSync(join(other.projectDir, ".pi", "settings.json"), "utf8") as string,
+      ) as { skills?: string[] };
+      expect(settings.skills).toEqual([]);
+    });
+
+    it("allows cross-workspace mutations while ANOTHER workspace has a busy session", async () => {
+      // Regression: the legacy host-wide gate refused cross-workspace skill
+      // mutations whenever any session was running anywhere (e.g. in the
+      // active workspace), even though the target workspace is untouched.
+      const { factory } = fixture(layout, other.projectDir, {
+        hasAnyBusySessions: () => true,
+      });
+      const handlers = createSkillHandlers(factory);
+      const response = (await handlers["skill.removePath"]!(
+        context("skill.removePath", {
+          path: "C:/team/skills",
+          scope: "project",
+          targetWorkspaceCwd: other.projectDir,
+        }),
+      )) as SkillHandlerResponse;
+      expect(response.error).toBeUndefined();
+    });
+
+    it("refuses with AGENT_BUSY when the target workspace itself has a busy session", async () => {
+      const { factory } = fixture(layout, other.projectDir, {
+        targetGraph: {
+          workspaceId: OTHER_WORKSPACE_ID,
+          canonicalCwd: pathResolve(other.projectDir),
+          isGraphBusy: () => true,
+          isGraphTransitioning: () => false,
+        },
+      });
+      const handlers = createSkillHandlers(factory);
+      const response = (await handlers["skill.removePath"]!(
+        context("skill.removePath", {
+          path: "C:/team/skills",
+          scope: "project",
+          targetWorkspaceCwd: other.projectDir,
+        }),
+      )) as SkillHandlerResponse;
+      expect(response.error?.code).toBe("AGENT_BUSY");
+      expect(response.error?.retryable).toBe(true);
+      expect(response.error?.details).toEqual({
+        workspaceId: OTHER_WORKSPACE_ID,
+        cwd: pathResolve(other.projectDir),
+      });
+      // The settings file was not created or modified.
+      expect(existsSync(join(other.projectDir, ".pi", "settings.json"))).toBe(false);
+    });
+
+    it("refuses with a retryable error while the target workspace is switching state", async () => {
+      const { factory } = fixture(layout, other.projectDir, {
+        targetGraph: {
+          workspaceId: OTHER_WORKSPACE_ID,
+          canonicalCwd: pathResolve(other.projectDir),
+          isGraphBusy: () => false,
+          isGraphTransitioning: () => true,
+        },
+      });
+      const handlers = createSkillHandlers(factory);
+      const response = (await handlers["skill.addPath"]!(
+        context("skill.addPath", {
+          path: "C:/team/skills",
+          scope: "project",
+          targetWorkspaceCwd: other.projectDir,
+        }),
+      )) as SkillHandlerResponse;
+      expect(response.error?.code).toBe("SERVICE_GRAPH_BUSY");
+      expect(response.error?.retryable).toBe(true);
     });
   });
 });

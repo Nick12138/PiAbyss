@@ -235,6 +235,16 @@ export class WorkspaceGraphFactory {
     );
   }
 
+  /** Busy-session check scoped to one bound graph (active or parked). */
+  isGraphBusy(graph: WorkspaceGraph): boolean {
+    return this.workspaceLifecycle.graphIsBusy(graph);
+  }
+
+  /** Park/reactivation transition check scoped to one bound graph. */
+  isGraphTransitioning(graph: WorkspaceGraph): boolean {
+    return this.workspaceLifecycle.isGraphTransitioning(graph);
+  }
+
   getSessionRuntimeInfo(
     sessionId: string,
     sessionPath: string,

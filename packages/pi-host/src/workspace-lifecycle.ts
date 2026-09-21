@@ -743,11 +743,16 @@ export class WorkspaceLifecycle {
     this.context.onBoundWorkspacesChanged?.();
   }
 
-  private graphIsBusy(graph: WorkspaceGraph): boolean {
+  graphIsBusy(graph: WorkspaceGraph): boolean {
     return (
       (graph.agentSession !== null && this.sessionRuntimeCache.isSessionBusy(graph.agentSession)) ||
       graph.backgroundSessions.size > 0
     );
+  }
+
+  /** True when the graph is mid park or mid reactivation — not merely parked. */
+  isGraphTransitioning(graph: WorkspaceGraph): boolean {
+    return this.reactivatingGraph === graph || this.parkingGraph === graph;
   }
 
   /**

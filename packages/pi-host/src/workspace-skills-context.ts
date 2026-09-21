@@ -225,13 +225,40 @@ export function invalidateTransientWorkspaceViews(): void {
   viewCache.clear();
 }
 
-/** Mutations are refused while any bound workspace has a busy session. */
-export function workspaceMutationBusyError(factory: WorkspaceGraphFactory): HostError | null {
-  if (factory.hasAnyBusySessions()) {
+/**
+ * Target-scoped gate for cross-workspace settings-file mutations (skill path
+ * add/remove, resource preference toggles).
+ *
+ * Writing the target workspace's settings only affects future or reloaded
+ * sessions there — running sessions keep their system prompt — so only the
+ * *target* workspace must be quiet. Gating on the whole host (the legacy
+ * behavior) wrongly blocked e.g. removing a skill directory from workspace B
+ * while a session ran in workspace A. The active-graph mutation path has no
+ * busy gate at all (withStableGraphRead handles concurrency), so this scoped
+ * policy simply aligns cross-workspace writes with that existing semantic.
+ */
+export function targetWorkspaceMutationBusyError(
+  factory: WorkspaceGraphFactory,
+  canonicalCwd: string,
+): HostError | null {
+  const graph = factory.findBoundGraph(canonicalCwd);
+  // No bound graph for the target → no session can be running there.
+  if (!graph) return null;
+  if (factory.isGraphTransitioning(graph)) {
+    return createHostError(
+      "SERVICE_GRAPH_BUSY",
+      "Target workspace is switching state; retry the operation",
+      { retryable: true },
+    );
+  }
+  if (factory.isGraphBusy(graph)) {
     return createHostError(
       "AGENT_BUSY",
-      "Stop the agent before modifying workspace skills",
-      { retryable: true },
+      "Stop the agent in the target workspace before modifying its skills",
+      {
+        retryable: true,
+        details: { workspaceId: graph.workspaceId, cwd: graph.canonicalCwd },
+      },
     );
   }
   return null;
