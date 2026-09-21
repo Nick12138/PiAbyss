@@ -128,6 +128,19 @@ function exactObject(
 }
 
 const SCHEDULE_PERMISSIONS = ["read_only", "write", "full"];
+
+/** At most one cross-workspace target field, each a bounded non-empty string. */
+function isOptionalWorkspaceTarget(params: Record<string, unknown>): boolean {
+  const id = params.targetWorkspaceId;
+  const cwd = params.targetWorkspaceCwd;
+  if (id !== undefined && !(typeof id === "string" && id.length > 0 && id.length <= 128)) {
+    return false;
+  }
+  if (cwd !== undefined && !(typeof cwd === "string" && cwd.length > 0 && cwd.length <= 1024)) {
+    return false;
+  }
+  return id === undefined || cwd === undefined;
+}
 const SCHEDULE_MISSED_WINDOWS = ["catch_up_one", "skip"];
 const SCHEDULE_NOTIFY_MODES = ["none", "system", "tg"];
 
@@ -999,18 +1012,31 @@ export function validateRequestParams<M extends HostMethod>(
         : fail("invalid model.setThinkingLevel params", { method });
     case "skill.list":
     case "prompt.list":
-      return params === null ? ok(null) : fail("params must be null", { method });
+      return params === null ||
+        (exactObject(params, [], ["targetWorkspaceId", "targetWorkspaceCwd"]) &&
+          isOptionalWorkspaceTarget(params))
+        ? ok(params)
+        : fail("params must be null or a workspace target", { method });
     case "skill.addPath":
     case "skill.removePath":
-      return exactObject(params, ["path", "scope"]) &&
+      return exactObject(params, ["path", "scope"], [
+        "targetWorkspaceId",
+        "targetWorkspaceCwd",
+      ]) &&
         isNonEmptyString(params.path) &&
-        ["user", "project"].includes(String(params.scope))
+        ["user", "project"].includes(String(params.scope)) &&
+        isOptionalWorkspaceTarget(params)
         ? ok(params)
         : fail(`invalid ${method} params`, { method });
     case "package.list":
-      return exactObject(params, ["scope"], ["includeResources"]) &&
+      return exactObject(params, ["scope"], [
+        "includeResources",
+        "targetWorkspaceId",
+        "targetWorkspaceCwd",
+      ]) &&
         ["user", "project", "all"].includes(String(params.scope)) &&
-        (params.includeResources === undefined || isBoolean(params.includeResources))
+        (params.includeResources === undefined || isBoolean(params.includeResources)) &&
+        isOptionalWorkspaceTarget(params)
         ? ok(params)
         : fail("invalid package.list params", { method });
     case "package.catalog": {
@@ -1065,9 +1091,13 @@ export function validateRequestParams<M extends HostMethod>(
         ? ok(params)
         : fail("invalid resource.setPreference params", { method });
     case "resource.setPreferences":
-      return exactObject(params, ["updates"]) &&
+      return exactObject(params, ["updates"], [
+        "targetWorkspaceId",
+        "targetWorkspaceCwd",
+      ]) &&
         Array.isArray(params.updates) &&
-        params.updates.every(isResourcePreferenceUpdate)
+        params.updates.every(isResourcePreferenceUpdate) &&
+        isOptionalWorkspaceTarget(params)
         ? ok(params)
         : fail("invalid resource.setPreferences params", { method });
     case "pluginLibrary.catalog":

@@ -6,7 +6,11 @@ import { createHostError } from "@piabyss/protocol";
 import type { HandlerContext } from "./server.js";
 import { TryMutex } from "./locks.js";
 import { createSkillHandlers } from "./skill-controller.js";
-import { resolveWorkspaceTarget } from "./workspace-skills-context.js";
+import {
+  buildFreshTransientWorkspaceView,
+  resolveWorkspaceTarget,
+  withTransientWorkspaceLock,
+} from "./workspace-skills-context.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp-agent.js";
 
@@ -136,6 +140,23 @@ describe("workspace-skills-context", () => {
         targetWorkspaceId: "00000000-0000-4000-8000-000000000999",
       });
       expect("code" in resolved && resolved.code).toBe("INVALID_REQUEST");
+    });
+  });
+
+  describe("transient lock", () => {
+    it("nested fresh build inside the lock does not deadlock", async () => {
+      const { factory } = fixture(layout, other.projectDir);
+      mkdirSync(join(other.projectDir, ".pi", "skills"), { recursive: true });
+      const result = await withTransientWorkspaceLock(async () => {
+        // Regression: this exact call shape used to self-deadlock when
+        // buildFreshTransientWorkspaceView acquired the lock itself.
+        const view = await buildFreshTransientWorkspaceView(
+          factory,
+          pathResolve(other.projectDir),
+        );
+        return view.workspaceId;
+      });
+      expect(result).toBe(OTHER_WORKSPACE_ID);
     });
   });
 

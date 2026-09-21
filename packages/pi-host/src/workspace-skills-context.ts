@@ -55,10 +55,27 @@ const viewCache = new Map<string, { expiresAt: number; promise: Promise<Transien
 
 /** Single-flight: transient builds/mutations must not interleave. */
 let transientMutex: Promise<unknown> = Promise.resolve();
+const TRANSIENT_LOCK_WAIT_TIMEOUT_MS = 60_000;
+
 export async function withTransientWorkspaceLock<T>(fn: () => Promise<T>): Promise<T> {
   const run = transientMutex.then(fn, fn);
   transientMutex = run.catch(() => undefined);
-  return run;
+  // Safety net: a queued caller must never wait forever (e.g. a hung SDK
+  // build would otherwise stall every later transient request permanently).
+  // On timeout the queued work still runs to completion; only this caller
+  // gives up.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error("Transient workspace operation timed out waiting for the lock")),
+      TRANSIENT_LOCK_WAIT_TIMEOUT_MS,
+    );
+  });
+  try {
+    return await Promise.race([run, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 /**
@@ -188,13 +205,19 @@ export async function getTransientWorkspaceView(
   }
 }
 
-/** Fresh (cache-bypassing) view for mutation paths; also invalidates the cache. */
+/**
+ * Fresh (cache-bypassing) view for mutation paths; also invalidates the cache.
+ * The build does NOT acquire the transient lock itself — callers that need
+ * serialization (mutation paths) must already hold withTransientWorkspaceLock;
+ * calling this inside that lock is the intended pattern and must stay
+ * lock-free to avoid self-deadlock.
+ */
 export async function buildFreshTransientWorkspaceView(
   factory: WorkspaceGraphFactory,
   canonicalCwd: string,
 ): Promise<TransientWorkspaceView> {
   viewCache.delete(canonicalCwd);
-  return withTransientWorkspaceLock(() => buildTransientWorkspaceView(factory, canonicalCwd));
+  return buildTransientWorkspaceView(factory, canonicalCwd);
 }
 
 /** Drop every cached transient view (disk-side settings changed). */

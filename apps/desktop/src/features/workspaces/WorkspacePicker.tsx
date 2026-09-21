@@ -323,6 +323,9 @@ export function WorkspacePicker() {
       // optimistic: the Host commits a pending shell (servicesReady: false)
       // and returns before the full build, so the picker switches instantly —
       // the session lands via a later snapshot event.
+      // Growing backoff: the Host itself waits up to 8s for the lock per
+      // attempt, so a few patient retries cover another switch's graph build
+      // (cold tsx compile can exceed 10s) before surfacing a busy toast.
       const attempted = await requestWithRetry(
         () =>
           hostClient.request(
@@ -333,6 +336,7 @@ export function WorkspacePicker() {
           ),
         undefined,
         () => request === requestRef.current,
+        [400, 800, 1_600, 3_200],
       );
       if (!attempted) return;
       const res = attempted;

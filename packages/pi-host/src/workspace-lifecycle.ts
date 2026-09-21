@@ -65,8 +65,14 @@ export function workspaceIdentityKey(
  * mid-read used to fail instantly; reads finish fast, so wait them out.
  * Lock holders that are themselves long mutations (another setCurrent,
  * package.mutation, …) still exceed the window and fail fast as before.
+ *
+ * 8s (up from 2s): an optimistic switch only needs the lock to commit its
+ * pending shell — the build is handed off to the background — so a longer
+ * initial wait just turns "another switch's graph build is still running"
+ * into a patient wait instead of a busy toast (the renderer shows the
+ * opening state and pairs the longer wait with its own retry backoff).
  */
-const WORKSPACE_SWITCH_LOCK_WAIT_MS = 2_000;
+const WORKSPACE_SWITCH_LOCK_WAIT_MS = 8_000;
 
 function workspaceCanonicalPathsEqual(
   left: string,

@@ -30,6 +30,7 @@ import type {
   WorkspaceTargetRef,
 } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
+import { requestWithRetry } from "../../lib/bridge/request-retry";
 import {
   mergeHostIdentity,
   sessionPackageContext,
@@ -196,9 +197,38 @@ export function SkillsSettings() {
 
   /** Cross-workspace targeting for host requests; undefined = active workspace. */
   function targetParams(): WorkspaceTargetRef | undefined {
-    const selected = selectedWorkspacePath;
+    // Unset selection resolves to the active workspace's own entry.
+    const selected = selectedWorkspacePath || workspace?.cwd;
     if (!selected || selected === workspace?.cwd) return undefined;
     return { targetWorkspaceCwd: selected };
+  }
+
+  /**
+   * Filter options: every known workspace by its basename. The active one is
+   * badged "· 当前工作区", keeps the "" sentinel value (so re-picking it is
+   * the same no-op as the old dedicated entry, and the requests keep using
+   * the cheap active-workspace channel) and is always sorted first. It is
+   * injected when the picker has not persisted it yet, so a selection always
+   * resolves to a real option.
+   */
+  function workspaceFilterOptions() {
+    const activeCwd = workspace?.cwd ?? "";
+    const paths =
+      activeCwd && !knownWorkspaces.some((path) => path === activeCwd)
+        ? [activeCwd, ...knownWorkspaces]
+        : [...knownWorkspaces];
+    if (activeCwd) {
+      paths.sort((left, right) =>
+        left === activeCwd ? -1 : right === activeCwd ? 1 : 0,
+      );
+    }
+    return paths.map((path) => ({
+      value: path === activeCwd ? "" : path,
+      label:
+        path === activeCwd
+          ? `${workspaceBasename(path)} · ${t("skillsWorkspaceActive")}`
+          : workspaceBasename(path),
+    }));
   }
 
   async function applyResponse<T extends { hostInstanceId?: string }>(response: T) {
@@ -228,8 +258,40 @@ export function SkillsSettings() {
       setResources([]);
     }
     try {
-      const [skillResponse, packageResponse, promptResponse] = await Promise.all([
-        hostClient.request("skill.list", workspaceContext(host, workspace), target ?? null, 30_000),
+      // Fast reads first, then package.list: the package resolve holds the
+      // serviceGraphLock for seconds while skill.list's stable read waits at
+      // most 250ms — racing all three made the page collide with itself
+      // ("Service graph is busy"). Each request retries through transient
+      // busy errors; null return means a newer refresh superseded us.
+      const responses = await Promise.all([
+        requestWithRetry(() =>
+          hostClient.request(
+            "skill.list",
+            workspaceContext(host, workspace),
+            target ?? null,
+            30_000,
+          ),
+        ),
+        requestWithRetry(() =>
+          hostClient.request(
+            "prompt.list",
+            workspaceContext(host, workspace),
+            target ?? null,
+            30_000,
+          ),
+        ),
+      ]).then((results) => (refreshRequest.current === request ? results : null));
+      if (!responses) return;
+      const [skillResponse, promptResponse] = responses;
+      if (!skillResponse || !promptResponse) return;
+      if (!skillResponse.ok) {
+        throw new Error(skillResponse.error?.message ?? t("notifSkillsLoadFailed"));
+      }
+      setSnapshot(skillResponse.result);
+      snapshotSourceRef.current = sourceKey;
+      // prompt.list is best-effort: a failure must not block the skills view.
+      setPromptSnapshot(promptResponse.ok ? promptResponse.result : null);
+      const packageResponse = await requestWithRetry(() =>
         hostClient.request(
           "package.list",
           workspaceContext(host, workspace),
@@ -240,21 +302,9 @@ export function SkillsSettings() {
           } satisfies HostRequestParams["package.list"],
           60_000,
         ),
-        hostClient.request("prompt.list", workspaceContext(host, workspace), target ?? null, 30_000),
-      ]);
+      );
       if (refreshRequest.current !== request) return;
-      if (!skillResponse.ok) {
-        throw new Error(skillResponse.error?.message ?? t("notifSkillsLoadFailed"));
-      }
-      setSnapshot(skillResponse.result);
-      snapshotSourceRef.current = sourceKey;
-      // prompt.list is best-effort: a failure must not block the skills view.
-      if (promptResponse.ok) {
-        setPromptSnapshot(promptResponse.result);
-      } else {
-        setPromptSnapshot(null);
-      }
-      if (packageResponse.ok) {
+      if (packageResponse?.ok) {
         setResources(
           packageResponse.result.resources.filter((resource) => resource.type === "skill"),
         );
@@ -284,12 +334,15 @@ export function SkillsSettings() {
     if (!host || !workspace || busy) return;
     setBusy(true);
     try {
-      const response = await hostClient.request(
-        method,
-        workspaceContext(host, workspace),
-        { path, scope, ...(targetParams() ?? {}) } satisfies HostRequestParams[typeof method],
-        30_000,
+      const response = await requestWithRetry(() =>
+        hostClient.request(
+          method,
+          workspaceContext(host, workspace),
+          { path, scope, ...(targetParams() ?? {}) } satisfies HostRequestParams[typeof method],
+          30_000,
+        ),
       );
+      if (!response) return;
       if (!response.ok) {
         throw new Error(
           response.error?.message ??
@@ -332,18 +385,23 @@ export function SkillsSettings() {
     setBusy(true);
     try {
       const response = target
-        ? await hostClient.request(
-            "resource.setPreferences",
-            sessionPackageContext(host, workspace),
-            { updates: [params], ...target } satisfies HostRequestParams["resource.setPreferences"],
-            null,
+        ? await requestWithRetry(() =>
+            hostClient.request(
+              "resource.setPreferences",
+              sessionPackageContext(host, workspace),
+              { updates: [params], ...target } satisfies HostRequestParams["resource.setPreferences"],
+              120_000,
+            ),
           )
-        : await hostClient.request(
-            "resource.setPreference",
-            sessionPackageContext(host, workspace),
-            params,
-            null,
+        : await requestWithRetry(() =>
+            hostClient.request(
+              "resource.setPreference",
+              sessionPackageContext(host, workspace),
+              params,
+              null,
+            ),
           );
+      if (!response) return;
       if (!response.ok) {
         throw new Error(response.error?.message ?? t("notifSkillToggleFailed"));
       }
@@ -463,16 +521,7 @@ export function SkillsSettings() {
                   value={selectedWorkspacePath}
                   disabled={busy || loadState === "loading"}
                   onChange={(value) => setSelectedWorkspacePath(value)}
-                  options={[
-                    { value: "", label: t("skillsWorkspaceActive") },
-                    ...knownWorkspaces.map((path) => ({
-                      value: path,
-                      label:
-                        path === workspace?.cwd
-                          ? `${workspaceBasename(path)} · ${t("skillsWorkspaceActive")}`
-                          : workspaceBasename(path),
-                    })),
-                  ]}
+                  options={workspaceFilterOptions()}
                 />
               </div>
               {targetParams() && (

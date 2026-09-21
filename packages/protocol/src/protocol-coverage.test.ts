@@ -406,6 +406,9 @@ function invalidParams(method: HostMethod): unknown {
     case "model.list":
     case "skill.list":
     case "prompt.list":
+      // {} is valid (targets the active workspace); invalid = bad target types
+      // or both target fields set at once.
+      return { targetWorkspaceId: 123, targetWorkspaceCwd: "C:/x" };
     case "package.reloadResources":
     case "telegram.getProfiles":
     case "telegram.listSessions":
