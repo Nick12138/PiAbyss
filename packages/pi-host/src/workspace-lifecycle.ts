@@ -331,9 +331,6 @@ export class WorkspaceLifecycle {
         // instant reactivation, then take the foreground with the shell.
         if (previousGraph) await this.retainGraph(previousGraph);
         const previousIdentity = server.getIdentity();
-        if (previousIdentity.sessionId) {
-          await this.context.deps.attachmentStore?.discardSessionDrafts(previousIdentity.sessionId);
-        }
 
         const pendingGraph: WorkspaceGraph = {
           workspaceId,
@@ -462,9 +459,6 @@ export class WorkspaceLifecycle {
       }
 
       if (previousGraph) await this.retainGraph(previousGraph);
-      if (previousIdentity.sessionId && previousIdentity.sessionId !== server.identity.sessionId) {
-        await this.context.deps.attachmentStore?.discardSessionDrafts(previousIdentity.sessionId);
-      }
       this.refreshAgentPhase();
       server.setLastError(undefined);
       const workspace = this.buildWorkspaceSnapshot(built.graph);
@@ -1171,9 +1165,6 @@ export class WorkspaceLifecycle {
 
     if (args.previousGraph) await this.retainGraph(args.previousGraph);
     markStep("retainPrevious");
-    if (previousIdentity.sessionId && previousIdentity.sessionId !== server.identity.sessionId) {
-      await this.context.deps.attachmentStore?.discardSessionDrafts(previousIdentity.sessionId);
-    }
     this.refreshAgentPhase();
     server.setLastError(undefined);
     const workspace = this.buildWorkspaceSnapshot(graph);

@@ -1000,6 +1000,46 @@ describe("app-store epoch wiring", () => {
     expect(useAppStore.getState().draftHydratedWorkspace).toBe("/p/w1");
   });
 
+  it("hydrates draft attachments and references alongside the text", () => {
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    const attachments = [
+      { type: "document" as const, sourcePath: "/p/w1/report.pdf" },
+      { type: "image" as const, id: "img-1", mediaType: "image/png", data: "aGVsbG8=" },
+    ];
+    const references = [
+      { id: "memo-1", kind: "memo" as const, label: "待办", payload: "<piabyss-memo/>" },
+    ];
+    useAppStore.getState().mergeHydratedDrafts(
+      "/p/w1",
+      [
+        {
+          kind: "session" as const,
+          canonicalCwd: "/p/w1",
+          sessionId: "s1",
+          text: "explain",
+          attachments,
+          references,
+          updatedAt: 1,
+        },
+        // Legacy v1 record without attachment/reference fields.
+        {
+          kind: "session" as const,
+          canonicalCwd: "/p/w1",
+          sessionId: "s2",
+          text: "legacy",
+          updatedAt: 2,
+        },
+      ],
+      {},
+    );
+
+    expect(useAppStore.getState().draftAttachments["session:s1"]).toEqual(attachments);
+    expect(useAppStore.getState().draftReferences["session:s1"]).toEqual(references);
+    expect(useAppStore.getState().draftAttachments["session:s2"]).toBeUndefined();
+    expect(useAppStore.getState().draftReferences["session:s2"]).toBeUndefined();
+  });
+
   it("ignores a workspace hydration result after switching elsewhere", () => {
     useAppStore.getState().beginHostEpoch(host("h1"));
     useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));

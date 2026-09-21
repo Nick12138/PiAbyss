@@ -1232,6 +1232,8 @@ export const en = {
   composerReadFileFailedDetail: "{name}: could not read file ({error})",
   composerFilePickerFailed: "Could not open the file picker",
   composerFileLimit: "Up to {max} files per message",
+  composerDraftAttachmentsDropped:
+    "{count} draft attachment(s) could not be restored (source missing or unsupported)",
   composerDocuments: "Document and text attachments",
   composerDocumentTypeMismatch: "The selected file is not a genuine PDF or DOCX file",
   composerDocumentEncrypted: "Encrypted or password-protected documents are not supported",

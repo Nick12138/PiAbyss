@@ -1173,6 +1173,7 @@ export const zh: Record<MessageKey, string> = {
   composerReadFileFailedDetail: "{name}：无法读取文件（{error}）",
   composerFilePickerFailed: "无法打开文件选择器",
   composerFileLimit: "每条消息最多添加 {max} 个文件",
+  composerDraftAttachmentsDropped: "{count} 个草稿附件无法恢复（源文件缺失或类型不支持）",
   composerDocuments: "文档和文本附件",
   composerDocumentTypeMismatch: "所选文件不是真实的 PDF 或 DOCX 文件",
   composerDocumentEncrypted: "暂不支持加密或有密码保护的文档",

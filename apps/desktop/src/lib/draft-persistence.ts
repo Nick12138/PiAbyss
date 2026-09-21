@@ -4,8 +4,10 @@ import {
   draftKeyForTarget,
   type DraftKey,
   type DraftMutation,
+  type DraftReference,
   type DraftTarget,
   type DraftWorkspaceSnapshot,
+  type StoredDraftAttachment,
 } from "./draft-target";
 
 export const DRAFT_WRITE_DEBOUNCE_MS = 250;
@@ -17,14 +19,50 @@ export type DraftSendReceipt = {
   version: number;
 };
 
-let pendingMutations = new Map<DraftKey, DraftMutation>();
+/**
+ * Dirty-key set. Mutations are not queued eagerly — each flush rebuilds the
+ * upsert payload (text + attachments + references) from the app store, so the
+ * last state before the flush always wins and text/attachment/reference edits
+ * can never clobber each other with a stale partial payload.
+ */
+let dirtyKeys = new Set<DraftKey>();
 let writeTimer: ReturnType<typeof setTimeout> | null = null;
 let writeQueue: Promise<void> = Promise.resolve();
 let persistenceFailureNotified = false;
 let hydrationRequest = 0;
 
-function mutationKey(mutation: DraftMutation): DraftKey {
-  return draftKeyForTarget(mutation.target);
+function markDraftDirty(key: DraftKey): void {
+  dirtyKeys.add(key);
+  if (writeTimer !== null) return;
+  writeTimer = globalThis.setTimeout(() => {
+    writeTimer = null;
+    void flushDraftWrites();
+  }, DRAFT_WRITE_DEBOUNCE_MS);
+}
+
+function buildMutations(): DraftMutation[] {
+  const state = useAppStore.getState();
+  const mutations: DraftMutation[] = [];
+  for (const key of dirtyKeys) {
+    const target = state.draftTargets[key];
+    // Unknown target: nothing was ever persisted for this key — skip.
+    if (!target) continue;
+    const text = state.draftTexts[key] ?? "";
+    const attachments = state.draftAttachments[key] ?? [];
+    const references = state.draftReferences[key] ?? [];
+    if (!text.trim() && attachments.length === 0 && references.length === 0) {
+      mutations.push({ op: "delete", target });
+    } else {
+      mutations.push({ op: "upsert", target, text, attachments, references });
+    }
+  }
+  return mutations;
+}
+
+async function applyNativeMutations(mutations: DraftMutation[]): Promise<void> {
+  const { invoke, isTauri } = await import("@tauri-apps/api/core");
+  if (!isTauri()) return;
+  await invoke("desktop_drafts_apply", { mutations });
 }
 
 function notifyPersistenceFailure(error: unknown): void {
@@ -36,37 +74,15 @@ function notifyPersistenceFailure(error: unknown): void {
     .pushNotification(`${tCurrent("notifDraftPersistenceFailed")}: ${detail}`, "warning");
 }
 
-function queueMutation(mutation: DraftMutation): void {
-  pendingMutations.set(mutationKey(mutation), mutation);
-  if (writeTimer !== null) return;
-  writeTimer = globalThis.setTimeout(() => {
-    writeTimer = null;
-    void flushDraftWrites();
-  }, DRAFT_WRITE_DEBOUNCE_MS);
-}
-
-async function applyNativeMutations(mutations: DraftMutation[]): Promise<void> {
-  const { invoke, isTauri } = await import("@tauri-apps/api/core");
-  if (!isTauri()) return;
-  await invoke("desktop_drafts_apply", { mutations });
-}
-
-function requeueFailedBatch(mutations: readonly DraftMutation[]): void {
-  for (const mutation of mutations) {
-    const key = mutationKey(mutation);
-    if (!pendingMutations.has(key)) pendingMutations.set(key, mutation);
-  }
-}
-
 export function flushDraftWrites(): Promise<void> {
   if (writeTimer !== null) {
     globalThis.clearTimeout(writeTimer);
     writeTimer = null;
   }
-  if (pendingMutations.size === 0) return writeQueue;
+  if (dirtyKeys.size === 0) return writeQueue;
 
-  const mutations = [...pendingMutations.values()];
-  pendingMutations = new Map();
+  const mutations = buildMutations();
+  dirtyKeys = new Set();
   writeQueue = writeQueue
     .catch(() => undefined)
     .then(() => applyNativeMutations(mutations))
@@ -74,7 +90,9 @@ export function flushDraftWrites(): Promise<void> {
       persistenceFailureNotified = false;
     })
     .catch((error) => {
-      requeueFailedBatch(mutations);
+      for (const mutation of mutations) {
+        markDraftDirty(draftKeyForTarget(mutation.target));
+      }
       notifyPersistenceFailure(error);
     });
   return writeQueue;
@@ -98,19 +116,44 @@ export async function settleDraftWritesWithin(
 
 export function editDraft(target: DraftTarget, text: string): number {
   const version = useAppStore.getState().setDraftTextLocal(target, text);
-  queueMutation(text.trim() ? { op: "upsert", target, text } : { op: "delete", target });
+  markDraftDirty(draftKeyForTarget(target));
   return version;
 }
 
+/** Persist the composer's restorable attachment snapshot for one draft. */
+export function setDraftAttachmentSnapshot(
+  target: DraftTarget,
+  attachments: readonly StoredDraftAttachment[],
+): void {
+  useAppStore.getState().setDraftAttachments(target, attachments);
+  markDraftDirty(draftKeyForTarget(target));
+}
+
+/** Update the injected references of one draft and mark them for persistence. */
+export function setDraftReferencesPersisted(
+  target: DraftTarget,
+  references: readonly DraftReference[],
+): void {
+  useAppStore.getState().setDraftReferences(target, references);
+  markDraftDirty(draftKeyForTarget(target));
+}
+
+/** Clear the draft text; attachments/references (if any) stay persisted. */
 export function deleteDraft(target: DraftTarget): number {
   const version = useAppStore.getState().setDraftTextLocal(target, "");
-  queueMutation({ op: "delete", target });
+  markDraftDirty(draftKeyForTarget(target));
   return version;
+}
+
+/** Drop every persisted field (text + attachments + references) of a draft. */
+export function deleteDraftEntirely(target: DraftTarget): void {
+  useAppStore.getState().clearDraftState(target);
+  markDraftDirty(draftKeyForTarget(target));
 }
 
 export function deleteSessionDrafts(canonicalCwd: string, sessionIds: readonly string[]): void {
   for (const sessionId of new Set(sessionIds)) {
-    deleteDraft({ kind: "session", canonicalCwd, sessionId });
+    deleteDraftEntirely({ kind: "session", canonicalCwd, sessionId });
   }
 }
 
@@ -125,7 +168,10 @@ export function stageDraftSend(target: DraftTarget): DraftSendReceipt {
 export function commitDraftSend(receipt: DraftSendReceipt): boolean {
   const key = draftKeyForTarget(receipt.target);
   if ((useAppStore.getState().draftEditVersions[key] ?? 0) !== receipt.version) return false;
-  queueMutation({ op: "delete", target: receipt.target });
+  // The composer clears its attachments/references before committing, so the
+  // store now holds an empty payload and the flush resolves to a delete. If a
+  // send failed and was restored instead, the re-added state persists again.
+  markDraftDirty(key);
   return true;
 }
 
@@ -151,7 +197,7 @@ export async function hydrateDraftWorkspace(canonicalCwd: string): Promise<void>
     const { invoke, isTauri } = await import("@tauri-apps/api/core");
     const snapshot = isTauri()
       ? await invoke<DraftWorkspaceSnapshot>("desktop_drafts_get", { canonicalCwd })
-      : { schemaVersion: 1, drafts: [] };
+      : { schemaVersion: 2, drafts: [] };
     if (request !== hydrationRequest) return;
     const store = useAppStore.getState();
     store.mergeHydratedDrafts(canonicalCwd, snapshot.drafts, baselineVersions);
@@ -170,7 +216,7 @@ export async function hydrateDraftWorkspace(canonicalCwd: string): Promise<void>
 
 export function __resetDraftPersistenceForTests(): void {
   if (writeTimer !== null) globalThis.clearTimeout(writeTimer);
-  pendingMutations = new Map();
+  dirtyKeys = new Set();
   writeTimer = null;
   writeQueue = Promise.resolve();
   persistenceFailureNotified = false;

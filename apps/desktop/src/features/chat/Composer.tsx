@@ -89,17 +89,96 @@ import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import { buildTextContextMenuItems } from "../../lib/text-context-menu";
 import { readClipboardText } from "../../lib/desktop-clipboard";
-import { draftKeyForTarget, draftTargetFor, type DraftReference } from "../../lib/draft-target";
+import {
+  draftKeyForTarget,
+  draftTargetFor,
+  type DraftReference,
+  type StoredDraftAttachment,
+} from "../../lib/draft-target";
 import {
   commitDraftSend,
   deleteDraft,
   editDraft,
   restoreDraftSend,
+  setDraftAttachmentSnapshot,
+  setDraftReferencesPersisted,
   stageDraftSend,
 } from "../../lib/draft-persistence";
 
 const MAX_FILES = 4;
 const MAX_FILE_BYTES = 256 * 1024;
+/** Cap for persisting a clipboard image's base64 payload (~1.5 MiB binary). */
+const MAX_STORED_IMAGE_DATA_CHARS = 2 * 1024 * 1024;
+/** Cap for persisting drag-dropped text files without a source path. */
+const MAX_STORED_TEXT_FILE_BYTES = 256 * 1024;
+/** Hard cap shared with the Rust draft store's per-record attachment limit. */
+const MAX_STORED_DRAFT_ATTACHMENTS = 32;
+
+/**
+ * Project the composer's live attachment state onto a restorable snapshot.
+ * Path-backed entries keep only the absolute source path; content-backed
+ * entries keep the payload only when it fits the persistence caps — oversized
+ * entries are simply not persisted (they keep working for the live session).
+ */
+function storedAttachmentsFrom(
+  images: readonly PendingImage[],
+  files: readonly PendingFile[],
+  documents: readonly PendingDocument[],
+): StoredDraftAttachment[] {
+  const stored: StoredDraftAttachment[] = [];
+  for (const image of images) {
+    if (image.sourcePath) {
+      stored.push({
+        type: "image",
+        id: image.id,
+        ...(image.name ? { name: image.name } : {}),
+        sourcePath: image.sourcePath,
+      });
+    } else if (image.data.length <= MAX_STORED_IMAGE_DATA_CHARS) {
+      stored.push({
+        type: "image",
+        id: image.id,
+        mediaType: image.mediaType,
+        data: image.data,
+        ...(image.name ? { name: image.name } : {}),
+      });
+    }
+  }
+  for (const file of files) {
+    const base = {
+      type: "file" as const,
+      id: file.id,
+      name: file.name,
+      size: file.size,
+      ...(file.unlimited ? { unlimited: true as const } : {}),
+    };
+    if (file.kind === "path") {
+      if (file.sourcePath) {
+        stored.push({
+          ...base,
+          kind: "path" as const,
+          sourcePath: file.sourcePath,
+          ...(file.isDirectory ? { isDirectory: true as const } : {}),
+        });
+      }
+    } else if (file.sourcePath) {
+      stored.push({ ...base, kind: "text" as const, sourcePath: file.sourcePath });
+    } else if (
+      file.text !== undefined &&
+      utf8ByteLength(file.text) <= MAX_STORED_TEXT_FILE_BYTES
+    ) {
+      stored.push({ ...base, kind: "text" as const, text: file.text });
+    }
+  }
+  for (const document of documents) {
+    if (document.kind === "path") {
+      stored.push({ type: "document", sourcePath: document.sourcePath });
+    } else {
+      stored.push({ type: "pasted-text", text: document.recovery.text });
+    }
+  }
+  return stored.slice(0, MAX_STORED_DRAFT_ATTACHMENTS);
+}
 
 /** Stable empty slice: keeps the store selector referentially stable. */
 const NO_DRAFT_REFERENCES: DraftReference[] = [];
@@ -379,6 +458,7 @@ export function Composer({
     draftKey ? (s.draftReferences[draftKey] ?? NO_DRAFT_REFERENCES) : NO_DRAFT_REFERENCES,
   );
   const setDraftReferences = useAppStore((s) => s.setDraftReferences);
+  const draftHydratedWorkspace = useAppStore((s) => s.draftHydratedWorkspace);
   const extensionWidgetsOpen = useAppStore((s) => s.extensionWidgetsOpen);
   const setExtensionWidgetsOpen = useAppStore((s) => s.setExtensionWidgetsOpen);
   const setSession = useAppStore((s) => s.applySessionSnapshot);
@@ -388,6 +468,8 @@ export function Composer({
   const [images, setImages] = useState<PendingImage[]>([]);
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [documents, setDocuments] = useState<PendingDocument[]>([]);
+  /** Bumped after attachment restores so the snapshot effect re-syncs. */
+  const [attachmentEpoch, setAttachmentEpoch] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const [completion, setCompletion] = useState<CompletionState | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
@@ -430,6 +512,8 @@ export function Composer({
     el.style.height = `${clamped}px`;
   }
   const recoveringPastedTextRef = useRef(new Set<string>());
+  const attachmentRestoreGeneration = useRef(0);
+  const restoringAttachmentsRef = useRef(false);
   const recoverFailedPastedTextCallbackRef = useRef<
     (document: PendingPastedText, error?: string) => Promise<void>
   >(async () => undefined);
@@ -466,7 +550,7 @@ export function Composer({
     const target = draftTargetFor(state.workspace, state.session);
     if (!target) return;
     const current = state.draftReferences[draftKeyForTarget(target)] ?? [];
-    state.setDraftReferences(
+    setDraftReferencesPersisted(
       target,
       current.filter((item) => item.id !== id),
     );
@@ -552,8 +636,11 @@ export function Composer({
     [],
   );
 
-  // Attachments are per-conversation; drop them when the session changes.
+  // Attachments are part of the draft: restore the persisted snapshot when
+  // the session changes (or after a restart) instead of dropping them.
   useEffect(() => {
+    const generation = ++attachmentRestoreGeneration.current;
+    const isCurrent = () => attachmentRestoreGeneration.current === generation;
     setImages([]);
     setFiles([]);
     documentsRef.current = [];
@@ -564,7 +651,51 @@ export function Composer({
     setStatsOpen(false);
     setForkOpen(false);
     fileSnapshotRef.current = null;
-  }, [dismissCompletion, sessionId]);
+
+    // While restoring, the live attachment state is transient (this render's
+    // closure may still hold the PREVIOUS draft's attachments). The snapshot
+    // effect must not run until the restored state has landed.
+    restoringAttachmentsRef.current = true;
+    const releaseRestoreLock = () => {
+      if (attachmentRestoreGeneration.current === generation) {
+        restoringAttachmentsRef.current = false;
+      }
+    };
+
+    if (!draftKey) {
+      queueMicrotask(releaseRestoreLock);
+      return;
+    }
+    const store = useAppStore.getState();
+    if (store.draftHydratedWorkspace !== store.workspace?.canonicalCwd) {
+      queueMicrotask(releaseRestoreLock);
+      return;
+    }
+    const stored = store.draftAttachments[draftKey] ?? [];
+    if (stored.length === 0) {
+      // Release after this commit's effects so the snapshot effect skips the
+      // transient render but persists the settled (possibly empty) state on
+      // the next one.
+      queueMicrotask(releaseRestoreLock);
+      return;
+    }
+    void restoreStoredAttachments(stored, isCurrent).finally(releaseRestoreLock);
+    // restoreStoredAttachments closes over the latest component scope on every
+    // render; the effect intentionally keys on draftKey/hydration only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dismissCompletion, draftKey, draftHydratedWorkspace]);
+
+  // Persist the restorable attachment snapshot alongside the draft text.
+  // Skipped while a restore is in flight so the transient empty state cannot
+  // clobber the stored snapshot before the restored entries land.
+  useEffect(() => {
+    if (!draftKey || restoringAttachmentsRef.current) return;
+    const store = useAppStore.getState();
+    if (store.draftHydratedWorkspace !== store.workspace?.canonicalCwd) return;
+    const target = draftTargetFor(store.workspace, store.session);
+    if (!target || draftKeyForTarget(target) !== draftKey) return;
+    setDraftAttachmentSnapshot(target, storedAttachmentsFrom(images, files, documents));
+  }, [draftKey, images, files, documents, attachmentEpoch]);
 
   useEffect(() => {
     if (!host || !workspace || !session) return;
@@ -789,7 +920,11 @@ export function Composer({
     }
   }
 
-  async function addDocumentPath(path: string, info?: DesktopFileInfo) {
+  async function addDocumentPath(
+    path: string,
+    info?: DesktopFileInfo,
+    isCancelled?: () => boolean,
+  ) {
     if (!host || !workspace || !session) return;
     let fileInfo: DesktopFileInfo;
     try {
@@ -828,14 +963,21 @@ export function Composer({
       if (
         !isCurrentRequestGeneration(useAppStore.getState().host, generation, {
           session: true,
-        })
+        }) ||
+        isCancelled?.()
       ) {
         return;
       }
-      updateDocuments((current) => [
-        ...current,
-        { ...response.result, kind: "path", sourcePath: path },
-      ]);
+      updateDocuments((current) =>
+        // Idempotent: a StrictMode remount or a racing restore can create the
+        // same attachment (reused host copy) twice — one chip must remain.
+        current.some((document) => document.id === response.result.id)
+          ? current
+          : [
+              ...current,
+              { ...response.result, kind: "path", sourcePath: path },
+            ],
+      );
 
       // Parsing can finish before the create response reaches the renderer.
       // Fetch once after insertion so no final state event can be lost.
@@ -920,8 +1062,9 @@ export function Composer({
     insertRecoveredText(document.recovery);
   }
 
-  async function addPastedText(recovery: PasteRecovery) {
+  async function addPastedText(recovery: PasteRecovery, isCancelled?: () => boolean) {
     if (!host || !workspace || !session) return;
+    if (isCancelled?.()) return;
     const localId = crypto.randomUUID();
     const pending: PendingPastedText = {
       id: localId,
@@ -1130,6 +1273,139 @@ export function Composer({
       let regularCount = 0;
       return next.filter((file) => file.unlimited || regularCount++ < MAX_FILES);
     });
+  }
+
+  /** Re-materialize persisted attachment entries into live composer state.
+   * Path-backed entries are re-read/re-uploaded; entries whose source file has
+   * disappeared are dropped with a single warning. */
+  async function restoreStoredAttachments(
+    stored: readonly StoredDraftAttachment[],
+    isCurrent: () => boolean,
+  ): Promise<void> {
+    const restoredImages: PendingImage[] = [];
+    const restoredFiles: PendingFile[] = [];
+    let dropped = 0;
+    for (const item of stored) {
+      if (!isCurrent()) return;
+      try {
+        switch (item.type) {
+          case "image": {
+            if (item.sourcePath) {
+              const file = await readDesktopSmallFile(item.sourcePath);
+              if (file.kind !== "image") {
+                dropped += 1;
+                break;
+              }
+              if (restoredImages.length < MAX_AGENT_REQUEST_IMAGES) {
+                restoredImages.push({
+                  id: crypto.randomUUID(),
+                  mediaType: file.mediaType,
+                  data: file.data,
+                  name: file.name,
+                  sourcePath: item.sourcePath,
+                });
+              }
+            } else if (item.data && item.mediaType) {
+              if (restoredImages.length < MAX_AGENT_REQUEST_IMAGES) {
+                restoredImages.push({
+                  id: crypto.randomUUID(),
+                  mediaType: item.mediaType,
+                  data: item.data,
+                  ...(item.name ? { name: item.name } : {}),
+                });
+              }
+            } else {
+              dropped += 1;
+            }
+            break;
+          }
+          case "file": {
+            if (item.kind === "path") {
+              if (!item.sourcePath) {
+                dropped += 1;
+                break;
+              }
+              const info = await getDesktopFileInfo(item.sourcePath);
+              restoredFiles.push({
+                id: crypto.randomUUID(),
+                name: item.name,
+                size: info.sizeBytes,
+                kind: "path",
+                sourcePath: item.sourcePath,
+                ...(info.isDirectory ? { isDirectory: true as const } : {}),
+                ...(item.unlimited ? { unlimited: true as const } : {}),
+              });
+            } else if (item.sourcePath) {
+              const file = await readDesktopSmallFile(item.sourcePath);
+              if (file.kind !== "text") {
+                dropped += 1;
+                break;
+              }
+              restoredFiles.push({
+                id: crypto.randomUUID(),
+                name: file.name,
+                size: file.sizeBytes,
+                kind: "text",
+                text: file.text,
+                sourcePath: item.sourcePath,
+                ...(item.unlimited ? { unlimited: true as const } : {}),
+              });
+            } else if (item.text !== undefined) {
+              restoredFiles.push({
+                id: crypto.randomUUID(),
+                name: item.name,
+                size: item.size,
+                kind: "text",
+                text: item.text,
+                ...(item.unlimited ? { unlimited: true as const } : {}),
+              });
+            } else {
+              dropped += 1;
+            }
+            break;
+          }
+          case "document":
+            // Re-creates the host-side attachment (copy + parse) and its chip.
+            await addDocumentPath(item.sourcePath, undefined, () => !isCurrent());
+            break;
+          case "pasted-text": {
+            const state = useAppStore.getState();
+            const target = draftTargetFor(state.workspace, state.session);
+            if (!state.host || !state.workspace || !state.session || !target) break;
+            const draft = state.draftTexts[draftKeyForTarget(target)] ?? "";
+            await addPastedText(
+              {
+                sessionId: state.session.sessionId,
+                text: item.text,
+                draft,
+                selectionStart: draft.length,
+                selectionEnd: draft.length,
+              },
+              () => !isCurrent(),
+            );
+            break;
+          }
+        }
+      } catch {
+        dropped += 1;
+      }
+    }
+    if (!isCurrent()) return;
+    if (restoredImages.length > 0) {
+      setImages((current) =>
+        [...current, ...restoredImages].slice(0, MAX_AGENT_REQUEST_IMAGES),
+      );
+    }
+    if (restoredFiles.length > 0) {
+      setFiles((current) => [...current, ...restoredFiles]);
+    }
+    // Re-run the snapshot effect even when nothing was restored (e.g. every
+    // source file vanished), so the persisted snapshot settles to the live
+    // state instead of keeping stale entries forever.
+    setAttachmentEpoch((epoch) => epoch + 1);
+    if (dropped > 0) {
+      pushNotification(t("composerDraftAttachmentsDropped", { count: dropped }), "warning");
+    }
   }
 
   async function chooseAttachments() {

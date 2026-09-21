@@ -2,6 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AttachmentSnapshot,
@@ -797,5 +798,60 @@ describe("Composer managed documents", () => {
       },
       null,
     );
+  });
+
+  it("does not duplicate restored document chips across session switches", async () => {
+    desktopMocks.isDesktop.mockResolvedValue(true);
+    useAppStore.setState({ draftHydratedWorkspace: "/workspace" });
+    let createCalls = 0;
+    vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      if (method === "attachment.create") {
+        createCalls += 1;
+        return { ok: true, result: attachment("ready") } as never;
+      }
+      return { ok: true, result: null } as never;
+    });
+
+    // Session A is an existing conversation (draft key session:<id>) where the
+    // user attaches one document. StrictMode mirrors the app's production
+    // wrapper: session switches remount the Composer and double-run effects.
+    const existingSession = {
+      ...session(),
+      messages: [{ role: "user" as const, content: "Existing conversation" }],
+    };
+    useAppStore.getState().applySessionSnapshot(existingSession);
+    const user = userEvent.setup();
+    render(
+      <StrictMode>
+        <Composer />
+      </StrictMode>,
+    );
+    await user.click(screen.getByRole("button", { name: "Attach PDF, DOCX, image, or text file" }));
+    await screen.findByText("manual.pdf");
+    await waitFor(() =>
+      expect(useAppStore.getState().draftAttachments["session:" + SESSION_ID]).toHaveLength(1),
+    );
+    expect(screen.getAllByRole("button", { name: "Remove manual.pdf" })).toHaveLength(1);
+
+    // Switch to an empty new conversation, then back to session A, twice.
+    const emptySession = { ...session(), sessionId: NEXT_SESSION_ID, revision: 4 };
+    for (let round = 0; round < 2; round += 1) {
+      await act(async () => {
+        useAppStore.getState().applySessionSnapshot(emptySession);
+      });
+      await act(async () => {});
+      await act(async () => {
+        useAppStore.getState().applySessionSnapshot(existingSession);
+      });
+      await act(async () => {});
+    }
+
+    // The restored draft must hold exactly one chip, no matter how often the
+    // user round-trips between sessions.
+    expect(screen.getAllByRole("button", { name: "Remove manual.pdf" })).toHaveLength(1);
+    expect(useAppStore.getState().draftAttachments["session:" + SESSION_ID]).toHaveLength(1);
+    // The restore re-creates the host attachment from the source path once per
+    // switch-back (the host dedupes the copy itself); the original add makes 1.
+    expect(createCalls).toBe(3);
   });
 });

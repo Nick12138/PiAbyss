@@ -7,13 +7,19 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
-const DRAFT_SCHEMA_VERSION: u32 = 1;
+const DRAFT_SCHEMA_VERSION: u32 = 2;
 const DRAFT_FILE_NAME: &str = "drafts.json";
 const MAX_DRAFT_TEXT_BYTES: usize = 1024 * 1024;
 const MAX_DRAFT_FILE_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_DRAFT_RECORDS: usize = 1_000;
 const MAX_DRAFT_MUTATIONS: usize = 128;
 const MAX_SESSION_ID_BYTES: usize = 256;
+const MAX_DRAFT_ATTACHMENTS: usize = 32;
+const MAX_DRAFT_REFERENCES: usize = 16;
+const MAX_DRAFT_ATTACHMENT_ITEM_BYTES: usize = 4 * 1024 * 1024;
+const MAX_DRAFT_ATTACHMENTS_BYTES: usize = 8 * 1024 * 1024;
+const MAX_DRAFT_REFERENCE_LABEL_BYTES: usize = 512;
+const MAX_DRAFT_REFERENCE_ID_BYTES: usize = 128;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -31,6 +37,53 @@ pub struct DraftTarget {
     pub session_id: Option<String>,
 }
 
+/// A restorable composer attachment persisted alongside the draft text.
+///
+/// Path-backed entries only keep the absolute source path so restore can
+/// re-read (or re-upload) them; content-backed entries keep the payload and
+/// are individually size-capped in `validate_attachments`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case", rename_all_fields = "camelCase")]
+pub enum DraftAttachmentRecord {
+    Image {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source_path: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        media_type: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        data: Option<String>,
+    },
+    File {
+        id: String,
+        name: String,
+        size: u64,
+        kind: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source_path: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        is_directory: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unlimited: Option<bool>,
+    },
+    Document { source_path: String },
+    PastedText { text: String },
+}
+
+/// An injected prompt reference (e.g. memo capsule) persisted with the draft.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftReferenceRecord {
+    pub id: String,
+    pub kind: String,
+    pub label: String,
+    pub payload: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DraftRecord {
@@ -39,6 +92,10 @@ pub struct DraftRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     pub text: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<DraftAttachmentRecord>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<DraftReferenceRecord>,
     pub updated_at: u64,
 }
 
@@ -62,7 +119,17 @@ struct DraftFile {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "op", rename_all = "lowercase")]
 pub enum DraftMutation {
-    Upsert { target: DraftTarget, text: String },
+    /// Full-state upsert: replaces the record's text, attachments, and
+    /// references together. An upsert whose payload is entirely empty deletes
+    /// the target instead.
+    Upsert {
+        target: DraftTarget,
+        text: String,
+        #[serde(default)]
+        attachments: Vec<DraftAttachmentRecord>,
+        #[serde(default)]
+        references: Vec<DraftReferenceRecord>,
+    },
     Delete { target: DraftTarget },
 }
 
@@ -192,9 +259,11 @@ impl DraftStore {
         if version > u64::from(DRAFT_SCHEMA_VERSION) {
             return Ok(ParsedDraftFile::Unsupported(version));
         }
-        if version != u64::from(DRAFT_SCHEMA_VERSION) {
+        if version < 1 {
             return Err(format!("unsupported draft schema version {version}"));
         }
+        // Versions 1..=2 share the record shape: v1 records simply lack the
+        // attachments/references fields, which default to empty via serde.
 
         let file: DraftFile = serde_json::from_value(value).map_err(|e| e.to_string())?;
         if file.drafts.len() > MAX_DRAFT_RECORDS {
@@ -207,7 +276,9 @@ impl DraftStore {
             let target = record.target();
             validate_target(&target)?;
             validate_text(&record.text)?;
-            if record.text.trim().is_empty() {
+            validate_attachments(&record.attachments)?;
+            validate_references(&record.references)?;
+            if is_empty_record(&record.text, &record.attachments, &record.references) {
                 return Err("draft file contains an empty draft record".into());
             }
             if !keys.insert(target) {
@@ -270,19 +341,28 @@ impl DraftStore {
 
         for mutation in mutations {
             match mutation {
-                DraftMutation::Upsert { target, text } => {
+                DraftMutation::Upsert {
+                    target,
+                    text,
+                    attachments,
+                    references,
+                } => {
                     validate_target(&target)?;
                     validate_text(&text)?;
-                    if text.trim().is_empty() {
+                    validate_attachments(&attachments)?;
+                    validate_references(&references)?;
+                    if is_empty_record(&text, &attachments, &references) {
                         if remove_target(&mut next, &target) {
                             applied += 1;
                         }
                         continue;
                     }
                     match next.iter_mut().find(|record| record.target() == target) {
-                        Some(record) if record.text == text => {}
+                        Some(record) if record.is_same_payload(&text, &attachments, &references) => {}
                         Some(record) => {
                             record.text = text;
+                            record.attachments = attachments;
+                            record.references = references;
                             record.updated_at = now_millis()?;
                             applied += 1;
                         }
@@ -292,6 +372,8 @@ impl DraftStore {
                                 canonical_cwd: target.canonical_cwd,
                                 session_id: target.session_id,
                                 text,
+                                attachments,
+                                references,
                                 updated_at: now_millis()?,
                             });
                             applied += 1;
@@ -350,6 +432,143 @@ fn validate_target(target: &DraftTarget) -> Result<(), String> {
             return Err("New-conversation draft target must not include sessionId".into());
         }
         DraftKind::NewConversation => {}
+    }
+    Ok(())
+}
+
+fn is_empty_record(
+    text: &str,
+    attachments: &[DraftAttachmentRecord],
+    references: &[DraftReferenceRecord],
+) -> bool {
+    text.trim().is_empty() && attachments.is_empty() && references.is_empty()
+}
+
+impl DraftRecord {
+    fn is_same_payload(
+        &self,
+        text: &str,
+        attachments: &[DraftAttachmentRecord],
+        references: &[DraftReferenceRecord],
+    ) -> bool {
+        self.text == text && self.attachments == attachments && self.references == references
+    }
+}
+
+fn validate_attachments(attachments: &[DraftAttachmentRecord]) -> Result<(), String> {
+    if attachments.len() > MAX_DRAFT_ATTACHMENTS {
+        return Err(format!(
+            "draft record contains more than {MAX_DRAFT_ATTACHMENTS} attachments"
+        ));
+    }
+    let mut total_bytes = 0usize;
+    for attachment in attachments {
+        let payload_bytes = match attachment {
+            DraftAttachmentRecord::Image { id, name, source_path, media_type, data } => {
+                validate_attachment_id(id)?;
+                validate_optional_path(source_path)?;
+                validate_optional_capped(name, MAX_DRAFT_REFERENCE_LABEL_BYTES, "image name")?;
+                validate_optional_capped(media_type, 256, "image media type")?;
+                if source_path.is_none() && data.is_none() {
+                    return Err("image attachment has neither sourcePath nor data".into());
+                }
+                data.as_deref().map_or(0, str::len)
+            }
+            DraftAttachmentRecord::File { id, name, kind, text, source_path, .. } => {
+                validate_attachment_id(id)?;
+                if kind != "text" && kind != "path" {
+                    return Err(format!("unknown file attachment kind {kind}"));
+                }
+                if name.trim().is_empty() {
+                    return Err("file attachment has an empty name".into());
+                }
+                validate_optional_path(source_path)?;
+                if kind == "text" && source_path.is_none() && text.is_none() {
+                    return Err("text file attachment has neither sourcePath nor text".into());
+                }
+                text.as_deref().map_or(0, str::len)
+            }
+            DraftAttachmentRecord::Document { source_path } => {
+                validate_required_path(source_path)?;
+                0
+            }
+            DraftAttachmentRecord::PastedText { text } => {
+                if text.is_empty() {
+                    return Err("pasted-text attachment has empty text".into());
+                }
+                text.len()
+            }
+        };
+        if payload_bytes > MAX_DRAFT_ATTACHMENT_ITEM_BYTES {
+            return Err(format!(
+                "draft attachment exceeds the {} MiB per-item limit",
+                MAX_DRAFT_ATTACHMENT_ITEM_BYTES / 1024 / 1024
+            ));
+        }
+        total_bytes += payload_bytes;
+    }
+    if total_bytes > MAX_DRAFT_ATTACHMENTS_BYTES {
+        return Err(format!(
+            "draft attachments exceed the {} MiB total limit",
+            MAX_DRAFT_ATTACHMENTS_BYTES / 1024 / 1024
+        ));
+    }
+    Ok(())
+}
+
+fn validate_references(references: &[DraftReferenceRecord]) -> Result<(), String> {
+    if references.len() > MAX_DRAFT_REFERENCES {
+        return Err(format!(
+            "draft record contains more than {MAX_DRAFT_REFERENCES} references"
+        ));
+    }
+    for reference in references {
+        validate_optional_capped(&Some(reference.id.clone()), MAX_DRAFT_REFERENCE_ID_BYTES, "reference id")?;
+        if reference.kind.trim().is_empty() || reference.kind.len() > 64 {
+            return Err("draft reference has an invalid kind".into());
+        }
+        if reference.label.trim().is_empty()
+            || reference.label.len() > MAX_DRAFT_REFERENCE_LABEL_BYTES
+        {
+            return Err("draft reference has an invalid label".into());
+        }
+        if reference.payload.is_empty() || reference.payload.len() > MAX_DRAFT_TEXT_BYTES {
+            return Err("draft reference has an invalid payload".into());
+        }
+    }
+    Ok(())
+}
+
+fn validate_attachment_id(id: &str) -> Result<(), String> {
+    if id.trim().is_empty() || id.len() > MAX_DRAFT_REFERENCE_ID_BYTES {
+        return Err("attachment id must contain 1 to 128 bytes".into());
+    }
+    Ok(())
+}
+
+fn validate_optional_path(path: &Option<String>) -> Result<(), String> {
+    if let Some(path) = path {
+        validate_required_path(path)?;
+    }
+    Ok(())
+}
+
+fn validate_required_path(path: &str) -> Result<(), String> {
+    if path.trim().is_empty() || path.len() > MAX_SESSION_ID_BYTES * 4 {
+        return Err("attachment sourcePath must contain 1 to 1024 bytes".into());
+    }
+    Ok(())
+}
+
+fn validate_optional_capped(
+    value: &Option<String>,
+    max_bytes: usize,
+    field: &str,
+) -> Result<(), String> {
+    if let Some(value) = value {
+        if value.len() > max_bytes {
+            return Err(format!("{field} exceeds the {max_bytes} byte limit"));
+        }
     }
     Ok(())
 }
@@ -514,6 +733,22 @@ mod tests {
         DraftMutation::Upsert {
             target,
             text: text.into(),
+            attachments: Vec::new(),
+            references: Vec::new(),
+        }
+    }
+
+    fn upsert_full(
+        target: DraftTarget,
+        text: &str,
+        attachments: Vec<DraftAttachmentRecord>,
+        references: Vec<DraftReferenceRecord>,
+    ) -> DraftMutation {
+        DraftMutation::Upsert {
+            target,
+            text: text.into(),
+            attachments,
+            references,
         }
     }
 
@@ -613,7 +848,7 @@ mod tests {
         let dir = test_dir("newer");
         let cwd = workspace_cwd(&dir, "repo");
         let path = dir.join(DRAFT_FILE_NAME);
-        let original = r#"{"schemaVersion":2,"drafts":[{"future":true}]}"#;
+        let original = r#"{"schemaVersion":3,"drafts":[{"future":true}]}"#;
         fs::write(&path, original).unwrap();
 
         let mut store = DraftStore::load_from_dir(&dir).unwrap();
@@ -645,6 +880,184 @@ mod tests {
                 &"x".repeat(MAX_DRAFT_TEXT_BYTES + 1),
             )])
             .is_err());
+        assert!(!dir.join(DRAFT_FILE_NAME).exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn image_attachment(data: &str) -> DraftAttachmentRecord {
+        DraftAttachmentRecord::Image {
+            id: "img-1".into(),
+            name: Some("shot.png".into()),
+            source_path: None,
+            media_type: Some("image/png".into()),
+            data: Some(data.into()),
+        }
+    }
+
+    fn memo_reference() -> DraftReferenceRecord {
+        DraftReferenceRecord {
+            id: "memo-1".into(),
+            kind: "memo".into(),
+            label: "待办".into(),
+            payload: "<piabyss-memo>payload</piabyss-memo>".into(),
+        }
+    }
+
+    #[test]
+    fn round_trips_attachments_and_references_with_text() {
+        let dir = test_dir("attachments");
+        let cwd = workspace_cwd(&dir, "repo");
+        let target = session_target(&cwd, "s1");
+        let attachments = vec![
+            image_attachment("aGVsbG8="),
+            DraftAttachmentRecord::Document {
+                source_path: "/repo/report.pdf".into(),
+            },
+        ];
+        let references = vec![memo_reference()];
+        let mut store = DraftStore::load_from_dir(&dir).unwrap();
+        store
+            .apply(vec![upsert_full(
+                target.clone(),
+                "explain the report",
+                attachments.clone(),
+                references.clone(),
+            )])
+            .unwrap();
+
+        let mut reloaded = DraftStore::load_from_dir(&dir).unwrap();
+        let snapshot = reloaded.workspace_snapshot(&cwd).unwrap();
+        assert_eq!(snapshot.drafts.len(), 1);
+        assert_eq!(snapshot.drafts[0].attachments, attachments);
+        assert_eq!(snapshot.drafts[0].references, references);
+
+        // Sending clears text/attachments/references in one upsert → delete.
+        reloaded
+            .apply(vec![upsert_full(target, "", Vec::new(), Vec::new())])
+            .unwrap();
+        assert!(reloaded.workspace_snapshot(&cwd).unwrap().drafts.is_empty());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn keeps_record_alive_on_attachments_or_references_alone() {
+        let dir = test_dir("attachments-only");
+        let cwd = workspace_cwd(&dir, "repo");
+        let target = session_target(&cwd, "s1");
+        let mut store = DraftStore::load_from_dir(&dir).unwrap();
+        store
+            .apply(vec![upsert_full(
+                target.clone(),
+                "",
+                vec![DraftAttachmentRecord::Document {
+                    source_path: "/repo/a.pdf".into(),
+                }],
+                Vec::new(),
+            )])
+            .unwrap();
+        assert_eq!(store.workspace_snapshot(&cwd).unwrap().drafts.len(), 1);
+        store
+            .apply(vec![upsert_full(target.clone(), "", Vec::new(), vec![memo_reference()])])
+            .unwrap();
+        assert_eq!(store.workspace_snapshot(&cwd).unwrap().drafts.len(), 1);
+
+        // Empty upsert (no text, no attachments, no references) deletes.
+        store
+            .apply(vec![upsert_full(target, "", Vec::new(), Vec::new())])
+            .unwrap();
+        assert!(store.workspace_snapshot(&cwd).unwrap().drafts.is_empty());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn reads_v1_records_and_upgrades_on_next_write() {
+        let dir = test_dir("v1");
+        let cwd = workspace_cwd(&dir, "repo");
+        let path = dir.join(DRAFT_FILE_NAME);
+        let legacy = serde_json::json!({
+            "schemaVersion": 1,
+            "drafts": [{
+                "kind": "session",
+                "canonicalCwd": cwd,
+                "sessionId": "s1",
+                "text": "legacy draft",
+                "updatedAt": 123
+            }]
+        });
+        fs::write(&path, serde_json::to_string(&legacy).unwrap()).unwrap();
+
+        let mut store = DraftStore::load_from_dir(&dir).unwrap();
+        let snapshot = store.workspace_snapshot(&cwd).unwrap();
+        assert!(snapshot.warning.is_none());
+        assert_eq!(snapshot.drafts.len(), 1);
+        assert_eq!(snapshot.drafts[0].text, "legacy draft");
+        assert!(snapshot.drafts[0].attachments.is_empty());
+
+        store
+            .apply(vec![upsert_full(
+                session_target(&cwd, "s1"),
+                "legacy draft",
+                vec![image_attachment("aGVsbG8=")],
+                Vec::new(),
+            )])
+            .unwrap();
+        let raw = fs::read_to_string(&path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(value["schemaVersion"], DRAFT_SCHEMA_VERSION);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn validates_attachments_and_references_before_writing() {
+        let dir = test_dir("attachment-validation");
+        let cwd = workspace_cwd(&dir, "repo");
+        let target = session_target(&cwd, "s1");
+        let mut store = DraftStore::load_from_dir(&dir).unwrap();
+
+        // Oversized image data.
+        let oversized = vec![image_attachment(&"x".repeat(MAX_DRAFT_ATTACHMENT_ITEM_BYTES + 1))];
+        assert!(store
+            .apply(vec![upsert_full(target.clone(), "t", oversized, Vec::new())])
+            .is_err());
+
+        // Image with neither sourcePath nor data.
+        let hollow = vec![DraftAttachmentRecord::Image {
+            id: "img".into(),
+            name: None,
+            source_path: None,
+            media_type: None,
+            data: None,
+        }];
+        assert!(store
+            .apply(vec![upsert_full(target.clone(), "t", hollow, Vec::new())])
+            .is_err());
+
+        // Unknown file kind.
+        let bad_kind = vec![DraftAttachmentRecord::File {
+            id: "f1".into(),
+            name: "a.bin".into(),
+            size: 1,
+            kind: "blob".into(),
+            text: None,
+            source_path: None,
+            is_directory: None,
+            unlimited: None,
+        }];
+        assert!(store
+            .apply(vec![upsert_full(target.clone(), "t", bad_kind, Vec::new())])
+            .is_err());
+
+        // Invalid reference payload.
+        let bad_reference = vec![DraftReferenceRecord {
+            id: "r1".into(),
+            kind: "memo".into(),
+            label: "待办".into(),
+            payload: String::new(),
+        }];
+        assert!(store
+            .apply(vec![upsert_full(target, "t", Vec::new(), bad_reference)])
+            .is_err());
+
         assert!(!dir.join(DRAFT_FILE_NAME).exists());
         fs::remove_dir_all(dir).unwrap();
     }

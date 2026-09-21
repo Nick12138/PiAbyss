@@ -56,6 +56,7 @@ import {
   type DraftRecord,
   type DraftReference,
   type DraftTarget,
+  type StoredDraftAttachment,
 } from "../draft-target";
 import {
   alignExtensionUiToSession,
@@ -496,6 +497,8 @@ export type AppState = EpochState & {
   draftTexts: Record<DraftKey, string>;
   /** Injected prompt references per draft, rendered as `@` chips in the composer. */
   draftReferences: Record<DraftKey, DraftReference[]>;
+  /** Restorable composer-attachment snapshot per draft (persisted with the text). */
+  draftAttachments: Record<DraftKey, StoredDraftAttachment[]>;
   draftTargets: Record<DraftKey, DraftTarget>;
   draftEditVersions: Record<DraftKey, number>;
   draftHydratedWorkspace: string | null;
@@ -615,6 +618,13 @@ export type AppState = EpochState & {
   setDraftTextLocal: (target: DraftTarget, text: string) => number;
   /** Replace the injected references of one draft (empty array clears them). */
   setDraftReferences: (target: DraftTarget, references: readonly DraftReference[]) => void;
+  /** Replace the persisted attachment snapshot of one draft (empty array clears it). */
+  setDraftAttachments: (
+    target: DraftTarget,
+    attachments: readonly StoredDraftAttachment[],
+  ) => void;
+  /** Drop every persisted field (text/attachments/references) of one draft. */
+  clearDraftState: (target: DraftTarget) => void;
   mergeHydratedDrafts: (
     canonicalCwd: string,
     drafts: readonly DraftRecord[],
@@ -704,6 +714,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   sessionTreeNavigated: false,
   draftTexts: {},
   draftReferences: {},
+  draftAttachments: {},
   draftTargets: {},
   draftEditVersions: {},
   draftHydratedWorkspace: null,
@@ -1527,23 +1538,56 @@ export const useAppStore = create<AppState>((set, get) => ({
       const draftReferences = { ...state.draftReferences };
       if (references.length > 0) draftReferences[key] = [...references];
       else delete draftReferences[key];
-      return { draftReferences };
+      return {
+        draftReferences,
+        draftTargets: { ...state.draftTargets, [key]: target },
+      };
+    }),
+  setDraftAttachments: (target, attachments) =>
+    set((state) => {
+      const key = draftKeyForTarget(target);
+      const draftAttachments = { ...state.draftAttachments };
+      if (attachments.length > 0) draftAttachments[key] = [...attachments];
+      else delete draftAttachments[key];
+      return {
+        draftAttachments,
+        draftTargets: { ...state.draftTargets, [key]: target },
+      };
+    }),
+  clearDraftState: (target) =>
+    set((state) => {
+      const key = draftKeyForTarget(target);
+      const draftTexts = { ...state.draftTexts };
+      const draftReferences = { ...state.draftReferences };
+      const draftAttachments = { ...state.draftAttachments };
+      delete draftTexts[key];
+      delete draftReferences[key];
+      delete draftAttachments[key];
+      return { draftTexts, draftReferences, draftAttachments };
     }),
   mergeHydratedDrafts: (canonicalCwd, drafts, baselineVersions) =>
     set((state) => {
       if (state.workspace?.canonicalCwd !== canonicalCwd) return {};
       const draftTexts = { ...state.draftTexts };
       const draftTargets = { ...state.draftTargets };
+      const draftReferences = { ...state.draftReferences };
+      const draftAttachments = { ...state.draftAttachments };
       for (const record of drafts) {
         const target = draftTargetFromRecord(record);
         const key = draftKeyForTarget(target);
         if ((state.draftEditVersions[key] ?? 0) !== (baselineVersions[key] ?? 0)) continue;
         draftTexts[key] = record.text;
         draftTargets[key] = target;
+        if (record.references?.length) draftReferences[key] = [...record.references];
+        else delete draftReferences[key];
+        if (record.attachments?.length) draftAttachments[key] = [...record.attachments];
+        else delete draftAttachments[key];
       }
       return {
         draftTexts,
         draftTargets,
+        draftReferences,
+        draftAttachments,
         draftHydratedWorkspace: canonicalCwd,
       };
     }),
@@ -1551,18 +1595,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => {
       const draftTexts = { ...state.draftTexts };
       const draftReferences = { ...state.draftReferences };
+      const draftAttachments = { ...state.draftAttachments };
       const draftTargets = { ...state.draftTargets };
       const draftEditVersions = { ...state.draftEditVersions };
       for (const [key, target] of Object.entries(state.draftTargets)) {
         if (target.canonicalCwd !== canonicalCwd) continue;
         delete draftTexts[key];
         delete draftReferences[key];
+        delete draftAttachments[key];
         delete draftTargets[key];
         delete draftEditVersions[key];
       }
       return {
         draftTexts,
         draftReferences,
+        draftAttachments,
         draftTargets,
         draftEditVersions,
         draftHydratedWorkspace:

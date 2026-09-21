@@ -791,13 +791,6 @@ export async function createSession(
     unsubscribeAgent = null;
     markStep("publish");
 
-    if (prev.sessionId && prev.sessionId !== sessionId) {
-      try {
-        await factory.deps.attachmentStore?.discardSessionDrafts(prev.sessionId);
-      } catch {
-        /* ignore — drafts cleanup is best-effort once the candidate published */
-      }
-    }
 
     if (!retainedPrevious) {
       try {
@@ -1108,9 +1101,6 @@ export async function openSession(
       if (retainedPrevious) factory.announceRetainedRuntime(retainedPrevious);
       publishExtensionUi();
       markStep("publish");
-      if (prev.sessionId && prev.sessionId !== sessionId) {
-        await factory.deps.attachmentStore?.discardSessionDrafts(prev.sessionId);
-      }
 
       if (!retainedPrevious) {
         try {

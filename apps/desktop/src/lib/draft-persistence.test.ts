@@ -8,6 +8,7 @@ import {
   flushDraftWrites,
   hydrateDraftWorkspace,
   restoreDraftSend,
+  setDraftAttachmentSnapshot,
   settleDraftWritesWithin,
   stageDraftSend,
 } from "./draft-persistence";
@@ -41,6 +42,8 @@ beforeEach(() => {
     workspace: null,
     session: null,
     draftTexts: {},
+    draftReferences: {},
+    draftAttachments: {},
     draftTargets: {},
     draftEditVersions: {},
     draftHydratedWorkspace: null,
@@ -65,7 +68,7 @@ describe("draft persistence queue", () => {
 
     expect(mocks.invoke).toHaveBeenCalledTimes(1);
     expect(mocks.invoke).toHaveBeenCalledWith("desktop_drafts_apply", {
-      mutations: [{ op: "upsert", target, text: "ab" }],
+      mutations: [{ op: "upsert", target, text: "ab", attachments: [], references: [] }],
     });
   });
 
@@ -80,7 +83,7 @@ describe("draft persistence queue", () => {
 
     expect(mocks.invoke).toHaveBeenCalledWith("desktop_drafts_apply", {
       mutations: [
-        { op: "upsert", target, text: "session" },
+        { op: "upsert", target, text: "session", attachments: [], references: [] },
         { op: "delete", target: second },
       ],
     });
@@ -99,7 +102,7 @@ describe("draft persistence queue", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("desktop_drafts_apply", {
       mutations: [
         { op: "delete", target },
-        { op: "upsert", target: second, text: "two" },
+        { op: "upsert", target: second, text: "two", attachments: [], references: [] },
       ],
     });
   });
@@ -113,7 +116,66 @@ describe("draft persistence queue", () => {
     await flushDraftWrites();
     expect(useAppStore.getState().draftTexts["session:s1"]).toBe("next");
     expect(mocks.invoke).toHaveBeenLastCalledWith("desktop_drafts_apply", {
-      mutations: [{ op: "upsert", target, text: "next" }],
+      mutations: [{ op: "upsert", target, text: "next", attachments: [], references: [] }],
+    });
+  });
+
+  it("persists the attachment snapshot alongside the text and survives text-only edits", async () => {
+    const attachments = [{ type: "document" as const, sourcePath: "/repo/a.pdf" }];
+    setDraftAttachmentSnapshot(target, attachments);
+    editDraft(target, "explain");
+    await flushDraftWrites();
+
+    expect(mocks.invoke).toHaveBeenLastCalledWith("desktop_drafts_apply", {
+      mutations: [{ op: "upsert", target, text: "explain", attachments, references: [] }],
+    });
+
+    // A later text-only edit must carry the snapshot along (full-state upsert).
+    editDraft(target, "explain again");
+    await flushDraftWrites();
+    expect(mocks.invoke).toHaveBeenLastCalledWith("desktop_drafts_apply", {
+      mutations: [{ op: "upsert", target, text: "explain again", attachments, references: [] }],
+    });
+  });
+
+  it("keeps the record alive while attachments remain after the text is cleared", async () => {
+    editDraft(target, "explain");
+    setDraftAttachmentSnapshot(target, [{ type: "pasted-text", text: "notes" }]);
+    await flushDraftWrites();
+
+    editDraft(target, "");
+    await flushDraftWrites();
+    expect(mocks.invoke).toHaveBeenLastCalledWith("desktop_drafts_apply", {
+      mutations: [
+        {
+          op: "upsert",
+          target,
+          text: "",
+          attachments: [{ type: "pasted-text", text: "notes" }],
+          references: [],
+        },
+      ],
+    });
+
+    setDraftAttachmentSnapshot(target, []);
+    await flushDraftWrites();
+    expect(mocks.invoke).toHaveBeenLastCalledWith("desktop_drafts_apply", {
+      mutations: [{ op: "delete", target }],
+    });
+  });
+
+  it("deletes Session drafts entirely (text + attachments) on session removal", async () => {
+    editDraft(target, "explain");
+    setDraftAttachmentSnapshot(target, [{ type: "document", sourcePath: "/repo/a.pdf" }]);
+    await flushDraftWrites();
+
+    deleteSessionDrafts("/repo", ["s1"]);
+    await flushDraftWrites();
+
+    expect(useAppStore.getState().draftTexts["session:s1"]).toBeUndefined();
+    expect(useAppStore.getState().draftAttachments["session:s1"]).toBeUndefined();
+    expect(mocks.invoke).toHaveBeenLastCalledWith("desktop_drafts_apply", {
+      mutations: [{ op: "delete", target }],
     });
   });
 
