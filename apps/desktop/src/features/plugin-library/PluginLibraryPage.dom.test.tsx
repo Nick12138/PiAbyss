@@ -17,6 +17,7 @@ import type {
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
 import { PluginLibraryPage } from "./PluginLibraryPage";
+import { resetPluginLibraryUpdatesCache } from "./plugin-updates";
 
 const { shellOpen } = vi.hoisted(() => ({ shellOpen: vi.fn() }));
 vi.mock("@tauri-apps/plugin-shell", () => ({ open: shellOpen }));
@@ -368,12 +369,15 @@ describe("PluginLibraryPage DOM workflows", () => {
   let currentCatalog: PluginLibraryCatalog;
   let visionModels: readonly ModelSummary[] | null;
   let visionModelsShouldFail: boolean;
+  let updateCheckResult: { supported: boolean; updates: Array<{ packageId: string; source: string; current?: string; available?: string }> };
 
   beforeEach(() => {
     currentSnapshot = emptySnapshot();
     currentCatalog = catalog();
     visionModels = VISION_MODELS;
     visionModelsShouldFail = false;
+    updateCheckResult = { supported: true, updates: [] };
+    resetPluginLibraryUpdatesCache();
     useAppStore.getState().setWorkspace(null);
     useAppStore.getState().applyPackageSnapshot(null);
     useAppStore.getState().setHost(host());
@@ -408,6 +412,8 @@ describe("PluginLibraryPage DOM workflows", () => {
         return envelope(method, { models: visionModels });
       }
       if (method === "package.list") return envelope(method, currentSnapshot);
+      if (method === "package.checkUpdates") return envelope(method, updateCheckResult);
+      if (method === "package.update") return envelope(method, mutationResult(currentSnapshot));
       if (
         method === "package.install" ||
         method === "resource.setPreferences" ||
@@ -534,6 +540,74 @@ describe("PluginLibraryPage DOM workflows", () => {
     // Cancel closes without persisting.
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("collapses repo-plugin updates into one my-pi-plugins row and updates all", async () => {
+    currentSnapshot = snapshotWithRepo(true);
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    updateCheckResult = {
+      supported: true,
+      updates: [{ packageId: "pkg-repo", source: REPO_SOURCE }],
+    };
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    await screen.findByText("联网搜索");
+    // Check ran against the mock; the update button sits next to refresh.
+    const updateButton = await screen.findByRole("button", { name: "Updates available" });
+    await user.click(updateButton);
+
+    const menu = document.querySelector<HTMLElement>("[data-plugin-updates-menu]")!;
+    expect(menu).not.toBeNull();
+    // Both repo plugins share one package: a single bundled row, no per-plugin entries.
+    const row = menu.querySelector<HTMLElement>('[data-plugin-update-row="repo:pkg-repo"]')!;
+    expect(row).toHaveTextContent("my-pi-plugins");
+    expect(menu.querySelector('[data-plugin-update-row="plugin:pkg-repo"]')).toBeNull();
+
+    await user.click(menu.querySelector<HTMLElement>("[data-plugin-update-all]")!);
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "package.update",
+        expect.objectContaining({ expectedWorkspaceId: "w1" }),
+        { packageId: "pkg-repo" },
+        expect.any(Number),
+      ),
+    );
+    // The applied update clears the badge/button without another check.
+    await waitFor(() => expect(document.querySelector("[data-plugin-updates]")).toBeNull());
+  });
+
+  it("lists npm plugin updates individually and supports a single update", async () => {
+    currentSnapshot = snapshotWithBrowser(true);
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    updateCheckResult = {
+      supported: true,
+      updates: [
+        { packageId: "pkg-browser", source: "npm:betterwright", current: "1.9.0", available: "1.10.0" },
+      ],
+    };
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    await screen.findByText("浏览器");
+    await user.click(await screen.findByRole("button", { name: "Updates available" }));
+
+    const menu = document.querySelector<HTMLElement>("[data-plugin-updates-menu]")!;
+    expect(menu).not.toBeNull();
+    const row = menu.querySelector<HTMLElement>('[data-plugin-update-row="plugin:pkg-browser"]')!;
+    expect(row).toHaveTextContent("浏览器");
+    expect(row).toHaveTextContent("v1.9.0 → v1.10.0");
+
+    await user.click(row.querySelector<HTMLElement>("[data-plugin-update-one]")!);
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "package.update",
+        expect.objectContaining({ expectedWorkspaceId: "w1" }),
+        { packageId: "pkg-browser" },
+        expect.any(Number),
+      ),
+    );
+    await waitFor(() => expect(document.querySelector("[data-plugin-updates]")).toBeNull());
   });
 
   it("installs an npm plugin via package.install after review", async () => {

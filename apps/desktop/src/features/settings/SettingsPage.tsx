@@ -42,6 +42,7 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { notifyOperationFailure } from "../../lib/notify-operation-error";
 import { SettingsTopBarActionsContext, SETTINGS_SECTION_META } from "./settings-top-bar";
+import { checkPluginLibraryUpdates } from "../plugin-library/plugin-updates";
 
 /** Fire-and-forget prefetch budget for the plugin-library registry warmup. */
 const PLUGIN_LIBRARY_PREFETCH_TIMEOUT_MS = 30_000;
@@ -520,6 +521,18 @@ export function SettingsPage({
         // page retries with its own error surface when actually opened.
       });
   }, [prefetchHost]);
+
+  // Opening Settings also checks the installed plugin-library plugins for
+  // updates (session-cached in plugin-updates.ts), so the update button in
+  // the plugin library top bar is ready as soon as the section is opened.
+  const prefetchWorkspace = useAppStore((s) => s.workspace);
+  useEffect(() => {
+    if (!prefetchHost || !prefetchWorkspace?.servicesReady) return;
+    if (!(prefetchHost.capabilities.packageUpdateCheck ?? false)) return;
+    void checkPluginLibraryUpdates(prefetchHost, prefetchWorkspace).catch(() => {
+      // Fire-and-forget: the plugin library page re-checks when opened.
+    });
+  }, [prefetchHost, prefetchWorkspace]);
 
   // Remember where the user left off (section + per-section scroll offsets)
   // when Settings unmounts, so the next generic open restores it while the

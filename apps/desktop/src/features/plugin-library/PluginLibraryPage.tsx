@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
+  ArrowDownToLine,
   Download,
   ExternalLink,
   Eye,
@@ -19,6 +20,7 @@ import type {
   HostRequestParams,
   ModelSummary,
   PackageMutationResult,
+  PackageUpdateSummary,
   PluginLibraryCatalog,
   PluginLibraryConfigItem,
   PluginLibraryEntry,
@@ -47,6 +49,13 @@ import {
   wantsModelListOptions,
   wantsModelOptions,
 } from "./plugin-library-model";
+import {
+  cachedPluginLibraryUpdates,
+  checkPluginLibraryUpdates,
+  computePluginUpdateRows,
+  markPluginLibraryUpdatesApplied,
+  type PluginUpdateRow,
+} from "./plugin-updates";
 import { PACKAGE_LIST_PARAMS, buildResourcePreferenceUpdates } from "../packages/packages-model";
 import {
   notifyDesktopSettingsSaveFailure,
@@ -576,6 +585,10 @@ export function PluginLibraryPage() {
   const [pendingOps, setPendingOps] = useState<Record<string, true>>({});
   const [review, setReview] = useState<PluginLibraryEntry | null>(null);
   const [configFor, setConfigFor] = useState<PluginLibraryEntry | null>(null);
+  // Update check result (hydrated from the settings-open prefetch cache when
+  // present); null until the first check for this host+workspace completes.
+  const [pluginUpdates, setPluginUpdates] = useState<PackageUpdateSummary[] | null>(null);
+  const [updateMenuOpen, setUpdateMenuOpen] = useState(false);
   const catalogRequest = useRef(0);
   const listRequest = useRef(0);
 
@@ -643,8 +656,79 @@ export function PluginLibraryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host?.hostInstanceId, workspace?.id, workspace?.servicesReady]);
 
+  const updateCheckSupported = host?.capabilities.packageUpdateCheck ?? false;
+  useEffect(() => {
+    if (!host || !workspace?.servicesReady || !updateCheckSupported) return;
+    const cached = cachedPluginLibraryUpdates(host.hostInstanceId, workspace.id);
+    if (cached) {
+      setPluginUpdates(cached);
+      return;
+    }
+    let cancelled = false;
+    void checkPluginLibraryUpdates(host, workspace)
+      .then((updates) => {
+        if (!cancelled) setPluginUpdates(updates);
+      })
+      .catch(() => {
+        // No update button on a failed check; the manual refresh flow still
+        // works and the next settings-open prefetch retries.
+        if (!cancelled) setPluginUpdates([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [host, workspace, updateCheckSupported]);
+
+  const updateRows = useMemo(
+    () =>
+      catalog && packages && pluginUpdates
+        ? computePluginUpdateRows(catalog, packages, pluginUpdates)
+        : [],
+    [catalog, packages, pluginUpdates],
+  );
+  const updatesBusy = Object.keys(pendingOps).some((id) => id.startsWith("plugin-update:"));
+
+  /** Remove just-updated packages from the local view and the session cache
+   *  so the update button/popup clear without another network roundtrip. */
+  function markUpdatesApplied(packageIds: readonly string[]) {
+    const ids = new Set(packageIds);
+    setPluginUpdates((prev) => (prev ? prev.filter((update) => !ids.has(update.packageId)) : prev));
+    const current = useAppStore.getState();
+    if (current.host && current.workspace) {
+      markPluginLibraryUpdatesApplied(current.host.hostInstanceId, current.workspace.id, ids);
+    }
+  }
+
+  async function applyPluginUpdate(row: PluginUpdateRow): Promise<boolean> {
+    const ok = await runMutation(
+      "package.update",
+      { packageId: row.packageId },
+      row.key,
+      row.label,
+    );
+    if (ok) markUpdatesApplied([row.packageId]);
+    return ok;
+  }
+
+  async function applyAllPluginUpdates() {
+    // Unique package ids in display order; rows sharing a package (repo
+    // plugins) update together in one mutation.
+    const rows = [...new Map(updateRows.map((row) => [row.packageId, row])).values()];
+    const allKey = "plugin-update:all";
+    for (const row of rows) {
+      const ok = await runMutation("package.update", { packageId: row.packageId }, allKey, row.label);
+      if (!ok) return; // host/workspace changed or the mutation failed — stop here.
+      markUpdatesApplied([row.packageId]);
+    }
+    if (rows.length > 0) pushNotification(t("notifPluginsUpdated", { count: rows.length }));
+  }
+
   async function runMutation(
-    method: "package.install" | "resource.setPreferences" | "pluginLibrary.apply",
+    method:
+      | "package.install"
+      | "package.update"
+      | "resource.setPreferences"
+      | "pluginLibrary.apply",
     params: HostRequestParams[typeof method],
     pluginId: string,
     name: string,
@@ -778,6 +862,82 @@ export function PluginLibraryPage() {
       {configFor && <PluginConfigDialog entry={configFor} onClose={() => setConfigFor(null)} />}
 
       <SettingsTopBarActions title={t("navPlugins")} subtitle={t("pluginsSubtitle")}>
+        {updateRows.length > 0 && (
+          <div className="relative flex" data-plugin-updates>
+            <button
+              type="button"
+              className="relative flex size-7 items-center justify-center rounded-md text-warning hover:bg-surface-overlay hover:text-foreground"
+              title={t("pluginsUpdateAction")}
+              aria-label={t("pluginsUpdateAction")}
+              onClick={() => setUpdateMenuOpen((open) => !open)}
+            >
+              <ArrowDownToLine size={14} />
+              <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-warning px-0.5 text-[9px] font-semibold leading-none text-surface">
+                {updateRows.length}
+              </span>
+            </button>
+            {updateMenuOpen && (
+              <>
+                {/* Click-away layer: closes the popup without a focus trap. */}
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setUpdateMenuOpen(false)}
+                />
+                <div
+                  data-plugin-updates-menu
+                  className="absolute right-0 top-8 z-50 w-72 rounded-lg border border-border bg-surface p-2 shadow-lg"
+                >
+                  <div className="flex items-center justify-between gap-2 px-1 pb-1.5">
+                    <span className="truncate text-xs font-medium">
+                      {t("pluginsUpdateTitle", { count: updateRows.length })}
+                    </span>
+                    <button
+                      type="button"
+                      data-plugin-update-all
+                      className="shrink-0 text-xs font-medium text-accent hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
+                      disabled={updatesBusy}
+                      onClick={() => void applyAllPluginUpdates()}
+                    >
+                      {t("pluginsUpdateAll")}
+                    </button>
+                  </div>
+                  <div className="flex flex-col">
+                    {updateRows.map((row) => (
+                      <div
+                        key={row.key}
+                        data-plugin-update-row={row.key}
+                        className="flex items-center gap-2 rounded-md px-1 py-1.5 hover:bg-surface-overlay"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-medium">
+                            {row.label}
+                            {row.repoPluginCount !== undefined &&
+                              row.repoPluginCount > 1 &&
+                              ` · ${t("pluginsUpdateRepoBundle", { count: row.repoPluginCount })}`}
+                          </p>
+                          {row.current && row.available && (
+                            <p className="text-[11px] tabular-nums text-muted">
+                              v{row.current} → v{row.available}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          data-plugin-update-one={row.key}
+                          className="shrink-0 rounded-md border border-border px-2 py-1 text-[11px] text-foreground hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={updatesBusy}
+                          onClick={() => void applyPluginUpdate(row)}
+                        >
+                          {t("pluginsUpdateOne")}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
         <button
           type="button"
           className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-50"
