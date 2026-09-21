@@ -69,16 +69,6 @@ type ProviderFetchCapture =
       };
     }
   | { error: HostError };
-type ProviderConnectionCapture =
-  | {
-      snapshot: {
-        original: string | null;
-        provider: ProviderSnapshot;
-        model: Model<Api>;
-        auth: Awaited<ReturnType<ModelRegistry["getApiKeyAndHeaders"]>>;
-      };
-    }
-  | { error: HostError };
 const MODELS_BACKUP_RETENTION = 5;
 
 const PROVIDER_APIS = new Set<ProviderApi>([
@@ -1772,75 +1762,55 @@ export function createProviderHandlers(
       const shutdownSignal = server.getShutdownSignal();
       try {
         shutdownSignal.throwIfAborted();
-        const captured = await withStableGraphRead({
-          requestId: ctx.id,
-          identity: server.identity,
-          serviceGraphLock: server.serviceGraphLock,
-          run: async (): Promise<ProviderConnectionCapture> => {
-            await refreshRegistry(factory);
-            const config = await readModelsConfig(modelsPath);
-            const raw = config.providers[providerId];
-            if (!isObject(raw)) {
-              return {
-                error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`),
-              };
-            }
-            const provider = providerSnapshot(
-              providerId,
-              raw,
-              factory,
-              resolveEnabledProviders(
-                config,
-                factory.getGraph()?.agentSession?.model?.provider,
-                runtimeProviderIds(factory),
-              ).includes(providerId),
-            );
-            const targetModelId = modelId?.trim() || provider.models[0]?.id;
-            if (!targetModelId) {
-              return {
-                error: createHostError(
-                  "INVALID_REQUEST",
-                  "Add and enable at least one model before testing the Provider",
-                ),
-              };
-            }
-            const model = factory.deps.modelRegistry.find(providerId, targetModelId);
-            if (!model) {
-              return {
-                error: createHostError(
-                  "MODEL_NOT_FOUND",
-                  `Model not found in Provider ${providerId}: ${targetModelId}`,
-                ),
-              };
-            }
-            const auth = await factory.deps.modelRegistry.getApiKeyAndHeaders(model);
-            return { snapshot: { original: config.original, provider, model, auth } };
-          },
-        });
-        if (!captured.ok) return { error: captured.error, identity: captured.identity };
-        if (!("snapshot" in captured.result)) {
-          return { error: captured.result.error, identity: captured.identity };
+        // Lock-free capture: a manual test only needs a best-effort view of the
+        // current config. Capturing under serviceGraphLock turned every test
+        // into a potential SERVICE_GRAPH_BUSY whenever any graph operation was
+        // mid-flight; the POST itself never needed the lock.
+        const identity = server.identity.snapshot();
+        await refreshRegistry(factory);
+        const config = await readModelsConfig(modelsPath);
+        const raw = config.providers[providerId];
+        if (!isObject(raw)) {
+          return {
+            error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`),
+            identity,
+          };
         }
+        const provider = providerSnapshot(
+          providerId,
+          raw,
+          factory,
+          resolveEnabledProviders(
+            config,
+            factory.getGraph()?.agentSession?.model?.provider,
+            runtimeProviderIds(factory),
+          ).includes(providerId),
+        );
+        const targetModelId = modelId?.trim() || provider.models[0]?.id;
+        if (!targetModelId) {
+          return {
+            error: createHostError(
+              "INVALID_REQUEST",
+              "Add and enable at least one model before testing the Provider",
+            ),
+            identity,
+          };
+        }
+        const model = factory.deps.modelRegistry.find(providerId, targetModelId);
+        if (!model) {
+          return {
+            error: createHostError(
+              "MODEL_NOT_FOUND",
+              `Model not found in Provider ${providerId}: ${targetModelId}`,
+            ),
+            identity,
+          };
+        }
+        const auth = await factory.deps.modelRegistry.getApiKeyAndHeaders(model);
 
-        const { original, provider, model, auth } = captured.result.snapshot;
         const result = await checkProviderConnection(provider, model, auth, shutdownSignal);
         if (result.category !== "authentication" || hasHeader(provider.headers, "authorization")) {
-          const validated = await readModelsOriginalUnderLock(server, modelsPath, ctx.id);
-          if (!validated.ok) return { error: validated.error, identity: validated.identity };
-          const stale = providerReadStaleError({
-            capturedIdentity: captured.identity,
-            validatedIdentity: validated.identity,
-            capturedOriginal: original,
-            validatedOriginal: validated.result,
-            message: "Provider configuration changed during connection testing",
-          });
-          if (stale) {
-            return {
-              error: stale,
-              identity: validated.identity,
-            };
-          }
-          return { result, identity: validated.identity };
+          return { result, identity };
         }
         const detectedAuthHeader = !provider.authHeader;
         const retry = await checkProviderConnection(
@@ -1851,41 +1821,33 @@ export function createProviderHandlers(
           detectedAuthHeader,
         );
         if (!retry.ok) {
-          const validated = await readModelsOriginalUnderLock(server, modelsPath, ctx.id);
-          if (!validated.ok) return { error: validated.error, identity: validated.identity };
-          const stale = providerReadStaleError({
-            capturedIdentity: captured.identity,
-            validatedIdentity: validated.identity,
-            capturedOriginal: original,
-            validatedOriginal: validated.result,
-            message: "Provider configuration changed during connection testing",
-          });
-          if (stale) {
-            return {
-              error: stale,
-              identity: validated.identity,
-            };
-          }
-          return { result, identity: validated.identity };
+          return { result, identity };
         }
         shutdownSignal.throwIfAborted();
-        const persistence = await persistDetectedAuthHeader(
-          modelsPath,
-          providerId,
-          detectedAuthHeader,
-          original,
-          captured.identity,
-          ctx.id,
-          factory,
-        );
-        if ("error" in persistence) return persistence;
-        return {
-          result: {
-            ...retry,
-            message: `${retry.message} Authentication mode was detected automatically.`,
-          },
-          identity: persistence.identity,
-        };
+        const detectedMessage = `${retry.message} Authentication mode was detected automatically.`;
+        // Best-effort write-back: persisting the detected auth header must
+        // never fail the test itself — skip persistence on any conflict,
+        // staleness, or busy lock.
+        try {
+          const persistence = await persistDetectedAuthHeader(
+            modelsPath,
+            providerId,
+            detectedAuthHeader,
+            config.original,
+            identity,
+            ctx.id,
+            factory,
+          );
+          if (!("error" in persistence)) {
+            return {
+              result: { ...retry, message: detectedMessage },
+              identity: persistence.identity,
+            };
+          }
+        } catch {
+          /* Persistence is optional; the test result stands. */
+        }
+        return { result: { ...retry, message: detectedMessage }, identity };
       } catch (error) {
         if (shutdownSignal.aborted) return { error: hostShuttingDownError() };
         return {

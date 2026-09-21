@@ -61,7 +61,7 @@ describe("withRegisteredGraphMutation", () => {
     active?.finish();
   });
 
-  it("finishes its registration when the graph mutex is busy", async () => {
+  it("finishes its registration when the graph mutex stays busy", async () => {
     const server = host();
     server.serviceGraphLock.tryAcquire({
       operationKind: "workspace.setCurrent",
@@ -72,6 +72,7 @@ describe("withRegisteredGraphMutation", () => {
       server,
       operationKind: "model.setCurrent",
       requestId: "model-select",
+      lockWaitMs: 0,
       run: () => ({ result: "unreachable" }),
     });
 
@@ -84,6 +85,48 @@ describe("withRegisteredGraphMutation", () => {
     expect(server.graphOperations.getActive()).toBeNull();
     expect(server.serviceGraphLock.getOwner()?.requestId).toBe("workspace-switch");
     server.serviceGraphLock.release("workspace-switch");
+  });
+
+  it("queues briefly behind a released lock instead of failing busy", async () => {
+    const server = host();
+    server.serviceGraphLock.tryAcquire({
+      operationKind: "session.open",
+      requestId: "session-open",
+    });
+    setTimeout(() => server.serviceGraphLock.release("session-open"), 20);
+
+    const outcome = await withRegisteredGraphMutation({
+      server,
+      operationKind: "provider.mutation",
+      requestId: "provider-save",
+      run: () => ({ result: "saved" }),
+    });
+
+    expect(outcome).toEqual({ result: "saved" });
+    expect(server.serviceGraphLock.getOwner()).toBeNull();
+    expect(server.graphOperations.getActive()).toBeNull();
+  });
+
+  it("stops waiting when the operation signal aborts and never leaks the lock", async () => {
+    const server = host();
+    server.serviceGraphLock.tryAcquire({
+      operationKind: "session.open",
+      requestId: "session-open",
+    });
+
+    const pending = withRegisteredGraphMutation({
+      server,
+      operationKind: "provider.mutation",
+      requestId: "provider-save",
+      run: () => ({ result: "unreachable" }),
+    });
+    server.graphOperations.cancelActive("superseded");
+
+    await expect(pending).resolves.toMatchObject({
+      error: { code: "SERVICE_GRAPH_BUSY", details: { cancelled: true } },
+    });
+    expect(server.serviceGraphLock.getOwner()?.requestId).toBe("session-open");
+    server.serviceGraphLock.release("session-open");
   });
 
   it("releases the mutex before finishing when the callback throws", async () => {

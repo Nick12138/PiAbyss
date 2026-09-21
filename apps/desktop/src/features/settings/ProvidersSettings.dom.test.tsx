@@ -308,7 +308,7 @@ describe("ProvidersSettings dirty tracking", () => {
 });
 
 describe("ProvidersSettings key-removal safety", () => {
-  it("Save & test saves without committing a pending stored-key removal", async () => {
+  it("Save & test skips the implicit save when only a stored-key removal is armed", async () => {
     const user = userEvent.setup();
     const spy = await renderLoaded();
 
@@ -318,11 +318,26 @@ describe("ProvidersSettings key-removal safety", () => {
     await user.click(screen.getByRole("button", { name: "Save & test" }));
     await waitFor(() => expect(callsFor(spy, "provider.checkConnection")).toHaveLength(1));
 
-    const saveCalls = callsFor(spy, "provider.save");
-    expect(saveCalls).toHaveLength(1);
-    expect(saveCalls[0][2]).not.toHaveProperty("clearApiKey");
+    // An unchanged draft needs no graph mutation before testing, and the
+    // pending removal must never be committed implicitly.
+    expect(callsFor(spy, "provider.save")).toHaveLength(0);
     // The removal stays armed for the explicit Save.
     expect(screen.getByText("Stored key will be removed when you save")).toBeInTheDocument();
+  });
+
+  it("Save & test persists a typed key before testing", async () => {
+    const user = userEvent.setup();
+    const spy = await renderLoaded();
+
+    await user.type(
+      screen.getByPlaceholderText(/Leave blank to keep current key/i),
+      "sk-typed-new-key",
+    );
+    await user.click(screen.getByRole("button", { name: "Save & test" }));
+    await waitFor(() => expect(callsFor(spy, "provider.checkConnection")).toHaveLength(1));
+
+    expect(callsFor(spy, "provider.save")).toHaveLength(1);
+    expect(callsFor(spy, "provider.save")[0][2]).toMatchObject({ apiKey: "sk-typed-new-key" });
   });
 
   it("explicit Save commits the stored-key removal", async () => {

@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Brain,
   Check,
+  ChevronDown,
   CircleCheck,
   Copy,
   Eye,
@@ -210,6 +211,10 @@ export function ProvidersSettings() {
   const [saving, setSaving] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [testing, setTesting] = useState(false);
+  // Model picked for the "save & test" button; falls back to the first model
+  // when unset or no longer present (e.g. after switching providers).
+  const [testModelId, setTestModelId] = useState<string | null>(null);
+  const [testMenuOpen, setTestMenuOpen] = useState(false);
   const [connectionResult, setConnectionResult] = useState<ProviderConnectionResult | null>(null);
   const [updatingProviderId, setUpdatingProviderId] = useState<string | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
@@ -233,6 +238,8 @@ export function ProvidersSettings() {
   const draftEpochRef = useRef(0);
 
   const selectedProvider = providers.find((provider) => provider.id === selectedId);
+  const testModel =
+    draft?.models.find((model) => model.id === testModelId)?.id ?? draft?.models[0]?.id ?? null;
   const storedMaskedKey =
     storedKeyPreview && storedKeyPreview.providerId === selectedId ? storedKeyPreview.masked : null;
   const revealedKeyValue =
@@ -557,12 +564,15 @@ export function ProvidersSettings() {
         draft,
         providers.some((item) => item.id === draft.originalId && item.compat !== undefined),
       );
-      const response = await hostClient.request("provider.save", hostContext(host), {
-        ...(draft.originalId ? { originalId: draft.originalId } : {}),
-        provider,
-        ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
-        ...(removeStoredKey ? { clearApiKey: true } : {}),
-      });
+      const response = await requestWithRetry(() =>
+        hostClient.request("provider.save", hostContext(host), {
+          ...(draft.originalId ? { originalId: draft.originalId } : {}),
+          provider,
+          ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+          ...(removeStoredKey ? { clearApiKey: true } : {}),
+        }),
+      );
+      if (!response) return null;
       if (!response.ok) {
         const message = localizeHostError(response.error, t);
         pushNotification(providerSaveFailureMessage(message, provider), "error");
@@ -617,18 +627,22 @@ export function ProvidersSettings() {
   async function fetchModels() {
     if (!host || !draft || fetching) return;
     const epoch = draftEpochRef.current;
-    const saved = await persistDraft({
-      notify: false,
-      includeKeyRemoval: false,
-      refreshModelCatalog: false,
-    });
-    if (!saved) return;
+    const unchanged = draftMatchesBaseline(draft);
+    const saved = unchanged
+      ? null
+      : await persistDraft({
+          notify: false,
+          includeKeyRemoval: false,
+          refreshModelCatalog: false,
+        });
+    if (!unchanged && !saved) return;
+    const providerId = saved?.id ?? draft.originalId!;
     setFetching(true);
     try {
       const response = await hostClient.request(
         "provider.fetchModels",
         hostContext(host),
-        { providerId: saved.id },
+        { providerId },
         20_000,
       );
       if (!response.ok) {
@@ -658,16 +672,36 @@ export function ProvidersSettings() {
     }
   }
 
-  async function testConnection() {
+  /** The implicit save before Test/Fetch is only needed to commit unsaved
+   *  edits (typed key, renamed models, new Provider). When the draft still
+   *  matches its loaded baseline, skip the graph mutation entirely: saving
+   *  anyway would race the shared host's graph lock and surface a spurious
+   *  "service busy" toast instead of running the test. */
+  function draftMatchesBaseline(candidate: DraftState): boolean {
+    return (
+      Boolean(candidate.originalId) &&
+      apiKey.trim() === "" &&
+      baselineRef.current !== null &&
+      draftFingerprint(candidate) === baselineRef.current
+    );
+  }
+
+  async function testConnection(modelIdOverride?: string) {
     if (!host || !draft || testing) return;
     const epoch = draftEpochRef.current;
-    const saved = await persistDraft({
-      notify: false,
-      includeKeyRemoval: false,
-      refreshModelCatalog: false,
-    });
-    if (!saved) return;
-    const modelId = saved.models[0]?.id;
+    const unchanged = draftMatchesBaseline(draft);
+    const saved = unchanged
+      ? null
+      : await persistDraft({
+          notify: false,
+          includeKeyRemoval: false,
+          refreshModelCatalog: false,
+        });
+    if (!unchanged && !saved) return;
+    const providerId = saved?.id ?? draft.originalId!;
+    const modelId =
+      modelIdOverride ?? draft.models.find((model) => model.id === testModelId)?.id ??
+      saved?.models[0]?.id ?? draft.models[0]?.id;
     if (!modelId) {
       pushNotification(t("notifNeedModelToTest"), "error");
       refreshProviderConfig();
@@ -676,12 +710,15 @@ export function ProvidersSettings() {
     setTesting(true);
     setConnectionResult(null);
     try {
-      const response = await hostClient.request(
-        "provider.checkConnection",
-        hostContext(host),
-        { providerId: saved.id, modelId },
-        25_000,
+      const response = await requestWithRetry(() =>
+        hostClient.request(
+          "provider.checkConnection",
+          hostContext(host),
+          { providerId, modelId },
+          25_000,
+        ),
       );
+      if (!response) return;
       if (!response.ok) {
         pushNotification(localizeHostError(response.error, t), hostErrorLevel(response.error));
         return;
@@ -1012,20 +1049,80 @@ export function ProvidersSettings() {
                       <Copy size={14} />
                     </button>
                   )}
-                  <button
-                    type="button"
-                    className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-surface-overlay disabled:opacity-50"
-                    disabled={saving || fetching || testing || draft.models.length === 0}
-                    title={t("providersSaveAndTestTitle")}
-                    aria-label={testing ? t("providersTesting") : t("providersSaveAndTest")}
-                    onClick={() => void testConnection()}
-                  >
-                    {testing ? (
-                      <RefreshCw className="animate-spin" size={14} />
-                    ) : (
-                      <Activity size={14} />
+                  <div className="relative flex items-stretch">
+                    {testMenuOpen && (
+                      <>
+                        {/* Click-away layer behind the dropdown menu. */}
+                        <button
+                          type="button"
+                          aria-hidden
+                          tabIndex={-1}
+                          className="fixed inset-0 z-40 cursor-default"
+                          onClick={() => setTestMenuOpen(false)}
+                        />
+                        <div className="absolute right-0 top-full z-50 mt-1 max-h-64 min-w-56 overflow-auto rounded-md border border-border bg-surface py-1 shadow-lg">
+                          <p className="px-3 py-1.5 text-[11px] text-muted">
+                            {t("providersTestMenuTitle")}
+                          </p>
+                          {draft.models.length === 0 ? (
+                            <p className="px-3 py-1.5 text-xs text-muted">
+                              {t("providersTestNoModel")}
+                            </p>
+                          ) : (
+                            draft.models.map((model) => (
+                              <button
+                                key={model.id}
+                                type="button"
+                                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-surface-overlay disabled:opacity-50"
+                                disabled={testing}
+                                onClick={() => {
+                                  setTestMenuOpen(false);
+                                  setTestModelId(model.id);
+                                  void testConnection(model.id);
+                                }}
+                              >
+                                <Check
+                                  className={`shrink-0 ${model.id === testModel ? "text-accent" : "opacity-0"}`}
+                                  size={13}
+                                />
+                                <span className="min-w-0 flex-1 truncate font-mono" title={model.id}>
+                                  {model.id}
+                                </span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </>
                     )}
-                  </button>
+                    <button
+                      type="button"
+                      className="flex h-8 items-center gap-1.5 rounded-l-md border border-border px-2.5 text-xs hover:bg-surface-overlay disabled:opacity-50"
+                      disabled={saving || fetching || testing || draft.models.length === 0}
+                      title={testModel ? t("providersTestModelTitle", { model: testModel }) : t("providersTestNoModel")}
+                      aria-label={testing ? t("providersTesting") : t("providersSaveAndTest")}
+                      onClick={() => void testConnection()}
+                    >
+                      {testing ? (
+                        <RefreshCw className="animate-spin" size={14} />
+                      ) : (
+                        <Activity size={14} />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="flex h-8 w-6 items-center justify-center rounded-r-md border border-l-0 border-border text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-50"
+                      disabled={saving || fetching || testing || draft.models.length === 0}
+                      title={t("providersTestMenuTitle")}
+                      aria-label={t("providersTestMenuTitle")}
+                      aria-expanded={testMenuOpen}
+                      onClick={() => setTestMenuOpen((current) => !current)}
+                    >
+                      <ChevronDown
+                        size={13}
+                        className={`transition-transform ${testMenuOpen ? "rotate-180" : ""}`}
+                      />
+                    </button>
+                  </div>
                   {draft.originalId && (
                     <button
                       type="button"
