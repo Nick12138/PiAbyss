@@ -55,6 +55,7 @@ import {
   TodoPopoverButton,
 } from "./ExtensionWidgets";
 import { PiMark } from "../../components/PiMark";
+import { SubagentsPopoverButton } from "../dock/SubagentsPanel";
 import { LightboxImage } from "../../components/ImageLightbox";
 import {
   activeSessionContext,
@@ -1931,6 +1932,7 @@ export function Composer({
             </button>
             <ContextUsageRing />
             <TodoPopoverButton />
+            <SubagentsPopoverButton />
             <ExtensionWidgetsButton open={extensionWidgetsOpen} onToggle={toggleExtensionWidgets} />
             <div className="ml-auto flex items-center gap-2.5">
               <ModelControls />

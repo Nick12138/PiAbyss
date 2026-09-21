@@ -319,6 +319,18 @@ export function RightDock() {
           setSidebarPref("piabyss.dock.open", open);
           return;
         }
+        if (request.kind === "activate-subagents") {
+          // Stable state setters only — safe inside the singleton subscription.
+          setTabOrder((current) =>
+            current.includes("subagents") ? current : [...current, "subagents"],
+          );
+          setActiveTab("subagents");
+          if (!useAppStore.getState().dockOpen) {
+            setDockOpen(true);
+            setSidebarPref("piabyss.dock.open", true);
+          }
+          return;
+        }
         const tabId = visibleTabIdsRef.current[request.index];
         if (!tabId) return;
         setActiveTab(tabId);

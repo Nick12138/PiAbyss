@@ -451,6 +451,9 @@ export type AppState = EpochState & {
   extensionTerminal: ExtensionTerminalState | null;
   /** Live pi-subagents projection for the active Pi session. */
   subagentsStatus: SubagentsStatusSnapshot;
+  /** Node id a popover/click wants the subagents tab to expand; consumed by
+   * SubagentsPanel and cleared after use. */
+  subagentsFocusNodeId: string | null;
   /** Right dock visibility. Auto-opens for extension panels; manual toggles persist. */
   dockOpen: boolean;
   /** Dock state to restore when the auto-opened panel closes (null = user took over). */
@@ -566,6 +569,7 @@ export type AppState = EpochState & {
     render: ExtensionMessageRenderSnapshot | null,
   ) => void;
   setSubagentsStatus: (status: SubagentsStatusSnapshot) => void;
+  focusSubagent: (nodeId: string | null) => void;
   setExtensionWidget: (widget: ExtensionWidgetState) => void;
   toggleExtensionWidgetCollapsed: (key: string) => void;
   setExtensionWidgetsOpen: (open: boolean) => void;
@@ -681,6 +685,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   extensionWidgetsOpen: false,
   lastExtensionWidgetAttentionRunId: null,
   extensionTerminal: null,
+  subagentsFocusNodeId: null,
   subagentsStatus: EMPTY_SUBAGENTS_STATUS,
   dockOpen: sidebarPref("piabyss.dock.open"),
   dockRestoreOnPanelClose: null,
@@ -858,6 +863,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       desyncReason: undefined,
       rehydrating: false,
       providerLogin: null,
+      subagentsFocusNodeId: null,
       subagentsStatus: EMPTY_SUBAGENTS_STATUS,
     });
   },
@@ -932,6 +938,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       packageProgress: null,
       packageRetry: null,
       thinkingLevels: [],
+      subagentsFocusNodeId: null,
       subagentsStatus: EMPTY_SUBAGENTS_STATUS,
     });
   },
@@ -1021,6 +1028,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             packageProgress: null,
             packageRetry: null,
             thinkingLevels: [],
+            subagentsFocusNodeId: null,
             subagentsStatus: EMPTY_SUBAGENTS_STATUS,
           }
         : {}),
@@ -1294,6 +1302,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     }),
   setSubagentsStatus: (subagentsStatus) => set({ subagentsStatus }),
+  focusSubagent: (subagentsFocusNodeId) => set({ subagentsFocusNodeId }),
   setExtensionMessageRender: (entryId, render) =>
     set((state) => {
       if (!state.session) return {};
@@ -1681,6 +1690,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...resetExtensionTerminal(current),
       packageProgress: null,
       packageRetry: null,
+      subagentsFocusNodeId: null,
       subagentsStatus: EMPTY_SUBAGENTS_STATUS,
     });
   },

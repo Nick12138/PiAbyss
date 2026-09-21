@@ -1,5 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
+import { createPortal } from "react-dom";
+import {
+  Bot,
   ChevronDown,
   ChevronUp,
   CircleAlert,
@@ -15,12 +26,16 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { useT } from "../../lib/i18n/use-t";
 import { hostClient } from "../../lib/bridge/host-client";
 import { workspaceContext } from "../../lib/bridge/host-context";
+import { requestDockCommand } from "../../lib/commands/events";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import { buildTranscriptRows, type TranscriptRow } from "../chat/transcript-model";
 import { TranscriptRowView } from "../chat/Transcript";
 
-function stateLabel(state: SubagentStatusNode["state"], t: ReturnType<typeof useT>): string {
+export function subagentStateLabel(
+  state: SubagentStatusNode["state"],
+  t: ReturnType<typeof useT>,
+): string {
   switch (state) {
     case "running":
       return t("subagentsStateRunning");
@@ -39,7 +54,7 @@ function stateLabel(state: SubagentStatusNode["state"], t: ReturnType<typeof use
   }
 }
 
-function stateClass(state: SubagentStatusNode["state"]): string {
+export function subagentStateClass(state: SubagentStatusNode["state"]): string {
   if (state === "running") return "text-accent";
   if (state === "complete") return "text-success";
   if (state === "failed" || state === "rejected") return "text-danger";
@@ -47,7 +62,10 @@ function stateClass(state: SubagentStatusNode["state"]): string {
   return "text-muted";
 }
 
-function roleLabel(role: string | undefined, t: ReturnType<typeof useT>): string | undefined {
+export function subagentRoleLabel(
+  role: string | undefined,
+  t: ReturnType<typeof useT>,
+): string | undefined {
   switch (role?.trim().toLowerCase()) {
     case "scout":
       return t("subagentsRoleScout");
@@ -69,7 +87,7 @@ function roleLabel(role: string | undefined, t: ReturnType<typeof useT>): string
 
 /** Badge glyphs: emoji for the built-in roles, undefined (fall back to the
  * localized text label) for anything else. */
-function roleEmoji(role: string | undefined): string | undefined {
+export function subagentRoleEmoji(role: string | undefined): string | undefined {
   switch (role?.trim().toLowerCase()) {
     case "scout":
     case "researcher":
@@ -83,7 +101,7 @@ function roleEmoji(role: string | undefined): string | undefined {
   }
 }
 
-function flattenNodes(
+export function flattenNodes(
   nodes: SubagentStatusNode[],
   depth = 0,
 ): Array<{ node: SubagentStatusNode; depth: number }> {
@@ -382,8 +400,8 @@ function InlineNode({
   const t = useT();
   const displayName = node.name ?? node.label;
   const role = node.role?.trim();
-  const localizedRole = roleLabel(role, t);
-  const badge = roleEmoji(role) ?? localizedRole;
+  const localizedRole = subagentRoleLabel(role, t);
+  const badge = subagentRoleEmoji(role) ?? localizedRole;
   const showRole = Boolean(badge && role !== displayName);
   return (
     <div
@@ -504,14 +522,14 @@ function InlineNode({
           </button>
         )}
         <span
-          className={`shrink-0 ${stateClass(node.state)}`}
-          aria-label={stateLabel(node.state, t)}
-          title={stateLabel(node.state, t)}
+          className={`shrink-0 ${subagentStateClass(node.state)}`}
+          aria-label={subagentStateLabel(node.state, t)}
+          title={subagentStateLabel(node.state, t)}
         >
           {node.state === "running" ? (
             <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />
           ) : (
-            <span className="text-[10px]">{stateLabel(node.state, t)}</span>
+            <span className="text-[10px]">{subagentStateLabel(node.state, t)}</span>
           )}
         </span>
       </div>
@@ -551,6 +569,8 @@ function InlineNode({
 export function SubagentsPanel() {
   const t = useT();
   const status = useAppStore((state) => state.subagentsStatus);
+  const subagentsFocusNodeId = useAppStore((state) => state.subagentsFocusNodeId);
+  const focusSubagent = useAppStore((state) => state.focusSubagent);
   const host = useAppStore((state) => state.host);
   const workspace = useAppStore((state) => state.workspace);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -574,6 +594,14 @@ export function SubagentsPanel() {
       setExpandedId(null);
     }
   }, [expandedId, nodes]);
+
+  // A popover/click request (see SubagentsPopoverButton) hands over the node
+  // to expand; consume it so later tab visits don't re-expand.
+  useEffect(() => {
+    if (!subagentsFocusNodeId) return;
+    setExpandedId(subagentsFocusNodeId);
+    focusSubagent(null);
+  }, [subagentsFocusNodeId, focusSubagent]);
 
   const loadSession = useCallback(
     async (target: SubagentStatusNode) => {
@@ -701,5 +729,210 @@ export function SubagentsPanel() {
         </div>
       )}
     </section>
+  );
+}
+
+/** Composer-toolbar trigger next to the todo button. Shows a compact fleet
+ * overview popover so subagent activity stays visible even when the right
+ * dock (and its subagents tab) is closed; the "view" action opens the tab. */
+export function SubagentsPopoverButton() {
+  const t = useT();
+  const status = useAppStore((state) => state.subagentsStatus);
+  const focusSubagent = useAppStore((state) => state.focusSubagent);
+  const [open, setOpen] = useState(false);
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLElement>(null);
+  const contentId = useId();
+
+  const nodes = useMemo(() => flattenNodes(status.runs), [status.runs]);
+  const runningCount = useMemo(
+    () => nodes.filter(({ node }) => node.state === "running").length,
+    [nodes],
+  );
+  const failedCount = useMemo(
+    () => nodes.filter(({ node }) => node.state === "failed" || node.state === "rejected").length,
+    [nodes],
+  );
+
+  const openSubagent = (nodeId: string) => {
+    setOpen(false);
+    focusSubagent(nodeId);
+    requestDockCommand({ kind: "activate-subagents" });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (buttonRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnPointerDown);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnPointerDown);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open || nodes.length === 0) return;
+
+    const updatePosition = () => {
+      const button = buttonRef.current;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      const margin = 8;
+      const gap = 8;
+      const maxWidth = Math.min(384, Math.max(1, window.innerWidth - margin * 2));
+      const right = Math.min(
+        Math.max(margin, window.innerWidth - rect.right),
+        Math.max(margin, window.innerWidth - maxWidth - margin),
+      );
+      const availableHeight = Math.max(1, rect.top - gap - margin);
+      setPopoverStyle({
+        right,
+        bottom: Math.max(margin, window.innerHeight - rect.top + gap),
+        maxWidth,
+        maxHeight: Math.min(280, availableHeight),
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open, nodes.length]);
+
+  // Keep the popover meaningful: hide the trigger when the extension is
+  // missing or no run exists (mirrors the todo button's visibility rule).
+  if (!status.available || nodes.length === 0) return null;
+
+  const button = (
+    <button
+      ref={buttonRef}
+      type="button"
+      aria-expanded={open}
+      aria-controls={contentId}
+      aria-label={t("subagentsTitle")}
+      title={t("subagentsTitle")}
+      className={`relative flex size-7 items-center justify-center rounded-md transition-colors ${
+        open
+          ? "bg-accent/15 text-accent"
+          : "text-muted hover:bg-surface-overlay hover:text-foreground"
+      }`}
+      onClick={() => setOpen((value) => !value)}
+    >
+      <Bot size={15} />
+      {runningCount > 0 ? (
+        <span
+          className="absolute -right-1 -top-1 flex min-w-3.5 items-center justify-center rounded-full bg-accent px-0.5 text-[9px] font-medium leading-3.5 text-white"
+          aria-hidden="true"
+        >
+          {runningCount}
+        </span>
+      ) : failedCount > 0 ? (
+        <span
+          className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-danger"
+          aria-hidden="true"
+        />
+      ) : null}
+    </button>
+  );
+  const popover = open ? (
+    <section
+      ref={popoverRef}
+      id={contentId}
+      className="theme-floating-surface fixed z-50 flex flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl"
+      style={popoverStyle ?? { visibility: "hidden", right: 0, bottom: 0 }}
+      aria-label={t("subagentsTitle")}
+    >
+      <div className="flex min-h-9 shrink-0 items-center gap-2 border-b border-border px-3 py-1.5">
+        <Bot size={15} className="shrink-0 text-accent" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+          {t("subagentsTitle")}
+        </span>
+        {runningCount > 0 && (
+          <span className="shrink-0 rounded-full bg-surface-overlay px-2 py-0.5 text-xs text-muted">
+            {t("subagentsActiveCount", { count: runningCount })}
+          </span>
+        )}
+      </div>
+      <div className="scrollbar-subtle min-h-0 overflow-y-auto p-2">
+        {nodes.length === 0 ? (
+          <div className="px-2 py-3 text-center text-xs text-muted">{t("subagentsEmpty")}</div>
+        ) : (
+          <ul className="flex flex-col gap-0.5">
+            {nodes.map(({ node, depth }) => {
+              const displayName = node.name ?? node.label;
+              const role = node.role?.trim();
+              const localizedRole = subagentRoleLabel(role, t);
+              const badge = subagentRoleEmoji(role) ?? localizedRole;
+              const showRole = Boolean(badge && role !== displayName);
+              return (
+                <li key={node.id}>
+                  <button
+                    type="button"
+                    className="flex w-full min-w-0 items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay"
+                    style={{ paddingLeft: `${8 + depth * 14}px` }}
+                    title={displayName}
+                    onClick={() => openSubagent(node.id)}
+                  >
+                    {showRole && (
+                      <span
+                        className="max-w-16 shrink-0 truncate text-[11px] text-muted"
+                        title={t("subagentsRole", { role: localizedRole ?? "" })}
+                      >
+                        {badge}
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                      {displayName}
+                    </span>
+                    {node.activity?.currentTool && (
+                      <span className="max-w-20 truncate text-[10px] text-muted">
+                        {node.activity.currentTool}
+                      </span>
+                    )}
+                    <span
+                      className={`shrink-0 ${subagentStateClass(node.state)}`}
+                      aria-label={subagentStateLabel(node.state, t)}
+                      title={subagentStateLabel(node.state, t)}
+                    >
+                      {node.state === "running" ? (
+                        <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />
+                      ) : (
+                        <span className="text-[10px]">{subagentStateLabel(node.state, t)}</span>
+                      )}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+      {status.omitted > 0 && (
+        <div className="shrink-0 border-t border-border px-3 py-1.5 text-[10px] text-muted">
+          {t("subagentsOmitted", { count: status.omitted })}
+        </div>
+      )}
+    </section>
+  ) : null;
+
+  return (
+    <>
+      {button}
+      {typeof document === "undefined" || !popoverStyle || !popover
+        ? null
+        : createPortal(popover, document.body)}
+    </>
   );
 }

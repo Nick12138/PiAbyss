@@ -372,7 +372,7 @@ export function TodoPopoverButton() {
       aria-controls={contentId}
       aria-label="Todo"
       title="Todo"
-      className={`flex size-7 items-center justify-center rounded-md transition-colors ${
+      className={`relative flex size-7 items-center justify-center rounded-md transition-colors ${
         open
           ? "bg-accent/15 text-accent"
           : "text-muted hover:bg-surface-overlay hover:text-foreground"
@@ -380,6 +380,14 @@ export function TodoPopoverButton() {
       onClick={() => setOpen((value) => !value)}
     >
       <ListTodo size={15} />
+      {activeCount > 0 && (
+        <span
+          className="absolute -right-1 -top-1 flex min-w-3.5 items-center justify-center rounded-full bg-accent px-0.5 text-[9px] font-medium leading-3.5 text-white"
+          aria-hidden="true"
+        >
+          {activeCount}
+        </span>
+      )}
     </button>
   );
   const popover = open ? (
