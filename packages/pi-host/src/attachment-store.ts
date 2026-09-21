@@ -227,10 +227,31 @@ function pastedTextFileName(now = new Date()): string {
   return `pasted-text-${stamp}.txt`;
 }
 
+/** Source-identity key of a path attachment: unchanged (path, size, mtime)
+ * means the existing parsed copy is still valid. Path case is normalized on
+ * Windows where the filesystem is case-insensitive. */
+function fileSourceKey(sourcePath: string, sizeBytes: number, mtimeMs: number): string {
+  const normalized = process.platform === "win32" ? sourcePath.toLowerCase() : sourcePath;
+  return `file\u0000${normalized}\u0000${sizeBytes}\u0000${mtimeMs}`;
+}
+
+function textSourceKey(sha256Hex: string): string {
+  return `text\u0000${sha256Hex}`;
+}
+
 export class AttachmentStore {
   readonly root: string;
   private readonly parser: AttachmentParser;
   private readonly removedIds = new Set<string>();
+  /**
+   * Skip-reparse reuse index: source-identity key → attachment id (plus the
+   * reverse map for O(1) eviction). A create() whose source matches an
+   * existing ready/needs_ocr attachment reuses the parsed copy instead of
+   * copying and parsing again — this is what makes draft restoration and
+   * repeated attaches of the same file instant.
+   */
+  private readonly sourceKeyIndex = new Map<string, string>();
+  private readonly sourceKeysById = new Map<string, string>();
   private readonly pendingParseTasks = new Set<Promise<void>>();
   /**
    * PDF.js and Mammoth can each use a substantial amount of memory even
@@ -268,6 +289,7 @@ export class AttachmentStore {
         await rm(this.attachmentDir(entry.name), { recursive: true, force: true });
       }
     }
+    await this.rebuildSourceKeyIndex();
   }
 
   async waitForIdle(): Promise<void> {
@@ -304,6 +326,11 @@ export class AttachmentStore {
     if (sourceStat.size > MAX_AGENT_ATTACHMENT_BYTES) {
       throw new AttachmentStoreError("too_large", "Document exceeds the 50 MiB file limit");
     }
+    // A prior ready copy of the same unchanged file is reused as-is (the
+    // session gains a reference); this skips the copy + parse pipeline below.
+    const sourceKey = fileSourceKey(sourcePath, sourceStat.size, sourceStat.mtimeMs);
+    const reused = await this.reuseAttachment(sourceKey, args.sessionId);
+    if (reused) return reused;
     const mediaType = await detectMediaType(sourcePath);
     const id = randomUUID();
     const directory = this.attachmentDir(id);
@@ -328,6 +355,7 @@ export class AttachmentStore {
     };
     await this.saveMetadata(metadata);
     this.publishChange(metadata, args.onChange);
+    this.indexSourceKey(sourceKey, id);
     try {
       const copiedPath = join(directory, sourceFile);
       await copyFile(sourcePath, copiedPath);
@@ -372,6 +400,10 @@ export class AttachmentStore {
     if (sizeBytes > MAX_PASTED_TEXT_ATTACHMENT_BYTES) {
       throw new AttachmentStoreError("too_large", "Pasted text exceeds the 1 MiB limit");
     }
+    // Identical pasted text reuses the existing parsed copy across sessions.
+    const sourceKey = textSourceKey(createHash("sha256").update(args.text, "utf8").digest("hex"));
+    const reused = await this.reuseAttachment(sourceKey, args.sessionId);
+    if (reused) return reused;
 
     const id = randomUUID();
     const directory = this.attachmentDir(id);
@@ -395,6 +427,7 @@ export class AttachmentStore {
     };
     await this.saveMetadata(metadata);
     this.publishChange(metadata, args.onChange);
+    this.indexSourceKey(sourceKey, id);
     try {
       const sourcePath = join(directory, sourceFile);
       await writeFile(sourcePath, args.text, { encoding: "utf8", mode: FILE_MODE });
@@ -432,7 +465,16 @@ export class AttachmentStore {
         "Attachment is already part of session history and cannot be removed",
       );
     }
+    const references = metadata.references.filter((reference) => reference !== sessionId);
+    if (references.length > 0) {
+      // The copy is shared with other sessions (reused attachment): detach
+      // only this session's reference and keep the parsed copy alive.
+      metadata.references = references;
+      await this.saveMetadata(metadata);
+      return;
+    }
     this.removedIds.add(attachmentId);
+    this.evictSourceKey(attachmentId);
     await rm(this.attachmentDir(attachmentId), { recursive: true, force: true });
   }
 
@@ -549,6 +591,7 @@ export class AttachmentStore {
         if (references.length === metadata.references.length) continue;
         if (references.length === 0) {
           this.removedIds.add(metadata.id);
+          this.evictSourceKey(metadata.id);
           await rm(this.attachmentDir(metadata.id), { recursive: true, force: true });
         } else {
           metadata.references = references;
@@ -568,6 +611,7 @@ export class AttachmentStore {
         const metadata = await this.loadMetadata(entry.name);
         if (metadata.committed || !metadata.references.includes(sessionId)) continue;
         this.removedIds.add(metadata.id);
+        this.evictSourceKey(metadata.id);
         await rm(this.attachmentDir(metadata.id), { recursive: true, force: true });
       } catch {
         // Startup reconciliation handles corrupt entries.
@@ -580,6 +624,97 @@ export class AttachmentStore {
       throw new AttachmentStoreError("invalid", "Attachment ID is invalid");
     }
     return join(this.root, attachmentId);
+  }
+
+  /** Rebuild the reuse index after a restart. Keys are recomputed from the
+   * CURRENT source file (path + size + mtime), so only still-unchanged source
+   * files with a surviving parsed copy are indexed. */
+  private async rebuildSourceKeyIndex(): Promise<void> {
+    const entries = await readdir(this.root, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !ATTACHMENT_ID_PATTERN.test(entry.name)) continue;
+      try {
+        const metadata = await this.loadMetadata(entry.name);
+        if (!metadata.sourcePath) continue;
+        if (metadata.status !== "ready" && metadata.status !== "needs_ocr") continue;
+        const sourceStat = await lstat(metadata.sourcePath).catch(() => null);
+        if (!sourceStat?.isFile()) continue;
+        this.indexSourceKey(
+          fileSourceKey(metadata.sourcePath, sourceStat.size, sourceStat.mtimeMs),
+          metadata.id,
+        );
+      } catch {
+        // Unreadable entries simply stay out of the reuse index.
+      }
+    }
+  }
+
+  private indexSourceKey(key: string, attachmentId: string): void {
+    const existing = this.sourceKeyIndex.get(key);
+    if (existing !== undefined && existing !== attachmentId) {
+      this.sourceKeysById.delete(existing);
+    }
+    this.sourceKeyIndex.set(key, attachmentId);
+    this.sourceKeysById.set(attachmentId, key);
+  }
+
+  private evictSourceKey(attachmentId: string): void {
+    const key = this.sourceKeysById.get(attachmentId);
+    if (key === undefined) return;
+    this.sourceKeysById.delete(attachmentId);
+    if (this.sourceKeyIndex.get(key) === attachmentId) this.sourceKeyIndex.delete(key);
+  }
+
+  /** Return the existing ready/needs_ocr attachment for this source identity,
+   * granting the session a reference so prompts can authorize against it.
+   * File attachments additionally verify the current source content hash
+   * against the parsed copy before reuse. Returns null when no reusable copy
+   * exists (caller creates a new one). */
+  private async reuseAttachment(
+    sourceKey: string,
+    sessionId: string,
+  ): Promise<AttachmentSnapshot | null> {
+    const existingId = this.sourceKeyIndex.get(sourceKey);
+    if (!existingId) return null;
+    let metadata: AttachmentMetadata;
+    try {
+      metadata = await this.loadMetadata(existingId);
+    } catch {
+      this.evictSourceKey(existingId);
+      return null;
+    }
+    if (this.removedIds.has(existingId) || this.sourceKeysById.get(existingId) !== sourceKey) {
+      this.sourceKeyIndex.delete(sourceKey);
+      return null;
+    }
+    if (metadata.status !== "ready" && metadata.status !== "needs_ocr") return null;
+    if (metadata.sourcePath) {
+      // Belt and braces: path + size + mtime matching can theoretically be
+      // spoofed on filesystems with coarse mtime granularity (FAT/exFAT, 2s
+      // ticks). Verify the source still hashes to the parsed copy's content
+      // before reusing it; a mismatch evicts the stale entry.
+      if (!metadata.sha256) return null;
+      const currentHash = await sha256(metadata.sourcePath).catch(() => null);
+      if (currentHash === null || currentHash !== metadata.sha256) {
+        this.evictSourceKey(existingId);
+        return null;
+      }
+    }
+    try {
+      if (!metadata.references.includes(sessionId)) {
+        metadata.references.push(sessionId);
+        await this.saveMetadata(metadata);
+      }
+    } catch (error) {
+      // A concurrent removal invalidated the shared copy; fall through to a
+      // normal create instead of failing the request.
+      logger.warn("Attachment reuse reference update failed", {
+        attachmentId: existingId,
+        error: normalizeParserError(error),
+      });
+      return null;
+    }
+    return metadataSnapshot(metadata);
   }
 
   private unitPath(attachmentId: string, index: number): string {

@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, realpath, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ZipFile } from "yazl";
@@ -554,5 +554,147 @@ describe("AttachmentStore", () => {
     await expect(
       store.read({ attachmentId: ready.id, sessionId: SESSION_ID, limit: 11 }),
     ).rejects.toMatchObject({ kind: "invalid" });
+  });
+
+  it("reuses one parsed copy for the same unchanged file across sessions", async () => {
+    const layout = await tempLayout();
+    const source = join(layout.root, "report.pdf");
+    await writeFile(source, buildPdf("Report"));
+    let parseCount = 0;
+    const store = new AttachmentStore({
+      agentDir: layout.agentDir,
+      parser: async ({ outputDir }) => {
+        parseCount += 1;
+        await writeFile(join(outputDir, "000001.txt"), "parsed");
+        return { status: "ready", unit: "page", unitCount: 1 };
+      },
+    });
+    await store.initialize();
+
+    const first = await createAndWait(store, source);
+    const second = await store.create({ sourcePath: source, sessionId: OTHER_SESSION_ID });
+
+    expect(parseCount).toBe(1);
+    expect(second.id).toBe(first.id);
+    expect(second.status).toBe("ready");
+    // Both sessions are authorized against the shared copy.
+    await expect(store.get(first.id, SESSION_ID)).resolves.toBeTruthy();
+    await expect(store.get(first.id, OTHER_SESSION_ID)).resolves.toBeTruthy();
+    const metadata = JSON.parse(
+      await readFile(join(store.root, first.id, "metadata.json"), "utf8"),
+    ) as { references: string[] };
+    expect(metadata.references).toEqual(expect.arrayContaining([SESSION_ID, OTHER_SESSION_ID]));
+  });
+
+  it("creates a fresh attachment when the source file has changed", async () => {
+    const layout = await tempLayout();
+    const source = join(layout.root, "report.pdf");
+    await writeFile(source, buildPdf("First version"));
+    let parseCount = 0;
+    const store = new AttachmentStore({
+      agentDir: layout.agentDir,
+      parser: async ({ outputDir }) => {
+        parseCount += 1;
+        await writeFile(join(outputDir, "000001.txt"), "parsed");
+        return { status: "ready", unit: "page", unitCount: 1 };
+      },
+    });
+    await store.initialize();
+
+    const first = await createAndWait(store, source);
+    await writeFile(source, buildPdf("Second changed and longer version"));
+    const second = await createAndWait(store, source);
+
+    expect(parseCount).toBe(2);
+    expect(second.id).not.toBe(first.id);
+  });
+
+  it("does not reuse a copy when content changed under the same size and mtime", async () => {
+    const layout = await tempLayout();
+    const source = join(layout.root, "report.pdf");
+    await writeFile(source, buildPdf("Original"));
+    let parseCount = 0;
+    const store = new AttachmentStore({
+      agentDir: layout.agentDir,
+      parser: async ({ outputDir }) => {
+        parseCount += 1;
+        await writeFile(join(outputDir, "000001.txt"), "parsed");
+        return { status: "ready", unit: "page", unitCount: 1 };
+      },
+    });
+    await store.initialize();
+
+    const first = await createAndWait(store, source);
+
+    // Hostile case: same-length rewrite with the original mtime restored —
+    // path + size + mtime all match, only the content differs. The reuse
+    // check must fall through to a fresh copy + parse.
+    const before = await stat(source);
+    await writeFile(source, buildPdf("Modified"));
+    await utimes(source, before.atime, before.mtime);
+    const second = await createAndWait(store, source);
+
+    expect(parseCount).toBe(2);
+    expect(second.id).not.toBe(first.id);
+    // The re-parsed copy is now the authoritative one: another create with
+    // the same (still modified) file legitimately reuses it.
+    const third = await createAndWait(store, source);
+    expect(parseCount).toBe(2);
+    expect(third.id).toBe(second.id);
+  });
+
+  it("reuses identical pasted text across sessions but not different text", async () => {
+    const layout = await tempLayout();
+    const store = new AttachmentStore({ agentDir: layout.agentDir, parser: parseAttachment });
+    await store.initialize();
+
+    const first = await createTextAndWait(store, "shared pasted notes");
+    const sameText = await store.createText({ text: "shared pasted notes", sessionId: OTHER_SESSION_ID });
+    expect(sameText.id).toBe(first.id);
+    await expect(store.get(first.id, OTHER_SESSION_ID)).resolves.toBeTruthy();
+
+    const otherText = await createTextAndWait(store, "different notes");
+    expect(otherText.id).not.toBe(first.id);
+  });
+
+  it("detaches only the removing session from a shared reused copy", async () => {
+    const layout = await tempLayout();
+    const source = join(layout.root, "report.pdf");
+    await writeFile(source, buildPdf("Shared"));
+    const store = new AttachmentStore({ agentDir: layout.agentDir, parser: parseAttachment });
+    await store.initialize();
+
+    const original = await createAndWait(store, source);
+    const reused = await store.create({ sourcePath: source, sessionId: OTHER_SESSION_ID });
+    expect(reused.id).toBe(original.id);
+
+    await store.removeDraft(original.id, SESSION_ID);
+    // The other session keeps its usable copy.
+    await expect(store.get(original.id, OTHER_SESSION_ID)).resolves.toBeTruthy();
+    await expect(store.get(original.id, SESSION_ID)).rejects.toMatchObject({ kind: "unauthorized" });
+
+    // Removing the last reference deletes the attachment entirely.
+    await store.removeDraft(original.id, OTHER_SESSION_ID);
+    await expect(store.get(original.id, OTHER_SESSION_ID)).rejects.toMatchObject({
+      kind: "not_found",
+    });
+  });
+
+  it("rebuilds the reuse index after a restart for unchanged source files", async () => {
+    const layout = await tempLayout();
+    const source = join(layout.root, "report.pdf");
+    await writeFile(source, buildPdf("Persisted"));
+    const first = new AttachmentStore({ agentDir: layout.agentDir, parser: parseAttachment });
+    await first.initialize();
+    const original = await createAndWait(first, source);
+    // Simulate a send so the attachment survives the startup cleanup.
+    await first.commitToSession([original.id], SESSION_ID);
+
+    const restarted = new AttachmentStore({ agentDir: layout.agentDir, parser: parseAttachment });
+    await restarted.initialize();
+    const reused = await restarted.create({ sourcePath: source, sessionId: OTHER_SESSION_ID });
+
+    expect(reused.id).toBe(original.id);
+    await expect(restarted.get(original.id, OTHER_SESSION_ID)).resolves.toBeTruthy();
   });
 });
