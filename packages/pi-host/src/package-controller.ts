@@ -371,8 +371,12 @@ export function createPackageHandlers(
       if (!server) {
         return { error: createHostError("HOST_NOT_READY", "Server not bound") };
       }
+      const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+      if (stale) return { error: stale };
+      // Capture the check inputs under a short stable read so the update
+      // mapping stays consistent with the published graph snapshot...
       const { withStableGraphRead } = await import("./stable-graph-read.js");
-      const out = await withStableGraphRead({
+      const captured = await withStableGraphRead({
         requestId: ctx.id,
         identity: server.identity,
         serviceGraphLock: server.serviceGraphLock,
@@ -382,31 +386,41 @@ export function createPackageHandlers(
           if (!g?.packageManager) {
             throw new Error("Workspace services not ready");
           }
-          if (!factory.deps.packageUpdateCheck) {
-            return {
-              supported: false,
-              updates: [] as Array<{ packageId: string; source: string }>,
-            };
-          }
-          const pm = g.packageManager as {
-            checkForAvailableUpdates?: () => Promise<
-              Array<{ source: string; displayName: string; type: string; scope: string }>
-            >;
-          };
-          const params = (ctx.params ?? {}) as { packageId?: string };
-          const updates = (await pm.checkForAvailableUpdates?.()) ?? [];
           return {
-            supported: true,
-            updates: mapPackageUpdates(
-              g.packageSnapshot?.configured ?? [],
-              updates,
-              params.packageId,
-            ),
+            packageManager: g.packageManager as {
+              checkForAvailableUpdates?: () => Promise<
+                Array<{ source: string; displayName: string; type: string; scope: string }>
+              >;
+            },
+            configured: g.packageSnapshot?.configured ?? [],
+            updateCheckEnabled: factory.deps.packageUpdateCheck,
           };
         },
       });
-      if (!out.ok) return { error: out.error, identity: out.identity };
-      return { result: out.result, identity: out.identity };
+      if (!captured.ok) return { error: captured.error, identity: captured.identity };
+      const { packageManager: pm, configured, updateCheckEnabled } = captured.result;
+      if (!updateCheckEnabled) {
+        return {
+          result: {
+            supported: false,
+            updates: [] as Array<{ packageId: string; source: string }>,
+          },
+          identity: server.identity.snapshot(),
+        };
+      }
+      // Network phase runs WITHOUT the graph lock: checkForAvailableUpdates is
+      // a read-only npm/git network sweep that takes seconds, and holding the
+      // lock for it starved every active-workspace stable read (e.g. opening
+      // the Skills settings page waited behind this via retry churn).
+      const params = (ctx.params ?? {}) as { packageId?: string };
+      const updates = (await pm.checkForAvailableUpdates?.()) ?? [];
+      return {
+        result: {
+          supported: true,
+          updates: mapPackageUpdates(configured, updates, params.packageId),
+        },
+        identity: server.identity.snapshot(),
+      };
     },
 
     "package.catalog": async (ctx) => {

@@ -42,7 +42,7 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { notifyOperationFailure } from "../../lib/notify-operation-error";
 import { SettingsTopBarActionsContext, SETTINGS_SECTION_META } from "./settings-top-bar";
-import { checkPluginLibraryUpdates } from "../plugin-library/plugin-updates";
+import { cachedPluginLibraryUpdates, checkPluginLibraryUpdates } from "../plugin-library/plugin-updates";
 
 /** Fire-and-forget prefetch budget for the plugin-library registry warmup. */
 const PLUGIN_LIBRARY_PREFETCH_TIMEOUT_MS = 30_000;
@@ -525,10 +525,23 @@ export function SettingsPage({
   // Opening Settings also checks the installed plugin-library plugins for
   // updates (session-cached in plugin-updates.ts), so the update button in
   // the plugin library top bar is ready as soon as the section is opened.
+  // Skip when this host+workspace already has a cached result: the check is
+  // a seconds-long npm/git network sweep on the Host and re-firing it on
+  // every Settings open delays the reads the settings sections themselves
+  // issue (notably the Skills section, which previously loaded visibly
+  // slower right after opening Settings).
   const prefetchWorkspace = useAppStore((s) => s.workspace);
   useEffect(() => {
     if (!prefetchHost || !prefetchWorkspace?.servicesReady) return;
     if (!(prefetchHost.capabilities.packageUpdateCheck ?? false)) return;
+    if (
+      cachedPluginLibraryUpdates(
+        prefetchHost.hostInstanceId,
+        prefetchWorkspace.id,
+      ) !== null
+    ) {
+      return;
+    }
     void checkPluginLibraryUpdates(prefetchHost, prefetchWorkspace).catch(() => {
       // Fire-and-forget: the plugin library page re-checks when opened.
     });
