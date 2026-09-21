@@ -1898,6 +1898,8 @@ export const en = {
   memoActionEdit: "Edit",
   memoActionSave: "Save",
   memoActionSaveHint: "Save (Ctrl+S)",
+  memoActionClear: "Clear",
+  memoActionClearHint: "Clear the unsaved new-note draft (text and images)",
   memoActionDelete: "Delete",
   memoActionDeleteConfirm: "Click again to confirm",
   memoActionDone: "Mark done",
@@ -1954,7 +1956,6 @@ export const en = {
   memoFieldWorkspace: "Workspace",
   memoFieldWorkspacePlaceholder: "Workspace name (optional)",
   memoFieldType: "Type",
-  memoImagePasteHint: "Paste (Ctrl+V), save (Ctrl+S), or drop images in the editor",
   memoDropIgnored: "Skipped non-image file {name}",
   memoImageTooLarge: "Image exceeds the 8 MiB limit",
   memoWorkspaceMismatch:

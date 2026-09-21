@@ -104,6 +104,39 @@ describe("MemoSync", () => {
     }
   });
 
+  it("skips re-uploading unchanged notes and images on repeat sync", async () => {
+    const { store, sync } = await tempLayout();
+    store.create({
+      type: "memo",
+      title: "带图",
+      contentMd: "正文",
+      images: [{ fileName: "a.png", mediaType: "image/png", dataBase64: PNG_BASE64 }],
+    });
+    const { fetchImpl } = mockR2();
+    vi.stubGlobal("fetch", fetchImpl);
+    try {
+      sync.setConfig(CONFIG);
+      await sync.syncNow();
+      const calls = vi.mocked(fetchImpl).mock.calls.length;
+
+      // 第二次同步：内容无变化 → 仅 GET 云端 notes.json，不再 PUT 任何对象。
+      const stats = await sync.syncNow();
+      expect(vi.mocked(fetchImpl).mock.calls.length).toBe(calls + 1);
+      expect(stats.uploadedImages).toBe(0);
+      expect(stats.bytes).toBe(0);
+
+      // 编辑记录后再次同步：只 PUT notes.json，图片不重传。
+      const note = store.list()[0]!;
+      store.update(note.id, { title: "改标题" });
+      const stats2 = await sync.syncNow();
+      expect(vi.mocked(fetchImpl).mock.calls.length).toBe(calls + 3);
+      expect(stats2.uploadedImages).toBe(0);
+      expect(stats2.bytes).toBeGreaterThan(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("records failures in lastSync state", async () => {
     const { sync } = await tempLayout();
     sync.setConfig(CONFIG);

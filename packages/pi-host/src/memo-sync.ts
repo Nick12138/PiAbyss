@@ -22,6 +22,7 @@
  * 变更后防抖触发后台同步，结果写回 lastSync* 字段。
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type { MemoNote, MemoSyncConfig, MemoSyncSettings } from "@piabyss/protocol";
 import { logger } from "./logger.js";
@@ -35,6 +36,8 @@ import {
 } from "./r2-client.js";
 
 const CONFIG_FILE_NAME = "sync-config.json";
+/** 上传指纹缓存文件：记录「已确认上传到云端」的对象内容哈希，避免重复上传。 */
+const UPLOAD_HASHES_FILE = "upload-hashes.json";
 /** 对象键前缀：固定值，不开放配置。 */
 const OBJECT_KEY_PREFIX = "piabyss/memo";
 /** autoSync 防抖窗口：连续变更合并为一次同步。 */
@@ -53,6 +56,15 @@ const EMPTY_CONFIG: MemoSyncConfig = {
 };
 
 type SyncStateFile = MemoSyncSettings;
+
+/** 上传指纹缓存（与 sync-config.json 同目录；切换目标桶/账号时整体作废）。 */
+type UploadHashesFile = {
+  version: 1;
+  /** 缓存所属目标：`<accountId>/<bucket>`，不匹配则清空重建。 */
+  target: string;
+  /** 对象相对路径（notes.json / images/...）→ 内容 sha256。 */
+  hashes: Record<string, string>;
+};
 
 /** 一次双向同步的统计。 */
 export type MemoSyncStats = {
@@ -222,6 +234,36 @@ export class MemoSync {
     return `${OBJECT_KEY_PREFIX}/${relative}`;
   }
 
+  /** 读取上传指纹缓存（缺失/损坏/目标变更 → 空缓存）。 */
+  private readUploadHashes(): Record<string, string> {
+    try {
+      const raw = JSON.parse(
+        readFileSync(join(configPath(this.agentDir), "..", UPLOAD_HASHES_FILE), "utf8"),
+      ) as UploadHashesFile;
+      const config = this.getSettings();
+      if (raw?.version !== 1 || typeof raw.target !== "string") return {};
+      if (raw.target !== `${config.accountId.trim()}/${config.bucket.trim()}`) return {};
+      return typeof raw.hashes === "object" && raw.hashes !== null ? raw.hashes : {};
+    } catch {
+      return {};
+    }
+  }
+
+  /** 原子写入上传指纹缓存（失败仅警告，不影响同步结果）。 */
+  private writeUploadHashes(target: string, hashes: Record<string, string>): void {
+    try {
+      const path = join(configPath(this.agentDir), "..", UPLOAD_HASHES_FILE);
+      mkdirSync(join(path, ".."), { recursive: true });
+      const tempPath = `${path}.tmp-${process.pid}-${Date.now()}`;
+      writeFileSync(tempPath, JSON.stringify({ version: 1, target, hashes } satisfies UploadHashesFile), "utf8");
+      renameSync(tempPath, path);
+    } catch (error) {
+      logger.warn("[memo-sync] failed to persist upload hashes", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   /** 测试连接（不落盘，不改动状态）。 */
   async test(config: MemoSyncConfig): Promise<{ ok: boolean; error: string | null }> {
     return testConnection(credentialsOf(config));
@@ -296,25 +338,53 @@ export class MemoSync {
         }
       }
 
-      // 6. 上传合并后的 notes.json + 本地存在的图片。
+      // 6. 上传合并后的 notes.json + 本地存在的图片（内容未变化的跳过，见 uploadHashes）。
       const notesBody = Buffer.from(
         JSON.stringify({ schemaVersion: 1, notes: merged.notes }, null, 2),
         "utf8",
       );
-      await putObject(creds, this.objectKey("notes.json"), notesBody);
+      const uploadHashes = this.readUploadHashes();
+      const target = `${creds.accountId}/${creds.bucket}`;
       let uploadedImages = 0;
-      let bytes = notesBody.byteLength;
+      let bytes = 0;
+      if (cloudBody === null || !notesBody.equals(cloudBody)) {
+        await putObject(creds, this.objectKey("notes.json"), notesBody);
+        uploadHashes[this.objectKey("notes.json")] = createHash("sha256").update(notesBody).digest("hex");
+        bytes = notesBody.byteLength;
+      }
+      // 指纹只保留当前合并结果引用到的对象（含墓碑图片之外的），其余丢弃防膨胀。
+      const referencedKeys = new Set<string>();
+      for (const note of merged.notes) {
+        if (note.deletedAt !== null) continue;
+        for (const image of note.images) {
+          referencedKeys.add(this.objectKey(`images/${note.id}/${image.fileName}`));
+        }
+      }
+      for (const key of Object.keys(uploadHashes)) {
+        if (key !== this.objectKey("notes.json") && !referencedKeys.has(key)) {
+          delete uploadHashes[key];
+        }
+      }
       for (const note of merged.notes) {
         if (note.deletedAt !== null) continue;
         for (const image of note.images) {
           const imageKey = `images/${note.id}/${image.fileName}`;
-          if (downloadedKeys.has(imageKey)) continue; // 刚从云端补齐，无需回传
+          const objectKey = this.objectKey(imageKey);
           const body = this.store.readImageFile(note.id, image.fileName);
-          await putObject(creds, this.objectKey(imageKey), body);
+          const hash = createHash("sha256").update(body).digest("hex");
+          if (uploadHashes[objectKey] === hash) continue; // 云端已有同内容对象，跳过
+          if (downloadedKeys.has(objectKey)) {
+            // 刚从云端补齐：内容即云端现值，记指纹即可，无需回传。
+            uploadHashes[objectKey] = hash;
+            continue;
+          }
+          await putObject(creds, objectKey, body);
+          uploadHashes[objectKey] = hash;
           uploadedImages += 1;
           bytes += body.byteLength;
         }
       }
+      this.writeUploadHashes(target, uploadHashes);
 
       const stats: MemoSyncStats = {
         uploadedNotes: merged.notes.filter((note) => note.deletedAt === null).length,

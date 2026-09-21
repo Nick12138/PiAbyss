@@ -1340,6 +1340,20 @@ export function validateRequestParams<M extends HostMethod>(
         params.imageId.length <= 128
         ? ok(params)
         : fail("invalid memo.readImage params", { method });
+    case "memo.getDraft":
+    case "memo.clearDraft":
+      return params === null ? ok(null) : fail("params must be null", { method });
+    case "memo.setDraft":
+      return exactObject(params, ["draft"]) &&
+        exactObject(params.draft, ["type", "contentMd"], ["workspaceHint"]) &&
+        isMemoNoteType(params.draft.type) &&
+        isString(params.draft.contentMd) &&
+        params.draft.contentMd.length <= 200_000 &&
+        (params.draft.workspaceHint === undefined ||
+          params.draft.workspaceHint === null ||
+          (isString(params.draft.workspaceHint) && params.draft.workspaceHint.length <= 300))
+        ? ok(params)
+        : fail("invalid memo.setDraft params", { method });
     case "memo.getSyncConfig":
       return params === null ? ok(null) : fail("params must be null", { method });
     case "memo.setSyncConfig":

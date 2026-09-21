@@ -14,6 +14,7 @@ import {
   Check,
   CheckCircle2,
   CircleAlert,
+  Eraser,
   Lightbulb,
   ListChecks,
   Loader2,
@@ -46,6 +47,7 @@ import {
   type DraftReference,
   type DraftTarget,
 } from "../../lib/draft-target";
+import { setDraftReferencesPersisted } from "../../lib/draft-persistence";
 import { isDesktopRuntime, readDesktopSmallFile } from "../../lib/desktop-file-access";
 import { useContainerWide } from "../../lib/use-container-wide";
 import { openSessionAcrossWorkspaces } from "../../lib/bridge/session-navigation";
@@ -53,10 +55,13 @@ import { buildInjectedReferenceEnvelope } from "../chat/injected-references";
 import { createNewSession } from "../../lib/commands/actions";
 import { useAppStore } from "../../lib/stores/app-store";
 import {
+  clearMemoDraft,
   createMemoNote,
   deleteMemoNote,
+  getMemoDraft,
   listMemoNotes,
   readMemoImageDataUrl,
+  setMemoDraft,
   updateMemoNote,
 } from "./memo-client";
 import { MEMO_SYNCED_EVENT } from "./memo-sync-status";
@@ -170,6 +175,72 @@ export function MemoPage() {
     window.addEventListener(MEMO_SYNCED_EVENT, onSynced);
     return () => window.removeEventListener(MEMO_SYNCED_EVENT, onSynced);
   }, []);
+
+  // ──「新建」草稿：本地文件持久化（仅新建表单；编辑已有记录不走草稿）────────
+  // 恢复时机：挂载 + 每次回到新建表单（draftEpoch 变化）。用户已有输入时不覆盖。
+  useEffect(() => {
+    let cancelled = false;
+    void getMemoDraft()
+      .then((draft) => {
+        if (cancelled || !draft) return;
+        setEditor((current) => {
+          if (!current || current.id !== null) return current;
+          if (current.contentMd.trim().length > 0) return current;
+          return {
+            ...current,
+            type: draft.type,
+            contentMd: draft.contentMd,
+            workspaceHint: draft.workspaceHint ?? current.workspaceHint,
+          };
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [draftEpoch]);
+
+  // 草稿持久化：新建表单内容变更后防抖落盘。空草稿不写文件（并清理旧草稿）；
+  // 待写载荷暂存在 ref 里，页面卸载/隐藏时由 flushPendingDraft 兑现。
+  const pendingDraftRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!editor || editor.id !== null) return;
+    const payload = JSON.stringify({
+      type: editor.type,
+      contentMd: editor.contentMd,
+      workspaceHint: editor.workspaceHint,
+    });
+    if (editor.contentMd.trim().length === 0 && editor.pendingImages.length === 0) {
+      pendingDraftRef.current = null;
+      const timer = setTimeout(() => void clearMemoDraft().catch(() => undefined), 600);
+      return () => clearTimeout(timer);
+    }
+    pendingDraftRef.current = payload;
+    const timer = setTimeout(() => {
+      pendingDraftRef.current = null;
+      void setMemoDraft(JSON.parse(payload)).catch(() => undefined);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [editor]);
+
+  const flushPendingDraft = useCallback(() => {
+    const payload = pendingDraftRef.current;
+    if (payload === null) return;
+    pendingDraftRef.current = null;
+    void setMemoDraft(JSON.parse(payload)).catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flushPendingDraft();
+    };
+    window.addEventListener("pagehide", flushPendingDraft);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      flushPendingDraft();
+      window.removeEventListener("pagehide", flushPendingDraft);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [flushPendingDraft]);
 
   const refresh = useCallback(async () => {
     try {
@@ -319,6 +390,14 @@ export function MemoPage() {
     });
   }
 
+  /** 清空新建表单：清正文与图片（保留类型/工作区），并删除本地草稿文件。 */
+  function clearNewDraft() {
+    if (!editor || editor.id !== null) return;
+    pendingDraftRef.current = null;
+    void clearMemoDraft().catch(() => undefined);
+    setEditor({ ...editor, contentMd: "", pendingImages: [], removedImageIds: [] });
+  }
+
   async function saveEditor() {
     if (!editor || saving) return;
     // 标题 = 正文首行；标签 = 正文内 #xxx。正文为空则无法派生标题。
@@ -361,6 +440,8 @@ export function MemoPage() {
       await refresh();
       if (editor.id === null) {
         // 新建：立刻回到全新的新建表单，继续下一条。
+        pendingDraftRef.current = null;
+        void clearMemoDraft().catch(() => undefined);
         resetToCreate();
       } else {
         // 编辑：回到该记录的详情。
@@ -449,7 +530,7 @@ export function MemoPage() {
       }),
     };
     const existing = state.draftReferences[key] ?? [];
-    state.setDraftReferences(target, [
+    setDraftReferencesPersisted(target, [
       ...existing.filter((item) => item.id !== reference.id),
       reference,
     ]);
@@ -814,6 +895,7 @@ export function MemoPage() {
               saving={saving}
               onChange={setEditor}
               onSave={saveEditor}
+              onClear={clearNewDraft}
               onAddImages={addImages}
               dragOver={dragOver}
               onRemoveImage={removePendingImage}
@@ -841,6 +923,7 @@ export function MemoPage() {
               saving={saving}
               onChange={setEditor}
               onSave={saveEditor}
+              onClear={clearNewDraft}
               onAddImages={addImages}
               dragOver={dragOver}
               onRemoveImage={removePendingImage}
@@ -1221,6 +1304,7 @@ function MemoEditor({
   saving,
   onChange,
   onSave,
+  onClear,
   onAddImages,
   onRemoveImage,
   dragOver,
@@ -1230,6 +1314,8 @@ function MemoEditor({
   saving: boolean;
   onChange: (next: EditorState) => void;
   onSave: () => void;
+  /** 仅新建模式传入：清空未保存的新建内容（正文与图片）。 */
+  onClear: () => void;
   onAddImages: (files: File[]) => void;
   onRemoveImage: (key: string) => void;
   dragOver: boolean;
@@ -1237,6 +1323,9 @@ function MemoEditor({
 }) {
   const t = useT();
   const canSave = editor.contentMd.trim().length > 0;
+  const canClear =
+    editor.id === null &&
+    (editor.contentMd.trim().length > 0 || editor.pendingImages.length > 0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   /** 只拦截图片粘贴；文本粘贴走默认行为。 */
@@ -1283,10 +1372,6 @@ function MemoEditor({
           ariaLabel={t("memoFieldType")}
           className="w-28 shrink-0"
         />
-        {/* 粘贴提示：窄屏隐藏，宽屏用 flex-1 把工作区输入和保存按钮推到右侧。 */}
-        <span className="hidden min-w-0 flex-1 truncate text-[11px] text-muted @2xl:block">
-          {t("memoImagePasteHint")}
-        </span>
         <input
           value={editor.workspaceHint}
           onChange={(event) => patch({ workspaceHint: event.target.value })}
@@ -1294,6 +1379,20 @@ function MemoEditor({
           aria-label={t("memoFieldWorkspace")}
           className="h-8 w-28 shrink-0 rounded-md border border-border bg-transparent px-2.5 text-[12px] outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-focus @2xl:w-44"
         />
+        {/* 弹性占位：把操作按钮推到右侧（替代原粘贴提示文案）。 */}
+        <div className="hidden min-w-0 flex-1 @2xl:block" />
+        {canClear && (
+          <button
+            type="button"
+            onClick={onClear}
+            title={t("memoActionClearHint")}
+            aria-label={t("memoActionClearHint")}
+            data-testid="memo-editor-clear"
+            className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-danger transition-colors hover:border-danger hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger"
+          >
+            <Eraser size={16} />
+          </button>
+        )}
         <button
           type="button"
           onClick={onSave}

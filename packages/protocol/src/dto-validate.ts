@@ -2392,6 +2392,19 @@ function isMemoNote(value: unknown): boolean {
   );
 }
 
+/** 备忘录新建草稿的 DTO 校验。 */
+function isMemoDraft(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["type", "contentMd", "workspaceHint", "updatedAt"]) &&
+    (value.type === "memo" || value.type === "idea" || value.type === "task") &&
+    isString(value.contentMd) &&
+    (value.workspaceHint === null || isString(value.workspaceHint)) &&
+    typeof value.updatedAt === "number" &&
+    Number.isSafeInteger(value.updatedAt)
+  );
+}
+
 function isScheduleAgentSessionSummary(value: unknown): boolean {
   return (
     isPlainObject(value) &&
@@ -3155,6 +3168,20 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         isNonEmptyString(result.mediaType)
         ? null
         : "invalid memo.readImage result";
+    case "memo.getDraft":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["draft"]) &&
+        (result.draft === null || isMemoDraft(result.draft))
+        ? null
+        : "invalid memo.getDraft result";
+    case "memo.setDraft":
+      return isPlainObject(result) && hasExactKeys(result, ["draft"]) && isMemoDraft(result.draft)
+        ? null
+        : "invalid memo.setDraft result";
+    case "memo.clearDraft":
+      return isPlainObject(result) && hasExactKeys(result, ["ok"]) && isBoolean(result.ok)
+        ? null
+        : "invalid memo.clearDraft result";
     case "memo.getSyncConfig":
     case "memo.setSyncConfig":
       return isPlainObject(result) &&

@@ -102,6 +102,31 @@ export function createMemoHandlers(agentDir: string): Partial<Record<string, Met
       };
     },
 
+    // 草稿仅本地持久化（不参与云同步，也不触发 autoSync）。
+    "memo.getDraft": async () => {
+      return { result: { draft: store.getDraft() } };
+    },
+
+    "memo.setDraft": async (ctx) => {
+      const params = ctx.params as {
+        draft: { type: unknown; contentMd: unknown; workspaceHint?: unknown };
+      };
+      const draft = store.saveDraft({
+        type: asString(params.draft.type) as MemoCreateInput["type"],
+        contentMd: asString(params.draft.contentMd),
+        workspaceHint:
+          params.draft.workspaceHint === undefined
+            ? undefined
+            : (params.draft.workspaceHint as string | null),
+      });
+      return { result: { draft } };
+    },
+
+    "memo.clearDraft": async () => {
+      store.clearDraft();
+      return { result: { ok: true } };
+    },
+
     "memo.getSyncConfig": async () => {
       return { result: { settings: getMemoSync(agentDir).getSettings() } };
     },

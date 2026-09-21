@@ -80,6 +80,7 @@ import type {
   PiSettingsSnapshot,
   PiSettingsPatch,
   SkillPathMutation,
+  WorkspaceTargetRef,
   SkillSnapshot,
   PromptSnapshot,
   PluginLibraryApplyParams,
@@ -102,6 +103,8 @@ import type {
   MemoNoteStatus,
   MemoNoteType,
   MemoImageInput,
+  MemoDraft,
+  MemoDraftInput,
   MemoSyncConfig,
   MemoSyncSettings,
 } from "./types.js";
@@ -255,6 +258,9 @@ export type HostContextMap = {
   "memo.update": HostContext;
   "memo.delete": HostContext;
   "memo.readImage": HostContext;
+  "memo.getDraft": HostContext;
+  "memo.setDraft": HostContext;
+  "memo.clearDraft": HostContext;
   "memo.getSyncConfig": HostContext;
   "memo.setSyncConfig": HostContext;
   "memo.testSync": HostContext;
@@ -393,11 +399,14 @@ export type HostRequestParams = {
   "model.list": null;
   "model.setCurrent": { provider: string; modelId: string };
   "model.setThinkingLevel": { level: string };
-  "skill.list": null;
-  "skill.addPath": SkillPathMutation;
-  "skill.removePath": SkillPathMutation;
-  "prompt.list": null;
-  "package.list": { scope: "user" | "project" | "all"; includeResources?: boolean };
+  "skill.list": WorkspaceTargetRef | null;
+  "skill.addPath": SkillPathMutation & WorkspaceTargetRef;
+  "skill.removePath": SkillPathMutation & WorkspaceTargetRef;
+  "prompt.list": WorkspaceTargetRef | null;
+  "package.list": {
+    scope: "user" | "project" | "all";
+    includeResources?: boolean;
+  } & WorkspaceTargetRef;
   "package.catalog": {
     refresh?: boolean;
     page?: number;
@@ -413,7 +422,7 @@ export type HostRequestParams = {
   "package.getResources": { packageId: string };
   "package.reloadResources": null;
   "resource.setPreference": ResourcePreferenceUpdate;
-  "resource.setPreferences": { updates: ResourcePreferenceUpdate[] };
+  "resource.setPreferences": { updates: ResourcePreferenceUpdate[] } & WorkspaceTargetRef;
   "pluginLibrary.catalog": { refresh?: boolean } | null;
   "pluginLibrary.apply": PluginLibraryApplyParams;
   "pluginLibrary.setEnv": PluginLibraryEnvUpdate;
@@ -497,6 +506,9 @@ export type HostRequestParams = {
   };
   "memo.delete": { id: string };
   "memo.readImage": { noteId: string; imageId: string };
+  "memo.getDraft": null;
+  "memo.setDraft": { draft: MemoDraftInput };
+  "memo.clearDraft": null;
   "memo.getSyncConfig": null;
   "memo.setSyncConfig": { settings: MemoSyncConfig };
   "memo.testSync": { settings: MemoSyncConfig };
@@ -717,6 +729,9 @@ export type HostResultMap = {
   "memo.update": { note: MemoNote };
   "memo.delete": { ok: boolean };
   "memo.readImage": { dataBase64: string; mediaType: string };
+  "memo.getDraft": { draft: MemoDraft | null };
+  "memo.setDraft": { draft: MemoDraft };
+  "memo.clearDraft": { ok: boolean };
   "memo.getSyncConfig": { settings: MemoSyncSettings };
   "memo.setSyncConfig": { settings: MemoSyncSettings };
   "memo.testSync": { ok: boolean; error: string | null };

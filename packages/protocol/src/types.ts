@@ -430,6 +430,18 @@ export type SkillPathMutation = {
   scope: SkillSettingsScope;
 };
 
+/**
+ * Optional cross-workspace targeting for skill/package/prompt management
+ * methods. Omitting both fields targets the active workspace. Only one of the
+ * two may be set; the Host resolves the id against its bound-workspace list
+ * and canonicalizes the cwd, so the renderer can pass the raw known-workspace
+ * path even when the workspace has never been bound this Host session.
+ */
+export type WorkspaceTargetRef = {
+  targetWorkspaceId?: string;
+  targetWorkspaceCwd?: string;
+};
+
 /** Kind of a discovered prompt file (matching Pi's loader roles). */
 export type PromptKind = "system" | "append" | "context";
 
@@ -1710,6 +1722,21 @@ export type MemoNote = {
    * 把删除传播到其他设备（编辑时间晚于墓碑可复活）；超过 TTL 后物理清除。
    */
   deletedAt: number | null;
+};
+
+/** 备忘录「新建」草稿（仅本机持久化，不参与云同步；不含图片附件）。 */
+export type MemoDraft = {
+  type: MemoNoteType;
+  contentMd: string;
+  workspaceHint: string | null;
+  updatedAt: number;
+};
+
+/** memo.setDraft 的输入：草稿不参与云同步，字段与 MemoDraft 对应（缺 updatedAt）。 */
+export type MemoDraftInput = {
+  type: MemoNoteType;
+  contentMd: string;
+  workspaceHint?: string | null;
 };
 
 /** 备忘录云同步（Cloudflare R2，S3 兼容 API）的连接配置。 */

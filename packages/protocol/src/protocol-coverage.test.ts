@@ -326,6 +326,11 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
     noteId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150",
     imageId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150",
   },
+  "memo.getDraft": null,
+  "memo.setDraft": {
+    draft: { type: "memo", contentMd: "未保存的草稿", workspaceHint: "PiAbyss" },
+  },
+  "memo.clearDraft": null,
   "memo.getSyncConfig": null,
   "memo.setSyncConfig": {
     settings: {
@@ -621,6 +626,11 @@ function invalidParams(method: HostMethod): unknown {
       return { id: "" };
     case "memo.readImage":
       return { noteId: "", imageId: "" };
+    case "memo.getDraft":
+    case "memo.clearDraft":
+      return { unexpected: true };
+    case "memo.setDraft":
+      return { draft: { type: "nope", contentMd: 42 } };
     case "memo.getSyncConfig":
     case "memo.syncNow":
       return { unexpected: true };

@@ -3,6 +3,8 @@
  * Host 上下文取自 app store（备忘录是全局数据，不走会话/工作区上下文）。
  */
 import type {
+  MemoDraft,
+  MemoDraftInput,
   MemoImageInput,
   MemoNote,
   MemoNoteStatus,
@@ -77,6 +79,36 @@ export async function deleteMemoNote(id: string): Promise<void> {
     DEFAULT_TIMEOUT_MS,
   );
   if (!response.ok) throw new Error(response.error?.message ?? "memo.delete failed");
+}
+
+/** 读取「新建」草稿（无草稿返回 null；仅本机持久化，不参与云同步）。 */
+export async function getMemoDraft(): Promise<MemoDraft | null> {
+  const response = await hostClient.request("memo.getDraft", requireHost(), null, DEFAULT_TIMEOUT_MS);
+  if (!response.ok) throw new Error(response.error?.message ?? "memo.getDraft failed");
+  return response.result.draft;
+}
+
+/** 保存「新建」草稿（整体覆盖；host 侧防抖由调用方控制）。 */
+export async function setMemoDraft(draft: MemoDraftInput): Promise<MemoDraft> {
+  const response = await hostClient.request(
+    "memo.setDraft",
+    requireHost(),
+    { draft },
+    DEFAULT_TIMEOUT_MS,
+  );
+  if (!response.ok) throw new Error(response.error?.message ?? "memo.setDraft failed");
+  return response.result.draft;
+}
+
+/** 清除「新建」草稿（文件不存在时静默成功）。 */
+export async function clearMemoDraft(): Promise<void> {
+  const response = await hostClient.request(
+    "memo.clearDraft",
+    requireHost(),
+    null,
+    DEFAULT_TIMEOUT_MS,
+  );
+  if (!response.ok) throw new Error(response.error?.message ?? "memo.clearDraft failed");
 }
 
 /** 读取记录图片为 data URL（页面直接 <img src> 展示）。 */

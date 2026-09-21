@@ -20,6 +20,8 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
+  MemoDraft,
+  MemoDraftInput,
   MemoImage,
   MemoImageInput,
   MemoNote,
@@ -126,11 +128,13 @@ export class MemoStore {
   private readonly root: string;
   private readonly imagesRoot: string;
   private readonly filePath: string;
+  private readonly draftPath: string;
 
   constructor(agentDir: string) {
     this.root = join(agentDir, "piabyss", "memo");
     this.imagesRoot = join(this.root, "images");
     this.filePath = join(this.root, "notes.json");
+    this.draftPath = join(this.root, "draft.json");
   }
 
   /** 存储根目录（诊断/展示用）。 */
@@ -327,6 +331,48 @@ export class MemoStore {
     const dir = join(this.imagesRoot, noteId);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, fileName), body);
+  }
+
+  /**
+   * 「新建」草稿：单文件本地持久化（仅本机，不参与云同步，不含图片附件）。
+   * 文件缺失/损坏视为无草稿。
+   */
+  getDraft(): MemoDraft | null {
+    if (!existsSync(this.draftPath)) return null;
+    try {
+      const raw = JSON.parse(readFileSync(this.draftPath, "utf8")) as MemoDraft;
+      if (
+        raw &&
+        NOTE_TYPES.includes(raw.type) &&
+        typeof raw.contentMd === "string" &&
+        raw.contentMd.length <= MAX_CONTENT_LENGTH
+      ) {
+        return raw;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** 保存草稿（整体覆盖，原子写入；contentMd 复用记录正文长度限制）。 */
+  saveDraft(input: MemoDraftInput): MemoDraft {
+    const draft: MemoDraft = {
+      type: this.requireType(input.type),
+      contentMd: this.requireContent(input.contentMd),
+      workspaceHint: this.normalizeHint(input.workspaceHint),
+      updatedAt: Date.now(),
+    };
+    mkdirSync(this.root, { recursive: true });
+    const tempPath = `${this.draftPath}.tmp-${process.pid}-${Date.now()}`;
+    writeFileSync(tempPath, JSON.stringify(draft, null, 2), "utf8");
+    renameSync(tempPath, this.draftPath);
+    return draft;
+  }
+
+  /** 清除草稿（文件不存在时静默成功）。 */
+  clearDraft(): void {
+    rmSync(this.draftPath, { force: true });
   }
 
   private readFile(): MemoFile {
