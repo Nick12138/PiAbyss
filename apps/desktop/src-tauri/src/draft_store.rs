@@ -43,7 +43,11 @@ pub struct DraftTarget {
 /// re-read (or re-upload) them; content-backed entries keep the payload and
 /// are individually size-capped in `validate_attachments`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "kebab-case", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 pub enum DraftAttachmentRecord {
     Image {
         id: String,
@@ -70,8 +74,12 @@ pub enum DraftAttachmentRecord {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         unlimited: Option<bool>,
     },
-    Document { source_path: String },
-    PastedText { text: String },
+    Document {
+        source_path: String,
+    },
+    PastedText {
+        text: String,
+    },
 }
 
 /// An injected prompt reference (e.g. memo capsule) persisted with the draft.
@@ -130,7 +138,9 @@ pub enum DraftMutation {
         #[serde(default)]
         references: Vec<DraftReferenceRecord>,
     },
-    Delete { target: DraftTarget },
+    Delete {
+        target: DraftTarget,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -358,7 +368,8 @@ impl DraftStore {
                         continue;
                     }
                     match next.iter_mut().find(|record| record.target() == target) {
-                        Some(record) if record.is_same_payload(&text, &attachments, &references) => {}
+                        Some(record)
+                            if record.is_same_payload(&text, &attachments, &references) => {}
                         Some(record) => {
                             record.text = text;
                             record.attachments = attachments;
@@ -464,7 +475,13 @@ fn validate_attachments(attachments: &[DraftAttachmentRecord]) -> Result<(), Str
     let mut total_bytes = 0usize;
     for attachment in attachments {
         let payload_bytes = match attachment {
-            DraftAttachmentRecord::Image { id, name, source_path, media_type, data } => {
+            DraftAttachmentRecord::Image {
+                id,
+                name,
+                source_path,
+                media_type,
+                data,
+            } => {
                 validate_attachment_id(id)?;
                 validate_optional_path(source_path)?;
                 validate_optional_capped(name, MAX_DRAFT_REFERENCE_LABEL_BYTES, "image name")?;
@@ -474,7 +491,14 @@ fn validate_attachments(attachments: &[DraftAttachmentRecord]) -> Result<(), Str
                 }
                 data.as_deref().map_or(0, str::len)
             }
-            DraftAttachmentRecord::File { id, name, kind, text, source_path, .. } => {
+            DraftAttachmentRecord::File {
+                id,
+                name,
+                kind,
+                text,
+                source_path,
+                ..
+            } => {
                 validate_attachment_id(id)?;
                 if kind != "text" && kind != "path" {
                     return Err(format!("unknown file attachment kind {kind}"));
@@ -523,7 +547,11 @@ fn validate_references(references: &[DraftReferenceRecord]) -> Result<(), String
         ));
     }
     for reference in references {
-        validate_optional_capped(&Some(reference.id.clone()), MAX_DRAFT_REFERENCE_ID_BYTES, "reference id")?;
+        validate_optional_capped(
+            &Some(reference.id.clone()),
+            MAX_DRAFT_REFERENCE_ID_BYTES,
+            "reference id",
+        )?;
         if reference.kind.trim().is_empty() || reference.kind.len() > 64 {
             return Err("draft reference has an invalid kind".into());
         }
@@ -957,7 +985,12 @@ mod tests {
             .unwrap();
         assert_eq!(store.workspace_snapshot(&cwd).unwrap().drafts.len(), 1);
         store
-            .apply(vec![upsert_full(target.clone(), "", Vec::new(), vec![memo_reference()])])
+            .apply(vec![upsert_full(
+                target.clone(),
+                "",
+                Vec::new(),
+                vec![memo_reference()],
+            )])
             .unwrap();
         assert_eq!(store.workspace_snapshot(&cwd).unwrap().drafts.len(), 1);
 
@@ -1015,9 +1048,16 @@ mod tests {
         let mut store = DraftStore::load_from_dir(&dir).unwrap();
 
         // Oversized image data.
-        let oversized = vec![image_attachment(&"x".repeat(MAX_DRAFT_ATTACHMENT_ITEM_BYTES + 1))];
+        let oversized = vec![image_attachment(
+            &"x".repeat(MAX_DRAFT_ATTACHMENT_ITEM_BYTES + 1),
+        )];
         assert!(store
-            .apply(vec![upsert_full(target.clone(), "t", oversized, Vec::new())])
+            .apply(vec![upsert_full(
+                target.clone(),
+                "t",
+                oversized,
+                Vec::new()
+            )])
             .is_err());
 
         // Image with neither sourcePath nor data.
