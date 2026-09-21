@@ -419,6 +419,7 @@ export const zh: Record<MessageKey, string> = {
   providersEditTitle: "编辑模型服务",
   providersAddTitle: "添加模型服务",
   providersCustom: "自定义服务",
+  providersServiceId: "服务ID",
   providersUnsaved: "有未保存的修改",
   providersSaveAndTest: "保存并测试",
   providersTesting: "测试中",

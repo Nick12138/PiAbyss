@@ -988,7 +988,9 @@ export function ProvidersSettings() {
                       {draft.originalId ? t("providersEditTitle") : t("providersAddTitle")}
                     </h1>
                     <p className="mt-1 text-xs text-muted">
-                      {draft.originalId ?? t("providersCustom")}
+                      {draft.originalId
+                        ? `${t("providersServiceId")} ${draft.originalId}`
+                        : t("providersCustom")}
                     </p>
                   </div>
                 </div>

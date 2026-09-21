@@ -447,6 +447,7 @@ export const en = {
   providersEditTitle: "Edit Provider",
   providersAddTitle: "Add Provider",
   providersCustom: "Custom Provider",
+  providersServiceId: "Service ID",
   providersUnsaved: "Unsaved changes",
   providersSaveAndTest: "Save & test",
   providersTesting: "Testing",

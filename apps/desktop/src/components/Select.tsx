@@ -50,6 +50,7 @@ export function Select({
     left: 0,
     minWidth: 0,
     maxHeight: 240,
+    opensUpward: false,
   });
   const ref = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -85,11 +86,25 @@ export function Select({
       const width = rect.width;
       const preferredLeft = align === "right" ? rect.right - width : rect.left;
       const left = Math.max(gutter, Math.min(preferredLeft, window.innerWidth - width - gutter));
+      // Prefer the surface's real rendered height over the estimate; on the
+      // very first pass after open it may still reflect the stale maxHeight,
+      // the layout effect below re-anchors once the clamped height applies.
+      const surface = menuRef.current;
+      const actualHeight = surface ? surface.getBoundingClientRect().height : 0;
+      const height = actualHeight > 0 ? actualHeight : maxHeight;
       const top = opensUpward
-        ? Math.max(gutter, rect.top - maxHeight)
-        : Math.min(rect.bottom + 4, window.innerHeight - maxHeight - gutter);
+        ? Math.max(gutter, rect.top - height)
+        : Math.min(rect.bottom + 4, window.innerHeight - height - gutter);
 
-      setMenuPosition({ top, left, minWidth: width, maxHeight });
+      setMenuPosition((pos) => {
+        const changed =
+          pos.top !== top ||
+          pos.left !== left ||
+          pos.minWidth !== width ||
+          pos.maxHeight !== maxHeight ||
+          pos.opensUpward !== opensUpward;
+        return changed ? { top, left, minWidth: width, maxHeight, opensUpward } : pos;
+      });
     };
 
     updateMenuPosition();
@@ -101,19 +116,30 @@ export function Select({
     };
   }, [align, open, options.length]);
 
-  // The list maxHeight is computed before render, but the footer (and its
-  // expandable content) only exists after render — clamp the surface back
-  // inside the viewport once its real height is known.
+  // The first pass above only estimates the surface height (maxHeight);
+  // the real surface is often shorter (few options, no footer). Once the
+  // actual height is known, re-anchor the surface to the trigger — otherwise
+  // an upward-flipped menu floats with a gap above the trigger (it would sit
+  // at rect.top - maxHeight instead of rect.top - actualHeight).
   useLayoutEffect(() => {
     if (!open) return;
     const surface = menuRef.current;
-    if (!surface) return;
-    const rect = surface.getBoundingClientRect();
-    const overflow = rect.bottom - (window.innerHeight - 8);
-    if (overflow > 0) {
-      setMenuPosition((pos) => ({ ...pos, top: Math.max(8, pos.top - overflow) }));
+    const trigger = triggerRef.current;
+    if (!surface || !trigger) return;
+    const actualHeight = surface.getBoundingClientRect().height;
+    const rect = trigger.getBoundingClientRect();
+    const gutter = 8;
+    let top = menuPosition.opensUpward
+      ? Math.max(gutter, rect.top - actualHeight)
+      : Math.min(rect.bottom + 4, window.innerHeight - actualHeight - gutter);
+    // Footer (or its expandable content) can grow the surface beyond the
+    // estimate; clamp it back inside the viewport.
+    const overflow = top + actualHeight - (window.innerHeight - gutter);
+    if (overflow > 0) top = Math.max(gutter, top - overflow);
+    if (top !== menuPosition.top) {
+      setMenuPosition((pos) => ({ ...pos, top }));
     }
-  }, [open, footer, menuPosition.top, menuPosition.maxHeight]);
+  }, [open, footer, menuPosition]);
 
   useEffect(() => {
     if (!open) return;
