@@ -479,6 +479,21 @@ export function SkillsSettings() {
         ? t("skillsGroupProject")
         : t("skillsGroupBundle");
 
+  const refreshButton = (
+    <button
+      type="button"
+      className={`flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-50 ${
+        knownWorkspaces.length > 0 ? "ml-auto" : ""
+      }`}
+      title={t("skillsRefresh")}
+      aria-label={t("skillsRefresh")}
+      disabled={loadState === "loading" || busy}
+      onClick={() => void refresh()}
+    >
+      <RefreshCw size={14} className={loadState === "loading" ? "animate-spin" : ""} />
+    </button>
+  );
+
   if (!host || !workspace?.servicesReady) {
     return (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -495,28 +510,7 @@ export function SkillsSettings() {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-skills-settings>
       <div className="min-h-0 flex-1 overflow-auto p-6" data-settings-scroll>
         <div className="mx-auto flex max-w-5xl flex-col gap-6">
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-xs text-muted">
-              {snapshot
-                ? t("skillsSummary", {
-                    loaded: String(rows.length),
-                    configured: String(snapshot.configuredPaths.length),
-                  })
-                : " "}
-            </p>
-            <button
-              type="button"
-              className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-50"
-              title={t("skillsRefresh")}
-              aria-label={t("skillsRefresh")}
-              disabled={loadState === "loading" || busy}
-              onClick={() => void refresh()}
-            >
-              <RefreshCw size={14} className={loadState === "loading" ? "animate-spin" : ""} />
-            </button>
-          </div>
-
-          {knownWorkspaces.length > 0 && (
+          {knownWorkspaces.length > 0 ? (
             <div className="flex flex-col gap-1.5">
               <div
                 className="flex flex-wrap items-center gap-1.5"
@@ -558,10 +552,31 @@ export function SkillsSettings() {
                     </button>
                   );
                 })}
+                {refreshButton}
               </div>
+              <p className="text-xs text-muted">
+                {snapshot
+                  ? t("skillsSummary", {
+                      loaded: String(rows.length),
+                      configured: String(snapshot.configuredPaths.length),
+                    })
+                  : " "}
+              </p>
               {targetParams() && (
                 <p className="text-[11px] text-muted">{t("skillsWorkspaceTargetHint")}</p>
               )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-xs text-muted">
+                {snapshot
+                  ? t("skillsSummary", {
+                      loaded: String(rows.length),
+                      configured: String(snapshot.configuredPaths.length),
+                    })
+                  : " "}
+              </p>
+              {refreshButton}
             </div>
           )}
 
