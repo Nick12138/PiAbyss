@@ -207,6 +207,22 @@ export function SkillsSettings() {
   }
 
   /**
+   * Error message for a failed mutation response. Cross-workspace AGENT_BUSY
+   * means the *target* workspace has a running session (since the host now
+   * scopes the busy gate to the target only) — show the localized, actionable
+   * message instead of the host's raw English text.
+   */
+  function mutationErrorMessage(
+    response: { ok: false; error?: { code?: string; message?: string } },
+    fallback: Parameters<Translate>[0],
+  ): string {
+    if (response.error?.code === "AGENT_BUSY" && targetParams()) {
+      return t("skillsWorkspaceTargetBusy");
+    }
+    return response.error?.message ?? t(fallback);
+  }
+
+  /**
    * Chip model for the scope row: every known workspace by its basename.
    * The active workspace keeps the "" sentinel value (so re-picking it is
    * the same no-op as before, and the requests keep using the cheap
@@ -350,10 +366,10 @@ export function SkillsSettings() {
       if (!response) return;
       if (!response.ok) {
         throw new Error(
-          response.error?.message ??
-            t(
-              method === "skill.addPath" ? "notifSkillPathAddFailed" : "notifSkillPathRemoveFailed",
-            ),
+          mutationErrorMessage(
+            response,
+            method === "skill.addPath" ? "notifSkillPathAddFailed" : "notifSkillPathRemoveFailed",
+          ),
         );
       }
       setSnapshot(response.result);
@@ -408,7 +424,7 @@ export function SkillsSettings() {
           );
       if (!response) return;
       if (!response.ok) {
-        throw new Error(response.error?.message ?? t("notifSkillToggleFailed"));
+        throw new Error(mutationErrorMessage(response, "notifSkillToggleFailed"));
       }
       const result = response.result as PackageMutationResult;
       setResources(
@@ -482,9 +498,7 @@ export function SkillsSettings() {
   const refreshButton = (
     <button
       type="button"
-      className={`flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-50 ${
-        knownWorkspaces.length > 0 ? "ml-auto" : ""
-      }`}
+      className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-50"
       title={t("skillsRefresh")}
       aria-label={t("skillsRefresh")}
       disabled={loadState === "loading" || busy}
@@ -510,75 +524,70 @@ export function SkillsSettings() {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-skills-settings>
       <div className="min-h-0 flex-1 overflow-auto p-6" data-settings-scroll>
         <div className="mx-auto flex max-w-5xl flex-col gap-6">
-          {knownWorkspaces.length > 0 ? (
-            <div className="flex flex-col gap-1.5">
-              <div
-                className="flex flex-wrap items-center gap-1.5"
-                role="group"
-                aria-label={t("skillsManageScope")}
-              >
-                <span className="shrink-0 text-xs text-muted">{t("skillsManageScope")}</span>
-                {workspaceChips().map((chip) => {
-                  const selected = chip.value === selectedWorkspacePath;
-                  const label = chip.isActive
-                    ? `${chip.basename} · ${t("skillsWorkspaceActive")}`
-                    : chip.basename;
-                  return (
-                    <button
-                      key={chip.path}
-                      type="button"
-                      aria-pressed={selected}
-                      aria-label={label}
-                      title={chip.path}
-                      disabled={busy}
-                      className={`flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors disabled:cursor-default disabled:opacity-60 ${
-                        selected
-                          ? "border-accent/60 bg-accent/10 text-foreground"
-                          : "border-border text-muted hover:bg-surface-overlay hover:text-foreground"
-                      }`}
-                      onClick={() => setSelectedWorkspacePath(chip.value)}
-                    >
-                      {chip.isTelegram && (
-                        <Send size={12} className="shrink-0 text-muted" aria-hidden />
-                      )}
-                      <span className="max-w-48 truncate">{chip.basename}</span>
-                      {chip.isActive && (
-                        <span
-                          className="size-1.5 shrink-0 rounded-full bg-success"
-                          title={t("skillsWorkspaceActive")}
-                          aria-hidden
-                        />
-                      )}
-                    </button>
-                  );
-                })}
-                {refreshButton}
-              </div>
-              <p className="text-xs text-muted">
-                {snapshot
-                  ? t("skillsSummary", {
-                      loaded: String(rows.length),
-                      configured: String(snapshot.configuredPaths.length),
-                    })
-                  : " "}
-              </p>
-              {targetParams() && (
-                <p className="text-[11px] text-muted">{t("skillsWorkspaceTargetHint")}</p>
-              )}
-            </div>
-          ) : (
+          <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between gap-4">
-              <p className="text-xs text-muted">
-                {snapshot
-                  ? t("skillsSummary", {
-                      loaded: String(rows.length),
-                      configured: String(snapshot.configuredPaths.length),
-                    })
-                  : " "}
-              </p>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="rounded-full bg-surface-overlay px-2.5 py-1 text-[11px] text-muted">
+                  {t("skillsLoadedBadge", { loaded: String(rows.length) })}
+                </span>
+                <span className="rounded-full bg-surface-overlay px-2.5 py-1 text-[11px] text-muted">
+                  {t("skillsConfiguredBadge", {
+                    configured: String(snapshot?.configuredPaths.length ?? 0),
+                  })}
+                </span>
+              </div>
               {refreshButton}
             </div>
+
+            {knownWorkspaces.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <div
+                  className="flex flex-wrap items-center gap-1.5"
+                  role="group"
+                  aria-label={t("skillsManageScope")}
+                >
+                  <span className="shrink-0 text-xs text-muted">{t("skillsManageScope")}</span>
+                  {workspaceChips().map((chip) => {
+                    const selected = chip.value === selectedWorkspacePath;
+                    const label = chip.isActive
+                      ? `${chip.basename} · ${t("skillsWorkspaceActive")}`
+                      : chip.basename;
+                    return (
+                      <button
+                        key={chip.path}
+                        type="button"
+                        aria-pressed={selected}
+                        aria-label={label}
+                        title={chip.path}
+                        disabled={busy}
+                        className={`flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors disabled:cursor-default disabled:opacity-60 ${
+                          selected
+                            ? "border-accent/60 bg-accent/10 text-foreground"
+                            : "border-border text-muted hover:bg-surface-overlay hover:text-foreground"
+                        }`}
+                        onClick={() => setSelectedWorkspacePath(chip.value)}
+                      >
+                        {chip.isTelegram && (
+                          <Send size={12} className="shrink-0 text-muted" aria-hidden />
+                        )}
+                        <span className="max-w-48 truncate">{chip.basename}</span>
+                        {chip.isActive && (
+                          <span
+                            className="size-1.5 shrink-0 rounded-full bg-success"
+                            title={t("skillsWorkspaceActive")}
+                            aria-hidden
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {targetParams() && (
+                  <p className="text-[11px] text-muted">{t("skillsWorkspaceTargetHint")}</p>
+                )}
+            </div>
           )}
+          </div>
 
           {snapshot?.resourceReloadRequired && (
             <p

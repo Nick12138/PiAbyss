@@ -543,7 +543,8 @@ export const en = {
   // Skills
   skillsSubtitle: "Inspect and manage skills discovered by Pi",
   skillsRefresh: "Refresh",
-  skillsSummary: "{loaded} skills loaded · {configured} configured paths",
+  skillsLoadedBadge: "{loaded} skills loaded",
+  skillsConfiguredBadge: "{configured} configured paths",
   skillsNoWorkspace:
     "Open a workspace to inspect skills. Discovery depends on the workspace directory.",
   skillsManageScope: "Managing",

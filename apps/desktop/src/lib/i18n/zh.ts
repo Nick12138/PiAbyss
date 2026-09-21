@@ -514,7 +514,8 @@ export const zh: Record<MessageKey, string> = {
   // Skills
   skillsSubtitle: "查看并管理 Pi 发现与加载的技能",
   skillsRefresh: "刷新",
-  skillsSummary: "已加载 {loaded} 个技能 · {configured} 个已配置路径",
+  skillsLoadedBadge: "已加载 {loaded} 个技能",
+  skillsConfiguredBadge: "{configured} 个已配置路径",
   skillsNoWorkspace: "打开工作区后才能查看技能。技能发现依赖于工作区目录。",
   skillsManageScope: "管理范围",
   skillsWorkspaceActive: "当前工作区",
