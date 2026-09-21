@@ -74,11 +74,11 @@ export function AppUpdateButton() {
       aria-label={label}
       aria-live="polite"
       data-app-update-button
-      className="flex h-6 shrink-0 items-center justify-center rounded-md bg-accent px-2 text-[11px] font-medium leading-none text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+      className="flex h-5 shrink-0 items-center justify-center rounded bg-accent px-1.5 text-[10px] font-medium leading-none text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
       onClick={() => void downloadAndInstall()}
     >
       {downloading && percent === null && (
-        <span className="mr-1.5 size-2 animate-pulse rounded-full bg-current" aria-hidden="true" />
+        <span className="mr-1 size-1.5 animate-pulse rounded-full bg-current" aria-hidden="true" />
       )}
       {label}
     </button>
