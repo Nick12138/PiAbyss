@@ -572,8 +572,8 @@ describe("SkillsSettings", () => {
       user: ReturnType<typeof userEvent.setup>,
       label: string,
     ) {
-      await user.click(screen.getByRole("button", { name: "Workspace" }));
-      await user.click(await screen.findByRole("option", { name: label }));
+      // Scope chips are direct toggle buttons named by workspace basename.
+      await user.click(screen.getByRole("button", { name: label }));
     }
 
     it("targets list requests at the selected workspace", async () => {

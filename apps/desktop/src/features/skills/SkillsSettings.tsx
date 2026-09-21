@@ -10,6 +10,7 @@ import {
   HelpCircle,
   Plus,
   RefreshCw,
+  Send,
   Trash2,
   User,
 } from "lucide-react";
@@ -37,7 +38,9 @@ import {
   workspaceContext,
 } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
+import { isSameTelegramPath } from "../../lib/telegram-path";
 import { useT, type Translate } from "../../lib/i18n/use-t";
+import { useTelegramViewStore } from "../telegram/telegram-view-store";
 import { SkillPreviewModal } from "./SkillPreviewModal";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -204,15 +207,16 @@ export function SkillsSettings() {
   }
 
   /**
-   * Filter options: every known workspace by its basename. The active one is
-   * badged "· 当前工作区", keeps the "" sentinel value (so re-picking it is
-   * the same no-op as the old dedicated entry, and the requests keep using
-   * the cheap active-workspace channel) and is always sorted first. It is
-   * injected when the picker has not persisted it yet, so a selection always
-   * resolves to a real option.
+   * Chip model for the scope row: every known workspace by its basename.
+   * The active workspace keeps the "" sentinel value (so re-picking it is
+   * the same no-op as before, and the requests keep using the cheap
+   * active-workspace channel) and is always sorted first. It is injected
+   * when the list has not persisted it yet, so a selection always resolves
+   * to a real chip.
    */
-  function workspaceFilterOptions() {
+  function workspaceChips() {
     const activeCwd = workspace?.cwd ?? "";
+    const telegramWorkspacePath = useTelegramViewStore.getState().workspacePath;
     const paths =
       activeCwd && !knownWorkspaces.some((path) => path === activeCwd)
         ? [activeCwd, ...knownWorkspaces]
@@ -223,11 +227,12 @@ export function SkillsSettings() {
       );
     }
     return paths.map((path) => ({
+      path,
+      /** "" = active workspace (see targetParams). */
       value: path === activeCwd ? "" : path,
-      label:
-        path === activeCwd
-          ? `${workspaceBasename(path)} · ${t("skillsWorkspaceActive")}`
-          : workspaceBasename(path),
+      basename: workspaceBasename(path),
+      isActive: path === activeCwd,
+      isTelegram: isSameTelegramPath(path, telegramWorkspacePath),
     }));
   }
 
@@ -512,22 +517,50 @@ export function SkillsSettings() {
           </div>
 
           {knownWorkspaces.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                <span className="shrink-0 text-xs text-muted">{t("skillsWorkspaceFilter")}</span>
-                <Select
-                  className="max-w-md min-w-56 flex-1"
-                  ariaLabel={t("skillsWorkspaceFilter")}
-                  value={selectedWorkspacePath}
-                  disabled={busy || loadState === "loading"}
-                  onChange={(value) => setSelectedWorkspacePath(value)}
-                  options={workspaceFilterOptions()}
-                />
+            <div className="flex flex-col gap-1.5">
+              <div
+                className="flex flex-wrap items-center gap-1.5"
+                role="group"
+                aria-label={t("skillsManageScope")}
+              >
+                <span className="shrink-0 text-xs text-muted">{t("skillsManageScope")}</span>
+                {workspaceChips().map((chip) => {
+                  const selected = chip.value === selectedWorkspacePath;
+                  const label = chip.isActive
+                    ? `${chip.basename} · ${t("skillsWorkspaceActive")}`
+                    : chip.basename;
+                  return (
+                    <button
+                      key={chip.path}
+                      type="button"
+                      aria-pressed={selected}
+                      aria-label={label}
+                      title={chip.path}
+                      disabled={busy}
+                      className={`flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors disabled:cursor-default disabled:opacity-60 ${
+                        selected
+                          ? "border-accent/60 bg-accent/10 text-foreground"
+                          : "border-border text-muted hover:bg-surface-overlay hover:text-foreground"
+                      }`}
+                      onClick={() => setSelectedWorkspacePath(chip.value)}
+                    >
+                      {chip.isTelegram && (
+                        <Send size={12} className="shrink-0 text-muted" aria-hidden />
+                      )}
+                      <span className="max-w-48 truncate">{chip.basename}</span>
+                      {chip.isActive && (
+                        <span
+                          className="size-1.5 shrink-0 rounded-full bg-success"
+                          title={t("skillsWorkspaceActive")}
+                          aria-hidden
+                        />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
               {targetParams() && (
-                <p className="rounded-lg border border-border bg-surface p-3 text-xs text-muted">
-                  {t("skillsWorkspaceTargetHint")}
-                </p>
+                <p className="text-[11px] text-muted">{t("skillsWorkspaceTargetHint")}</p>
               )}
             </div>
           )}

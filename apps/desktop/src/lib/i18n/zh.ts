@@ -516,7 +516,7 @@ export const zh: Record<MessageKey, string> = {
   skillsRefresh: "刷新",
   skillsSummary: "已加载 {loaded} 个技能 · {configured} 个已配置路径",
   skillsNoWorkspace: "打开工作区后才能查看技能。技能发现依赖于工作区目录。",
-  skillsWorkspaceFilter: "工作区",
+  skillsManageScope: "管理范围",
   skillsWorkspaceActive: "当前工作区",
   skillsWorkspaceTargetHint:
     "正在管理所选工作区：技能目录的添加/移除与启用开关都作用于该工作区（写入其 .pi/settings.json）。",
