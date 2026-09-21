@@ -336,7 +336,6 @@ export class WorkspaceLifecycle {
         // fingerprint capture is deferred — so a rapid switch back is an
         // instant reactivation, then take the foreground with the shell.
         if (previousGraph) await this.retainGraph(previousGraph);
-        const previousIdentity = server.getIdentity();
 
         const pendingGraph: WorkspaceGraph = {
           workspaceId,
