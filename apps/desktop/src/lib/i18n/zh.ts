@@ -238,6 +238,9 @@ export const zh: Record<MessageKey, string> = {
   generalAdvancedDesc: "高级选项存放于 agent 目录下的 settings.json，可打开手动编辑。",
   generalAdvancedOpenFile: "打开 settings.json",
   generalAdvancedRestartHint: "更改将在重启 Host 后生效。",
+  generalProxy: "网络代理",
+  generalProxyDesc:
+    "Host 出网请求（模型 API、插件市场等）使用的 HTTP(S) 代理。留空表示不使用；环境变量 HTTP_PROXY/HTTPS_PROXY 优先。",
   generalDefaultTools: "默认工具",
   generalDefaultToolsDesc: "新会话启用的内置工具。未勾选的工具仍可通过 bash 调用。",
   generalDefaultToolsReadDesc: "读取文件内容",
@@ -521,8 +524,7 @@ export const zh: Record<MessageKey, string> = {
   skillsWorkspaceActive: "当前工作区",
   skillsWorkspaceTargetHint:
     "正在管理所选工作区：技能目录的添加/移除与启用开关都作用于该工作区（写入其 .pi/settings.json）。",
-  skillsWorkspaceTargetBusy:
-    "有会话正在运行，无法修改所选工作区的技能；请先停止相关会话。",
+  skillsWorkspaceTargetBusy: "有会话正在运行，无法修改所选工作区的技能；请先停止相关会话。",
   skillsGroupUser: "全局（用户）",
   skillsGroupProject: "项目",
   skillsGroupBundle: "包与扩展",

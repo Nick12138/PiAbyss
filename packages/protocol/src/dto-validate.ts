@@ -2456,10 +2456,17 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
             "followUpMode",
             "models",
           ],
-          ["defaultProvider", "defaultModel", "defaultTools", "askUserQuestionEnabled"],
+          [
+            "defaultProvider",
+            "defaultModel",
+            "defaultTools",
+            "askUserQuestionEnabled",
+            "httpProxy",
+          ],
         ) &&
         (result.defaultProvider === undefined || isString(result.defaultProvider)) &&
         (result.defaultModel === undefined || isString(result.defaultModel)) &&
+        (result.httpProxy === undefined || isString(result.httpProxy)) &&
         (result.defaultTools === undefined ||
           (Array.isArray(result.defaultTools) &&
             result.defaultTools.every((name) => isString(name)))) &&

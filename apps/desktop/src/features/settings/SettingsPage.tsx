@@ -37,12 +37,16 @@ import { ShortcutsSettings } from "./ShortcutsSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { PiSettings } from "./PiSettings";
 import { DefaultToolsSetting } from "./DefaultToolsSetting";
+import { ProxySetting } from "./ProxySetting";
 import { RestartHostButton } from "./restart-host";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { notifyOperationFailure } from "../../lib/notify-operation-error";
 import { SettingsTopBarActionsContext, SETTINGS_SECTION_META } from "./settings-top-bar";
-import { cachedPluginLibraryUpdates, checkPluginLibraryUpdates } from "../plugin-library/plugin-updates";
+import {
+  cachedPluginLibraryUpdates,
+  checkPluginLibraryUpdates,
+} from "../plugin-library/plugin-updates";
 
 /** Fire-and-forget prefetch budget for the plugin-library registry warmup. */
 const PLUGIN_LIBRARY_PREFETCH_TIMEOUT_MS = 30_000;
@@ -426,6 +430,7 @@ function GeneralSettings() {
             <h2 className="mb-2 text-[13px] font-medium text-muted">{t("generalAdvancedGroup")}</h2>
             <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
               <p className="text-sm text-muted">{t("generalAdvancedDesc")}</p>
+              <ProxySetting />
               <DefaultToolsSetting />
               <div className="flex flex-wrap items-center gap-2">
                 <button
@@ -534,12 +539,7 @@ export function SettingsPage({
   useEffect(() => {
     if (!prefetchHost || !prefetchWorkspace?.servicesReady) return;
     if (!(prefetchHost.capabilities.packageUpdateCheck ?? false)) return;
-    if (
-      cachedPluginLibraryUpdates(
-        prefetchHost.hostInstanceId,
-        prefetchWorkspace.id,
-      ) !== null
-    ) {
+    if (cachedPluginLibraryUpdates(prefetchHost.hostInstanceId, prefetchWorkspace.id) !== null) {
       return;
     }
     void checkPluginLibraryUpdates(prefetchHost, prefetchWorkspace).catch(() => {

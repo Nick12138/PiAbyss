@@ -253,6 +253,9 @@ export const en = {
     "Advanced options live in settings.json in the agent directory. Open the file to edit them by hand.",
   generalAdvancedOpenFile: "Open settings.json",
   generalAdvancedRestartHint: "Changes take effect after restarting the Host.",
+  generalProxy: "Network proxy",
+  generalProxyDesc:
+    "HTTP(S) proxy for the Host's outbound requests (model APIs, plugin registry, etc.). Leave empty to disable; the HTTP_PROXY/HTTPS_PROXY environment variables take precedence.",
   generalDefaultTools: "Default tools",
   generalDefaultToolsDesc:
     "Built-in tools enabled for new sessions. Unchecked tools stay callable through bash.",

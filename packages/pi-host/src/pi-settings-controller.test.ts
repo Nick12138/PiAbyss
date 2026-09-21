@@ -150,6 +150,80 @@ describe("piSettings defaultTools", () => {
   });
 });
 
+describe("piSettings httpProxy", () => {
+  let agentDir = "";
+
+  afterEach(() => {
+    if (agentDir) rmSync(agentDir, { recursive: true, force: true });
+    agentDir = "";
+  });
+
+  function setup() {
+    agentDir = mkdtempSync(join(tmpdir(), "piabyss-pi-settings-proxy-"));
+    return createPiSettingsHandlers(fakeFactory(fakeRuntime([]), agentDir), agentDir);
+  }
+
+  async function patch(handlers: ReturnType<typeof createPiSettingsHandlers>, params: unknown) {
+    const response = (await handlers["piSettings.patch"]!({ params } as never)) as {
+      result?: PiSettingsSnapshot;
+      error?: { code?: string; message: string };
+    };
+    return response;
+  }
+
+  it("omits httpProxy until it is configured", async () => {
+    const handlers = setup();
+    const response = (await handlers["piSettings.get"]!({} as never)) as {
+      result?: PiSettingsSnapshot;
+    };
+    expect(response.result?.httpProxy).toBeUndefined();
+  });
+
+  it("persists a valid proxy URL and reads it back", async () => {
+    const handlers = setup();
+    const response = await patch(handlers, { httpProxy: " http://127.0.0.1:7890 " });
+    expect(response.result?.httpProxy).toBe("http://127.0.0.1:7890");
+
+    const written = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8")) as {
+      httpProxy?: string;
+    };
+    expect(written.httpProxy).toBe("http://127.0.0.1:7890");
+
+    const reread = (await handlers["piSettings.get"]!({} as never)) as {
+      result?: PiSettingsSnapshot;
+    };
+    expect(reread.result?.httpProxy).toBe("http://127.0.0.1:7890");
+  });
+
+  it("rejects a value that is not a URL without writing settings.json", async () => {
+    const handlers = setup();
+    const response = await patch(handlers, { httpProxy: "not a url" });
+    expect(response.result).toBeUndefined();
+    expect(response.error?.code).toBe("INVALID_REQUEST");
+  });
+
+  it("rejects a non-http scheme without writing settings.json", async () => {
+    const handlers = setup();
+    const response = await patch(handlers, { httpProxy: "socks5://127.0.0.1:1080" });
+    expect(response.result).toBeUndefined();
+    expect(response.error?.code).toBe("INVALID_REQUEST");
+  });
+
+  it("clears the setting when patched with an empty value", async () => {
+    const handlers = setup();
+    const first = await patch(handlers, { httpProxy: "http://127.0.0.1:7890" });
+    expect(first.result?.httpProxy).toBe("http://127.0.0.1:7890");
+
+    const cleared = await patch(handlers, { httpProxy: "  " });
+    expect(cleared.result?.httpProxy).toBeUndefined();
+
+    const written = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8")) as {
+      httpProxy?: string;
+    };
+    expect("httpProxy" in written).toBe(false);
+  });
+});
+
 describe("superseded extension packages", () => {
   it("drops only the exact superseded entries and keeps everything else", () => {
     const packages = [

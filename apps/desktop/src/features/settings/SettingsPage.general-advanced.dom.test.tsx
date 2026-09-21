@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HostStatusSnapshot } from "@piabyss/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
+import { hostClient } from "../../lib/bridge/host-client";
 import { SettingsPage } from "./SettingsPage";
 
 const invokeMock = vi.fn(async () => undefined);
@@ -111,5 +112,88 @@ describe("GeneralSettings advanced block", () => {
     await user.click(within(dialog).getByRole("button", { name: "Restart Host" }));
 
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("pi_host_restart"));
+  });
+});
+
+describe("GeneralSettings network proxy", () => {
+  function piSettingsResult(overrides: Record<string, unknown> = {}) {
+    return {
+      defaultThinkingLevel: "medium",
+      retryMaxRetries: 3,
+      defaultProjectTrust: "ask",
+      steeringMode: "one-at-a-time",
+      followUpMode: "one-at-a-time",
+      askUserQuestionEnabled: true,
+      models: [],
+      ...overrides,
+    };
+  }
+
+  function mockRequest(stored: string | undefined) {
+    return vi.spyOn(hostClient, "request").mockImplementation(async (method, _ctx, params) => {
+      if (method === "piSettings.get") {
+        return { ok: true, result: piSettingsResult({ httpProxy: stored }) } as never;
+      }
+      const patch = params as { httpProxy?: string };
+      return { ok: true, result: piSettingsResult({ httpProxy: patch.httpProxy }) } as never;
+    });
+  }
+
+  it("renders the persisted proxy URL in the input", async () => {
+    mockRequest("http://127.0.0.1:7890");
+    render(<SettingsPage initialSection="general" />);
+
+    const input = await screen.findByLabelText("Network proxy");
+    await waitFor(() => expect(input).toHaveValue("http://127.0.0.1:7890"));
+  });
+
+  it("persists a trimmed proxy URL on blur", async () => {
+    const user = userEvent.setup();
+    const request = mockRequest("");
+    render(<SettingsPage initialSection="general" />);
+
+    const input = await screen.findByLabelText("Network proxy");
+    await waitFor(() => expect(input).not.toBeDisabled());
+
+    await user.type(input, " http://127.0.0.1:7890 ");
+    await user.tab();
+
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith("piSettings.patch", expect.anything(), {
+        httpProxy: "http://127.0.0.1:7890",
+      }),
+    );
+    await waitFor(() => expect(input).toHaveValue("http://127.0.0.1:7890"));
+  });
+
+  it("rolls the input back and notifies when the patch is rejected", async () => {
+    const user = userEvent.setup();
+    const request = mockRequest("");
+    request.mockImplementation(async (method, _ctx, params) => {
+      if (method === "piSettings.get") {
+        return { ok: true, result: piSettingsResult({ httpProxy: "" }) } as never;
+      }
+      void params;
+      return {
+        ok: false,
+        error: { code: "INVALID_REQUEST", message: "httpProxy must be a valid http(s) proxy URL" },
+      } as never;
+    });
+    render(<SettingsPage initialSection="general" />);
+
+    const input = await screen.findByLabelText("Network proxy");
+    await waitFor(() => expect(input).not.toBeDisabled());
+
+    await user.type(input, "not a url");
+    await user.tab();
+
+    await waitFor(() => expect(input).toHaveValue(""));
+    expect(
+      useAppStore
+        .getState()
+        .notifications.some((item) =>
+          item.message.includes("httpProxy must be a valid http(s) proxy URL"),
+        ),
+    ).toBe(true);
   });
 });

@@ -115,6 +115,7 @@ function snapshot(settingsManager: SettingsManager, runtime: ModelRuntime): PiSe
     ...(settings.defaultTools ? { defaultTools: [...settings.defaultTools] } : {}),
     askUserQuestionEnabled:
       (settings as { askUserQuestionEnabled?: unknown }).askUserQuestionEnabled !== false,
+    ...(settings.httpProxy ? { httpProxy: settings.httpProxy } : {}),
     models: modelSummaries(runtime),
   };
 }
@@ -203,6 +204,35 @@ export function createPiSettingsHandlers(
       }
       if (patch.askUserQuestionEnabled !== undefined) {
         jsonPatch.askUserQuestionEnabled = patch.askUserQuestionEnabled;
+      }
+      if (patch.httpProxy !== undefined) {
+        const proxy = patch.httpProxy.trim();
+        // An empty value clears the setting; writeGlobalSettings serializes the
+        // `undefined` assignment as an absent key, keeping settings.json clean.
+        if (proxy) {
+          let parsed: URL;
+          try {
+            parsed = new URL(proxy);
+          } catch {
+            return {
+              error: createHostError(
+                "INVALID_REQUEST",
+                "httpProxy must be a valid http(s) proxy URL",
+              ),
+            };
+          }
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+            return {
+              error: createHostError(
+                "INVALID_REQUEST",
+                "httpProxy must use the http: or https: scheme",
+              ),
+            };
+          }
+          jsonPatch.httpProxy = proxy;
+        } else {
+          jsonPatch.httpProxy = undefined;
+        }
       }
 
       try {

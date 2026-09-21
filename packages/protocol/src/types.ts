@@ -361,6 +361,8 @@ export type PiSettingsSnapshot = {
    * Omitted means enabled.
    */
   askUserQuestionEnabled?: boolean;
+  /** HTTP(S) proxy URL the Host applies process-wide at startup; omitted means none. */
+  httpProxy?: string;
   models: PiSettingsModel[];
 };
 
@@ -374,6 +376,8 @@ export type PiSettingsPatch = {
   followUpMode?: "all" | "one-at-a-time";
   defaultTools?: string[];
   askUserQuestionEnabled?: boolean;
+  /** HTTP(S) proxy URL to persist; an empty string clears the setting. */
+  httpProxy?: string;
 };
 
 /** Scope of a settings-configured skill path (mirrors Settings scopes). */
