@@ -35,6 +35,7 @@ import {
   MessageCircleQuestion,
   Play,
   Puzzle,
+  Quote,
   RotateCcw,
   Terminal,
 } from "lucide-react";
@@ -72,6 +73,7 @@ import { navigateTreeTo } from "../tree/session-tree-nav";
 import { TurnJumpRail, turnRailStops } from "./TurnJumpRail";
 import { formatCacheHitPercent } from "./stats-format";
 import { requestGoOn, requestRetry } from "../../lib/retry-actions";
+import { addQuoteReference } from "../../lib/quote-reference";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import {
@@ -758,10 +760,16 @@ export function Transcript() {
                       ...(selectionInside
                         ? [
                             {
+                              id: "transcript.quoteSelection",
+                              label: t("menuQuoteSelection"),
+                              icon: Quote,
+                              separatorBefore: Boolean(linkUrl),
+                              onSelect: () => addQuoteReference(selectedText),
+                            },
+                            {
                               id: "transcript.copySelection",
                               label: t("menuCopySelection"),
                               icon: Copy,
-                              separatorBefore: Boolean(linkUrl),
                               onSelect: () => navigator.clipboard.writeText(selectedText),
                             },
                           ]

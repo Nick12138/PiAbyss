@@ -7,6 +7,7 @@ import type { HostStatusSnapshot, SessionSnapshot, WorkspaceSnapshot } from "@pi
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { Transcript } from "./Transcript";
+import { formatQuotedSelection } from "../../lib/quote-reference";
 import { MenuHost } from "../../components/Menu";
 import { piWorkingVariants } from "../../lib/i18n";
 import { PROGRESSIVE_BATCH_ROWS } from "./progressive-mount";
@@ -297,6 +298,79 @@ describe("Transcript Session-open scrolling", () => {
     });
     await user.click(await screen.findByRole("menuitem", { name: "Copy message" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("First Session"));
+  });
+
+  it("offers a quote action that adds the selection as a composer capsule", async () => {
+    const user = userEvent.setup();
+    useAppStore.setState({
+      workspace: {
+        id: WORKSPACE_ID,
+        cwd: "/workspace",
+        canonicalCwd: "/workspace",
+        revision: 1,
+        servicesReady: true,
+      },
+      draftReferences: {},
+    });
+    vi.stubGlobal(
+      "getSelection",
+      vi.fn(() => ({
+        rangeCount: 1,
+        toString: () => "quoted line",
+        getRangeAt: () => ({ intersectsNode: () => true }),
+      })),
+    );
+    const { container } = render(
+      <>
+        <Transcript />
+        <MenuHost />
+      </>,
+    );
+
+    fireEvent.contextMenu(container.querySelector(".transcript-row")!, {
+      clientX: 24,
+      clientY: 32,
+    });
+    expect(await screen.findByRole("menuitem", { name: "Quote to composer" })).toBeInTheDocument();
+    await user.click(screen.getByRole("menuitem", { name: "Quote to composer" }));
+    expect(useAppStore.getState().draftReferences[`session:${SESSION_A}`]).toEqual([
+      {
+        id: expect.stringMatching(/^quote:/),
+        kind: "quote",
+        label: "quoted line",
+        payload: "> quoted line",
+      },
+    ]);
+  });
+
+  it("hides the quote action when the selection is outside the transcript row", async () => {
+    vi.stubGlobal(
+      "getSelection",
+      vi.fn(() => ({
+        rangeCount: 1,
+        toString: () => "quoted line",
+        getRangeAt: () => ({ intersectsNode: () => false }),
+      })),
+    );
+    const { container } = render(
+      <>
+        <Transcript />
+        <MenuHost />
+      </>,
+    );
+
+    fireEvent.contextMenu(container.querySelector(".transcript-row")!, {
+      clientX: 24,
+      clientY: 32,
+    });
+    expect(await screen.findByRole("menuitem", { name: "Copy message" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Quote to composer" })).toBeNull();
+  });
+
+  it("formats multi-line selections as a markdown blockquote", () => {
+    expect(formatQuotedSelection("  first \n\nsecond\n")).toBe(">   first\n>\n> second");
+    expect(formatQuotedSelection("single")).toBe("> single");
+    expect(formatQuotedSelection("  \n")).toBe("");
   });
 
   it("folds an injected memo prompt into an @ chip and copies only the user's text", async () => {

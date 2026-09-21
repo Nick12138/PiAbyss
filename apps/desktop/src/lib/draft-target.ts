@@ -65,28 +65,29 @@ export type DraftMutation =
    * references together. An upsert whose payload is entirely empty deletes
    * the target instead. Omitted fields mean "empty", not "unchanged".
    */
-  {
-    op: "upsert";
-    target: DraftTarget;
-    text: string;
-    attachments?: StoredDraftAttachment[];
-    references?: DraftReference[];
-  }
+  | {
+      op: "upsert";
+      target: DraftTarget;
+      text: string;
+      attachments?: StoredDraftAttachment[];
+      references?: DraftReference[];
+    }
   | { op: "delete"; target: DraftTarget };
 
 /**
  * Prompt payload the app injected into a draft on the user's behalf (e.g. the
- * memo "handle now" action). The composer renders it as an `@` chip and only
- * expands `payload` into the outgoing text at send time, so the prompt never
- * shows up in the input box.
+ * memo "handle now" action), or a transcript-selection quote capsule. The
+ * composer renders it as a capsule and only expands `payload` into the
+ * outgoing text at send time, so the payload never shows up in the input box.
  */
 export type DraftReference = {
   /** Unique within one draft; used as the React key and for removal. */
   id: string;
-  kind: "memo";
-  /** Chip caption: the memo title. */
+  /** "memo" renders an `@Memo · title` capsule; "quote" a `Quote · preview` one. */
+  kind: "memo" | "quote";
+  /** Capsule caption: the memo title or the quote preview. */
   label: string;
-  /** Full prompt text prepended to the message (reference block + instruction). */
+  /** Full prompt text (memo) or blockquote (quote) prepended to the message. */
   payload: string;
 };
 

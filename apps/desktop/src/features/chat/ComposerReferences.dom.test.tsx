@@ -154,6 +154,34 @@ describe("Composer injected references", () => {
     });
   });
 
+  it("renders quote capsules with a preview caption and the full text as title", async () => {
+    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      if (method === "agent.prompt") return { ok: true, result: { accepted: true } } as never;
+      return { ok: true, result: null } as never;
+    });
+    const user = userEvent.setup();
+    useAppStore.setState({
+      draftReferences: {
+        [DRAFT_KEY]: [
+          { id: "quote:1", kind: "quote", label: "quoted line", payload: "> quoted line" },
+        ],
+      },
+    });
+    render(<Composer />);
+
+    const chip = screen.getByTitle("> quoted line");
+    expect(chip).toBeVisible();
+    expect(screen.getByText("Quote · quoted line")).toBeVisible();
+
+    await user.type(screen.getByRole("textbox"), "接着这个说");
+    const send = screen.getByRole("button", { name: "Send" });
+    await waitFor(() => expect(send).toBeEnabled());
+    await user.click(send);
+
+    const prompt = request.mock.calls.find(([method]) => method === "agent.prompt");
+    expect(prompt?.[2]).toEqual({ text: "> quoted line\n\n接着这个说" });
+  });
+
   it("lets the user drop the reference before sending", async () => {
     const user = userEvent.setup();
     render(<Composer />);

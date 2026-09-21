@@ -20,6 +20,7 @@ import {
   MessageCircleQuestion,
   Paperclip,
   Puzzle,
+  Quote,
   RefreshCw,
   Square,
   Undo2,
@@ -163,10 +164,7 @@ function storedAttachmentsFrom(
       }
     } else if (file.sourcePath) {
       stored.push({ ...base, kind: "text" as const, sourcePath: file.sourcePath });
-    } else if (
-      file.text !== undefined &&
-      utf8ByteLength(file.text) <= MAX_STORED_TEXT_FILE_BYTES
-    ) {
+    } else if (file.text !== undefined && utf8ByteLength(file.text) <= MAX_STORED_TEXT_FILE_BYTES) {
       stored.push({ ...base, kind: "text" as const, text: file.text });
     }
   }
@@ -973,10 +971,7 @@ export function Composer({
         // same attachment (reused host copy) twice — one chip must remain.
         current.some((document) => document.id === response.result.id)
           ? current
-          : [
-              ...current,
-              { ...response.result, kind: "path", sourcePath: path },
-            ],
+          : [...current, { ...response.result, kind: "path", sourcePath: path }],
       );
 
       // Parsing can finish before the create response reaches the renderer.
@@ -1392,9 +1387,7 @@ export function Composer({
     }
     if (!isCurrent()) return;
     if (restoredImages.length > 0) {
-      setImages((current) =>
-        [...current, ...restoredImages].slice(0, MAX_AGENT_REQUEST_IMAGES),
-      );
+      setImages((current) => [...current, ...restoredImages].slice(0, MAX_AGENT_REQUEST_IMAGES));
     }
     if (restoredFiles.length > 0) {
       setFiles((current) => [...current, ...restoredFiles]);
@@ -1973,27 +1966,50 @@ export function Composer({
               aria-label={t("composerReferences")}
               data-composer-references
             >
-              {references.map((reference) => (
-                <div
-                  key={reference.id}
-                  className="group flex h-7 items-center gap-1.5 rounded-md border border-accent/35 bg-accent/5 px-2 text-xs"
-                  title={`@${t("injectedRefMemo")} · ${reference.label}`}
-                >
-                  <ListTodo size={12} className="shrink-0 text-accent" />
-                  <span className="max-w-40 truncate">
-                    @{t("injectedRefMemo")} · {reference.label}
-                  </span>
-                  <button
-                    type="button"
-                    title={t("composerReferenceRemove")}
-                    aria-label={t("composerReferenceRemoveNamed", { name: reference.label })}
-                    className="text-muted hover:text-danger"
-                    onClick={() => removeReference(reference.id)}
+              {references.map((reference) =>
+                reference.kind === "quote" ? (
+                  <div
+                    key={reference.id}
+                    tabIndex={0}
+                    className="group flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2 text-xs outline-none focus-visible:border-accent/50"
+                    title={reference.payload}
                   >
-                    <X size={11} />
-                  </button>
-                </div>
-              ))}
+                    <Quote size={12} className="shrink-0 text-muted" />
+                    <span className="max-w-40 truncate">
+                      {t("injectedRefQuote")} · {reference.label}
+                    </span>
+                    <button
+                      type="button"
+                      title={t("composerReferenceRemove")}
+                      aria-label={t("composerReferenceRemoveNamed", { name: reference.label })}
+                      className="text-muted hover:text-danger"
+                      onClick={() => removeReference(reference.id)}
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    key={reference.id}
+                    className="group flex h-7 items-center gap-1.5 rounded-md border border-accent/35 bg-accent/5 px-2 text-xs"
+                    title={`@${t("injectedRefMemo")} · ${reference.label}`}
+                  >
+                    <ListTodo size={12} className="shrink-0 text-accent" />
+                    <span className="max-w-40 truncate">
+                      @{t("injectedRefMemo")} · {reference.label}
+                    </span>
+                    <button
+                      type="button"
+                      title={t("composerReferenceRemove")}
+                      aria-label={t("composerReferenceRemoveNamed", { name: reference.label })}
+                      className="text-muted hover:text-danger"
+                      onClick={() => removeReference(reference.id)}
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                ),
+              )}
             </div>
           )}
           {files.length > 0 && (
