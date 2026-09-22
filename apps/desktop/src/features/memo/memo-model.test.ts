@@ -5,6 +5,7 @@ import {
   collectWorkspaces,
   composeMemoPrompt,
   composeMemoResultSection,
+  defaultProjectWorkspacePath,
   deriveTitle,
   extractTags,
   filterNotes,
@@ -12,6 +13,7 @@ import {
   noteExcerpt,
   noteMatchesWorkspace,
   pathBasename,
+  resolveWorkspaceHint,
   sortNotesForList,
   statusCounts,
   tagHue,
@@ -161,6 +163,51 @@ describe("workspace hints", () => {
     expect(
       collectWorkspaces([note({ workspaceHint: "A" }), note({ workspaceHint: "a" }), note()]),
     ).toEqual(["A"]);
+  });
+});
+
+describe("resolveWorkspaceHint", () => {
+  const candidates = ["D:/work/PiAbyss", "D:/work/other-app", "D:/work/PiAbyss/packages/client"];
+  it("prefers exact path match over basename and substring", () => {
+    expect(resolveWorkspaceHint("d:/work/piabyss", candidates)).toBe("D:/work/PiAbyss");
+    expect(resolveWorkspaceHint("PiAbyss", candidates)).toBe("D:/work/PiAbyss");
+    expect(resolveWorkspaceHint("packages/client", candidates)).toBe(
+      "D:/work/PiAbyss/packages/client",
+    );
+  });
+  it("ignores surrounding whitespace and is case-insensitive", () => {
+    expect(resolveWorkspaceHint("  Other-App  ", candidates)).toBe("D:/work/other-app");
+  });
+  it("returns null for empty/blank hints and unmatched hints", () => {
+    expect(resolveWorkspaceHint(null, candidates)).toBeNull();
+    expect(resolveWorkspaceHint("  ", candidates)).toBeNull();
+    expect(resolveWorkspaceHint("Nope", candidates)).toBeNull();
+    expect(resolveWorkspaceHint("PiAbyss", [])).toBeNull();
+  });
+  it("keeps the first candidate when several match equally", () => {
+    expect(resolveWorkspaceHint("shared", ["D:/a/shared", "D:/b/shared"])).toBe("D:/a/shared");
+  });
+});
+
+describe("defaultProjectWorkspacePath", () => {
+  it("joins the agent dir with piabyss/DefaultProject (windows backslashes)", () => {
+    expect(defaultProjectWorkspacePath("C:\\Users\\liu\\.pi\\agent")).toBe(
+      "C:\\Users\\liu\\.pi\\agent\\piabyss\\DefaultProject",
+    );
+  });
+  it("joins with forward slashes for posix-style agent dirs", () => {
+    expect(defaultProjectWorkspacePath("/home/liu/.pi/agent")).toBe(
+      "/home/liu/.pi/agent/piabyss/DefaultProject",
+    );
+  });
+  it("trims trailing separators instead of doubling them", () => {
+    expect(defaultProjectWorkspacePath("C:\\a\\b\\")).toBe("C:\\a\\b\\piabyss\\DefaultProject");
+    expect(defaultProjectWorkspacePath("/a/b/")).toBe("/a/b/piabyss/DefaultProject");
+  });
+  it("returns null for empty or missing agent dirs", () => {
+    expect(defaultProjectWorkspacePath(null)).toBeNull();
+    expect(defaultProjectWorkspacePath(undefined)).toBeNull();
+    expect(defaultProjectWorkspacePath("   ")).toBeNull();
   });
 });
 

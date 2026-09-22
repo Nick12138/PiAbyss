@@ -1976,11 +1976,14 @@ export const en = {
   memoFieldTags: "Tags",
   memoFieldWorkspace: "Workspace",
   memoFieldWorkspacePlaceholder: "Workspace name (optional)",
+  memoWorkspaceCurrent: "Current",
   memoFieldType: "Type",
   memoDropIgnored: "Skipped non-image file {name}",
   memoImageTooLarge: "Image exceeds the 8 MiB limit",
   memoWorkspaceMismatch:
-    "Linked to workspace {workspace} — the conversation will open in the current workspace.",
+    "Linked to workspace {workspace} — running the agent will switch to that workspace.",
+  memoWorkspaceUnresolved:
+    'No workspace matches "{workspace}" — the default workspace will be used instead.',
 } as const;
 
 /**

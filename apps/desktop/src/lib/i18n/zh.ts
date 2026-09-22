@@ -1901,10 +1901,12 @@ export const zh: Record<MessageKey, string> = {
   memoFieldTags: "标签",
   memoFieldWorkspace: "工作区",
   memoFieldWorkspacePlaceholder: "工作区名称（可选）",
+  memoWorkspaceCurrent: "当前",
   memoFieldType: "类型",
   memoDropIgnored: "已忽略非图片文件 {name}",
   memoImageTooLarge: "图片超过 8 MiB 上限",
-  memoWorkspaceMismatch: "该记录关联工作区 {workspace}，将在当前工作区打开会话。",
+  memoWorkspaceMismatch: "该记录关联工作区 {workspace}，执行时将切换到该工作区。",
+  memoWorkspaceUnresolved: "未找到与 {workspace} 匹配的工作区，执行时将使用默认工作区。",
 };
 
 /**

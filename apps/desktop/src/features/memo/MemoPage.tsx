@@ -13,6 +13,7 @@ import {
   Bot,
   Check,
   CheckCircle2,
+  ChevronDown,
   CircleAlert,
   Eraser,
   Lightbulb,
@@ -29,6 +30,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -36,6 +38,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import type { MemoNote, MemoNoteStatus, MemoNoteType } from "@piabyss/protocol";
 import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
 import { LightboxImage } from "../../components/ImageLightbox";
@@ -50,7 +53,8 @@ import {
 import { setDraftReferencesPersisted } from "../../lib/draft-persistence";
 import { isDesktopRuntime, readDesktopSmallFile } from "../../lib/desktop-file-access";
 import { useContainerWide } from "../../lib/use-container-wide";
-import { openSessionAcrossWorkspaces } from "../../lib/bridge/session-navigation";
+import { activateWorkspaceAcrossWorkspaces, openSessionAcrossWorkspaces } from "../../lib/bridge/session-navigation";
+import { waitForWorkspaceServicesReady } from "../workspaces/workspace-switch-policy";
 import { buildInjectedReferenceEnvelope } from "../chat/injected-references";
 import { createNewSession } from "../../lib/commands/actions";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -70,12 +74,15 @@ import {
   collectWorkspaces,
   composeMemoPrompt,
   composeMemoResultSection,
+  defaultProjectWorkspacePath,
   deriveTitle,
   extractTags,
   filterNotes,
   formatMemoDateTime,
   noteExcerpt,
+  noteMatchesWorkspace,
   pathBasename,
+  resolveWorkspaceHint,
   sortNotesForList,
   statusCounts,
   tagHue,
@@ -131,6 +138,46 @@ const IMAGE_INPUT_TYPES = /image\/(png|jpeg|gif|webp|bmp|avif|svg\+xml)/;
 /** 暂存图片的唯一键序号（粘贴的截图文件名可能重复）。 */
 let pendingImageSeq = 0;
 
+type WorkspaceSettingsSnapshot =
+  | {
+      defaultWorkspace?: string | null;
+      lastWorkspace?: string | null;
+      knownWorkspaces?: string[];
+    }
+  | null
+  | undefined;
+
+/**
+ * 解析备忘录应落入的工作区路径：提示在「当前工作区 + knownWorkspaces +
+ * 内置默认工作区」里匹配（精确路径 > 末段 > 包含，见 resolveWorkspaceHint）；
+ * 匹配不上（名称写错 / 工作区从未激活过等）回退默认工作区：用户配置的
+ * defaultWorkspace → 内置 DefaultProject（<agentDir>/piabyss/DefaultProject）
+ * → lastWorkspace → 当前工作区。提示为空时调用方应直接用当前。
+ */
+function resolveMemoTargetCwd(
+  hint: string,
+  currentCwd: string | null,
+  settings: WorkspaceSettingsSnapshot,
+  agentDir: string | null,
+): string | null {
+  const known = settings?.knownWorkspaces ?? [];
+  const defaultProject = defaultProjectWorkspacePath(agentDir);
+  const candidates = [...known];
+  if (currentCwd) candidates.unshift(currentCwd);
+  if (
+    defaultProject &&
+    !candidates.some((entry) => entry.toLowerCase() === defaultProject.toLowerCase())
+  ) {
+    candidates.push(defaultProject);
+  }
+  const resolved = resolveWorkspaceHint(hint, candidates);
+  if (resolved) return resolved;
+  if (settings?.defaultWorkspace) return settings.defaultWorkspace;
+  if (defaultProject) return defaultProject;
+  if (settings?.lastWorkspace) return settings.lastWorkspace;
+  return currentCwd ?? null;
+}
+
 /** 粘贴的截图往往没有有意义的文件名，按 MIME 推断一个。 */
 function imageFileName(file: File): string {
   if (file.name && /\.[a-z0-9]+$/i.test(file.name)) return file.name;
@@ -141,6 +188,7 @@ function imageFileName(file: File): string {
 export function MemoPage() {
   const t = useT();
   const workspace = useAppStore((s) => s.workspace);
+  const desktopSettings = useAppStore((s) => s.desktopSettings);
   const pushNotification = useAppStore((s) => s.pushNotification);
 
   const [notes, setNotes] = useState<MemoNote[] | null>(null);
@@ -266,6 +314,30 @@ export function MemoPage() {
   const counts = useMemo(() => statusCounts(notes ?? []), [notes]);
   const tagOptions = useMemo(() => collectTags(notes ?? []), [notes]);
   const workspaceOptions = useMemo(() => collectWorkspaces(notes ?? []), [notes]);
+
+  // 工作区提示解析的候选路径：当前工作区 + knownWorkspaces（执行跳转与横幅共用）。
+  const workspaceCandidates = useMemo(() => {
+    const known = desktopSettings?.knownWorkspaces ?? [];
+    const current = workspace?.canonicalCwd;
+    return current ? [current, ...known] : known;
+  }, [desktopSettings, workspace]);
+
+  // 工作区输入框的下拉选项：当前工作区优先，其后是历史出现过的提示（按小写去重）。
+  const workspaceComboOptions = useMemo(() => {
+    const current = workspace?.canonicalCwd ? pathBasename(workspace.canonicalCwd) : "";
+    const seen = new Set<string>();
+    const options: { value: string; current?: boolean }[] = [];
+    const push = (hint: string, isCurrent: boolean) => {
+      if (!hint) return;
+      const key = hint.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      options.push(isCurrent ? { value: hint, current: true } : { value: hint });
+    };
+    push(current, true);
+    for (const hint of workspaceOptions) push(hint, false);
+    return options;
+  }, [workspaceOptions, workspace]);
 
   const visibleNotes = useMemo(
     () =>
@@ -559,6 +631,8 @@ export function MemoPage() {
 
   /**
    * 把记录以引用胶囊注入新会话草稿，并切到对话页（总是新开会话，不影响当前选中的会话）。
+   * 会先跳转到记录关联的工作区（workspaceHint 匹配 knownWorkspaces；匹配不上
+   * 回退默认工作区），再在目标工作区里新建会话。
    * 注入的是结构化引用（composer 渲染成 `@备忘录` 胶囊），提示词原文只在发送时展开，
    * 不会显示在输入框里。
    */
@@ -566,6 +640,34 @@ export function MemoPage() {
     const before = useAppStore.getState();
     if (!before.workspace) {
       pushNotification(t("memoAgentNoWorkspace"), "warning");
+      return;
+    }
+    const hint = note.workspaceHint?.trim();
+    // 提示就是当前工作区（含不区分大小写的 basename 匹配）时无需切换。
+    const targetCwd =
+      !hint || noteMatchesWorkspace(note, before.workspace.canonicalCwd)
+        ? before.workspace.canonicalCwd
+        : resolveMemoTargetCwd(
+            hint,
+            before.workspace.canonicalCwd,
+            before.desktopSettings,
+            before.host?.agentDir ?? null,
+          );
+    if (!targetCwd) {
+      pushNotification(t("memoAgentNoWorkspace"), "warning");
+      return;
+    }
+    if (targetCwd !== before.workspace.canonicalCwd) {
+      // 切换必须等到构建稳定（optimistic: false），否则 session.create 会撞锁。
+      const activation = await activateWorkspaceAcrossWorkspaces(targetCwd, {
+        optimistic: false,
+      });
+      if (activation.status !== "opened" && activation.status !== "already-active") return;
+    }
+    // 刚提交的乐观切换可能还在后台建图（servicesReady=false），等就绪再建会话，
+    // 避免 session.create 静默失败。
+    if (!(await waitForWorkspaceServicesReady())) {
+      pushNotification(t("memoAgentCreateFailed"), "error");
       return;
     }
     const created = await createNewSession();
@@ -607,6 +709,34 @@ export function MemoPage() {
       }
     }
     if (!opened) {
+      // 原会话不可达：回退到记录关联的工作区（结果会话 cwd 优先，其次提示解析，
+      // 匹配不上用默认工作区），在目标工作区新建会话。
+      const before = useAppStore.getState();
+      const hint = note.workspaceHint?.trim();
+      const targetCwd =
+        note.result?.sessionCwd ??
+        (hint && before.workspace && !noteMatchesWorkspace(note, before.workspace.canonicalCwd)
+          ? resolveMemoTargetCwd(
+              hint,
+              before.workspace.canonicalCwd,
+              before.desktopSettings,
+              before.host?.agentDir ?? null,
+            )
+          : (before.workspace?.canonicalCwd ?? null));
+      if (targetCwd && targetCwd !== before.workspace?.canonicalCwd) {
+        const activation = await activateWorkspaceAcrossWorkspaces(targetCwd, {
+          optimistic: false,
+        });
+        if (activation.status !== "opened" && activation.status !== "already-active") {
+          pushNotification(t("memoContinueFailed"), "error");
+          return;
+        }
+      }
+      // 与「执行」同款：等目标工作区服务图就绪再建会话。
+      if (!(await waitForWorkspaceServicesReady())) {
+        pushNotification(t("memoContinueFailed"), "error");
+        return;
+      }
       const created = await createNewSession();
       if (!created) {
         pushNotification(t("memoContinueFailed"), "error");
@@ -735,6 +865,10 @@ export function MemoPage() {
   const mismatch = selectedNote
     ? workspaceMismatch(selectedNote, workspace?.canonicalCwd ?? null)
     : null;
+  // 横幅语义：提示能解析到已知工作区 → 执行时切换过去；解析不到 → 回退默认工作区。
+  const workspaceHintResolved = selectedNote
+    ? resolveWorkspaceHint(selectedNote.workspaceHint, workspaceCandidates) !== null
+    : false;
   return (
     <div
       ref={rootRef}
@@ -893,6 +1027,7 @@ export function MemoPage() {
               key={editor.id ?? `new-${draftEpoch}`}
               editor={editor}
               saving={saving}
+              workspaceOptions={workspaceComboOptions}
               onChange={setEditor}
               onSave={saveEditor}
               onClear={clearNewDraft}
@@ -906,6 +1041,7 @@ export function MemoPage() {
               note={selectedNote}
               imageUrls={imageUrls}
               workspaceMismatchHint={mismatch}
+              workspaceHintResolved={mismatch !== null && workspaceHintResolved}
               confirmingDelete={confirmingDelete}
               onBack={backToList}
               onEdit={() => startEdit(selectedNote)}
@@ -921,6 +1057,7 @@ export function MemoPage() {
               key={`new-${draftEpoch}`}
               editor={newEditorState(useAppStore.getState().workspace?.canonicalCwd)}
               saving={saving}
+              workspaceOptions={workspaceComboOptions}
               onChange={setEditor}
               onSave={saveEditor}
               onClear={clearNewDraft}
@@ -1173,6 +1310,7 @@ function MemoDetail({
   note,
   imageUrls,
   workspaceMismatchHint,
+  workspaceHintResolved,
   confirmingDelete,
   onBack,
   onEdit,
@@ -1183,6 +1321,8 @@ function MemoDetail({
   note: MemoNote;
   imageUrls: Record<string, string>;
   workspaceMismatchHint: string | null;
+  /** 提示能否解析到已知工作区（能 → 执行时切换过去；不能 → 回退默认工作区）。 */
+  workspaceHintResolved: boolean;
   confirmingDelete: boolean;
   onBack: () => void;
   onEdit: () => void;
@@ -1263,7 +1403,11 @@ function MemoDetail({
         {workspaceMismatchHint && (
           <div className="flex items-center gap-1.5 rounded-md bg-surface-overlay px-2.5 py-1.5 text-[12px] text-muted">
             <CircleAlert size={13} className="shrink-0" aria-hidden />
-            <span>{t("memoWorkspaceMismatch", { workspace: workspaceMismatchHint })}</span>
+            <span>
+              {workspaceHintResolved
+                ? t("memoWorkspaceMismatch", { workspace: workspaceMismatchHint })
+                : t("memoWorkspaceUnresolved", { workspace: workspaceMismatchHint })}
+            </span>
           </div>
         )}
 
@@ -1302,6 +1446,7 @@ function MemoDetail({
 function MemoEditor({
   editor,
   saving,
+  workspaceOptions,
   onChange,
   onSave,
   onClear,
@@ -1312,6 +1457,8 @@ function MemoEditor({
 }: {
   editor: EditorState;
   saving: boolean;
+  /** 工作区输入框的下拉选项（当前工作区 + 历史提示）。 */
+  workspaceOptions: { value: string; current?: boolean }[];
   onChange: (next: EditorState) => void;
   onSave: () => void;
   /** 仅新建模式传入：清空未保存的新建内容（正文与图片）。 */
@@ -1372,12 +1519,13 @@ function MemoEditor({
           ariaLabel={t("memoFieldType")}
           className="w-28 shrink-0"
         />
-        <input
+        <WorkspaceCombobox
           value={editor.workspaceHint}
-          onChange={(event) => patch({ workspaceHint: event.target.value })}
+          onChange={(value) => patch({ workspaceHint: value })}
+          options={workspaceOptions}
           placeholder={t("memoFieldWorkspacePlaceholder")}
-          aria-label={t("memoFieldWorkspace")}
-          className="h-8 w-28 shrink-0 rounded-md border border-border bg-transparent px-2.5 text-[12px] outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-focus @2xl:w-44"
+          ariaLabel={t("memoFieldWorkspace")}
+          className="w-28 shrink-0 @2xl:w-44"
         />
         {/* 弹性占位：把操作按钮推到右侧（替代原粘贴提示文案）。 */}
         <div className="hidden min-w-0 flex-1 @2xl:block" />
@@ -1454,6 +1602,156 @@ function MemoEditor({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * 工作区输入框：可自由手输 + 下拉选择（combobox）。
+ * 聚焦或点右侧箭头展开选项浮层（portal，不被工具栏裁剪），点选回填；不匹配时直接保留手输内容。
+ */
+function WorkspaceCombobox({
+  value,
+  onChange,
+  options,
+  placeholder,
+  ariaLabel,
+  className = "",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; current?: boolean }[];
+  placeholder: string;
+  ariaLabel: string;
+  className?: string;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<{
+    left: number;
+    minWidth: number;
+    maxHeight: number;
+    top?: number;
+    bottom?: number;
+  } | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // 打开时定位浮层：默认向下展开，下方空间不足时向上翻转（用 bottom 定位避免两段式修正）。
+  useLayoutEffect(() => {
+    if (!open) return;
+    const reposition = () => {
+      const input = inputRef.current;
+      if (!input) return;
+      const rect = input.getBoundingClientRect();
+      const gutter = 8;
+      const below = Math.max(0, window.innerHeight - rect.bottom - gutter);
+      const above = Math.max(0, rect.top - gutter);
+      const opensUpward = below < 160 && above > below;
+      const maxHeight = Math.max(1, Math.min(240, (opensUpward ? above : below) || 240));
+      setMenuStyle(
+        opensUpward
+          ? { left: rect.left, minWidth: rect.width, maxHeight, bottom: window.innerHeight - rect.top + 4 }
+          : { left: rect.left, minWidth: rect.width, maxHeight, top: rect.bottom + 4 },
+      );
+    };
+    reposition();
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    return () => {
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [open]);
+
+  // 浮层打开时：点外部 / Escape 关闭。
+  useEffect(() => {
+    if (!open) return;
+    const closeOnPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!wrapRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
+    };
+    const closeOnEscape = (event: DocumentEventMap["keydown"]) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnPointerDown);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnPointerDown);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapRef} className={`relative min-w-0 ${className}`}>
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" && !open) {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+        role="combobox"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        autoComplete="off"
+        spellCheck={false}
+        className="h-8 w-full rounded-md border border-border bg-transparent pl-2.5 pr-7 text-[12px] outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-focus"
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-hidden
+        className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted transition-colors hover:text-foreground"
+        onClick={() => setOpen((current) => !current)}
+      >
+        <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && menuStyle && options.length > 0 &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="listbox"
+            aria-label={ariaLabel}
+            className="theme-floating-surface scrollbar-subtle fixed z-[100] max-w-[calc(100vw-16px)] overflow-y-auto overscroll-contain rounded-md border border-border bg-surface-raised py-1 shadow-lg"
+            style={menuStyle}
+          >
+            {options.map((option) => {
+              const isSelected = option.value.toLowerCase() === value.trim().toLowerCase();
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  // 阻止 pointerdown 抢走输入框焦点（否则点击选项时输入框先失焦）。
+                  onPointerDown={(event) => event.preventDefault()}
+                  className={`flex h-8 w-full items-center gap-1.5 whitespace-nowrap px-2.5 text-left text-xs transition-colors hover:bg-surface-overlay ${
+                    isSelected ? "font-medium text-foreground" : "text-muted"
+                  }`}
+                  onClick={() => {
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
+                >
+                  <span className="min-w-0 flex-1 truncate">{option.value}</span>
+                  {option.current && (
+                    <span className="shrink-0 text-[10px] text-muted">{t("memoWorkspaceCurrent")}</span>
+                  )}
+                  {isSelected && <Check size={14} strokeWidth={2.5} className="shrink-0" />}
+                </button>
+              );
+            })}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { hostClient } from "../bridge/host-client";
 import { hostErrorLevel, localizeHostError } from "../bridge/localize-host-error";
+import { requestWithRetry } from "../bridge/request-retry";
 import {
   activeSessionContext,
   captureRequestGeneration,
@@ -29,6 +30,15 @@ export function subscribeCreateSessionPending(listener: (pending: boolean) => vo
 
 export type AbortMethod = "agent.abort" | "agent.abortCompaction" | "agent.abortRetry";
 
+/**
+ * session.create 的 SERVICE_GRAPH_BUSY 退避（总窗口 ≈4.7s）。
+ * 首次跨工作区切换（workspace.setCurrent 返回成功）后，目标工作区图常有
+ * 短暂的后台收尾（扩展激活、指纹核对）仍占用 serviceGraphLock；紧跟着的
+ * session.create 会撞忙。session.open 已有同款退避，这里补齐，否则备忘录
+ * 「执行」这类「切换后立即建会话」的路径首跳会误报「服务繁忙」。
+ */
+const CREATE_SESSION_RETRY_DELAYS_MS = [80, 200, 400, 800, 1200, 2000] as const;
+
 export function abortMethodForSession(session: {
   isCompacting?: boolean;
   isRetrying?: boolean;
@@ -44,11 +54,25 @@ export async function createNewSession(): Promise<boolean> {
   const generation = captureRequestGeneration(state.host);
   setCreatePending(true);
   try {
-    const response = await hostClient.request(
-      "session.create",
-      nullableSessionContext(state.host, state.workspace),
-      {},
+    const response = await requestWithRetry(
+      () => {
+        // 每次尝试都取最新的身份上下文（重试窗口内 host/workspace 理论上
+        // 不变，但快照可能已被事件流更新——与 session.open 的做法一致）。
+        const current = useAppStore.getState();
+        if (!current.host || !current.workspace) {
+          throw new Error(tCurrent("notifCreateSessionFailed"));
+        }
+        return hostClient.request(
+          "session.create",
+          nullableSessionContext(current.host, current.workspace),
+          {},
+        );
+      },
+      undefined,
+      () => isCurrentRequestGeneration(useAppStore.getState().host, generation),
+      CREATE_SESSION_RETRY_DELAYS_MS,
     );
+    if (!response) return false;
     if (!isCurrentRequestGeneration(useAppStore.getState().host, generation)) {
       return false;
     }

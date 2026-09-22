@@ -144,6 +144,44 @@ export function workspaceMismatch(note: MemoNote, workspaceCwd: string | null): 
   return note.workspaceHint;
 }
 
+/**
+ * 把工作区提示解析成具体的工作区路径（供「执行」跨工作区跳转使用）。
+ * 候选来自 knownWorkspaces 等已知路径；匹配优先级：路径完全一致（忽略大小写）
+ * > 提示等于路径末段 > 路径包含提示，同级取靠前的候选；全部不匹配返回 null
+ * （调用方回退到默认工作区）。
+ */
+export function resolveWorkspaceHint(
+  hint: string | null | undefined,
+  candidates: readonly string[],
+): string | null {
+  const trimmed = hint?.trim().toLowerCase() ?? "";
+  if (!trimmed) return null;
+  for (const candidate of candidates) {
+    if (candidate.toLowerCase() === trimmed) return candidate;
+  }
+  for (const candidate of candidates) {
+    if (pathBasename(candidate).toLowerCase() === trimmed) return candidate;
+  }
+  for (const candidate of candidates) {
+    if (candidate.toLowerCase().includes(trimmed)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * PiAbyss 内置的默认工作区：`<agentDir>/piabyss/DefaultProject`（Rust 首启
+ * 创建并写入 knownWorkspaces/lastWorkspace，同名约定见 desktop_settings.rs）。
+ * 「执行」在提示匹配不到任何已知工作区时回退到这里（推不出来再回退 lastWorkspace/当前）。
+ */
+export function defaultProjectWorkspacePath(agentDir: string | null | undefined): string | null {
+  const base = agentDir?.trim();
+  if (!base) return null;
+  // 含反斜杠的 Windows 路径用反斜杠拼接；POSIX 与 C:/ 正斜杠形式用正斜杠
+  // （Windows 的 pathResolve/existsSync 两种分隔符都接受，避免混合分隔符）。
+  const separator = base.includes("\\") ? "\\" : "/";
+  return `${base.replace(/[\\/]+$/, "")}${separator}piabyss${separator}DefaultProject`;
+}
+
 /** 全部记录里出现过的标签（小写去重，保序）。 */
 export function collectTags(notes: readonly MemoNote[]): string[] {
   const seen = new Set<string>();
