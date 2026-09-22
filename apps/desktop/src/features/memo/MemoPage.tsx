@@ -53,7 +53,10 @@ import {
 import { setDraftReferencesPersisted } from "../../lib/draft-persistence";
 import { isDesktopRuntime, readDesktopSmallFile } from "../../lib/desktop-file-access";
 import { useContainerWide } from "../../lib/use-container-wide";
-import { activateWorkspaceAcrossWorkspaces, openSessionAcrossWorkspaces } from "../../lib/bridge/session-navigation";
+import {
+  activateWorkspaceAcrossWorkspaces,
+  openSessionAcrossWorkspaces,
+} from "../../lib/bridge/session-navigation";
 import { waitForWorkspaceServicesReady } from "../workspaces/workspace-switch-policy";
 import { buildInjectedReferenceEnvelope } from "../chat/injected-references";
 import { createNewSession } from "../../lib/commands/actions";
@@ -1471,8 +1474,7 @@ function MemoEditor({
   const t = useT();
   const canSave = editor.contentMd.trim().length > 0;
   const canClear =
-    editor.id === null &&
-    (editor.contentMd.trim().length > 0 || editor.pendingImages.length > 0);
+    editor.id === null && (editor.contentMd.trim().length > 0 || editor.pendingImages.length > 0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   /** 只拦截图片粘贴；文本粘贴走默认行为。 */
@@ -1652,7 +1654,12 @@ function WorkspaceCombobox({
       const maxHeight = Math.max(1, Math.min(240, (opensUpward ? above : below) || 240));
       setMenuStyle(
         opensUpward
-          ? { left: rect.left, minWidth: rect.width, maxHeight, bottom: window.innerHeight - rect.top + 4 }
+          ? {
+              left: rect.left,
+              minWidth: rect.width,
+              maxHeight,
+              bottom: window.innerHeight - rect.top + 4,
+            }
           : { left: rect.left, minWidth: rect.width, maxHeight, top: rect.bottom + 4 },
       );
     };
@@ -1714,7 +1721,9 @@ function WorkspaceCombobox({
       >
         <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
-      {open && menuStyle && options.length > 0 &&
+      {open &&
+        menuStyle &&
+        options.length > 0 &&
         createPortal(
           <div
             ref={menuRef}
@@ -1743,7 +1752,9 @@ function WorkspaceCombobox({
                 >
                   <span className="min-w-0 flex-1 truncate">{option.value}</span>
                   {option.current && (
-                    <span className="shrink-0 text-[10px] text-muted">{t("memoWorkspaceCurrent")}</span>
+                    <span className="shrink-0 text-[10px] text-muted">
+                      {t("memoWorkspaceCurrent")}
+                    </span>
                   )}
                   {isSelected && <Check size={14} strokeWidth={2.5} className="shrink-0" />}
                 </button>

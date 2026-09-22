@@ -77,10 +77,7 @@ export function waitForWorkspaceActivation(previousHostId: string): Promise<void
 /** How long callers may wait for the active workspace's service graph to be ready. */
 const WORKSPACE_SERVICES_READY_TIMEOUT_MS = 60_000;
 
-type WorkspaceServicesReadyState = Pick<
-  AppState,
-  "hostFatal" | "workspace"
->;
+type WorkspaceServicesReadyState = Pick<AppState, "hostFatal" | "workspace">;
 
 /**
  * Resolves true once the active workspace's service graph is built
@@ -106,10 +103,7 @@ export function waitForWorkspaceServicesReady(): Promise<boolean> {
       if (state.hostFatal) finish(false);
       else if (state.workspace?.servicesReady) finish(true);
     };
-    const timeout = globalThis.setTimeout(
-      () => finish(false),
-      WORKSPACE_SERVICES_READY_TIMEOUT_MS,
-    );
+    const timeout = globalThis.setTimeout(() => finish(false), WORKSPACE_SERVICES_READY_TIMEOUT_MS);
     unsubscribe = useAppStore.subscribe(inspect);
     inspect(useAppStore.getState());
   });
