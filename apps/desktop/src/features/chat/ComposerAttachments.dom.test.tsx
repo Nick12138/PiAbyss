@@ -503,7 +503,11 @@ describe("Composer managed documents", () => {
 
     expect(pasteText(textarea, "x".repeat(1024 * 1024 + 1))).toBe(false);
     expect(textarea).toHaveValue("Keep this draft");
-    expect(request).not.toHaveBeenCalled();
+    // The ShellJobsBar hydration (shelljobs.list) is unrelated to attachments;
+    // assert no attachment pipeline traffic instead of zero requests overall.
+    expect(request.mock.calls.filter(([method]) => method.startsWith("attachment."))).toHaveLength(
+      0,
+    );
   });
 
   it("prioritizes clipboard files over a long text representation", async () => {
@@ -521,7 +525,9 @@ describe("Composer managed documents", () => {
       }),
     ).toBe(false);
     expect(await screen.findByText("note.txt")).toBeVisible();
-    expect(request).not.toHaveBeenCalled();
+    expect(request.mock.calls.filter(([method]) => method.startsWith("attachment."))).toHaveLength(
+      0,
+    );
   });
 
   it("does not reopen command completion after its token disappears", async () => {

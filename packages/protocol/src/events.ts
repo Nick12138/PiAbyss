@@ -17,6 +17,7 @@ export const HOST_EVENT_NAMES = [
   "agent.compactionChanged",
   "agent.retryChanged",
   "subagents.statusChanged",
+  "shelljobs.changed",
   "model.changed",
   "provider.loginEvent",
   "package.progress",

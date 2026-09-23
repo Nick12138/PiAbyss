@@ -3,6 +3,7 @@ import type {
   DesktopSettings,
   ExtensionMessageRenderSnapshot,
   SubagentsStatusSnapshot,
+  ShellJobSummary,
   ExtensionUiGroupStatus,
   HostStatusSnapshot,
   PackageMutationResult,
@@ -452,6 +453,8 @@ export type AppState = EpochState & {
   extensionTerminal: ExtensionTerminalState | null;
   /** Live pi-subagents projection for the active Pi session. */
   subagentsStatus: SubagentsStatusSnapshot;
+  /** Background shell job summaries (pi shelljob tool) across sessions. */
+  shellJobs: ShellJobSummary[];
   /** Node id a popover/click wants the subagents tab to expand; consumed by
    * SubagentsPanel and cleared after use. */
   subagentsFocusNodeId: string | null;
@@ -572,6 +575,7 @@ export type AppState = EpochState & {
     render: ExtensionMessageRenderSnapshot | null,
   ) => void;
   setSubagentsStatus: (status: SubagentsStatusSnapshot) => void;
+  setShellJobs: (jobs: ShellJobSummary[]) => void;
   focusSubagent: (nodeId: string | null) => void;
   setExtensionWidget: (widget: ExtensionWidgetState) => void;
   toggleExtensionWidgetCollapsed: (key: string) => void;
@@ -619,10 +623,7 @@ export type AppState = EpochState & {
   /** Replace the injected references of one draft (empty array clears them). */
   setDraftReferences: (target: DraftTarget, references: readonly DraftReference[]) => void;
   /** Replace the persisted attachment snapshot of one draft (empty array clears it). */
-  setDraftAttachments: (
-    target: DraftTarget,
-    attachments: readonly StoredDraftAttachment[],
-  ) => void;
+  setDraftAttachments: (target: DraftTarget, attachments: readonly StoredDraftAttachment[]) => void;
   /** Drop every persisted field (text/attachments/references) of one draft. */
   clearDraftState: (target: DraftTarget) => void;
   mergeHydratedDrafts: (
@@ -697,6 +698,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   extensionTerminal: null,
   subagentsFocusNodeId: null,
   subagentsStatus: EMPTY_SUBAGENTS_STATUS,
+  shellJobs: [],
   dockOpen: sidebarPref("piabyss.dock.open"),
   dockRestoreOnPanelClose: null,
   sidebarCollapsed: sidebarPref("piabyss.sidebar.collapsed"),
@@ -876,6 +878,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       providerLogin: null,
       subagentsFocusNodeId: null,
       subagentsStatus: EMPTY_SUBAGENTS_STATUS,
+      shellJobs: [],
     });
   },
 
@@ -951,6 +954,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       thinkingLevels: [],
       subagentsFocusNodeId: null,
       subagentsStatus: EMPTY_SUBAGENTS_STATUS,
+      shellJobs: [],
     });
   },
 
@@ -1313,6 +1317,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     }),
   setSubagentsStatus: (subagentsStatus) => set({ subagentsStatus }),
+  setShellJobs: (shellJobs) => set({ shellJobs }),
   focusSubagent: (subagentsFocusNodeId) => set({ subagentsFocusNodeId }),
   setExtensionMessageRender: (entryId, render) =>
     set((state) => {
@@ -1739,6 +1744,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       packageRetry: null,
       subagentsFocusNodeId: null,
       subagentsStatus: EMPTY_SUBAGENTS_STATUS,
+      shellJobs: [],
     });
   },
 

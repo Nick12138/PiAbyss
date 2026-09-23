@@ -50,6 +50,7 @@ import {
 import { joinOutgoingParts } from "./injected-references";
 import { ContextUsageRing, ModelControls } from "./ModelControls";
 import { QueuePanel } from "./QueuePanel";
+import { ShellJobsBar } from "./ShellJobsBar";
 import {
   ExtensionWidgetsPopover,
   ExtensionWidgetsButton,
@@ -1796,6 +1797,7 @@ export function Composer({
           <p className="h-4" aria-hidden />
         </div>
       )}
+      <ShellJobsBar />
       <QueuePanel />
       <div
         ref={extensionWidgetAnchorRef}

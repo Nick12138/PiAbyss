@@ -2273,6 +2273,48 @@ function isScheduleTranscriptEntry(value: unknown): boolean {
   );
 }
 
+/** 后台 shell 任务（pi shelljob 工具）摘要与定位结果的形状校验。 */
+function isShellJobStatus(value: unknown): boolean {
+  return (
+    value === "running" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "killed" ||
+    value === "unknown"
+  );
+}
+
+function isShellJobSummary(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      ["id", "command", "cwd", "sessionId", "createdAt", "status"],
+      ["title", "pid", "startedAt", "finishedAt"],
+    ) &&
+    isString(value.id) &&
+    value.id.length <= 160 &&
+    isString(value.command) &&
+    isString(value.cwd) &&
+    isString(value.sessionId) &&
+    isSafeRevision(value.createdAt) &&
+    isShellJobStatus(value.status) &&
+    (value.title === undefined || isString(value.title)) &&
+    (value.pid === undefined || (isSafeRevision(value.pid) && value.pid > 0)) &&
+    (value.startedAt === undefined || isSafeRevision(value.startedAt)) &&
+    (value.finishedAt === undefined || isSafeRevision(value.finishedAt))
+  );
+}
+
+function isShellJobsSnapshot(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["jobs"]) &&
+    Array.isArray(value.jobs) &&
+    value.jobs.every(isShellJobSummary)
+  );
+}
+
 function isScheduleNotification(value: unknown): boolean {
   return (
     isPlainObject(value) &&
@@ -3096,6 +3138,12 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         result.entries.every(isScheduleNotification)
         ? null
         : "invalid schedule.listNotifications result";
+    case "shelljobs.list":
+      return isShellJobsSnapshot(result) ? null : "invalid ShellJobsSnapshot";
+    case "shelljobs.stop":
+      return isPlainObject(result) && hasExactKeys(result, ["stopped"]) && result.stopped === true
+        ? null
+        : "shelljobs.stop result must be { stopped: true }";
     case "schedule.agentStart":
       return isPlainObject(result) &&
         hasExactKeys(result, ["sessionId", "sessionPath"]) &&
@@ -3373,6 +3421,8 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
         isSafeRevision(payload.total)
         ? null
         : "invalid schedule.notificationsChanged payload";
+    case "shelljobs.changed":
+      return isShellJobsSnapshot(payload) ? null : "invalid ShellJobsSnapshot payload";
     case "attachment.changed":
       return isPlainObject(payload) &&
         hasExactKeys(payload, ["attachment"]) &&

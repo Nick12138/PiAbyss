@@ -686,6 +686,9 @@ export function handleHostEvent(
     case "subagents.statusChanged":
       store.setSubagentsStatus(event.payload);
       break;
+    case "shelljobs.changed":
+      store.setShellJobs(event.payload.jobs);
+      break;
     case "agent.retryChanged": {
       const cur = useAppStore.getState().session;
       if (cur) {

@@ -1019,21 +1019,18 @@ export function validateRequestParams<M extends HostMethod>(
         : fail("params must be null or a workspace target", { method });
     case "skill.addPath":
     case "skill.removePath":
-      return exactObject(params, ["path", "scope"], [
-        "targetWorkspaceId",
-        "targetWorkspaceCwd",
-      ]) &&
+      return exactObject(params, ["path", "scope"], ["targetWorkspaceId", "targetWorkspaceCwd"]) &&
         isNonEmptyString(params.path) &&
         ["user", "project"].includes(String(params.scope)) &&
         isOptionalWorkspaceTarget(params)
         ? ok(params)
         : fail(`invalid ${method} params`, { method });
     case "package.list":
-      return exactObject(params, ["scope"], [
-        "includeResources",
-        "targetWorkspaceId",
-        "targetWorkspaceCwd",
-      ]) &&
+      return exactObject(
+        params,
+        ["scope"],
+        ["includeResources", "targetWorkspaceId", "targetWorkspaceCwd"],
+      ) &&
         ["user", "project", "all"].includes(String(params.scope)) &&
         (params.includeResources === undefined || isBoolean(params.includeResources)) &&
         isOptionalWorkspaceTarget(params)
@@ -1091,10 +1088,7 @@ export function validateRequestParams<M extends HostMethod>(
         ? ok(params)
         : fail("invalid resource.setPreference params", { method });
     case "resource.setPreferences":
-      return exactObject(params, ["updates"], [
-        "targetWorkspaceId",
-        "targetWorkspaceCwd",
-      ]) &&
+      return exactObject(params, ["updates"], ["targetWorkspaceId", "targetWorkspaceCwd"]) &&
         Array.isArray(params.updates) &&
         params.updates.every(isResourcePreferenceUpdate) &&
         isOptionalWorkspaceTarget(params)
@@ -1245,6 +1239,14 @@ export function validateRequestParams<M extends HostMethod>(
         (params.limit === undefined || isScheduleLimit(params.limit))
         ? ok(params)
         : fail("invalid schedule.listNotifications params", { method });
+    case "shelljobs.list":
+      return params === null ? ok(null) : fail("params must be null", { method });
+    case "shelljobs.stop":
+      return exactObject(params, ["jobId"], []) &&
+        isNonEmptyString(params.jobId) &&
+        params.jobId.length <= 160
+        ? ok(params)
+        : fail(`invalid ${method} params`, { method });
     case "schedule.agentStart":
       return exactObject(params, ["cwd", "requirement"], ["model", "job"]) &&
         isNonEmptyString(params.cwd) &&

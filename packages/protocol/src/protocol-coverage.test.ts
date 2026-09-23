@@ -148,6 +148,8 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "subagents.pause": { nodeId: "run-1" },
   "subagents.continue": { nodeId: "run-1" },
   "subagents.resume": { nodeId: "run-1" },
+  "shelljobs.list": null,
+  "shelljobs.stop": { jobId: "job_abc123" },
   "agent.prompt": { text: "hi" },
   "agent.steer": { text: "hi" },
   "agent.followUp": { text: "hi" },
@@ -985,6 +987,7 @@ describe("protocol coverage — events", () => {
       fleet: [],
       runs: [],
     },
+    "shelljobs.changed": { jobs: [] },
     "model.changed": { thinkingLevel: "off", availableThinkingLevels: ["off"] },
     "provider.loginEvent": {
       loginId: "login-1",

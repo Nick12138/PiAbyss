@@ -1769,3 +1769,26 @@ export type MemoImageInput = {
   mediaType: string;
   dataBase64: string;
 };
+
+/** 后台 shell 任务（pi shelljob 工具）的生命周期状态。 */
+export type ShellJobStatus = "running" | "completed" | "failed" | "killed" | "unknown";
+
+/** 单个后台 shell 任务的摘要（不含输出内容）。 */
+export type ShellJobSummary = {
+  id: string;
+  command: string;
+  cwd: string;
+  /** 提交该任务的主会话 id（用于跳转定位）。 */
+  sessionId: string;
+  createdAt: number;
+  status: ShellJobStatus;
+  title?: string;
+  pid?: number;
+  startedAt?: number;
+  finishedAt?: number;
+};
+
+/** 全量后台 shell 任务快照（list 结果与 changed 事件共用）。 */
+export type ShellJobsSnapshot = {
+  jobs: ShellJobSummary[];
+};

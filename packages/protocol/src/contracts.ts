@@ -87,6 +87,7 @@ import type {
   PluginLibraryCatalog,
   PluginLibraryEnvUpdate,
   SubagentsStatusSnapshot,
+  ShellJobsSnapshot,
   ScheduleJob,
   ScheduleJobInput,
   ScheduleJobPatch,
@@ -170,6 +171,8 @@ export type HostContextMap = {
   "subagents.pause": WorkspaceContext;
   "subagents.continue": WorkspaceContext;
   "subagents.resume": WorkspaceContext;
+  "shelljobs.list": HostContext;
+  "shelljobs.stop": HostContext;
   "agent.prompt": ActiveSessionContext;
   "agent.steer": ActiveSessionContext;
   "agent.followUp": ActiveSessionContext;
@@ -345,6 +348,8 @@ export type HostRequestParams = {
   "subagents.pause": { nodeId: string };
   "subagents.continue": { nodeId: string };
   "subagents.resume": { nodeId: string };
+  "shelljobs.list": null;
+  "shelljobs.stop": { jobId: string };
   "agent.prompt": {
     text: string;
     images?: SerializableImage[];
@@ -591,6 +596,8 @@ export type HostResultMap = {
   "subagents.pause": { paused: boolean };
   "subagents.continue": { continued: boolean };
   "subagents.resume": { resumed: boolean };
+  "shelljobs.list": ShellJobsSnapshot;
+  "shelljobs.stop": { stopped: boolean };
   "agent.prompt": { accepted: true; runId: string };
   "agent.steer": { accepted: true };
   "agent.followUp": { accepted: true };
@@ -781,6 +788,7 @@ export type HostEventPayloadMap = {
     errorMessage?: string;
   };
   "subagents.statusChanged": SubagentsStatusSnapshot;
+  "shelljobs.changed": ShellJobsSnapshot;
   "model.changed": {
     model?: ModelSummary;
     thinkingLevel: string;

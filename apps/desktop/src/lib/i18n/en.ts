@@ -1342,6 +1342,20 @@ export const en = {
   // Right Dock
   dockFiles: "Files",
   dockSubagents: "Subagents",
+  shellJobStatusRunning: "Running",
+  shellJobStatusCompleted: "Completed",
+  shellJobStatusFailed: "Failed",
+  shellJobStatusKilled: "Stopped",
+  shellJobStatusUnknown: "Unknown",
+  shellJobStop: "Stop",
+  shellJobStopConfirm: "Confirm stop?",
+  shellJobStopFailed: "Failed to stop the background job",
+  shellJobOpenSessionFailed: "Could not open the session that started this job",
+  shellJobOpenSessionTitle: "Open the session that started this job ({cwd})",
+  shellJobStoppedNotifyAgent:
+    "The user manually stopped the background job “{title}” ({jobId}) from the PiAbyss UI. Please take note — do not restart it on your own. Ask the user if follow-up action is needed.",
+  shellJobStoppedOtherSession:
+    "Background job stopped. It belongs to another session — its Agent was not notified.",
   subagentsTitle: "Subagents",
   subagentsCopyId: "Copy subagent ID",
   subagentsConnected: "Connected",
