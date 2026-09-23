@@ -8,9 +8,27 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { TurnJumpRail, turnRailStops, type TurnRailStop } from "./TurnJumpRail";
 
 const STOPS: TurnRailStop[] = [
-  { sourceId: "u1", rowKey: "k1", excerpt: "first ask", agentExcerpt: "response 1", agentPending: false },
-  { sourceId: "u2", rowKey: "k2", excerpt: "second ask", agentExcerpt: undefined, agentPending: false },
-  { sourceId: "u3", rowKey: "k3", excerpt: "third ask", agentExcerpt: "response 3", agentPending: false },
+  {
+    sourceId: "u1",
+    rowKey: "k1",
+    excerpt: "first ask",
+    agentExcerpt: "response 1",
+    agentPending: false,
+  },
+  {
+    sourceId: "u2",
+    rowKey: "k2",
+    excerpt: "second ask",
+    agentExcerpt: undefined,
+    agentPending: false,
+  },
+  {
+    sourceId: "u3",
+    rowKey: "k3",
+    excerpt: "third ask",
+    agentExcerpt: "response 3",
+    agentPending: false,
+  },
 ];
 
 /** The rail needs a scrollport ref for active-tick tracking. */
@@ -148,7 +166,13 @@ describe("TurnJumpRail", () => {
 
     expect(turnRailStops(rows)).toEqual([
       { sourceId: "u1", rowKey: "k1", excerpt: "hello", agentExcerpt: "hi", agentPending: false },
-      { sourceId: "u4", rowKey: "k4", excerpt: "indented first line", agentExcerpt: undefined, agentPending: false },
+      {
+        sourceId: "u4",
+        rowKey: "k4",
+        excerpt: "indented first line",
+        agentExcerpt: undefined,
+        agentPending: false,
+      },
     ]);
   });
 });

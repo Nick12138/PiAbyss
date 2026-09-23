@@ -203,15 +203,15 @@ export function TurnJumpRail({
       // the measured centering offset lands.
       className="absolute right-5 top-1/2 z-10 flex -translate-y-1/2"
     >
-      <div 
+      <div
         ref={hoveredRowRef as any}
         className="flex max-h-[50vh] w-7 flex-col items-end justify-center gap-2"
         onPointerMove={(e) => {
           // Find the closest button element
-          const buttons = e.currentTarget.querySelectorAll('button');
+          const buttons = e.currentTarget.querySelectorAll("button");
           let closestIndex = -1;
           let minDistance = Infinity;
-          
+
           buttons.forEach((btn, index) => {
             const rect = btn.getBoundingClientRect();
             if (rect.height === 0) return;
@@ -222,7 +222,7 @@ export function TurnJumpRail({
               closestIndex = index;
             }
           });
-          
+
           if (closestIndex >= 0 && closestIndex < stops.length) {
             setHovered(closestIndex);
           }
