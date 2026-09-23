@@ -1611,6 +1611,10 @@ export function Composer({
     setFiles([]);
     documentsRef.current = [];
     setDocuments([]);
+    // Clear the persisted snapshot synchronously with the live composer state.
+    // The draft target can change as soon as the first prompt creates a session,
+    // before the attachment persistence effect gets a chance to run.
+    setDraftAttachmentSnapshot(draftTarget, []);
     setDraftReferences(draftTarget, []);
     const context = activeSessionContext(host, workspace, session);
     const attachmentBlocks: string[] = sentFiles.map((f) =>

@@ -199,6 +199,35 @@ describe("Composer managed documents", () => {
     );
   });
 
+  it("clears the new-conversation attachment draft when a prompt is accepted", async () => {
+    useAppStore.setState({ draftHydratedWorkspace: "/workspace" });
+    vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      if (method === "attachment.create")
+        return { ok: true, result: attachment("parsing") } as never;
+      if (method === "attachment.get") return { ok: true, result: attachment("ready") } as never;
+      if (method === "agent.prompt") return { ok: true, result: { accepted: true } } as never;
+      return { ok: true, result: null } as never;
+    });
+    const user = userEvent.setup();
+    render(<Composer />);
+
+    await user.click(screen.getByRole("button", { name: "Attach PDF, DOCX, image, or text file" }));
+    await screen.findByText("manual.pdf");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeEnabled());
+    expect(useAppStore.getState().draftAttachments["new:/workspace"]).toHaveLength(1);
+
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(useAppStore.getState().draftAttachments["new:/workspace"]).toBeUndefined();
+    await act(async () => {
+      useAppStore.getState().applySessionSnapshot({
+        ...session(),
+        sessionId: NEXT_SESSION_ID,
+      });
+    });
+    expect(screen.queryByText("manual.pdf")).not.toBeInTheDocument();
+  });
+
   it("converts one 4 KiB paste and sends only its managed attachment ID", async () => {
     const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
       if (method === "attachment.createText") {
