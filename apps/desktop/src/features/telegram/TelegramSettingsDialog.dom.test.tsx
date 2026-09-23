@@ -71,6 +71,32 @@ describe("TelegramSettingsDialog", () => {
     expect(onChanged).toHaveBeenCalled();
   });
 
+  it("starts and stops the bridge from a non-Telegram workspace", async () => {
+    const startInBackground = vi.fn().mockResolvedValue(true);
+    const stopBridge = vi.fn().mockResolvedValue(true);
+    useTelegramViewStore.setState({
+      startTelegramBridgeInBackground: startInBackground,
+      stopTelegramBridge: stopBridge,
+    });
+    vi.spyOn(hostClient, "request").mockResolvedValue({
+      ok: true,
+      method: "telegram.getConfig",
+      id: "1",
+      result: { default: null, workspacePath: "/agent/workspace/telegram" },
+    } as never);
+    render(<TelegramSettingsDialog onCancel={vi.fn()} onChanged={vi.fn()} />);
+
+    const user = userEvent.setup();
+    const bridgeSwitch = screen.getByRole("switch", { name: /bridge/i });
+    await user.click(bridgeSwitch);
+    expect(startInBackground).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("switch", { name: /bridge/i })).toBeChecked();
+
+    await user.click(screen.getByRole("switch", { name: /bridge/i }));
+    expect(stopBridge).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("switch", { name: /bridge/i })).not.toBeChecked();
+  });
+
   it("walks through the delete confirmation and resets via telegram.reset", async () => {
     const spy = vi.spyOn(hostClient, "request").mockResolvedValue({
       ok: true,

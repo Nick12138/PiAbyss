@@ -50,7 +50,9 @@ export function TelegramSettingsDialog({
   const bridgeStatus = useTelegramViewStore((s) => s.bridgeStatus);
   const bridgeLoading = useTelegramViewStore((s) => s.bridgeLoading);
   const refreshBridgeStatus = useTelegramViewStore((s) => s.refreshBridgeStatus);
-  const startTelegramBridge = useTelegramViewStore((s) => s.startTelegramBridge);
+  const startTelegramBridgeInBackground = useTelegramViewStore(
+    (s) => s.startTelegramBridgeInBackground,
+  );
   const stopTelegramBridge = useTelegramViewStore((s) => s.stopTelegramBridge);
   const exitTelegramWorkspace = useTelegramViewStore((s) => s.exitTelegramWorkspace);
 
@@ -91,10 +93,9 @@ export function TelegramSettingsDialog({
   async function toggleBridge(next: boolean) {
     if (bridgeBusy) return;
     setBridgeBusy(true);
-    // The TG workspace's main panel is read-only, so run the bridge command
-    // programmatically in this workspace's session; only fall back to the
-    // composer prefill when the programmatic path is unavailable.
-    const ok = next ? await startTelegramBridge() : await stopTelegramBridge();
+    // The bridge belongs to the dedicated Telegram Host, regardless of the
+    // currently selected foreground workspace.
+    const ok = next ? await startTelegramBridgeInBackground() : await stopTelegramBridge();
     setBridgeBusy(false);
     if (!ok) {
       prefilledCommand(next ? "/telegram-connect" : "/telegram-disconnect");

@@ -410,6 +410,7 @@ pub async fn pi_host_acknowledge_terminal(
 pub async fn pi_host_bootstrap_telegram(
     state: State<'_, AppState>,
     cwd: String,
+    connect: Option<bool>,
 ) -> Result<(), String> {
     let settings = state.settings.lock().await;
     let (_route_id, manager, created) = {
@@ -479,7 +480,12 @@ pub async fn pi_host_bootstrap_telegram(
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
 
-    // 2. agent.prompt → /telegram-connect in the dedicated telegram workspace.
+    // 2. Run the bridge command in the dedicated telegram workspace.
+    let command = if connect.unwrap_or(true) {
+        "/telegram-connect"
+    } else {
+        "/telegram-disconnect"
+    };
     let prompt_id = uuid::Uuid::new_v4().to_string();
     let prompt = serde_json::json!({
         "protocolVersion": 1,
@@ -492,7 +498,7 @@ pub async fn pi_host_bootstrap_telegram(
             "expectedSessionId": session_id,
             "expectedSessionRevision": session_revision,
         },
-        "params": { "text": "/telegram-connect" },
+        "params": { "text": command },
     });
     let prompt_resp = mgr
         .request(prompt.to_string(), Duration::from_secs(60))
@@ -501,7 +507,8 @@ pub async fn pi_host_bootstrap_telegram(
         serde_json::from_str(&prompt_resp).map_err(|e| format!("parse prompt response: {e}"))?;
     if prompt_json.get("ok").and_then(|v| v.as_bool()) != Some(true) {
         return Err(format!(
-            "/telegram-connect failed: {}",
+            "{} failed: {}",
+            command,
             prompt_json
                 .get("error")
                 .map(|e| e.to_string())

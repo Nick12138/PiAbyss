@@ -114,9 +114,8 @@ type TelegramViewState = {
    *  switching the foreground workspace. Unlike `startTelegramBridge`, this does
    *  NOT require the telegram workspace to be the active workspace. */
   startTelegramBridgeInBackground: () => Promise<boolean>;
-  /** Runs `/telegram-disconnect` programmatically. Same activation constraint
-   *  as `startTelegramBridge`; in Threaded Mode the plugin's confirm dialog
-   *  cannot be answered from a detached prompt, so it may no-op there. */
+  /** Runs `/telegram-disconnect` programmatically. Works from the active
+   *  telegram workspace or by targeting its dedicated Host in the background. */
   stopTelegramBridge: () => Promise<boolean>;
   openTelegramSession: (sessionPath: string) => Promise<void>;
   closeTelegramSession: () => void;
@@ -297,7 +296,7 @@ export const useTelegramViewStore = create<TelegramViewState>((set, get) => ({
     const workspacePath = await get().ensureTelegramWorkspace();
     if (!workspacePath) return false;
     try {
-      const ok = await bootstrapTelegramHost(workspacePath);
+      const ok = await bootstrapTelegramHost(workspacePath, true);
       if (ok) {
         // The dedicated Host starts polling asynchronously; re-read status
         // shortly after so the dot reflects the fresh connection.
@@ -311,20 +310,36 @@ export const useTelegramViewStore = create<TelegramViewState>((set, get) => ({
 
   stopTelegramBridge: async () => {
     const { host, workspace, session } = useAppStore.getState();
-    if (!host || !workspace || !session) return false;
-    if (!isSameTelegramPath(workspace.canonicalCwd, get().workspacePath)) return false;
-    try {
-      const res = await hostClient.request(
-        "agent.prompt",
-        activeSessionContext(host, workspace, session),
-        { text: "/telegram-disconnect" },
-        30_000,
-      );
-      if (res.ok) {
-        setTimeout(() => void get().refreshBridgeStatus(), 1500);
-        return true;
+    if (
+      host &&
+      workspace &&
+      session &&
+      isSameTelegramPath(workspace.canonicalCwd, get().workspacePath)
+    ) {
+      try {
+        const res = await hostClient.request(
+          "agent.prompt",
+          activeSessionContext(host, workspace, session),
+          { text: "/telegram-disconnect" },
+          30_000,
+        );
+        if (res.ok) {
+          setTimeout(() => void get().refreshBridgeStatus(), 1500);
+          return true;
+        }
+      } catch {
+        // If the active-host route cannot handle it, try the dedicated Host.
       }
-      return false;
+    }
+
+    // The bridge belongs to the Telegram workspace Host, not whichever
+    // workspace happens to be selected in the renderer.
+    const workspacePath = await get().ensureTelegramWorkspace();
+    if (!workspacePath) return false;
+    try {
+      const ok = await bootstrapTelegramHost(workspacePath, false);
+      if (ok) setTimeout(() => void get().refreshBridgeStatus(), 1500);
+      return ok;
     } catch {
       return false;
     }
