@@ -812,7 +812,14 @@ describe("Composer managed documents", () => {
       draftHydratedWorkspace: "/workspace",
       draftAttachments: {
         ["session:" + SESSION_ID]: [
-          { type: "file", id: "missing", name: "missing.txt", size: 10, kind: "text", sourcePath: "/missing.txt" },
+          {
+            type: "file",
+            id: "missing",
+            name: "missing.txt",
+            size: 10,
+            kind: "text",
+            sourcePath: "/missing.txt",
+          },
         ],
       },
     });
@@ -826,7 +833,9 @@ describe("Composer managed documents", () => {
     expect(
       useAppStore
         .getState()
-        .notifications.some((notification) => /draft attachment.*could not be restored/i.test(notification.message)),
+        .notifications.some((notification) =>
+          /draft attachment.*could not be restored/i.test(notification.message),
+        ),
     ).toBe(false);
   });
 
