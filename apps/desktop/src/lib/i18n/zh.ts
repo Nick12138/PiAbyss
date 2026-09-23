@@ -1544,6 +1544,7 @@ export const zh: Record<MessageKey, string> = {
   gitPullFailedNamed: "{workspace}拉取失败：{detail}",
   gitPushFailedNamed: "{workspace}推送失败：{detail}",
   gitTaskFailedConflict: "存在合并冲突，请解决后重试",
+  gitTaskFailedDiverged: "远程分支包含本地没有的提交。请先拉取并整合远程更新，再推送。",
   gitTaskFailedCleanWorktree: "请先提交或暂存本地改动",
   gitTaskFailedNetwork: "无法连接远程仓库",
   gitTaskFailedAuth: "认证失败，请检查凭据",

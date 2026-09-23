@@ -214,6 +214,10 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   const [networkTask, setNetworkTask] = useState<{ taskId: string; kind: "pull" | "push" } | null>(
     null,
   );
+  // A very fast failure (for example, a non-fast-forward push) can finish
+  // before React commits the accepted task and installs its listener. Keep a
+  // small buffer of completions observed by the always-on listener below.
+  const finishedNetworkTasks = useRef(new Set<string>());
   // Any in-flight git operation: the synchronous request window, or an accepted
   // background pull/push still running in the Host.
   const operation = operationState ?? networkTask?.kind ?? null;
@@ -290,6 +294,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
     setDiffLoading(false);
     setOperation(null);
     setNetworkTask(null);
+    finishedNetworkTasks.current.clear();
     setCommitMessage("");
     setGeneratingMessage(false);
     setCommitSha(null);
@@ -436,16 +441,23 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
     [acceptSnapshot, gitWatchContext, visible, selection, diff, reloadDiffQuietly],
   );
 
-  // Hold the pull/push spinner for the whole task, not just the request that
-  // accepted it. The event is addressed to the requesting workspace identity,
-  // so it reaches this subscription as long as the user stays on it.
+  // Listen before a network task is started. A fast failure (notably a
+  // non-fast-forward push) can emit git.taskFinished before React commits the
+  // accepted task and an effect tied to networkTask could subscribe.
   useEffect(() => {
-    if (!gitWatchContext || !networkTask) return;
-    const taskId = networkTask.taskId;
+    if (!gitWatchContext) return;
     return subscribeValidatedHostEvent("git.taskFinished", gitWatchContext, (event) => {
-      if (event.payload.taskId === taskId) setNetworkTask(null);
+      const { taskId } = event.payload;
+      finishedNetworkTasks.current.add(taskId);
+      // Keep the race buffer bounded; task IDs are unique and an old completion
+      // cannot affect any task started later.
+      if (finishedNetworkTasks.current.size > 50) {
+        const oldest = finishedNetworkTasks.current.values().next().value;
+        if (oldest) finishedNetworkTasks.current.delete(oldest);
+      }
+      setNetworkTask((current) => (current?.taskId === taskId ? null : current));
     });
-  }, [gitWatchContext, networkTask]);
+  }, [gitWatchContext]);
 
   // Safety net: if the Host restarts mid-task the event never arrives. The
   // Host's own network timeout is 30s, so anything past this is stale.
@@ -948,9 +960,16 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
       }
       // Accepted — the task keeps running in the Host. Its snapshot side
       // effects arrive via git.changed; its outcome notification is emitted by
-      // the git.taskFinished handler in App.tsx. Track the taskId so the
-      // spinner survives until the task actually finishes.
-      setNetworkTask({ taskId: response.result.taskId, kind });
+      // the git.taskFinished handler in App.tsx. The task may already have
+      // finished before this response is handled, so consult the completion
+      // buffer before showing a spinner.
+      const { taskId } = response.result;
+      if (finishedNetworkTasks.current.has(taskId)) {
+        finishedNetworkTasks.current.delete(taskId);
+        setNetworkTask(null);
+      } else {
+        setNetworkTask({ taskId, kind });
+      }
     } catch (requestError) {
       if (requestGeneration === generation.current) {
         setError(

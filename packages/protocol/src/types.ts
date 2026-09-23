@@ -294,7 +294,7 @@ export type GitTaskFinishedPayload = {
   ok: boolean;
   /** User-facing failure message when `ok` is false (already localized server-side? no — raw git error). */
   error?: string;
-  errorKind?: "conflict" | "clean-worktree" | "network" | "auth" | "other";
+  errorKind?: "conflict" | "diverged" | "clean-worktree" | "network" | "auth" | "other";
   snapshot?: GitStatusSnapshot;
 };
 
