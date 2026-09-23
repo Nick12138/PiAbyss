@@ -196,6 +196,31 @@ describe("GitAsyncTaskRunner", () => {
     expect(payload.errorKind).toBe("clean-worktree");
   });
 
+  it("classifies a push rejected because the remote has new commits as divergence", async () => {
+    const other = join(repo, "..", "other");
+    execFileSync("git", ["clone", remote, other], { stdio: "pipe" });
+    git(other, ["config", "user.email", "test@example.com"]);
+    git(other, ["config", "user.name", "Test"]);
+    await writeFile(join(other, "remote.txt"), "remote commit\n");
+    git(other, ["add", "."]);
+    git(other, ["commit", "-m", "remote update"]);
+    git(other, ["push"]);
+
+    await writeFile(join(repo, "local.txt"), "local commit\n");
+    git(repo, ["add", "."]);
+    git(repo, ["commit", "-m", "local update"]);
+
+    const emitCalls: Array<{ event: string; payload: unknown }> = [];
+    const { runner } = runnerWith(emitCalls);
+    runner.start({ kind: "push", workspaceCwd: repo, identity });
+    const payload = await waitForTask(emitCalls);
+    expect(payload).toMatchObject({
+      operation: "push",
+      ok: false,
+      errorKind: "diverged",
+    });
+  });
+
   it("still delivers the failure toast when the workspace was switched away", async () => {
     await writeFile(join(repo, "a.txt"), "dirty local edit\n");
     const emitCalls: Array<{ event: string; payload: unknown }> = [];

@@ -1,5 +1,5 @@
 import { FolderOpen, LoaderCircle, Pencil, Send, Settings } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { useT } from "../../lib/i18n/use-t";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
@@ -21,8 +21,8 @@ import { TelegramSettingsDialog } from "./TelegramSettingsDialog";
  * switches to the REAL dedicated workspace (`<agentDir>/workspace/telegram`)
  * through the normal host-switch machinery, so the bridge's polling session
  * lives in this workspace and TG turns never land in other workspaces. The
- * bridge does NOT auto-start on entry or at app startup — it only starts via
- * the manual settings switch. The row is hidden until a bot
+ * bridge auto-resumes at app startup when its persisted preference is enabled;
+ * entering the workspace itself does not start it. The row is hidden until a bot
  * profile has actually been added and configured (see the render guard); once
  * visible, the subtitle reflects the bind state.
  */
@@ -55,14 +55,26 @@ export function TelegramWorkspaceRow({
   // Mirrors the persisted bridge on/off preference so the status dot can
   // distinguish "user turned it off" from "should be on but not connected".
   const [bridgePrefOn, setBridgePrefOn] = useState(() => loadTelegramBridgePrefEnabled());
+  const startupResumeHostRef = useRef<string | null>(null);
 
-  // Refresh on mount and again once the host becomes available, so a
-  // persisted telegram.json / journaled history shows up after startup.
+  // Load the Telegram profile/status when the host becomes available. If the
+  // user had enabled the bridge, resume it in its dedicated background Host;
+  // this never changes the foreground workspace. The host id guard prevents
+  // duplicate bootstrap calls (including React StrictMode effect replay).
   useEffect(() => {
-    void ensureWorkspace().then(() => {
-      void refresh();
-      void refreshStatus();
-    });
+    if (!hostReady || startupResumeHostRef.current === hostReady) return;
+    startupResumeHostRef.current = hostReady;
+    void (async () => {
+      await ensureWorkspace();
+      await Promise.all([refresh(), refreshStatus()]);
+      if (
+        loadTelegramBridgePrefEnabled() &&
+        useTelegramViewStore.getState().profile?.configured &&
+        useTelegramViewStore.getState().bridgeStatus?.connected !== true
+      ) {
+        await useTelegramViewStore.getState().startTelegramBridgeInBackground();
+      }
+    })();
   }, [ensureWorkspace, hostReady, refresh, refreshStatus]);
 
   const openFolder = useCallback(() => {

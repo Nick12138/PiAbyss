@@ -1272,15 +1272,13 @@ export function Composer({
   }
 
   /** Re-materialize persisted attachment entries into live composer state.
-   * Path-backed entries are re-read/re-uploaded; entries whose source file has
-   * disappeared are dropped with a single warning. */
+   * Unavailable entries are silently skipped. */
   async function restoreStoredAttachments(
     stored: readonly StoredDraftAttachment[],
     isCurrent: () => boolean,
   ): Promise<void> {
     const restoredImages: PendingImage[] = [];
     const restoredFiles: PendingFile[] = [];
-    let dropped = 0;
     for (const item of stored) {
       if (!isCurrent()) return;
       try {
@@ -1288,10 +1286,7 @@ export function Composer({
           case "image": {
             if (item.sourcePath) {
               const file = await readDesktopSmallFile(item.sourcePath);
-              if (file.kind !== "image") {
-                dropped += 1;
-                break;
-              }
+              if (file.kind !== "image") break;
               if (restoredImages.length < MAX_AGENT_REQUEST_IMAGES) {
                 restoredImages.push({
                   id: crypto.randomUUID(),
@@ -1310,17 +1305,12 @@ export function Composer({
                   ...(item.name ? { name: item.name } : {}),
                 });
               }
-            } else {
-              dropped += 1;
             }
             break;
           }
           case "file": {
             if (item.kind === "path") {
-              if (!item.sourcePath) {
-                dropped += 1;
-                break;
-              }
+              if (!item.sourcePath) break;
               const info = await getDesktopFileInfo(item.sourcePath);
               restoredFiles.push({
                 id: crypto.randomUUID(),
@@ -1333,10 +1323,7 @@ export function Composer({
               });
             } else if (item.sourcePath) {
               const file = await readDesktopSmallFile(item.sourcePath);
-              if (file.kind !== "text") {
-                dropped += 1;
-                break;
-              }
+              if (file.kind !== "text") break;
               restoredFiles.push({
                 id: crypto.randomUUID(),
                 name: file.name,
@@ -1355,8 +1342,6 @@ export function Composer({
                 text: item.text,
                 ...(item.unlimited ? { unlimited: true as const } : {}),
               });
-            } else {
-              dropped += 1;
             }
             break;
           }
@@ -1383,7 +1368,7 @@ export function Composer({
           }
         }
       } catch {
-        dropped += 1;
+        // Missing or unsupported sources do not prevent the rest from restoring.
       }
     }
     if (!isCurrent()) return;
@@ -1397,9 +1382,6 @@ export function Composer({
     // source file vanished), so the persisted snapshot settles to the live
     // state instead of keeping stale entries forever.
     setAttachmentEpoch((epoch) => epoch + 1);
-    if (dropped > 0) {
-      pushNotification(t("composerDraftAttachmentsDropped", { count: dropped }), "warning");
-    }
   }
 
   async function chooseAttachments() {
@@ -1630,6 +1612,10 @@ export function Composer({
     setFiles([]);
     documentsRef.current = [];
     setDocuments([]);
+    // Clear the persisted snapshot synchronously with the live composer state.
+    // The draft target can change as soon as the first prompt creates a session,
+    // before the attachment persistence effect gets a chance to run.
+    setDraftAttachmentSnapshot(draftTarget, []);
     setDraftReferences(draftTarget, []);
     const context = activeSessionContext(host, workspace, session);
     const attachmentBlocks: string[] = sentFiles.map((f) =>

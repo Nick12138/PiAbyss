@@ -22,10 +22,10 @@ export async function activateWorkspaceHost(cwd: string): Promise<boolean> {
  * inside it WITHOUT switching the foreground route. The renderer's active
  * Host (and thus the visible workspace) is left untouched.
  */
-export async function bootstrapTelegramHost(cwd: string): Promise<boolean> {
+export async function bootstrapTelegramHost(cwd: string, connect = true): Promise<boolean> {
   const { invoke, isTauri } = await import("@tauri-apps/api/core");
   if (!isTauri()) return false;
-  await invoke("pi_host_bootstrap_telegram", { cwd });
+  await invoke("pi_host_bootstrap_telegram", { cwd, connect });
   return true;
 }
 

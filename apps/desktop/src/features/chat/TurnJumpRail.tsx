@@ -69,6 +69,7 @@ export function TurnJumpRail({
   const t = useT();
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
+  const [popupTop, setPopupTop] = useState<number | null>(null);
   const lastHoveredRef = useRef<number | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
   const hoveredRowRef = useRef<HTMLButtonElement | null>(null);
@@ -101,6 +102,21 @@ export function TurnJumpRail({
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [hovered, onJump, stops]);
+
+  // Anchor the popup to the actual hovered/focused tick. The rail can be tall
+  // and its ticks are laid out with flex gaps, so an index-based offset drifts.
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail || hovered === null) {
+      setPopupTop(null);
+      return;
+    }
+    const tick = rail.querySelector<HTMLElement>(`[data-turn-rail-index="${hovered}"]`);
+    if (!tick) return;
+    const railRect = rail.getBoundingClientRect();
+    const tickRect = tick.getBoundingClientRect();
+    setPopupTop(tickRect.top + tickRect.height / 2 - railRect.top);
+  }, [hovered, stops]);
 
   // Keep the hovered popup row in view when the list is taller than the clamp.
   useEffect(() => {
@@ -187,17 +203,18 @@ export function TurnJumpRail({
       // the measured centering offset lands.
       className="absolute right-5 top-1/2 z-10 flex -translate-y-1/2"
     >
-      <div 
+      <div
         ref={hoveredRowRef as any}
         className="flex max-h-[50vh] w-7 flex-col items-end justify-center gap-2"
         onPointerMove={(e) => {
           // Find the closest button element
-          const buttons = e.currentTarget.querySelectorAll('button');
+          const buttons = e.currentTarget.querySelectorAll("button");
           let closestIndex = -1;
           let minDistance = Infinity;
-          
+
           buttons.forEach((btn, index) => {
             const rect = btn.getBoundingClientRect();
+            if (rect.height === 0) return;
             const centerY = rect.top + rect.height / 2;
             const distance = Math.abs(e.clientY - centerY);
             if (distance < minDistance) {
@@ -205,7 +222,7 @@ export function TurnJumpRail({
               closestIndex = index;
             }
           });
-          
+
           if (closestIndex >= 0 && closestIndex < stops.length) {
             setHovered(closestIndex);
           }
@@ -223,24 +240,22 @@ export function TurnJumpRail({
           }
         }}
       >
-        {lastHoveredRef.current !== null && (
+        {hovered !== null && (
           <div
             data-turn-rail-popup
-            className="theme-floating-surface absolute right-full top-0 z-20 mr-2 w-80 rounded-lg border border-border bg-surface-raised p-3 shadow-xl"
-            style={{
-              transform: `translateY(${lastHoveredRef.current * 16 - 8}px)`,
-            }}
+            className="theme-floating-surface absolute right-full z-20 mr-2 w-80 -translate-y-1/2 rounded-lg border border-border bg-surface-raised p-3 shadow-xl"
+            style={{ top: popupTop ?? 0 }}
           >
             {/* User message with # prefix */}
             <div className="mb-2 text-sm leading-relaxed text-foreground">
               <div className="line-clamp-1">
-                <span className="font-medium">#{lastHoveredRef.current + 1}</span>{" "}
-                {stops[lastHoveredRef.current]?.excerpt || "(empty message)"}
+                <span className="font-medium">#{hovered + 1}</span>{" "}
+                {stops[hovered]?.excerpt || "(empty message)"}
               </div>
             </div>
             {/* Agent response */}
             <div className="text-sm leading-relaxed text-muted">
-              {stops[lastHoveredRef.current]?.agentPending ? (
+              {stops[hovered]?.agentPending ? (
                 <div className="flex items-center gap-2">
                   <svg
                     className="size-3 animate-spin text-accent"
@@ -265,7 +280,7 @@ export function TurnJumpRail({
                   <span className="text-xs">处理中...</span>
                 </div>
               ) : (
-                <div className="line-clamp-3">{stops[lastHoveredRef.current]?.agentExcerpt || "无回复"}</div>
+                <div className="line-clamp-3">{stops[hovered]?.agentExcerpt || "无回复"}</div>
               )}
             </div>
           </div>
@@ -294,6 +309,7 @@ export function TurnJumpRail({
               key={stop.sourceId}
               type="button"
               aria-label={tooltip}
+              data-turn-rail-index={index}
               data-active={active ? "true" : undefined}
               className="relative h-2 w-full shrink-0 flex items-center -my-0.5"
               onPointerEnter={() => setHovered(index)}

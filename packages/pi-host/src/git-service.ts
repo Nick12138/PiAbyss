@@ -479,7 +479,7 @@ export type GitTaskOutcome = {
   ok: boolean;
   snapshot?: GitStatusSnapshot;
   error?: string;
-  errorKind?: "conflict" | "clean-worktree" | "network" | "auth" | "other";
+  errorKind?: "conflict" | "diverged" | "clean-worktree" | "network" | "auth" | "other";
 };
 
 /**
@@ -487,6 +487,15 @@ export type GitTaskOutcome = {
  * notification without pattern-matching git output itself.
  */
 function classifyGitTaskError(message: string): GitTaskOutcome["errorKind"] {
+  // A push rejected because the remote has commits missing locally is a
+  // recoverable history divergence, not a generic network failure.
+  if (
+    /non-fast-forward|fetch first|remote contains work that you do not have|tip of your current branch is behind/i.test(
+      message,
+    )
+  ) {
+    return "diverged";
+  }
   if (
     /cannot pull with rebase|please commit or stash|local changes.*would be overwritten|your local changes/i.test(
       message,

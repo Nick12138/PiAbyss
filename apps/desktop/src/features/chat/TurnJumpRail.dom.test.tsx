@@ -8,9 +8,27 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { TurnJumpRail, turnRailStops, type TurnRailStop } from "./TurnJumpRail";
 
 const STOPS: TurnRailStop[] = [
-  { sourceId: "u1", rowKey: "k1", excerpt: "first ask", agentExcerpt: "response 1", agentPending: false },
-  { sourceId: "u2", rowKey: "k2", excerpt: "second ask", agentExcerpt: undefined, agentPending: false },
-  { sourceId: "u3", rowKey: "k3", excerpt: "third ask", agentExcerpt: "response 3", agentPending: false },
+  {
+    sourceId: "u1",
+    rowKey: "k1",
+    excerpt: "first ask",
+    agentExcerpt: "response 1",
+    agentPending: false,
+  },
+  {
+    sourceId: "u2",
+    rowKey: "k2",
+    excerpt: "second ask",
+    agentExcerpt: undefined,
+    agentPending: false,
+  },
+  {
+    sourceId: "u3",
+    rowKey: "k3",
+    excerpt: "third ask",
+    agentExcerpt: "response 3",
+    agentPending: false,
+  },
 ];
 
 /** The rail needs a scrollport ref for active-tick tracking. */
@@ -79,6 +97,41 @@ describe("TurnJumpRail", () => {
     expect(onJump).toHaveBeenCalledWith("u2");
   });
 
+  it("anchors the popup to the hovered tick center", () => {
+    render(<Harness stops={STOPS} onJump={vi.fn()} />);
+
+    const rail = document.querySelector<HTMLElement>("[data-turn-rail]")!;
+    const tick = document.querySelector<HTMLElement>('[data-turn-rail-index="1"]')!;
+    vi.spyOn(rail, "getBoundingClientRect").mockReturnValue({
+      top: 100,
+      bottom: 500,
+      left: 0,
+      right: 40,
+      width: 40,
+      height: 400,
+      x: 0,
+      y: 100,
+      toJSON: () => ({}),
+    });
+    vi.spyOn(tick, "getBoundingClientRect").mockReturnValue({
+      top: 270,
+      bottom: 278,
+      left: 20,
+      right: 40,
+      width: 20,
+      height: 8,
+      x: 20,
+      y: 270,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.pointerEnter(tick);
+
+    const popup = document.querySelector<HTMLElement>("[data-turn-rail-popup]")!;
+    expect(popup.style.top).toBe("174px");
+    expect(popup).toHaveClass("-translate-y-1/2");
+  });
+
   it("moves between turns with Alt+ArrowUp/Alt+ArrowDown", () => {
     const onJump = vi.fn();
     render(<Harness stops={STOPS} onJump={onJump} />);
@@ -113,7 +166,13 @@ describe("TurnJumpRail", () => {
 
     expect(turnRailStops(rows)).toEqual([
       { sourceId: "u1", rowKey: "k1", excerpt: "hello", agentExcerpt: "hi", agentPending: false },
-      { sourceId: "u4", rowKey: "k4", excerpt: "indented first line", agentExcerpt: undefined, agentPending: false },
+      {
+        sourceId: "u4",
+        rowKey: "k4",
+        excerpt: "indented first line",
+        agentExcerpt: undefined,
+        agentPending: false,
+      },
     ]);
   });
 });

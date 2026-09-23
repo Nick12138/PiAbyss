@@ -49,6 +49,8 @@ describe("TelegramWorkspaceRow", () => {
   let ensureWorkspace: ReturnType<typeof vi.fn>;
   let onActivate: ReturnType<typeof vi.fn>;
   beforeEach(() => {
+    useAppStore.setState({ host: null, workspace: null, session: null });
+    globalThis.localStorage?.removeItem("piabyss.telegram.bridgeEnabled.v1");
     refreshTelegramSessions = vi.fn().mockResolvedValue(undefined);
     refreshBridgeStatus = vi.fn().mockResolvedValue(undefined);
     startTelegramBridge = vi.fn().mockResolvedValue(true);
@@ -85,9 +87,8 @@ describe("TelegramWorkspaceRow", () => {
     useTelegramViewStore.setState({ profile: null, sessions: [], loaded: true });
     render(<TelegramWorkspaceRow onActivate={onActivate} />);
     expect(screen.queryByText("Telegram")).not.toBeInTheDocument();
-    // The row stays mounted invisibly so its config-load duties still run and
-    // it appears the moment a profile is saved elsewhere.
-    expect(ensureWorkspace).toHaveBeenCalled();
+    // Without a ready host, startup bootstrap/config loading is deferred.
+    expect(ensureWorkspace).not.toHaveBeenCalled();
   });
 
   it("shows the telegram row with the bot handle", () => {
@@ -105,7 +106,8 @@ describe("TelegramWorkspaceRow", () => {
     expect(startTelegramBridge).not.toHaveBeenCalled();
   });
 
-  it("does not auto-start the bridge at app startup", async () => {
+  it("auto-starts the bridge in the background at startup when enabled and disconnected", async () => {
+    globalThis.localStorage?.setItem("piabyss.telegram.bridgeEnabled.v1", "1");
     useAppStore.setState({
       host,
       workspace: {
@@ -144,11 +146,20 @@ describe("TelegramWorkspaceRow", () => {
       desynchronized: false,
     });
     render(<TelegramWorkspaceRow onActivate={onActivate} />);
-    // Startup must never bootstrap the bridge — a configured profile alone is
-    // not enough. The bridge only starts via the manual settings switch.
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    expect(startTelegramBridgeInBackground).not.toHaveBeenCalled();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(startTelegramBridgeInBackground).toHaveBeenCalledTimes(1);
     expect(onActivate).not.toHaveBeenCalled();
+    globalThis.localStorage?.removeItem("piabyss.telegram.bridgeEnabled.v1");
+  });
+
+  it("does not auto-start at startup when the bridge is already connected", async () => {
+    globalThis.localStorage?.setItem("piabyss.telegram.bridgeEnabled.v1", "1");
+    useTelegramViewStore.setState({ bridgeStatus: { connected: true } });
+    useAppStore.setState({ host, connecting: false, rehydrating: false, desynchronized: false });
+    render(<TelegramWorkspaceRow onActivate={onActivate} />);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(startTelegramBridgeInBackground).not.toHaveBeenCalled();
+    globalThis.localStorage?.removeItem("piabyss.telegram.bridgeEnabled.v1");
   });
 
   it("does not auto-enter at startup when the bridge preference is off", async () => {
@@ -162,6 +173,7 @@ describe("TelegramWorkspaceRow", () => {
     render(<TelegramWorkspaceRow onActivate={onActivate} />);
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(onActivate).not.toHaveBeenCalled();
+    expect(startTelegramBridgeInBackground).not.toHaveBeenCalled();
     globalThis.localStorage?.removeItem("piabyss.telegram.bridgeEnabled.v1");
   });
 

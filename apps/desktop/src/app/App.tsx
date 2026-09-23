@@ -560,13 +560,15 @@ export function handleHostEvent(
         const kindKey =
           payload.errorKind === "conflict"
             ? "gitTaskFailedConflict"
-            : payload.errorKind === "clean-worktree"
-              ? "gitTaskFailedCleanWorktree"
-              : payload.errorKind === "network"
-                ? "gitTaskFailedNetwork"
-                : payload.errorKind === "auth"
-                  ? "gitTaskFailedAuth"
-                  : null;
+            : payload.errorKind === "diverged"
+              ? "gitTaskFailedDiverged"
+              : payload.errorKind === "clean-worktree"
+                ? "gitTaskFailedCleanWorktree"
+                : payload.errorKind === "network"
+                  ? "gitTaskFailedNetwork"
+                  : payload.errorKind === "auth"
+                    ? "gitTaskFailedAuth"
+                    : null;
         const detail = kindKey ? tCurrent(kindKey) : (payload.error ?? "");
         const message =
           payload.operation === "pull"

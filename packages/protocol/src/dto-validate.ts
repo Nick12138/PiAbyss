@@ -2090,6 +2090,7 @@ function isGitTaskFinishedPayload(value: unknown): boolean {
     (value.error === undefined || isString(value.error)) &&
     (value.errorKind === undefined ||
       value.errorKind === "conflict" ||
+      value.errorKind === "diverged" ||
       value.errorKind === "clean-worktree" ||
       value.errorKind === "network" ||
       value.errorKind === "auth" ||

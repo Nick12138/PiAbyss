@@ -676,6 +676,66 @@ describe("ChangesPanel", () => {
     );
   });
 
+  it("does not leave the push spinner running if taskFinished arrives before acceptance", async () => {
+    const clean = status({
+      files: [
+        {
+          path: "src/app.ts",
+          staged: null,
+          unstaged: "modified",
+          conflict: false,
+          submodule: false,
+          pathSupported: true,
+        },
+      ],
+    });
+    request.mockImplementation(async (method) => {
+      if (method === "git.setWatching")
+        return success(method, { watching: true, snapshot: clean }) as never;
+      if (method === "git.push") {
+        // Model a quick rejection (e.g. non-fast-forward) whose completion
+        // event is delivered before the accepted response continuation runs.
+        act(() => {
+          publishValidatedHostEvent({
+            protocolVersion: 1,
+            event: "git.taskFinished",
+            hostInstanceId: host.hostInstanceId,
+            workspaceId: workspace.id,
+            workspaceRevision: workspace.revision,
+            sessionId: null,
+            sessionRevision: 0,
+            packageRevision: 0,
+            sequence: 1,
+            timestamp: Date.now(),
+            payload: {
+              taskId: "quick-task",
+              operation: "push",
+              workspaceName: "app",
+              ok: false,
+              error: "rejected",
+              errorKind: "network",
+            },
+          } as never);
+        });
+        return success(method, {
+          accepted: true,
+          taskId: "quick-task",
+          workspaceCwd: "/repo",
+        }) as never;
+      }
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+    render(<ChangesPanel visible />);
+
+    await user.click(await screen.findByRole("button", { name: "Push" }));
+
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith("git.push", expect.any(Object), null, 15_000),
+    );
+    expect(screen.queryByRole("button", { name: /Pushing/ })).not.toBeInTheDocument();
+  });
+
   it("reloads history when a pull moves HEAD while the History tab is open", async () => {
     const before = {
       sha: "a".repeat(40),

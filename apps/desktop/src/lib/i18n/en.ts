@@ -1624,6 +1624,8 @@ export const en = {
   gitPullFailedNamed: "{workspace} pull failed: {detail}",
   gitPushFailedNamed: "{workspace} push failed: {detail}",
   gitTaskFailedConflict: "Merge conflicts detected — resolve them and retry",
+  gitTaskFailedDiverged:
+    "The remote branch has commits missing locally. Pull and integrate the remote updates before pushing.",
   gitTaskFailedCleanWorktree: "Commit or stash your local changes first",
   gitTaskFailedNetwork: "Could not reach the remote repository",
   gitTaskFailedAuth: "Authentication failed — check your credentials",
