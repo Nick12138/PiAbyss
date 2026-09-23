@@ -800,6 +800,36 @@ describe("Composer managed documents", () => {
     );
   });
 
+  it("silently skips unavailable draft attachments while restoring the rest", async () => {
+    desktopMocks.isDesktop.mockResolvedValue(true);
+    desktopMocks.readSmall.mockRejectedValue(new Error("source file is missing"));
+    const existingSession = {
+      ...session(),
+      messages: [{ role: "user" as const, content: "Existing conversation" }],
+    };
+    useAppStore.getState().applySessionSnapshot(existingSession);
+    useAppStore.setState({
+      draftHydratedWorkspace: "/workspace",
+      draftAttachments: {
+        ["session:" + SESSION_ID]: [
+          { type: "file", id: "missing", name: "missing.txt", size: 10, kind: "text", sourcePath: "/missing.txt" },
+        ],
+      },
+    });
+
+    render(<Composer />);
+
+    await waitFor(() => expect(desktopMocks.readSmall).toHaveBeenCalledWith("/missing.txt"));
+    await waitFor(() =>
+      expect(useAppStore.getState().draftAttachments["session:" + SESSION_ID]).toBeUndefined(),
+    );
+    expect(
+      useAppStore
+        .getState()
+        .notifications.some((notification) => /draft attachment.*could not be restored/i.test(notification.message)),
+    ).toBe(false);
+  });
+
   it("does not duplicate restored document chips across session switches", async () => {
     desktopMocks.isDesktop.mockResolvedValue(true);
     useAppStore.setState({ draftHydratedWorkspace: "/workspace" });
