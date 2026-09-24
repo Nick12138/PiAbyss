@@ -355,7 +355,7 @@ async function main(): Promise<void> {
     ...createTelegramHandlers(agentDir),
     ...createTelegramSessionHandlers(agentDir),
     ...createScheduleHandlers(agentDir),
-    ...createMemoHandlers(agentDir),
+    ...createMemoHandlers(agentDir, modelRuntime, modelRegistry),
     ...createShellJobHandlers(),
     ...createPiSettingsHandlers(graphFactory, agentDir),
     ...createSkillHandlers(graphFactory),

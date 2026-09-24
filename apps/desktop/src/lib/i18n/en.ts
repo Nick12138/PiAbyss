@@ -1935,6 +1935,9 @@ export const en = {
   memoActionEdit: "Edit",
   memoActionSave: "Save",
   memoActionSaveHint: "Save (Ctrl+S)",
+  memoOptimize: "Organize memo",
+  memoUndoOptimize: "Undo organization",
+  memoOptimizeFailed: "Memo organization failed",
   memoActionClear: "Clear",
   memoActionClearHint: "Clear the unsaved new-note draft (text and images)",
   memoActionDelete: "Delete",
@@ -1996,8 +1999,6 @@ export const en = {
   memoFieldType: "Type",
   memoDropIgnored: "Skipped non-image file {name}",
   memoImageTooLarge: "Image exceeds the 8 MiB limit",
-  memoWorkspaceMismatch:
-    "Linked to workspace {workspace} — running the agent will switch to that workspace.",
   memoWorkspaceUnresolved:
     'No workspace matches "{workspace}" — the default workspace will be used instead.',
 } as const;

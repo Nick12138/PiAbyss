@@ -1306,6 +1306,25 @@ export function validateRequestParams<M extends HostMethod>(
         : fail("invalid schedule.agentDelete params", { method });
     case "memo.list":
       return params === null ? ok(null) : fail("params must be null", { method });
+    case "memo.optimize":
+      return exactObject(params, ["contentMd", "type", "workspaceHint", "workspaces"]) &&
+        isString(params.contentMd) &&
+        params.contentMd.length <= 200_000 &&
+        isMemoNoteType(params.type) &&
+        (params.workspaceHint === null ||
+          (isString(params.workspaceHint) && params.workspaceHint.length <= 300)) &&
+        Array.isArray(params.workspaces) &&
+        params.workspaces.length <= 200 &&
+        params.workspaces.every(
+          (entry) =>
+            exactObject(entry, ["id", "name"]) &&
+            isNonEmptyString(entry.id) &&
+            entry.id.length <= 128 &&
+            isString(entry.name) &&
+            entry.name.length <= 300,
+        )
+        ? ok(params)
+        : fail("invalid memo.optimize params", { method });
     case "memo.create":
       return exactObject(
         params,

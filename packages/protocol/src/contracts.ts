@@ -257,6 +257,7 @@ export type HostContextMap = {
   "schedule.agentAbort": HostContext;
   "schedule.agentDelete": HostContext;
   "memo.list": HostContext;
+  "memo.optimize": HostContext;
   "memo.create": HostContext;
   "memo.update": HostContext;
   "memo.delete": HostContext;
@@ -487,6 +488,12 @@ export type HostRequestParams = {
   "schedule.agentAbort": { sessionId: string };
   "schedule.agentDelete": { sessionPath: string };
   "memo.list": null;
+  "memo.optimize": {
+    contentMd: string;
+    type: MemoNoteType;
+    workspaceHint: string | null;
+    workspaces: Array<{ id: string; name: string }>;
+  };
   "memo.create": {
     type: MemoNoteType;
     title: string;
@@ -732,6 +739,11 @@ export type HostResultMap = {
   "schedule.agentAbort": { ok: boolean };
   "schedule.agentDelete": { ok: boolean };
   "memo.list": { notes: MemoNote[] };
+  "memo.optimize": {
+    contentMd: string;
+    type: MemoNoteType;
+    workspaceId: string | null;
+  };
   "memo.create": { note: MemoNote };
   "memo.update": { note: MemoNote };
   "memo.delete": { ok: boolean };

@@ -22,6 +22,7 @@ import {
   Pencil,
   Plus,
   ScrollText,
+  Sparkles,
   StickyNote,
   Trash2,
   X,
@@ -64,6 +65,7 @@ import { useAppStore } from "../../lib/stores/app-store";
 import {
   clearMemoDraft,
   createMemoNote,
+  optimizeMemo,
   deleteMemoNote,
   getMemoDraft,
   listMemoNotes,
@@ -90,7 +92,6 @@ import {
   statusCounts,
   tagHue,
   withMemoPrompt,
-  workspaceMismatch,
   type MemoStatusFilter,
 } from "./memo-model";
 
@@ -865,13 +866,11 @@ export function MemoPage() {
     };
   }, [editorOpen, addDroppedPaths]);
 
-  const mismatch = selectedNote
-    ? workspaceMismatch(selectedNote, workspace?.canonicalCwd ?? null)
-    : null;
-  // 横幅语义：提示能解析到已知工作区 → 执行时切换过去；解析不到 → 回退默认工作区。
-  const workspaceHintResolved = selectedNote
-    ? resolveWorkspaceHint(selectedNote.workspaceHint, workspaceCandidates) !== null
-    : false;
+  // 只提示无法解析的工作区关联；可解析时「执行」会自动切换，无需额外提醒。
+  const unresolvedWorkspace =
+    selectedNote && resolveWorkspaceHint(selectedNote.workspaceHint, workspaceCandidates) === null
+      ? selectedNote.workspaceHint
+      : null;
   return (
     <div
       ref={rootRef}
@@ -1031,6 +1030,10 @@ export function MemoPage() {
               editor={editor}
               saving={saving}
               workspaceOptions={workspaceComboOptions}
+              availableWorkspaces={workspaceCandidates.map((cwd, index) => ({
+                id: `workspace-${index}`,
+                name: pathBasename(cwd),
+              }))}
               onChange={setEditor}
               onSave={saveEditor}
               onClear={clearNewDraft}
@@ -1043,8 +1046,7 @@ export function MemoPage() {
             <MemoDetail
               note={selectedNote}
               imageUrls={imageUrls}
-              workspaceMismatchHint={mismatch}
-              workspaceHintResolved={mismatch !== null && workspaceHintResolved}
+              unresolvedWorkspace={unresolvedWorkspace}
               confirmingDelete={confirmingDelete}
               onBack={backToList}
               onEdit={() => startEdit(selectedNote)}
@@ -1061,6 +1063,10 @@ export function MemoPage() {
               editor={newEditorState(useAppStore.getState().workspace?.canonicalCwd)}
               saving={saving}
               workspaceOptions={workspaceComboOptions}
+              availableWorkspaces={workspaceCandidates.map((cwd, index) => ({
+                id: `workspace-${index}`,
+                name: pathBasename(cwd),
+              }))}
               onChange={setEditor}
               onSave={saveEditor}
               onClear={clearNewDraft}
@@ -1312,8 +1318,7 @@ function BackToListButton({ onClick }: { onClick: () => void }) {
 function MemoDetail({
   note,
   imageUrls,
-  workspaceMismatchHint,
-  workspaceHintResolved,
+  unresolvedWorkspace,
   confirmingDelete,
   onBack,
   onEdit,
@@ -1323,9 +1328,7 @@ function MemoDetail({
 }: {
   note: MemoNote;
   imageUrls: Record<string, string>;
-  workspaceMismatchHint: string | null;
-  /** 提示能否解析到已知工作区（能 → 执行时切换过去；不能 → 回退默认工作区）。 */
-  workspaceHintResolved: boolean;
+  unresolvedWorkspace: string | null;
   confirmingDelete: boolean;
   onBack: () => void;
   onEdit: () => void;
@@ -1403,14 +1406,10 @@ function MemoDetail({
           <span className="text-muted">{formatMemoDateTime(note.updatedAt)}</span>
         </div>
 
-        {workspaceMismatchHint && (
+        {unresolvedWorkspace && (
           <div className="flex items-center gap-1.5 rounded-md bg-surface-overlay px-2.5 py-1.5 text-[12px] text-muted">
             <CircleAlert size={13} className="shrink-0" aria-hidden />
-            <span>
-              {workspaceHintResolved
-                ? t("memoWorkspaceMismatch", { workspace: workspaceMismatchHint })
-                : t("memoWorkspaceUnresolved", { workspace: workspaceMismatchHint })}
-            </span>
+            <span>{t("memoWorkspaceUnresolved", { workspace: unresolvedWorkspace })}</span>
           </div>
         )}
 
@@ -1450,6 +1449,7 @@ function MemoEditor({
   editor,
   saving,
   workspaceOptions,
+  availableWorkspaces,
   onChange,
   onSave,
   onClear,
@@ -1462,6 +1462,7 @@ function MemoEditor({
   saving: boolean;
   /** 工作区输入框的下拉选项（当前工作区 + 历史提示）。 */
   workspaceOptions: { value: string; current?: boolean }[];
+  availableWorkspaces: { id: string; name: string }[];
   onChange: (next: EditorState) => void;
   onSave: () => void;
   /** 仅新建模式传入：清空未保存的新建内容（正文与图片）。 */
@@ -1472,6 +1473,8 @@ function MemoEditor({
   onBack: () => void;
 }) {
   const t = useT();
+  const [optimizing, setOptimizing] = useState(false);
+  const [undoSnapshot, setUndoSnapshot] = useState<EditorState | null>(null);
   const canSave = editor.contentMd.trim().length > 0;
   const canClear =
     editor.id === null && (editor.contentMd.trim().length > 0 || editor.pendingImages.length > 0);
@@ -1486,12 +1489,54 @@ function MemoEditor({
       .filter((file) => IMAGE_INPUT_TYPES.test(file.type));
     if (files.length > 0) {
       event.preventDefault();
+      setUndoSnapshot(null);
       onAddImages(files);
     }
   }
 
   function patch(partial: Partial<EditorState>) {
+    setUndoSnapshot(null);
     onChange({ ...editor, ...partial });
+  }
+
+  async function runOptimization() {
+    if (optimizing || !editor.contentMd.trim()) return;
+    setOptimizing(true);
+    const before = {
+      ...editor,
+      pendingImages: [...editor.pendingImages],
+      removedImageIds: [...editor.removedImageIds],
+    };
+    try {
+      const result = await optimizeMemo({
+        contentMd: editor.contentMd,
+        type: editor.type,
+        workspaceHint: editor.workspaceHint ? pathBasename(editor.workspaceHint) : null,
+        workspaces: availableWorkspaces,
+      });
+      const chosenIndex = result.workspaceId?.startsWith("workspace-")
+        ? Number(result.workspaceId.slice("workspace-".length))
+        : -1;
+      const chosen = Number.isInteger(chosenIndex)
+        ? availableWorkspaces[chosenIndex]?.name
+        : undefined;
+      setUndoSnapshot(before);
+      onChange({
+        ...editor,
+        contentMd: result.contentMd,
+        type: result.type,
+        ...(chosen ? { workspaceHint: chosen } : {}),
+      });
+    } catch (error) {
+      useAppStore
+        .getState()
+        .pushNotification(
+          `${t("memoOptimizeFailed")}: ${error instanceof Error ? error.message : String(error)}`,
+          "error",
+        );
+    } finally {
+      setOptimizing(false);
+    }
   }
 
   /** Ctrl+S / ⌘S 快捷保存：输入框（正文/工作区）聚焦时也能触发，拦截浏览器默认保存。 */
@@ -1529,12 +1574,42 @@ function MemoEditor({
           ariaLabel={t("memoFieldWorkspace")}
           className="w-28 shrink-0 @2xl:w-44"
         />
-        {/* 弹性占位：把操作按钮推到右侧（替代原粘贴提示文案）。 */}
         <div className="hidden min-w-0 flex-1 @2xl:block" />
+        {undoSnapshot ? (
+          <button
+            type="button"
+            onClick={() => {
+              onChange(undoSnapshot);
+              setUndoSnapshot(null);
+            }}
+            title={t("memoUndoOptimize")}
+            aria-label={t("memoUndoOptimize")}
+            className="flex h-8 shrink-0 items-center gap-1 rounded-md border border-border px-2 text-xs text-muted hover:bg-surface-overlay"
+          >
+            <ArrowLeft size={14} />
+            {t("memoUndoOptimize")}
+          </button>
+        ) : (
+          editor.contentMd.trim() && (
+            <button
+              type="button"
+              onClick={() => void runOptimization()}
+              disabled={optimizing}
+              title={t("memoOptimize")}
+              aria-label={t("memoOptimize")}
+              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-accent hover:bg-surface-overlay disabled:opacity-50"
+            >
+              {optimizing ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+            </button>
+          )
+        )}
         {canClear && (
           <button
             type="button"
-            onClick={onClear}
+            onClick={() => {
+              setUndoSnapshot(null);
+              onClear();
+            }}
             title={t("memoActionClearHint")}
             aria-label={t("memoActionClearHint")}
             data-testid="memo-editor-clear"
@@ -1593,7 +1668,10 @@ function MemoEditor({
                 )}
                 <button
                   type="button"
-                  onClick={() => onRemoveImage(image.key)}
+                  onClick={() => {
+                    setUndoSnapshot(null);
+                    onRemoveImage(image.key);
+                  }}
                   aria-label={t("memoActionDelete")}
                   className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted hover:text-destructive"
                 >

@@ -26,6 +26,25 @@ function requireHost() {
   return hostContext(host);
 }
 
+export type MemoOptimizeRequest = {
+  contentMd: string;
+  type: MemoNoteType;
+  workspaceHint: string | null;
+  workspaces: Array<{ id: string; name: string }>;
+};
+
+export type MemoOptimizeResult = {
+  contentMd: string;
+  type: MemoNoteType;
+  workspaceId: string | null;
+};
+
+export async function optimizeMemo(input: MemoOptimizeRequest): Promise<MemoOptimizeResult> {
+  const response = await hostClient.request("memo.optimize", requireHost(), input, null);
+  if (!response.ok) throw new Error(response.error?.message ?? "memo.optimize failed");
+  return response.result;
+}
+
 export type MemoCreateRequest = {
   type: MemoNoteType;
   title: string;
@@ -83,7 +102,12 @@ export async function deleteMemoNote(id: string): Promise<void> {
 
 /** 读取「新建」草稿（无草稿返回 null；仅本机持久化，不参与云同步）。 */
 export async function getMemoDraft(): Promise<MemoDraft | null> {
-  const response = await hostClient.request("memo.getDraft", requireHost(), null, DEFAULT_TIMEOUT_MS);
+  const response = await hostClient.request(
+    "memo.getDraft",
+    requireHost(),
+    null,
+    DEFAULT_TIMEOUT_MS,
+  );
   if (!response.ok) throw new Error(response.error?.message ?? "memo.getDraft failed");
   return response.result.draft;
 }

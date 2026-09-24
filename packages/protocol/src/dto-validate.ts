@@ -3208,6 +3208,15 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         result.notes.every(isMemoNote)
         ? null
         : "invalid memo.list result";
+    case "memo.optimize":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["contentMd", "type", "workspaceId"]) &&
+        isString(result.contentMd) &&
+        result.contentMd.length <= 200_000 &&
+        ["memo", "idea", "task"].includes(String(result.type)) &&
+        (result.workspaceId === null || isNonEmptyString(result.workspaceId))
+        ? null
+        : "invalid memo.optimize result";
     case "memo.create":
     case "memo.update":
       return isPlainObject(result) && hasExactKeys(result, ["note"]) && isMemoNote(result.note)

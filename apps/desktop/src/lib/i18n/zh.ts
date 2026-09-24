@@ -1858,6 +1858,9 @@ export const zh: Record<MessageKey, string> = {
   memoActionEdit: "编辑",
   memoActionSave: "保存",
   memoActionSaveHint: "保存（Ctrl+S）",
+  memoOptimize: "整理备忘录",
+  memoUndoOptimize: "撤销整理",
+  memoOptimizeFailed: "备忘录整理失败",
   memoActionClear: "清空",
   memoActionClearHint: "清空未保存的新建内容（正文与图片）",
   memoActionDelete: "删除",
@@ -1919,7 +1922,6 @@ export const zh: Record<MessageKey, string> = {
   memoFieldType: "类型",
   memoDropIgnored: "已忽略非图片文件 {name}",
   memoImageTooLarge: "图片超过 8 MiB 上限",
-  memoWorkspaceMismatch: "该记录关联工作区 {workspace}，执行时将切换到该工作区。",
   memoWorkspaceUnresolved: "未找到与 {workspace} 匹配的工作区，执行时将使用默认工作区。",
 };
 

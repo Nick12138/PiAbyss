@@ -312,6 +312,12 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "schedule.agentAbort": { sessionId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150" },
   "schedule.agentDelete": { sessionPath: "C:/s.jsonl" },
   "memo.list": null,
+  "memo.optimize": {
+    contentMd: "正文",
+    type: "memo",
+    workspaceHint: null,
+    workspaces: [],
+  },
   "memo.create": {
     type: "task",
     title: "重构 memo 模块",
@@ -623,6 +629,8 @@ function invalidParams(method: HostMethod): unknown {
       return { sessionPath: "" };
     case "memo.list":
       return {}; // must be null
+    case "memo.optimize":
+      return { contentMd: 42, type: "bad", workspaceHint: false, workspaces: [] };
     case "memo.create":
       return { type: "nope", title: "", contentMd: 42 };
     case "memo.update":
