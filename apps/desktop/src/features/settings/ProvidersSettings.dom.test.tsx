@@ -307,6 +307,31 @@ describe("ProvidersSettings dirty tracking", () => {
   });
 });
 
+describe("ProvidersSettings save errors", () => {
+  it("keeps a busy error from model-service changes out of notification history", async () => {
+    const user = userEvent.setup();
+    const spy = await renderLoaded(
+      mockRequests({
+        "provider.save": () =>
+          errorEnvelope("provider.save", {
+            code: "AGENT_BUSY",
+            message: "Agent is busy",
+            retryable: false,
+          }),
+      }),
+    );
+
+    await user.type(screen.getByLabelText(/Vendor name/), " updated");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(callsFor(spy, "provider.save")).toHaveLength(1));
+    expect(useAppStore.getState().notifications).toEqual([]);
+    expect(useAppStore.getState().transientNotifications.map((item) => item.message)).toContain(
+      "Agent is busy. Wait for the current run to finish, then try again.",
+    );
+  });
+});
+
 describe("ProvidersSettings key-removal safety", () => {
   it("Save & test skips the implicit save when only a stored-key removal is armed", async () => {
     const user = userEvent.setup();

@@ -575,7 +575,10 @@ export function ProvidersSettings() {
       if (!response) return null;
       if (!response.ok) {
         const message = localizeHostError(response.error, t);
-        pushNotification(providerSaveFailureMessage(message, provider), "error");
+        pushNotification(
+          providerSaveFailureMessage(message, provider),
+          hostErrorLevel(response.error),
+        );
         return null;
       }
       const saved = response.result.provider;
