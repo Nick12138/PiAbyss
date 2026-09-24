@@ -3,7 +3,7 @@ import { Square } from "lucide-react";
 import type { ShellJobStatus, ShellJobSummary } from "@piabyss/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
-import { activeSessionContext, hostContext } from "../../lib/bridge/host-context";
+import { hostContext, workspaceContext } from "../../lib/bridge/host-context";
 import { openSessionAcrossWorkspaces } from "../../lib/bridge/session-navigation";
 import { useT } from "../../lib/i18n/use-t";
 
@@ -152,7 +152,24 @@ export function ShellJobsBar() {
   if (running.length === 0) return null;
 
   const openSession = async (job: ShellJobSummary) => {
-    const outcome = await openSessionAcrossWorkspaces({ cwd: job.cwd, sessionId: job.sessionId });
+    const outcome = await openSessionAcrossWorkspaces(
+      { cwd: job.cwd, sessionId: job.sessionId },
+      {
+        resolveSessionPath: async (sessionId) => {
+          const current = useAppStore.getState();
+          if (!current.host || !current.workspace) return null;
+          const response = await hostClient.request(
+            "session.list",
+            workspaceContext(current.host, current.workspace),
+            null,
+            30_000,
+          );
+          if (!response.ok) return null;
+          const item = response.result.items.find((entry) => entry.sessionId === sessionId);
+          return item ? { sessionPath: item.sessionPath, archived: item.archived } : null;
+        },
+      },
+    );
     if (outcome.status === "archived" || outcome.status === "failed") {
       pushNotification(t("shellJobOpenSessionFailed"), "info");
     }
@@ -172,25 +189,11 @@ export function ShellJobsBar() {
     try {
       const res = await hostClient.request("shelljobs.stop", hostContext(host), { jobId: job.id });
       if (!res.ok) {
-        pushNotification(t("shellJobStopFailed"), "error");
+        pushNotification(`${t("shellJobStopFailed")}: ${res.error.message}`, "error");
         return;
       }
-      // Notify the owning agent (current session only — cross-session
-      // injection is not possible from the desktop).
-      const state = useAppStore.getState();
-      const session = state.session;
-      const workspace = state.workspace;
-      if (session && workspace && job.sessionId === session.sessionId) {
-        const text = t("shellJobStoppedNotifyAgent", {
-          title: job.title ?? job.command,
-          jobId: job.id,
-        });
-        await hostClient.request("agent.followUp", activeSessionContext(host, workspace, session), {
-          text,
-        });
-      } else {
-        pushNotification(t("shellJobStoppedOtherSession"), "info");
-      }
+      // pi-shelljob owns status settlement and sends the sole Agent notification
+      // through its triggerTurn notifier; do not inject a duplicate prompt here.
     } finally {
       setStoppingId(null);
     }

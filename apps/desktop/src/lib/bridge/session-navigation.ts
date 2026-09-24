@@ -207,6 +207,20 @@ export async function openSessionAcrossWorkspaces(
   target: SessionNavigationTarget,
   options: SessionNavigationOptions = {},
 ): Promise<SessionNavigationOutcome> {
+  // Avoid workspace activation when the requested session is already active.
+  // In shared-host mode, an unnecessary setCurrent can switch the transcript to
+  // that workspace's default/newest session before the later sessionId check.
+  const initialSession = useAppStore.getState().session;
+  if (
+    (target.sessionPath && initialSession?.sessionPath === target.sessionPath) ||
+    // Session IDs are globally unique; check before activating the target
+    // workspace because shared-host setCurrent can replace the active session
+    // with that workspace's default session as a side effect.
+    (target.sessionId && initialSession?.sessionId === target.sessionId)
+  ) {
+    return { status: "already-active" };
+  }
+
   // Cross-workspace activation (dedicated-Host or in-place setCurrent); the
   // helper owns the shared-host-mode branching and busy recovery.
   const activation = await activateWorkspaceAcrossWorkspaces(target.cwd, {

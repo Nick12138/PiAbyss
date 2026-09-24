@@ -195,6 +195,20 @@ describe("openSessionAcrossWorkspaces", () => {
     expect(hostClient.request).not.toHaveBeenCalled();
   });
 
+  it("keeps the already-active session without switching workspaces", async () => {
+    useAppStore.getState().setHost(host());
+    useAppStore.getState().setWorkspace(workspace());
+    useAppStore.getState().applySessionSnapshot(session());
+
+    const outcome = await openSessionAcrossWorkspaces({
+      cwd: "/proj/other",
+      sessionId: SESSION_ID,
+    });
+
+    expect(outcome.status).toBe("already-active");
+    expect(hostClient.request).not.toHaveBeenCalled();
+  });
+
   it("opens a same-workspace session and applies the snapshot", async () => {
     useAppStore.getState().setHost(host());
     useAppStore.getState().setWorkspace(workspace());

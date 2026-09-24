@@ -165,11 +165,14 @@ describe("ShellJobsBar", () => {
 
     await user.click(screen.getByRole("button", { name: /npm run dev/ }));
     await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith({ cwd: "/repo", sessionId: SESSION_ID }),
+      expect(navigate).toHaveBeenCalledWith(
+        { cwd: "/repo", sessionId: SESSION_ID },
+        expect.objectContaining({ resolveSessionPath: expect.any(Function) }),
+      ),
     );
   });
 
-  it("stops with a two-click confirm and notifies the agent via followUp for the owning session", async () => {
+  it("stops with a two-click confirm without sending a duplicate Agent notification", async () => {
     const user = userEvent.setup();
     useAppStore.getState().setShellJobs([RUNNING_JOB] as never);
     const request = vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
@@ -203,9 +206,15 @@ describe("ShellJobsBar", () => {
       ),
     );
     await waitFor(() =>
-      expect(request).toHaveBeenCalledWith("agent.followUp", expect.anything(), {
-        text: expect.stringContaining("job_run1"),
+      expect(request).toHaveBeenCalledWith("shelljobs.stop", expect.anything(), {
+        jobId: "job_run1",
       }),
+    );
+    expect(request).not.toHaveBeenCalledWith("agent.prompt", expect.anything(), expect.anything());
+    expect(request).not.toHaveBeenCalledWith(
+      "agent.followUp",
+      expect.anything(),
+      expect.anything(),
     );
   });
 });

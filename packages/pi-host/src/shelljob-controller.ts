@@ -1,65 +1,32 @@
 /**
  * Handlers for the background shell job status bar (shelljobs.* methods).
- *
- * Read paths go through shelljob-store; stop performs a best-effort process
- * tree kill using the pid recorded in status.json. pid reuse is the main
- * hazard: the window between "job running" and our kill is short, and we
- * re-check status.json (single source of truth for the extension) right
- * before signaling — a reused pid whose status.json still says "running" is
- * accepted as residual risk rather than guessing at process cmdlines.
+ * Stop is delegated to pi-shelljob's authenticated loopback control endpoint,
+ * so the extension owns process termination, state transition and notification.
  */
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { createHostError, type HostError } from "@piabyss/protocol";
 import type { MethodHandler } from "./server.js";
 import { readShellJob, readShellJobs } from "./shelljob-store.js";
 
-const execFileP = promisify(execFile);
+const DEFAULT_CONTROL_PORT = 18_767;
+const CONTROL_TIMEOUT_MS = 15_000;
 
-/** Grace period between SIGTERM and SIGKILL on POSIX tree kills. */
-const POSIX_TERM_GRACE_MS = 1_500;
-
-async function isPidAlive(pid: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    try {
-      process.kill(pid, 0);
-      resolve(true);
-    } catch {
-      resolve(false);
-    }
-  });
+function controlPort(): number {
+  const value = Number.parseInt(process.env.SHELLJOB_CONTROL_PORT ?? "", 10);
+  return Number.isInteger(value) && value > 0 && value < 65_536 ? value : DEFAULT_CONTROL_PORT;
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/** Tree-kill a job's pid. Returns false when nothing matching was alive. */
-async function killJobProcess(jobPid: number): Promise<boolean> {
-  if (process.platform === "win32") {
-    try {
-      // /T covers the child tree the pi extension spawns detached.
-      await execFileP("taskkill", ["/PID", String(jobPid), "/T", "/F"], { timeout: 10_000 });
-      return true;
-    } catch {
-      return false;
-    }
+function controlToken(): string | null {
+  const fromEnv = process.env.SHELLJOB_CONTROL_TOKEN?.trim();
+  if (fromEnv) return fromEnv;
+  try {
+    const token = readFileSync(join(homedir(), ".pi", "shelljob", "token"), "utf8").trim();
+    return token || null;
+  } catch {
+    return null;
   }
-  // POSIX: prefer the process group (shelljob workers run detached), fall
-  // back to the pid itself; escalate to SIGKILL after the grace period.
-  const signal = (negated: boolean, sig: NodeJS.Signals): boolean => {
-    try {
-      process.kill(negated ? -jobPid : jobPid, sig);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-  const signaled = signal(true, "SIGTERM") || signal(false, "SIGTERM");
-  if (!signaled) return false;
-  await sleep(POSIX_TERM_GRACE_MS);
-  if (await isPidAlive(jobPid)) {
-    if (!signal(true, "SIGKILL")) signal(false, "SIGKILL");
-  }
-  return true;
 }
 
 function jobError(code: HostError["code"], message: string): HostError {
@@ -68,33 +35,89 @@ function jobError(code: HostError["code"], message: string): HostError {
 
 export function createShellJobHandlers(): Record<string, MethodHandler> {
   return {
-    "shelljobs.list": async () => {
-      return { result: { jobs: readShellJobs() } };
-    },
+    "shelljobs.list": async () => ({ result: { jobs: readShellJobs() } }),
 
     "shelljobs.stop": async (ctx) => {
       const jobId = (ctx.params as { jobId: string }).jobId;
-      // Fresh read right before signaling: the extension flips status.json on
-      // exit, so a stale "running" snapshot is re-checked here.
       const job = readShellJob(jobId);
       if (!job) {
         return { error: jobError("RESOURCE_NOT_FOUND", `后台任务 ${jobId} 不存在`) };
       }
-      if (job.status !== "running") {
-        return { error: jobError("INVALID_REQUEST", `后台任务 ${jobId} 已结束，无需停止`) };
-      }
-      if (!job.pid) {
-        return { error: jobError("INTERNAL_ERROR", `后台任务 ${jobId} 缺少进程信息，无法停止`) };
-      }
-      const killed = await killJobProcess(job.pid);
-      if (!killed) {
+      // The plugin is authoritative for terminal/running state. Do not reject
+      // from this potentially stale Host snapshot; it handles already-ended and
+      // concurrent kill requests idempotently.
+      const token = controlToken();
+      if (!token) {
         return {
-          error: jobError("INTERNAL_ERROR", `停止后台任务 ${jobId} 失败（进程可能已退出）`),
+          error: jobError("HOST_NOT_READY", "pi-shelljob 控制接口尚未就绪（缺少认证 token）"),
         };
       }
-      // The extension owns status.json and will mark the job killed on its
-      // own reap cycle; the watcher picks that up within one poll interval.
-      return { result: { stopped: true } };
+      // Derive the caller session from the locally persisted owning job record,
+      // not from a UI-supplied value. The plugin independently checks that the
+      // target job belongs to this session before allowing termination.
+      const sessionId = job.sessionId;
+      if (!sessionId) {
+        return { error: jobError("INVALID_REQUEST", `后台任务 ${jobId} 缺少会话归属`) };
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), CONTROL_TIMEOUT_MS);
+      try {
+        const response = await fetch(`http://127.0.0.1:${controlPort()}/api/jobs/stop`, {
+          method: "POST",
+          // Never forward the bearer token through an HTTP redirect.
+          redirect: "error",
+          headers: {
+            "content-type": "application/json",
+            "x-pi-shelljob-token": token,
+            "x-pi-session-id": sessionId,
+          },
+          body: JSON.stringify({ jobId }),
+          signal: controller.signal,
+        });
+        const result = (await response.json().catch(() => null)) as {
+          ok?: boolean;
+          status?: string;
+          error?: string;
+        } | null;
+        if (
+          response.ok &&
+          result?.ok &&
+          (result.status === "killed" || result.status === "already_ended")
+        ) {
+          return { result: { stopped: true } };
+        }
+        if (response.status === 404) {
+          return {
+            error: jobError("RESOURCE_NOT_FOUND", result?.error ?? `后台任务 ${jobId} 不存在`),
+          };
+        }
+        if (response.status === 403) {
+          return {
+            error: jobError("INVALID_REQUEST", result?.error ?? "后台任务会话归属校验失败"),
+          };
+        }
+        if (response.status === 401) {
+          return { error: jobError("HOST_NOT_READY", "pi-shelljob 控制接口认证失败") };
+        }
+        return {
+          error: jobError(
+            response.status === 503 ? "HOST_NOT_READY" : "INTERNAL_ERROR",
+            result?.error ?? `pi-shelljob 停止接口返回 HTTP ${response.status}`,
+          ),
+        };
+      } catch (error) {
+        const timedOut = error instanceof Error && error.name === "AbortError";
+        return {
+          error: jobError(
+            "HOST_NOT_READY",
+            timedOut
+              ? "等待 pi-shelljob 停止接口超时"
+              : `无法连接 pi-shelljob 停止接口：${error instanceof Error ? error.message : String(error)}`,
+          ),
+        };
+      } finally {
+        clearTimeout(timer);
+      }
     },
   };
 }
