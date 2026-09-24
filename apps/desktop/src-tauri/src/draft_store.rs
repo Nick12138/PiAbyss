@@ -333,6 +333,22 @@ impl DraftStore {
         })
     }
 
+    pub fn clear_all(&mut self) -> Result<(), String> {
+        if self.read_only {
+            return Err("draft persistence is read-only or unavailable".into());
+        }
+        let path = self
+            .path
+            .as_ref()
+            .ok_or_else(|| "draft persistence path is unavailable".to_string())?;
+        if self.drafts.is_empty() {
+            return Ok(());
+        }
+        write_file(path, &[])?;
+        self.drafts.clear();
+        Ok(())
+    }
+
     pub fn apply(&mut self, mutations: Vec<DraftMutation>) -> Result<DraftApplyResult, String> {
         if self.read_only {
             return Err("draft persistence is read-only or unavailable".into());
@@ -809,6 +825,27 @@ mod tests {
         assert_eq!(snapshot.drafts.len(), 2);
         assert_eq!(snapshot.drafts[0].kind, DraftKind::NewConversation);
         assert_eq!(snapshot.drafts[1].session_id.as_deref(), Some("s1"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn clear_all_removes_every_workspace_draft_from_disk() {
+        let dir = test_dir("clear-all");
+        let repo_a = workspace_cwd(&dir, "repo-a");
+        let repo_b = workspace_cwd(&dir, "repo-b");
+        let mut store = DraftStore::load_from_dir(&dir).unwrap();
+        store
+            .apply(vec![
+                upsert(new_target(&repo_a), "text"),
+                upsert(session_target(&repo_b, "s1"), "text with attachment"),
+            ])
+            .unwrap();
+
+        store.clear_all().unwrap();
+        assert!(store.workspace_snapshot(&repo_a).unwrap().drafts.is_empty());
+        assert!(store.workspace_snapshot(&repo_b).unwrap().drafts.is_empty());
+        let reloaded = DraftStore::load_from_dir(&dir).unwrap();
+        assert!(reloaded.drafts.is_empty());
         fs::remove_dir_all(dir).unwrap();
     }
 

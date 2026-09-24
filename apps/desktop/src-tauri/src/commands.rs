@@ -63,6 +63,12 @@ pub async fn desktop_drafts_get(
 }
 
 #[tauri::command]
+pub async fn desktop_drafts_clear_all(state: State<'_, AppState>) -> Result<(), String> {
+    let mut store = state.drafts.lock().await;
+    store.clear_all()
+}
+
+#[tauri::command]
 pub async fn desktop_drafts_apply(
     state: State<'_, AppState>,
     mutations: Vec<DraftMutation>,

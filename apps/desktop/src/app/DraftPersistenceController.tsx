@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import {
+  clearAllDrafts,
   flushDraftWrites,
   hydrateDraftWorkspace,
   settleDraftWritesWithin,
@@ -110,8 +111,9 @@ export function DraftPersistenceController() {
         if (closing) return;
         closing = true;
         try {
-          if (!shouldAwaitDraftFlushOnClose()) await settleDraftWritesWithin();
+          await settleDraftWritesWithin();
           if (!(await ensureFileCanLeave())) return;
+          await clearAllDrafts();
           if (shouldAwaitDraftFlushOnClose()) await closeWindowAfterDraftFlush(event, appWindow);
           else {
             await appWindow.hide();
@@ -126,6 +128,7 @@ export function DraftPersistenceController() {
         try {
           await settleDraftWritesWithin();
           if (!(await ensureFileCanLeave())) return;
+          await clearAllDrafts();
           await invoke("desktop_exit");
         } finally {
           closing = false;

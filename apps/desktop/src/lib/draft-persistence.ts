@@ -214,6 +214,20 @@ export async function hydrateDraftWorkspace(canonicalCwd: string): Promise<void>
   }
 }
 
+/** Clear all in-memory and persisted composer drafts when the app window closes. */
+export async function clearAllDrafts(): Promise<void> {
+  if (writeTimer !== null) globalThis.clearTimeout(writeTimer);
+  writeTimer = null;
+  dirtyKeys = new Set();
+  const { invoke, isTauri } = await import("@tauri-apps/api/core");
+  if (isTauri()) await invoke("desktop_drafts_clear_all");
+  const state = useAppStore.getState();
+  for (const target of Object.values(state.draftTargets)) {
+    state.clearDraftState(target);
+  }
+  dirtyKeys = new Set();
+}
+
 export function __resetDraftPersistenceForTests(): void {
   if (writeTimer !== null) globalThis.clearTimeout(writeTimer);
   dirtyKeys = new Set();
