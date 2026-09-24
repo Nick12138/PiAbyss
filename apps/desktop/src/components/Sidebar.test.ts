@@ -24,6 +24,16 @@ describe("Sidebar", () => {
     },
   );
 
+  it("disables the memo entry until the Host is ready", () => {
+    const html = renderToStaticMarkup(
+      createElement(SidebarLayout, { page: "chat", setPage: vi.fn() }),
+    );
+
+    expect(html).toContain('data-testid="sidebar-memo-entry"');
+    expect(html).toContain('title="Memos · host not ready"');
+    expect(html).toMatch(/data-testid="sidebar-memo-entry"[^>]*disabled/);
+  });
+
   it("renders the aside as a zero-width strip when the sidebar is collapsed", async () => {
     // sidebarCollapsed lives in app-store (zustand v5 serves SSR from the
     // store's initial snapshot captured at module load, so setState can't

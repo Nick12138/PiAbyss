@@ -130,6 +130,7 @@ export function SidebarLayout({
 }) {
   const t = useT();
   const scheduleEnabled = useSchedulePluginEnabled();
+  const hostReady = Boolean(useAppStore((s) => s.host?.hostInstanceId));
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const telegramViewActive = useTelegramWorkspaceActive();
   const [sessionsCollapsed, setSessionsCollapsed] = useState(() =>
@@ -343,18 +344,19 @@ export function SidebarLayout({
             <div className="px-2 pb-2">
               <button
                 type="button"
+                disabled={!hostReady}
                 onClick={() => setPage(page === "memo" ? "chat" : "memo")}
                 data-ui="nav-item"
                 data-testid="sidebar-memo-entry"
                 data-state={page === "memo" ? "active" : "inactive"}
-                title={t("memoTitle")}
+                title={hostReady ? t("memoTitle") : `${t("memoTitle")} · host not ready`}
                 aria-label={t("memoTitle")}
                 aria-pressed={page === "memo"}
                 className={`flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] transition-colors ${
                   page === "memo"
                     ? "theme-nav-active bg-nav-active text-nav-active-foreground"
                     : "text-foreground hover:bg-surface-overlay"
-                }`}
+                } disabled:cursor-not-allowed disabled:opacity-40`}
               >
                 <ListTodo size={18} className="shrink-0" />
                 <span>{t("memoTitle")}</span>
