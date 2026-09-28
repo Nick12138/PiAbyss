@@ -914,11 +914,13 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
 
   const copyCommitInfo = async (commit: GitCommitSummary) => {
     try {
+      // Deliberately silent: no success toast. Copying a commit reference is a
+      // throwaway action, and a toast covering the history list right after the
+      // user right-clicked it is pure noise.
       await navigator.clipboard.writeText(commitClipboardText(commit, locale));
-      pushNotification(t("gitCommitInfoCopied"), "success");
     } catch {
-      // Clipboard unavailable (e.g. missing permission) — the SHA is also
-      // selectable from the row, so stay silent.
+      // Clipboard unavailable (e.g. missing permission) — stay silent too; the
+      // SHA is selectable from the row.
     }
   };
 

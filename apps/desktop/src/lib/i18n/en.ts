@@ -1662,7 +1662,6 @@ export const en = {
   gitCopyPath: "Copy path",
   gitPathCopied: "File path copied",
   gitCopyCommitInfo: "Copy commit info",
-  gitCommitInfoCopied: "Commit info copied",
   gitDiscardHunkTitle: "Discard this hunk?",
   gitDiscardHunkConfirm: "This permanently discards the selected unstaged hunk in {path}.",
   gitDiscardHunk: "Discard hunk",
