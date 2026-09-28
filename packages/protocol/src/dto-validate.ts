@@ -2405,6 +2405,7 @@ function isMemoNote(value: unknown): boolean {
       "title",
       "contentMd",
       "status",
+      "sessionId",
       "tags",
       "workspaceHint",
       "images",
@@ -2418,7 +2419,11 @@ function isMemoNote(value: unknown): boolean {
     (value.type === "memo" || value.type === "idea" || value.type === "task") &&
     isString(value.title) &&
     isString(value.contentMd) &&
-    (value.status === "open" || value.status === "done" || value.status === "archived") &&
+    (value.status === "open" ||
+      value.status === "in_progress" ||
+      value.status === "done" ||
+      value.status === "archived") &&
+    (value.sessionId === null || isString(value.sessionId)) &&
     isStringArray(value.tags) &&
     (value.workspaceHint === null || isString(value.workspaceHint)) &&
     Array.isArray(value.images) &&
@@ -2698,6 +2703,7 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
     case "git.unstage":
     case "git.unstageAll":
     case "git.discard":
+    case "git.discardAll":
       return isGitMutationResult(result, false) ? null : `invalid ${method} result`;
     case "git.push":
     case "git.pull":

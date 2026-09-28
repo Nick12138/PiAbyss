@@ -969,7 +969,6 @@ export class GitService {
     if (
       change.conflict ||
       change.submodule ||
-      change.unstaged === "untracked" ||
       change.unstaged === "conflicted" ||
       change.unstaged === "renamed" ||
       change.unstaged === "copied"
@@ -980,9 +979,16 @@ export class GitService {
       );
     }
     this.validatePath(status.repositoryRoot, change.path);
+    // Untracked files have no HEAD/index version to restore, so discarding
+    // means deleting the file itself (`git clean` without -x never touches
+    // ignored paths, matching the status listing that hid them).
+    const args =
+      change.unstaged === "untracked"
+        ? ["clean", "-f", "--", change.path]
+        : ["restore", "--worktree", "--", change.path];
     const result = await runGitCommand(this.executable, {
       cwd: status.repositoryRoot,
-      args: ["restore", "--worktree", "--", change.path],
+      args,
       timeoutMs: GIT_MUTATION_TIMEOUT_MS,
       maxStdoutBytes: GIT_MUTATION_OUTPUT_LIMIT_BYTES,
       truncateStdout: true,
@@ -994,6 +1000,63 @@ export class GitService {
         safeGitMessage(result.stderr || result.stdout.toString("utf8"), "Git discard failed"),
       );
     }
+    return { applied: true, ...(await this.refreshAfterMutation(workspace, signal)) };
+  }
+
+  /**
+   * Discard every change in the working tree at once: staged and unstaged
+   * edits are reset to HEAD, and untracked (new) files and directories are
+   * deleted. Refuses the whole batch when any entry is unsafe to discard
+   * (conflicts, submodules, or non-UTF-8 paths) so the user never loses a
+   * file they could not see or review in the panel.
+   */
+  async discardAll(
+    workspace: string,
+    expectedRevision: number,
+    signal?: AbortSignal,
+  ): Promise<GitMutationResult> {
+    const status = this.requireReady(await this.getStatus(workspace, signal));
+    if (status.revision !== expectedRevision) {
+      throw new GitServiceError("STALE_REVISION", "Git status changed before discard", true);
+    }
+    if (status.files.length === 0) {
+      throw new GitServiceError("GIT_OPERATION_FAILED", "There are no changes to discard");
+    }
+    if (
+      status.files.some(
+        (change) => change.conflict || change.submodule || !change.pathSupported,
+      )
+    ) {
+      throw new GitServiceError(
+        "GIT_OPERATION_FAILED",
+        "Some changes cannot be safely discarded from PiAbyss; discard them individually",
+      );
+    }
+    const runMutation = async (args: string[], fallback: string) => {
+      const result = await runGitCommand(this.executable, {
+        cwd: status.repositoryRoot,
+        args,
+        timeoutMs: GIT_MUTATION_TIMEOUT_MS,
+        maxStdoutBytes: GIT_MUTATION_OUTPUT_LIMIT_BYTES,
+        truncateStdout: true,
+        signal,
+      });
+      if (result.exitCode !== 0) {
+        throw new GitServiceError(
+          "GIT_OPERATION_FAILED",
+          safeGitMessage(result.stderr || result.stdout.toString("utf8"), fallback),
+        );
+      }
+    };
+    // On an unborn branch `reset --hard` cannot resolve HEAD; a mixed reset
+    // still unstages everything, after which `clean` removes the files.
+    await runMutation(
+      status.unborn ? ["reset"] : ["reset", "--hard"],
+      "Git discard-all failed",
+    );
+    // `clean` without -x never touches ignored paths, matching the status
+    // listing that hides them.
+    await runMutation(["clean", "-f", "-d"], "Git discard-all failed");
     return { applied: true, ...(await this.refreshAfterMutation(workspace, signal)) };
   }
 

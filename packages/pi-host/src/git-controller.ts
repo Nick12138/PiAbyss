@@ -380,6 +380,17 @@ export function createGitHandlers(
         emitSnapshot,
       ),
 
+    "git.discardAll": async (ctx) =>
+      mutateGit(
+        factory,
+        ctx,
+        (root, signal) => {
+          const params = ctx.params as { expectedRevision: number };
+          return service.discardAll(root, params.expectedRevision, signal);
+        },
+        emitSnapshot,
+      ),
+
     "git.commit": async (ctx) =>
       mutateGit(
         factory,

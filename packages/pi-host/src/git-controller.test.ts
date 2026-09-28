@@ -88,6 +88,7 @@ function fixture() {
     unstage: vi.fn(),
     unstageAll: vi.fn(),
     discard: vi.fn(),
+    discardAll: vi.fn(async () => ({ applied: true as const, snapshot: ready })),
     commit: vi.fn(),
     getStagedPatch: vi.fn(),
     createBranch: vi.fn(async () => ({ applied: true as const, snapshot: ready })),
@@ -176,7 +177,14 @@ describe("Git controller", () => {
       4,
       expect.any(AbortSignal),
     );
-    expect(state.server.emit).toHaveBeenCalledTimes(2);
+
+    await handlers["git.discardAll"]!(context("git.discardAll", { expectedRevision: 4 }));
+    expect(state.service.discardAll).toHaveBeenCalledWith(
+      "/repo/apps/desktop",
+      4,
+      expect.any(AbortSignal),
+    );
+    expect(state.server.emit).toHaveBeenCalledTimes(3);
   });
 
   it("routes hunk and branch mutations through the lock and emits refreshed status", async () => {

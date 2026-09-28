@@ -326,13 +326,59 @@ describe("GitService", () => {
     await expect(readFile(join(workspace, "tracked.txt"), "utf8")).resolves.toBe("reviewed\n");
     expect(git(root, "show", `:${path}`)).toBe("reviewed");
 
-    await writeFile(join(workspace, "untracked.txt"), "keep me\n", "utf8");
+    await writeFile(join(workspace, "untracked.txt"), "delete me\n", "utf8");
+    await mkdir(join(workspace, "packages", "app", "nested"), { recursive: true });
+    await writeFile(join(workspace, "packages", "app", "nested", "new.txt"), "new\n", "utf8");
     const withUntracked = await service.getStatus(workspace);
     if (withUntracked.state !== "ready") throw new Error("expected ready status");
-    await expect(
-      service.discard(workspace, "packages/app/untracked.txt", withUntracked.revision),
-    ).rejects.toMatchObject({ code: "GIT_OPERATION_FAILED" });
-    await expect(readFile(join(workspace, "untracked.txt"), "utf8")).resolves.toBe("keep me\n");
+    const discardedUntracked = await service.discard(
+      workspace,
+      "packages/app/untracked.txt",
+      withUntracked.revision,
+    );
+    expect(discardedUntracked.applied).toBe(true);
+    await expect(readFile(join(workspace, "untracked.txt"), "utf8")).rejects.toThrow();
+    await expect(readFile(join(workspace, "packages", "app", "nested", "new.txt"), "utf8")).resolves.toBe(
+      "new\n",
+    );
+  });
+
+  it("discards all changes including staged edits and untracked files", async () => {
+    const { root, workspace } = await createRepository();
+    const service = new GitService();
+    const path = "packages/app/tracked.txt";
+    await writeFile(join(workspace, "tracked.txt"), "reviewed\n", "utf8");
+    const initial = await service.getStatus(workspace);
+    if (initial.state !== "ready") throw new Error("expected ready status");
+    const staged = await service.stage(workspace, path, initial.revision);
+    if (!staged.snapshot || staged.snapshot.state !== "ready") throw new Error("expected status");
+    await writeFile(join(workspace, "tracked.txt"), "modified\n", "utf8");
+    await writeFile(join(workspace, "untracked.txt"), "delete me\n", "utf8");
+    await mkdir(join(workspace, "untracked-dir"), { recursive: true });
+    await writeFile(join(workspace, "untracked-dir", "inside.txt"), "delete me too\n", "utf8");
+
+    const before = await service.getStatus(workspace);
+    if (before.state !== "ready") throw new Error("expected ready status");
+    expect(before.files.length).toBeGreaterThan(1);
+    const discarded = await service.discardAll(workspace, before.revision);
+    expect(discarded.snapshot).toMatchObject({ state: "ready", files: [] });
+    await expect(readFile(join(workspace, "tracked.txt"), "utf8")).resolves.toBe("first\n");
+    await expect(readFile(join(workspace, "untracked.txt"), "utf8")).rejects.toThrow();
+    await expect(readFile(join(workspace, "untracked-dir", "inside.txt"), "utf8")).rejects.toThrow();
+    expect(git(root, "status", "--porcelain")).toBe("");
+  });
+
+  it("refuses discardAll on stale revision and rejects on empty worktree", async () => {
+    const { workspace } = await createRepository();
+    const service = new GitService();
+    const initial = await service.getStatus(workspace);
+    if (initial.state !== "ready") throw new Error("expected ready status");
+    await expect(service.discardAll(workspace, initial.revision)).rejects.toMatchObject({
+      code: "GIT_OPERATION_FAILED",
+    });
+    await expect(service.discardAll(workspace, initial.revision + 500)).rejects.toMatchObject({
+      code: "STALE_REVISION",
+    });
   });
 
   it("rejects commit when staged bytes change after review", async () => {

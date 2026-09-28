@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
 import type {
@@ -824,5 +824,94 @@ describe("ChangesPanel", () => {
     expect(screen.getByText("ffffffff")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Back to history" }));
     expect(screen.getByRole("button", { name: "Open commit: History change" })).toBeVisible();
+  });
+
+  it("offers a discard button for new (untracked) files that deletes them on confirm", async () => {
+    const untracked = status({
+      files: [
+        {
+          path: "src/new.ts",
+          staged: null,
+          unstaged: "untracked",
+          conflict: false,
+          submodule: false,
+          pathSupported: true,
+        },
+      ],
+    });
+    const cleaned = status({ revision: 8, files: [] });
+    request.mockImplementation(async (method) => {
+      if (method === "git.setWatching")
+        return success(method, { watching: true, snapshot: untracked }) as never;
+      if (method === "git.discard") return success(method, { applied: true, snapshot: cleaned }) as never;
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+    render(<ChangesPanel visible />);
+
+    await user.click(await screen.findByRole("button", { name: "Delete new file src/new.ts" }));
+    expect(screen.getByRole("dialog", { name: "Discard changes?" })).toBeVisible();
+    expect(screen.getByText("This permanently deletes the new file src/new.ts.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Discard changes" }));
+
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "git.discard",
+        expect.any(Object),
+        { path: "src/new.ts", expectedRevision: 7 },
+        32_000,
+      ),
+    );
+  });
+
+  it("copies the absolute file path from the row context menu", async () => {
+    // userEvent.setup() installs its own navigator.clipboard stub, so ours
+    // must be defined after it to observe the copy.
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    render(
+      <>
+        <MenuHost />
+        <ChangesPanel visible />
+      </>,
+    );
+
+    const row = (
+      await screen.findByRole("button", { name: "Changes: src/app.ts" })
+    ).parentElement!;
+    fireEvent.contextMenu(row);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Copy path" }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("/repo/src/app.ts"));
+  });
+
+  it("discards every change at once after confirmation", async () => {
+    const cleaned = status({ revision: 8, files: [] });
+    request.mockImplementation(async (method) => {
+      if (method === "git.setWatching")
+        return success(method, { watching: true, snapshot: status() }) as never;
+      if (method === "git.discardAll") return success(method, { applied: true, snapshot: cleaned }) as never;
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+    render(<ChangesPanel visible />);
+
+    const header = await screen.findByRole("button", { name: "Discard all changes" });
+    expect(screen.getAllByRole("button", { name: "Discard all changes" })).toHaveLength(1);
+    await user.click(header);
+    const dialog = screen.getByRole("dialog", { name: "Discard all changes?" });
+    await user.click(within(dialog).getByRole("button", { name: "Discard all changes" }));
+
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "git.discardAll",
+        expect.any(Object),
+        { expectedRevision: 7 },
+        32_000,
+      ),
+    );
   });
 });

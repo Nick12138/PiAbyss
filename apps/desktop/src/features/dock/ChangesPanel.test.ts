@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { GitStatusSnapshot } from "@piabyss/protocol";
 import {
   buildGitListRows,
+  canDiscardAllGitChanges,
   canDiscardGitChange,
   gitChangeLetter,
   parseUnifiedDiffLines,
@@ -79,7 +80,7 @@ describe("ChangesPanel helpers", () => {
     expect(gitChangeLetter("conflicted")).toBe("!");
   });
 
-  it("allows discard only for safe tracked worktree changes", () => {
+  it("allows discard for safe worktree changes including new (untracked) files", () => {
     const file = {
       path: "src/app.ts",
       staged: null,
@@ -89,10 +90,34 @@ describe("ChangesPanel helpers", () => {
       pathSupported: true,
     };
     expect(canDiscardGitChange(file)).toBe(true);
-    expect(canDiscardGitChange({ ...file, unstaged: "untracked" })).toBe(false);
+    expect(canDiscardGitChange({ ...file, unstaged: "untracked" })).toBe(true);
     expect(canDiscardGitChange({ ...file, unstaged: "renamed" })).toBe(false);
     expect(canDiscardGitChange({ ...file, conflict: true })).toBe(false);
     expect(canDiscardGitChange({ ...file, submodule: true })).toBe(false);
     expect(canDiscardGitChange({ ...file, pathSupported: false })).toBe(false);
+  });
+
+  it("allows batch discard only when every listed change is safe", () => {
+    const file = {
+      path: "src/app.ts",
+      staged: null,
+      unstaged: "modified" as const,
+      conflict: false,
+      submodule: false,
+      pathSupported: true,
+    };
+    const snapshot = (files: typeof file[]) =>
+      ({
+        state: "ready",
+        revision: 7,
+        files,
+      }) as Parameters<typeof canDiscardAllGitChanges>[0];
+    expect(canDiscardAllGitChanges(snapshot([]))).toBe(false);
+    expect(canDiscardAllGitChanges(snapshot([file]))).toBe(true);
+    expect(canDiscardAllGitChanges(snapshot([file, { ...file, conflict: true }]))).toBe(false);
+    expect(canDiscardAllGitChanges(snapshot([file, { ...file, submodule: true }]))).toBe(false);
+    expect(canDiscardAllGitChanges(snapshot([file, { ...file, pathSupported: false }]))).toBe(
+      false,
+    );
   });
 });

@@ -133,6 +133,7 @@ export type HostContextMap = {
   "git.unstage": WorkspaceContext;
   "git.unstageAll": WorkspaceContext;
   "git.discard": WorkspaceContext;
+  "git.discardAll": WorkspaceContext;
   "git.commit": WorkspaceContext;
   "git.listBranches": WorkspaceContext;
   "git.createBranch": WorkspaceContext;
@@ -306,6 +307,7 @@ export type HostRequestParams = {
   "git.unstage": { path: string; expectedRevision: number };
   "git.unstageAll": { expectedRevision: number };
   "git.discard": { path: string; expectedRevision: number };
+  "git.discardAll": { expectedRevision: number };
   "git.commit": { message: string; expectedIndexGeneration: string };
   "git.listBranches": null;
   "git.createBranch": { name: string; expectedRevision: number };
@@ -509,6 +511,7 @@ export type HostRequestParams = {
       title?: string;
       contentMd?: string;
       status?: MemoNoteStatus;
+      sessionId?: string | null;
       tags?: string[];
       workspaceHint?: string | null;
       addImages?: MemoImageInput[];
@@ -559,6 +562,7 @@ export type HostResultMap = {
   "git.unstage": GitMutationResult;
   "git.unstageAll": GitMutationResult;
   "git.discard": GitMutationResult;
+  "git.discardAll": GitMutationResult;
   "git.commit": GitCommitResult;
   "git.listBranches": GitBranchList;
   "git.createBranch": GitMutationResult;

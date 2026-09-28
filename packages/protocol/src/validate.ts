@@ -353,7 +353,7 @@ function isMemoNoteType(value: unknown): boolean {
 
 /** 备忘录状态白名单。 */
 function isMemoNoteStatus(value: unknown): boolean {
-  return value === "open" || value === "done" || value === "archived";
+  return value === "open" || value === "in_progress" || value === "done" || value === "archived";
 }
 
 /** 备忘录图片载荷：base64 解码后不超过 8 MiB。 */
@@ -396,6 +396,9 @@ function isMemoNoteFields(value: Record<string, unknown>): boolean {
     (value.contentMd === undefined ||
       (isString(value.contentMd) && value.contentMd.length <= 200_000)) &&
     (value.status === undefined || isMemoNoteStatus(value.status)) &&
+    (value.sessionId === undefined ||
+      value.sessionId === null ||
+      (isString(value.sessionId) && value.sessionId.length <= 200)) &&
     (value.tags === undefined ||
       (isStringArray(value.tags) &&
         value.tags.length <= 20 &&
@@ -721,6 +724,7 @@ export function validateRequestParams<M extends HostMethod>(
         : fail(`invalid ${method} params`, { method });
     case "git.stageAll":
     case "git.unstageAll":
+    case "git.discardAll":
       return exactObject(params, ["expectedRevision"]) && isSafeRevision(params.expectedRevision)
         ? ok(params)
         : fail(`invalid ${method} params`, { method });
@@ -1361,6 +1365,7 @@ export function validateRequestParams<M extends HostMethod>(
             "title",
             "contentMd",
             "status",
+            "sessionId",
             "tags",
             "workspaceHint",
             "addImages",

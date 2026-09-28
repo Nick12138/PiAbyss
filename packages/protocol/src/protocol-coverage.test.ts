@@ -110,6 +110,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "git.unstage": { path: "src/app.ts", expectedRevision: 1 },
   "git.unstageAll": { expectedRevision: 1 },
   "git.discard": { path: "src/app.ts", expectedRevision: 1 },
+  "git.discardAll": { expectedRevision: 1 },
   "git.commit": { message: "feat: update app", expectedIndexGeneration: "a".repeat(64) },
   "git.listBranches": null,
   "git.createBranch": { name: "feature/git", expectedRevision: 1 },
@@ -463,6 +464,7 @@ function invalidParams(method: HostMethod): unknown {
       return { path: "../escape", expectedRevision: "old" };
     case "git.stageAll":
     case "git.unstageAll":
+    case "git.discardAll":
       return { expectedRevision: -1 };
     case "git.commit":
       return { message: "", expectedIndexGeneration: "nope" };

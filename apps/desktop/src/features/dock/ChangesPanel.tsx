@@ -20,6 +20,7 @@ import {
   ArrowDownToLine,
   Check,
   ChevronDown,
+  Copy,
   FileCode2,
   GitBranch,
   GitBranchPlus,
@@ -175,12 +176,23 @@ export function parseUnifiedDiffLines(patch: string): DiffLine[] {
 }
 
 export function canDiscardGitChange(file: GitFileChange): boolean {
+  // Untracked (new) files can be discarded too: discarding deletes the file
+  // itself. Renames/copies and conflicts stay read-only because they cannot
+  // be reverted safely from the panel.
   return Boolean(
     file.pathSupported &&
     !file.conflict &&
     !file.submodule &&
     file.unstaged !== null &&
-    !["untracked", "conflicted", "renamed", "copied"].includes(file.unstaged),
+    !["conflicted", "renamed", "copied"].includes(file.unstaged),
+  );
+}
+
+/** True when every listed change can be discarded as a batch. */
+export function canDiscardAllGitChanges(status: ReadyStatus): boolean {
+  return (
+    status.files.length > 0 &&
+    status.files.every((file) => file.pathSupported && !file.conflict && !file.submodule)
   );
 }
 
@@ -225,6 +237,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   const [generatingMessage, setGeneratingMessage] = useState(false);
   const [commitSha, setCommitSha] = useState<string | null>(null);
   const [discardTarget, setDiscardTarget] = useState<GitFileChange | null>(null);
+  const [discardAllOpen, setDiscardAllOpen] = useState(false);
   const [hunkDiscardTarget, setHunkDiscardTarget] = useState<GitDiffHunk | null>(null);
   const [branchLoading, setBranchLoading] = useState(false);
   const [createBranchOpen, setCreateBranchOpen] = useState(false);
@@ -299,6 +312,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
     setGeneratingMessage(false);
     setCommitSha(null);
     setDiscardTarget(null);
+    setDiscardAllOpen(false);
     setHunkDiscardTarget(null);
     setBranchLoading(false);
     setCreateBranchOpen(false);
@@ -831,6 +845,49 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
     }
   };
 
+  const discardAll = async () => {
+    if (!host || !workspace || !ready || !canDiscardAllGitChanges(ready)) return;
+    const requestGeneration = generation.current;
+    setOperation("git.discardAll");
+    setError(null);
+    try {
+      const response = await hostClient.request(
+        "git.discardAll",
+        workspaceContext(host, workspace),
+        { expectedRevision: ready.revision },
+        32_000,
+      );
+      if (requestGeneration !== generation.current) return;
+      if (!response.ok) {
+        setError(errorMessage(response.error, t("gitOperationFailed"), t));
+        if (response.error?.code === "STALE_REVISION") void refresh();
+        return;
+      }
+      if (response.result.snapshot) acceptSnapshot(response.result.snapshot);
+      else void refresh();
+      if (response.result.warning) pushNotification(response.result.warning, "warning");
+    } catch (requestError) {
+      if (requestGeneration === generation.current) {
+        setError(requestError instanceof Error ? requestError.message : t("gitOperationFailed"));
+      }
+    } finally {
+      if (requestGeneration === generation.current) setOperation(null);
+    }
+  };
+
+  const copyFilePath = async (file: GitFileChange) => {
+    const absolutePath = ready
+      ? `${ready.repositoryRoot.replace(/[\\/]+$/, "")}/${file.path}`
+      : file.path;
+    try {
+      await navigator.clipboard.writeText(absolutePath);
+      pushNotification(t("gitPathCopied"), "success");
+    } catch {
+      // Clipboard unavailable (e.g. missing permission) — the path is also
+      // selectable via the row tooltip, so stay silent.
+    }
+  };
+
   const stagedCount = ready?.files.filter((file) => file.staged !== null).length ?? 0;
   const hasConflicts = ready?.files.some((file) => file.conflict) ?? false;
   const canCommit = Boolean(
@@ -1155,6 +1212,26 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
             </button>
             <button
               type="button"
+              title={t("gitDiscardAll")}
+              aria-label={t("gitDiscardAll")}
+              disabled={
+                loading ||
+                historyLoading ||
+                Boolean(operation) ||
+                !ready ||
+                !canDiscardAllGitChanges(ready)
+              }
+              className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-danger disabled:opacity-40"
+              onClick={() => setDiscardAllOpen(true)}
+            >
+              {operation === "git.discardAll" ? (
+                <LoaderCircle size={14} className="animate-spin" />
+              ) : (
+                <Trash2 size={14} />
+              )}
+            </button>
+            <button
+              type="button"
               title={t("gitPull")}
               aria-label={t("gitPull")}
               disabled={loading || historyLoading || Boolean(operation) || !ready}
@@ -1294,6 +1371,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
                             }
                             onOpen={() => void loadDiff({ path: row.file.path, area: row.area })}
                             onMutate={() => void mutate(row.file, row.area)}
+                            onCopyPath={() => void copyFilePath(row.file)}
                             onDiscard={
                               row.area === "unstaged" && canDiscardGitChange(row.file)
                                 ? () => setDiscardTarget(row.file)
@@ -1423,8 +1501,35 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
             void discard(target);
           }}
         >
-          <p>{t("gitDiscardConfirm", { path: discardTarget.path })}</p>
-          {discardTarget.staged !== null && <p className="mt-2">{t("gitDiscardKeepsStaged")}</p>}
+          {discardTarget.unstaged === "untracked" ? (
+            <p>{t("gitDiscardUntrackedConfirm", { path: discardTarget.path })}</p>
+          ) : (
+            <>
+              <p>{t("gitDiscardConfirm", { path: discardTarget.path })}</p>
+              {discardTarget.staged !== null && (
+                <p className="mt-2">{t("gitDiscardKeepsStaged")}</p>
+              )}
+            </>
+          )}
+        </Dialog>
+      )}
+      {discardAllOpen && (
+        <Dialog
+          title={t("gitDiscardAllTitle")}
+          confirmLabel={
+            operation === "git.discardAll" ? t("gitDiscardingAll") : t("gitDiscardAll")
+          }
+          tone="danger"
+          icon={Trash2}
+          onCancel={() => {
+            if (operation !== "git.discardAll") setDiscardAllOpen(false);
+          }}
+          onConfirm={() => {
+            setDiscardAllOpen(false);
+            void discardAll();
+          }}
+        >
+          <p>{t("gitDiscardAllConfirm")}</p>
         </Dialog>
       )}
       {createBranchOpen && (
@@ -1479,6 +1584,7 @@ function FileRow({
   discardActive,
   onOpen,
   onMutate,
+  onCopyPath,
   onDiscard,
   t,
 }: {
@@ -1488,21 +1594,48 @@ function FileRow({
   discardActive: boolean;
   onOpen: () => void;
   onMutate: () => void;
+  onCopyPath: () => void;
   onDiscard?: () => void;
   t: Translate;
 }) {
   const { name, directory } = splitPath(row.file.path);
   const change = row.file[row.area]!;
+  const isUntracked = change === "untracked";
   const actionLabel =
     row.area === "unstaged"
       ? t("gitStageFile", { path: row.file.path })
       : t("gitUnstageFile", { path: row.file.path });
+  const discardLabel = isUntracked
+    ? t("gitDiscardUntrackedFile", { path: row.file.path })
+    : t("gitDiscardFile", { path: row.file.path });
   const diffLabel = `${row.area === "staged" ? t("gitStagedChanges") : t("gitChanges")}: ${row.file.path}`;
   const ActionIcon = row.area === "unstaged" ? Plus : Undo2;
+  const openFileContextMenu = (trigger: HTMLElement) => {
+    openContextMenu({
+      x: trigger.getBoundingClientRect().left,
+      y: trigger.getBoundingClientRect().bottom,
+      trigger,
+      items: [
+        {
+          id: "git-copy-path",
+          label: t("gitCopyPath"),
+          icon: Copy,
+          onSelect: onCopyPath,
+        },
+      ],
+    });
+  };
   return (
     <div
       role="listitem"
       className="group flex h-full min-w-0 items-center border-b border-border/60 px-2 hover:bg-surface-overlay"
+      onContextMenu={(event) => {
+        const trigger = contextMenuTrigger(event.currentTarget);
+        if (trigger) {
+          event.preventDefault();
+          openFileContextMenu(trigger);
+        }
+      }}
     >
       <button
         type="button"
@@ -1531,8 +1664,8 @@ function FileRow({
       {onDiscard && (
         <button
           type="button"
-          title={t("gitDiscardFile", { path: row.file.path })}
-          aria-label={t("gitDiscardFile", { path: row.file.path })}
+          title={discardLabel}
+          aria-label={discardLabel}
           disabled={busy}
           className={`ml-1 flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-danger/10 hover:text-danger focus:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-danger disabled:cursor-not-allowed disabled:opacity-30 ${discardActive ? "opacity-100 text-danger" : "opacity-0 group-hover:opacity-100"}`}
           onClick={onDiscard}

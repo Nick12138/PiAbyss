@@ -22,6 +22,7 @@ export const HOST_METHODS = [
   "git.unstage",
   "git.unstageAll",
   "git.discard",
+  "git.discardAll",
   "git.commit",
   "git.listBranches",
   "git.createBranch",
@@ -273,6 +274,7 @@ export type WorkspaceOnlyMethod =
   | "git.unstage"
   | "git.unstageAll"
   | "git.discard"
+  | "git.discardAll"
   | "git.commit"
   | "git.listBranches"
   | "git.createBranch"
@@ -402,6 +404,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "git.unstage": "workspace",
   "git.unstageAll": "workspace",
   "git.discard": "workspace",
+  "git.discardAll": "workspace",
   "git.commit": "workspace",
   "git.listBranches": "workspace",
   "git.createBranch": "workspace",

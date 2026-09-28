@@ -350,7 +350,10 @@ describe("parseHostRequest", () => {
   });
 
   it("validates Git batch mutations by revision and exact fields", () => {
-    const request = (method: "git.stageAll" | "git.unstageAll", params: unknown) =>
+    const request = (
+      method: "git.stageAll" | "git.unstageAll" | "git.discardAll",
+      params: unknown,
+    ) =>
       parseHostRequest({
         protocolVersion: 1,
         id: REQUEST_ID,
@@ -361,8 +364,10 @@ describe("parseHostRequest", () => {
 
     expect(request("git.stageAll", { expectedRevision: 1 }).ok).toBe(true);
     expect(request("git.unstageAll", { expectedRevision: 2 }).ok).toBe(true);
+    expect(request("git.discardAll", { expectedRevision: 3 }).ok).toBe(true);
     expect(request("git.stageAll", { expectedRevision: -1 }).ok).toBe(false);
     expect(request("git.unstageAll", { expectedRevision: 1, path: "." }).ok).toBe(false);
+    expect(request("git.discardAll", { expectedRevision: 1, path: "." }).ok).toBe(false);
   });
 
   it("validates Git commit messages by UTF-8 bytes and index generation", () => {
@@ -1263,6 +1268,9 @@ describe("Git DTO validation", () => {
       true,
     );
     expect(validateSuccessResult("git.discard", { applied: true, snapshot: ready }).ok).toBe(true);
+    expect(validateSuccessResult("git.discardAll", { applied: true, snapshot: ready }).ok).toBe(
+      true,
+    );
     expect(validateSuccessResult("git.mutateHunk", { applied: true, snapshot: ready }).ok).toBe(
       true,
     );
