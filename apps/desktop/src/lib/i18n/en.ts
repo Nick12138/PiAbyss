@@ -189,7 +189,7 @@ export const en = {
   generalStartupGroup: "Startup",
   generalPiSettingsGroup: "Pi defaults",
   generalAskUserQuestion: "Ask user question tool",
-  generalAskUserQuestionDesc: "Let the model invoke the popup question tool.",
+  generalAskUserQuestionDesc: "Let the model ask questions in the conversation.",
   generalDefaultModel: "Default model",
   generalDefaultModelDesc: "Choose the default provider and model for new sessions.",
   generalDefaultProvider: "Default provider",

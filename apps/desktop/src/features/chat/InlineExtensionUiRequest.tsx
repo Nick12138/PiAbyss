@@ -5,10 +5,25 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { ExtensionUiRequestContent } from "./ExtensionUiRequestContent";
 import { useExtensionUiResponse } from "./use-extension-ui-response";
 
+function isEmbeddedQuestionRequest(request: {
+  origin?: { invocationKind: string; toolName?: string };
+}): boolean {
+  return (
+    request.origin?.invocationKind === "tool" && request.origin.toolName === "ask_user_question"
+  );
+}
+
 export function InlineExtensionUiRequest() {
   const t = useT();
   const activeRequest = useAppStore((state) => state.extensionUiRequest);
-  const request = activeRequest?.presentation === "inline" ? activeRequest : null;
+  // Older Hosts may still label this built-in request as modal. Keep the
+  // questionnaire embedded so upgrading the desktop does not bring back the
+  // full-screen prompt for an already-running turn.
+  const request =
+    activeRequest &&
+    (activeRequest.presentation === "inline" || isEmbeddedQuestionRequest(activeRequest))
+      ? activeRequest
+      : null;
   const decisionGroups = useAppStore((state) => state.extensionDecisionGroups);
   const sessionId = useAppStore((state) => state.session?.sessionId ?? null);
   const requestGroup = request?.groupKey ? decisionGroups[request.groupKey] : undefined;
@@ -18,7 +33,9 @@ export function InlineExtensionUiRequest() {
         .filter(
           (group) =>
             group.status === "active" &&
-            group.presentation === "inline" &&
+            (group.presentation === "inline" ||
+              (group.origin?.invocationKind === "tool" &&
+                group.origin.toolName === "ask_user_question")) &&
             group.activeRequestId === null &&
             group.context.expectedSessionId === sessionId,
         )

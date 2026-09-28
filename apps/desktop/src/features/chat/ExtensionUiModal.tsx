@@ -3,12 +3,25 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { ExtensionUiRequestContent } from "./ExtensionUiRequestContent";
 import { useExtensionUiResponse } from "./use-extension-ui-response";
 
+function isEmbeddedQuestionRequest(request: {
+  origin?: { invocationKind: string; toolName?: string };
+}): boolean {
+  return (
+    request.origin?.invocationKind === "tool" && request.origin.toolName === "ask_user_question"
+  );
+}
+
 const FOCUSABLE_SELECTOR =
   "button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])";
 
 export function ExtensionUiModal() {
   const activeRequest = useAppStore((state) => state.extensionUiRequest);
-  const request = activeRequest?.presentation === "inline" ? null : activeRequest;
+  const request =
+    activeRequest &&
+    activeRequest.presentation !== "inline" &&
+    !isEmbeddedQuestionRequest(activeRequest)
+      ? activeRequest
+      : null;
   const controller = useExtensionUiResponse(request);
   const dialogRef = useRef<HTMLDivElement>(null);
   const wasSubmittingRef = useRef(false);

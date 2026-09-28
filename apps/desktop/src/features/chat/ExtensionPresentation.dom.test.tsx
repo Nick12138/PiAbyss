@@ -286,6 +286,28 @@ describe("Extension presentation surfaces", () => {
     expect(screen.queryByRole("region")).not.toBeInTheDocument();
   });
 
+  it("embeds the built-in ask_user_question request even when an older Host labels it modal", () => {
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "modal",
+          origin: {
+            invocationKind: "tool",
+            extensionId: "piabyss",
+            extensionDisplayName: "PiAbyss",
+            sourceKind: "synthetic",
+            toolName: "ask_user_question",
+            toolCallId: "tool-call-1",
+          },
+        }),
+      );
+    });
+    renderRequestSurfaces();
+
+    expect(screen.getByRole("region", { name: "Choose how to continue" })).toBeVisible();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("prefers Host-trusted Extension origin over an untrusted source hint", () => {
     act(() => {
       useAppStore.getState().setExtensionUiRequest(
@@ -582,6 +604,39 @@ describe("Extension presentation surfaces", () => {
         .getState()
         .notifications.filter((item) => item.message === "Extension request expired"),
     ).toHaveLength(1);
+  });
+
+  it("keeps a built-in questionnaire group embedded while it waits for the next question", async () => {
+    vi.spyOn(hostClient, "request").mockResolvedValue({ ok: true, result: null } as never);
+    useAppStore.setState({
+      session: {
+        sessionId: CONTEXT.expectedSessionId,
+        revision: CONTEXT.expectedSessionRevision,
+      } as never,
+    });
+    const groupKey = "tool:ask-user-question";
+    const request = extensionRequest({
+      groupKey,
+      presentation: "modal",
+      origin: {
+        invocationKind: "tool",
+        extensionId: "piabyss",
+        extensionDisplayName: "PiAbyss",
+        sourceKind: "synthetic",
+        toolName: "ask_user_question",
+        toolCallId: "tool-call-2",
+      },
+    });
+    act(() => useAppStore.getState().setExtensionUiRequest(request));
+    const user = userEvent.setup();
+    renderRequestSurfaces();
+
+    expect(screen.getByRole("region", { name: "Choose how to continue" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Waiting for the next question"),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("keeps one Inline group shell across sequential select and input requests", async () => {

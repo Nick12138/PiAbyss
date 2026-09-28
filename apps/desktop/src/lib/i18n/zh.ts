@@ -180,7 +180,7 @@ export const zh: Record<MessageKey, string> = {
   generalStartupGroup: "启动",
   generalPiSettingsGroup: "Pi 默认设置",
   generalAskUserQuestion: "提问工具",
-  generalAskUserQuestionDesc: "允许模型调用弹窗询问工具。",
+  generalAskUserQuestionDesc: "允许模型直接在对话中提问。",
   generalDefaultModel: "默认模型",
   generalDefaultModelDesc: "选择新会话默认使用的模型服务商和模型。",
   generalDefaultProvider: "默认服务商",

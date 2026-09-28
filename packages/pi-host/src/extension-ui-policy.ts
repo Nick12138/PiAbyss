@@ -76,6 +76,10 @@ function resolveDecisionRisk(input: DecisionRouteInput): ExtensionUiRisk {
     : "normal";
 }
 
+export function isAskUserQuestionOrigin(origin: ExtensionUiOrigin): boolean {
+  return origin.invocationKind === "tool" && origin.toolName === "ask_user_question";
+}
+
 function resolveDecisionPresentation(
   input: DecisionRouteInput,
   risk: ExtensionUiRisk,
@@ -83,6 +87,12 @@ function resolveDecisionPresentation(
   presentation: ExtensionUiPresentation;
   reason: ExtensionUiRouteReason;
 } {
+  // The built-in questionnaire is part of the conversation flow. Keep it
+  // embedded even when the compatibility setting or option metadata would
+  // send other Extension UI requests to the legacy modal surface.
+  if (isAskUserQuestionOrigin(input.origin)) {
+    return { presentation: "inline", reason: "active-tool" };
+  }
   if (risk === "high") {
     const reason =
       input.hostRisk === "high"

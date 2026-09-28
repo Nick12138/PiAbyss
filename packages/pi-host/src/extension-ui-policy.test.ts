@@ -62,11 +62,24 @@ describe("resolveDecisionRoute", () => {
     expect(classifyHostDecisionRisk(toolOrigin)).toEqual({});
   });
 
-  it("keeps legacy mode modal and routes ordinary active tools inline in auto", () => {
+  it("keeps legacy mode modal while embedding ask_user_question", () => {
     expect(resolveDecisionRoute(routeInput({ mode: "legacy-modal" }))).toMatchObject({
       disposition: "present",
       presentation: "modal",
       risk: "normal",
+    });
+    expect(
+      resolveDecisionRoute(
+        routeInput({
+          mode: "legacy-modal",
+          origin: { ...toolOrigin, toolName: "ask_user_question" },
+        }),
+      ),
+    ).toMatchObject({
+      disposition: "present",
+      presentation: "inline",
+      risk: "normal",
+      reason: "active-tool",
     });
     expect(resolveDecisionRoute(routeInput())).toEqual({
       disposition: "present",
