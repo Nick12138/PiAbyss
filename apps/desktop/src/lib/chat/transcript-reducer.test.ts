@@ -1159,4 +1159,52 @@ describe("optimistic user echo", () => {
     expect(s.messages).toHaveLength(1);
     expect(s.messages[0]?._optimisticKey).toBeUndefined();
   });
+
+  it("claims an injected-reference-only optimistic row (memo capsule sent with empty text)", () => {
+    // Regression: a memo capsule sent without any extra prompt produces an
+    // outgoing message whose entire text is a <piabyss-ref> envelope. After
+    // stripping the injected blocks both sides are text-less, and the match
+    // used to fall through to the (empty) image comparison — message_start
+    // then appended a second user bubble that vanished on the next snapshot.
+    const envelope = '<piabyss-ref kind="memo" title="测试备忘录">\n正文\n</piabyss-ref>';
+    let s = baseSession();
+    s.messages = [{ role: "user", content: envelope, _optimisticKey: "opt-memo" }];
+
+    s = applyAgentEvent(s, {
+      runId: "r-memo",
+      event: {
+        type: "message_start",
+        message: { role: "user", content: envelope, timestamp: 2 },
+      },
+    })!;
+    expect(s.messages).toHaveLength(1);
+    expect(s.messages[0]).toMatchObject({ role: "user", timestamp: 2 });
+    expect(s.messages[0]?._optimisticKey).toBeUndefined();
+
+    s = applyAgentEvent(s, {
+      runId: "r-memo",
+      event: {
+        type: "message_end",
+        message: { role: "user", content: envelope, timestamp: 3 },
+      },
+    })!;
+    expect(s.messages).toHaveLength(1);
+    expect(s.messages[0]).toMatchObject({ role: "user", timestamp: 3 });
+  });
+
+  it("still appends when the incoming user message has visible text and the optimistic row does not", () => {
+    const envelope = '<piabyss-ref kind="memo" title="测试备忘录">\n正文\n</piabyss-ref>';
+    let s = baseSession();
+    s.messages = [{ role: "user", content: envelope, _optimisticKey: "opt-memo" }];
+
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_start",
+        message: { role: "user", content: `${envelope}\n\n请帮我看看`, timestamp: 2 },
+      },
+    })!;
+
+    expect(s.messages).toHaveLength(2);
+  });
 });

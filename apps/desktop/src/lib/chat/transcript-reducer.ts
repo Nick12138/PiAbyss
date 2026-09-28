@@ -489,14 +489,21 @@ function messagesMatchByContent(
   if (leftText || rightText) return leftText === rightText;
   const leftImages = contentImages(left.content);
   const rightImages = contentImages(right.content);
-  return (
-    leftImages.length > 0 &&
-    leftImages.length === rightImages.length &&
-    leftImages.every(
-      (image, index) =>
-        image.data === rightImages[index]?.data && image.mimeType === rightImages[index]?.mimeType,
-    )
-  );
+  if (leftImages.length > 0 || rightImages.length > 0) {
+    return (
+      leftImages.length > 0 &&
+      leftImages.length === rightImages.length &&
+      leftImages.every(
+        (image, index) =>
+          image.data === rightImages[index]?.data && image.mimeType === rightImages[index]?.mimeType,
+      )
+    );
+  }
+  // Both sides strip to no text and no images: they are pure injected-reference
+  // payloads (e.g. a memo capsule sent with no extra prompt). After the blocks
+  // are folded away the rows describe the same turn, so they match — otherwise
+  // message_start would append a second bubble for the same send.
+  return true;
 }
 
 /**
