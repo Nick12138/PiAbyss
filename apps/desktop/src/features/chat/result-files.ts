@@ -49,3 +49,15 @@ export function declaredResultFiles(blocks: readonly TranscriptBlock[]): Declare
   }
   return files;
 }
+
+/**
+ * Tool calls that only feed the UI — the chips above — and render as nothing
+ * themselves. They stay in the session data; the transcript just skips them.
+ */
+const RENDER_HIDDEN_TOOLS = new Set([RESULT_FILES_TOOL_NAME]);
+
+export function filterRenderableBlocks(blocks: readonly TranscriptBlock[]): TranscriptBlock[] {
+  return blocks.filter(
+    (block) => !(block.kind === "tool" && RENDER_HIDDEN_TOOLS.has(block.tool.name)),
+  );
+}

@@ -67,7 +67,7 @@ import {
 import { stripAttachmentReferenceBlocks } from "@piabyss/protocol";
 import { InjectedReferenceChip } from "./InjectedReferenceChip";
 import { ResultFilesRow } from "./ResultFilesRow";
-import { declaredResultFiles } from "./result-files";
+import { declaredResultFiles, filterRenderableBlocks } from "./result-files";
 import { BranchNavigator } from "../tree/BranchNavigator";
 import { branchAlternatives, type TreeBranchPoint } from "../tree/tree-model";
 import { useSessionTree } from "../tree/tree-data";
@@ -1236,24 +1236,25 @@ export const TranscriptRowView = memo(function TranscriptRowView({
   // summary row ("N tool calls · M messages") and only the final result
   // message stays visible. While the turn is running (or the process adds
   // nothing beyond the final message) everything renders in streaming order.
-  const finalBlocks: TranscriptBlock[] = sections.final.filter(
-    (block) => block.kind !== "thinking",
-  );
+  // 前端隐藏只喂 UI 的工具调用（如 piabyss_present_files）：不渲染卡片、
+  // 不计入折叠统计，但数据仍在 sections 里驱动结尾的文件胶囊。
+  const declaredFiles = row.sections ? declaredResultFiles(row.sections.ordered) : [];
+  const orderedBlocks = filterRenderableBlocks(sections.ordered);
+  const hiddenSteps = sections.ordered.length - orderedBlocks.length;
+  const stepCount = Math.max(0, sections.stepCount - hiddenSteps);
+  const finalBlocks: TranscriptBlock[] = orderedBlocks.filter((block) => block.kind !== "thinking");
   // 折叠条件：回合已完成（不在 working 状态且不在 streaming）
   // 有 endedAt 的是新回合（实时记录了结束时间）
   // 没有 endedAt 的是历史回合（持久化时没有这个字段），也应该折叠
   const isActiveRound = working || mode === "streaming";
   const turnEnded = !isActiveRound;
   const canFold =
-    turnFold && turnEnded && sections.stepCount > 0 && sections.ordered.length > finalBlocks.length;
-  const foldBlocks = canFold
-    ? sections.ordered.filter((block) => !finalBlocks.includes(block))
-    : [];
+    turnFold && turnEnded && stepCount > 0 && orderedBlocks.length > finalBlocks.length;
+  const foldBlocks = canFold ? orderedBlocks.filter((block) => !finalBlocks.includes(block)) : [];
   const foldToolCount = foldBlocks.filter(
     (block) => block.kind === "tool" || block.kind === "extension",
   ).length;
   const foldMessageCount = foldBlocks.filter((block) => block.kind === "text").length;
-  const declaredFiles = row.sections ? declaredResultFiles(row.sections.ordered) : [];
 
   return (
     <div className="group/assistant relative w-full">
@@ -1285,7 +1286,7 @@ export const TranscriptRowView = memo(function TranscriptRowView({
           </>
         ) : (
           <AssistantOrderedContent
-            blocks={sections.ordered}
+            blocks={orderedBlocks}
             mode={mode}
             showCaret={showCaret}
             lastTextBlock={lastTextBlock}

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { RESULT_FILES_TOOL_NAME, declaredResultFiles, parseDeclaredFiles } from "./result-files";
+import {
+  RESULT_FILES_TOOL_NAME,
+  declaredResultFiles,
+  filterRenderableBlocks,
+  parseDeclaredFiles,
+} from "./result-files";
 import type { TranscriptBlock, ToolTrace } from "./transcript-model";
 
 function toolTrace(overrides: Partial<ToolTrace>): TranscriptBlock {
@@ -57,5 +62,21 @@ describe("declaredResultFiles", () => {
       { kind: "text", text: "done" },
     ];
     expect(declaredResultFiles(blocks)).toEqual([]);
+  });
+});
+
+describe("filterRenderableBlocks", () => {
+  it("drops the declaration tool but keeps everything else", () => {
+    const blocks: TranscriptBlock[] = [
+      { kind: "text", text: "working" },
+      toolTrace({ id: "a", args: { files: [{ path: "a.md" }] } }),
+      toolTrace({ id: "b", name: "write", args: { path: "b.md" } }),
+      { kind: "thinking", text: "hmm" },
+    ];
+    expect(filterRenderableBlocks(blocks)).toEqual([
+      { kind: "text", text: "working" },
+      toolTrace({ id: "b", name: "write", args: { path: "b.md" } }),
+      { kind: "thinking", text: "hmm" },
+    ]);
   });
 });
