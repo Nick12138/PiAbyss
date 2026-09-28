@@ -89,7 +89,7 @@ export function filterNotes(notes: MemoNote[], filter: MemoFilter): MemoNote[] {
   });
 }
 
-/** 列表排序：进行中按 updatedAt 倒序；已完成按 completedAt 倒序。 */
+/** 列表排序：已完成按 completedAt 倒序，其余按 updatedAt 倒序。 */
 export function sortNotesForList(notes: MemoNote[], status: MemoStatusFilter): MemoNote[] {
   const sorted = [...notes];
   if (status === "done") {
@@ -104,6 +104,7 @@ export function sortNotesForList(notes: MemoNote[], status: MemoStatusFilter): M
 export function statusCounts(notes: MemoNote[]): Record<MemoNoteStatus, number> {
   const counts: Record<MemoNoteStatus, number> = {
     open: 0,
+    in_progress: 0,
     done: 0,
     archived: 0,
   };

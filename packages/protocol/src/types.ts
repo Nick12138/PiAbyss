@@ -1676,8 +1676,8 @@ export type ScheduleStatus = {
 /** 备忘录记录类型。 */
 export type MemoNoteType = "memo" | "idea" | "task";
 
-/** 备忘录状态：进行中 / 已完成 / 已归档。 */
-export type MemoNoteStatus = "open" | "done" | "archived";
+/** 备忘录状态：待办 / 进行中 / 已完成 / 已归档。 */
+export type MemoNoteStatus = "open" | "in_progress" | "done" | "archived";
 
 /** 备忘录记录的图片引用（图片文件由 Host 存储在备忘录目录下）。 */
 export type MemoImage = {
@@ -1717,6 +1717,8 @@ export type MemoNote = {
   images: MemoImage[];
   createdAt: number;
   updatedAt: number;
+  /** 最近一次执行所绑定的会话 ID；没有执行会话时为 null。可选以兼容旧版内存快照。 */
+  sessionId?: string | null;
   /** 状态变为 done 的时间；非 done 恒为 null。 */
   completedAt: number | null;
   /** 最近一次 Agent 处理的结果总结；手动标记完成不产生总结。重新处理会覆盖旧总结。 */

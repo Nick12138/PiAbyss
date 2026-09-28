@@ -112,6 +112,7 @@ function parseCloudNotes(body: Buffer | null): MemoNote[] {
       if (typeof note?.id !== "string" || note.id === "") continue;
       if (typeof note?.createdAt !== "number" || typeof note?.updatedAt !== "number") continue;
       if (note.result === undefined) note.result = null;
+      if (note.sessionId === undefined) note.sessionId = null;
       if (note.deletedAt === undefined) note.deletedAt = null;
       notes.push(note);
     }
@@ -255,7 +256,11 @@ export class MemoSync {
       const path = join(configPath(this.agentDir), "..", UPLOAD_HASHES_FILE);
       mkdirSync(join(path, ".."), { recursive: true });
       const tempPath = `${path}.tmp-${process.pid}-${Date.now()}`;
-      writeFileSync(tempPath, JSON.stringify({ version: 1, target, hashes } satisfies UploadHashesFile), "utf8");
+      writeFileSync(
+        tempPath,
+        JSON.stringify({ version: 1, target, hashes } satisfies UploadHashesFile),
+        "utf8",
+      );
       renameSync(tempPath, path);
     } catch (error) {
       logger.warn("[memo-sync] failed to persist upload hashes", {
@@ -349,7 +354,9 @@ export class MemoSync {
       let bytes = 0;
       if (cloudBody === null || !notesBody.equals(cloudBody)) {
         await putObject(creds, this.objectKey("notes.json"), notesBody);
-        uploadHashes[this.objectKey("notes.json")] = createHash("sha256").update(notesBody).digest("hex");
+        uploadHashes[this.objectKey("notes.json")] = createHash("sha256")
+          .update(notesBody)
+          .digest("hex");
         bytes = notesBody.byteLength;
       }
       // 指纹只保留当前合并结果引用到的对象（含墓碑图片之外的），其余丢弃防膨胀。

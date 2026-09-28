@@ -43,7 +43,7 @@ const MAX_TAG_LENGTH = 60;
 const MAX_TAGS_PER_NOTE = 20;
 
 const NOTE_TYPES: readonly MemoNoteType[] = ["memo", "idea", "task"];
-const NOTE_STATUSES: readonly MemoNoteStatus[] = ["open", "done", "archived"];
+const NOTE_STATUSES: readonly MemoNoteStatus[] = ["open", "in_progress", "done", "archived"];
 
 /** mediaType → 扩展名（用于图片落盘命名）。 */
 const IMAGE_EXTENSIONS: Record<string, string> = {
@@ -90,6 +90,7 @@ export type MemoUpdatePatch = {
   title?: string;
   contentMd?: string;
   status?: MemoNoteStatus;
+  sessionId?: string | null;
   tags?: string[];
   workspaceHint?: string | null;
   addImages?: MemoImageInput[];
@@ -171,6 +172,7 @@ export class MemoStore {
       title,
       contentMd,
       status: "open",
+      sessionId: null,
       tags: normalizeTags(input.tags),
       workspaceHint: this.normalizeHint(input.workspaceHint),
       images: [],
@@ -204,6 +206,9 @@ export class MemoStore {
       note.status = status;
       note.completedAt = status === "done" ? (note.completedAt ?? Date.now()) : null;
     }
+    if (patch.sessionId !== undefined) {
+      note.sessionId = this.normalizeSessionId(patch.sessionId);
+    }
     if (patch.clearResult) note.result = null;
     if (patch.removeImageIds?.length) {
       for (const imageId of patch.removeImageIds) this.removeImageFile(note, imageId);
@@ -234,6 +239,7 @@ export class MemoStore {
     if (!sessionId) throw memoError("INVALID_REQUEST", "缺少提交总结的会话信息");
     const now = Date.now();
     note.status = "done";
+    note.sessionId = sessionId;
     note.completedAt = note.completedAt ?? now;
     note.result = {
       resultMd,
@@ -380,10 +386,11 @@ export class MemoStore {
     try {
       const raw = JSON.parse(readFileSync(this.filePath, "utf8")) as MemoFile;
       if (raw && raw.schemaVersion === 1 && Array.isArray(raw.notes)) {
-        // 旧数据兼容：result / deletedAt 缺失时补齐为 null（下次写盘时落定）。
+        // 旧数据兼容：result / deletedAt / sessionId 缺失时补齐为 null（下次写盘时落定）。
         for (const note of raw.notes) {
           if (note.result === undefined) note.result = null;
           if (note.deletedAt === undefined) note.deletedAt = null;
+          if (note.sessionId === undefined) note.sessionId = null;
         }
         return raw;
       }
@@ -488,6 +495,11 @@ export class MemoStore {
   private normalizeHint(value: string | null | undefined): string | null {
     const hint = value?.trim();
     return hint ? hint.slice(0, 300) : null;
+  }
+
+  private normalizeSessionId(value: string | null | undefined): string | null {
+    const sessionId = value?.trim();
+    return sessionId ? sessionId.slice(0, 200) : null;
   }
 }
 

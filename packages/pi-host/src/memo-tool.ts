@@ -159,7 +159,7 @@ export function buildMemoTool(
 
         // reopen
         if (params.action === "reopen") {
-          const note = store.update(id, { status: "open" });
+          const note = store.update(id, { status: "open", sessionId: null });
           return {
             content: [
               {

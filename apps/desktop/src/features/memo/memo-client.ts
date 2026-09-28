@@ -59,6 +59,7 @@ export type MemoUpdateRequest = {
   title?: string;
   contentMd?: string;
   status?: MemoNoteStatus;
+  sessionId?: string | null;
   tags?: string[];
   workspaceHint?: string | null;
   addImages?: MemoImageInput[];

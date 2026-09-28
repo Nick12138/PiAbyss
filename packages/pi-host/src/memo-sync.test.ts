@@ -203,6 +203,7 @@ describe("MemoSync", () => {
         images: [{ id: "img-1", fileName: "b.png", mediaType: "image/png", bytes: 8 }],
         createdAt: 1,
         updatedAt: 1,
+        sessionId: null,
         completedAt: null,
         result: null,
         deletedAt: null,

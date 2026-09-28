@@ -58,6 +58,8 @@ import {
   activateWorkspaceAcrossWorkspaces,
   openSessionAcrossWorkspaces,
 } from "../../lib/bridge/session-navigation";
+import { hostClient } from "../../lib/bridge/host-client";
+import { workspaceContext } from "../../lib/bridge/host-context";
 import { waitForWorkspaceServicesReady } from "../workspaces/workspace-switch-policy";
 import { buildInjectedReferenceEnvelope } from "../chat/injected-references";
 import { createNewSession } from "../../lib/commands/actions";
@@ -95,7 +97,7 @@ import {
   type MemoStatusFilter,
 } from "./memo-model";
 
-const STATUS_TABS: readonly MemoStatusFilter[] = ["open", "done", "archived"];
+const STATUS_TABS: readonly MemoStatusFilter[] = ["open", "in_progress", "done", "archived"];
 
 const TYPE_OPTIONS: readonly MemoNoteType[] = ["memo", "idea", "task"];
 
@@ -680,6 +682,29 @@ export function MemoPage() {
       return;
     }
     const state = useAppStore.getState();
+    const sessionId = state.session?.sessionId ?? null;
+    if (!sessionId) {
+      pushNotification(t("memoAgentCreateFailed"), "error");
+      return;
+    }
+    let runningNote: MemoNote = { ...note, status: "in_progress", sessionId, result: null };
+    try {
+      const updated = await updateMemoNote(note.id, {
+        status: "in_progress",
+        sessionId,
+        clearResult: true,
+      });
+      runningNote = updated;
+      setNotes((current) =>
+        current ? current.map((entry) => (entry.id === updated.id ? updated : entry)) : current,
+      );
+    } catch (error) {
+      pushNotification(
+        `${t("memoSaveFailed")}: ${error instanceof Error ? error.message : String(error)}`,
+        "error",
+      );
+      return;
+    }
     const target = draftTargetFor(state.workspace, state.session);
     if (!target) {
       pushNotification(t("memoAgentNoWorkspace"), "warning");
@@ -687,10 +712,64 @@ export function MemoPage() {
     }
     injectMemoReference(
       target,
-      note,
-      withMemoPrompt("", composeMemoPrompt(note), t("memoAgentPrompt")),
+      runningNote,
+      withMemoPrompt("", composeMemoPrompt(runningNote), t("memoAgentPrompt")),
     );
     state.setPage("chat");
+  }
+
+  /** 打开记录绑定的会话；跨工作区时复用统一导航。 */
+  async function openBoundSession(note: MemoNote) {
+    if (!note.sessionId) return;
+    const state = useAppStore.getState();
+    const currentCwd = state.workspace?.canonicalCwd ?? null;
+    const hint = note.workspaceHint?.trim();
+    const targetCwd =
+      hint && currentCwd && !noteMatchesWorkspace(note, currentCwd)
+        ? resolveMemoTargetCwd(
+            hint,
+            currentCwd,
+            state.desktopSettings,
+            state.host?.agentDir ?? null,
+          )
+        : (currentCwd ??
+          resolveMemoTargetCwd(
+            hint ?? "",
+            currentCwd,
+            state.desktopSettings,
+            state.host?.agentDir ?? null,
+          ));
+    if (!targetCwd) {
+      pushNotification(t("memoSessionOpenFailed"), "error");
+      return;
+    }
+    const outcome = await openSessionAcrossWorkspaces(
+      { cwd: targetCwd, sessionId: note.sessionId },
+      {
+        resolveSessionPath: async (sessionId) => {
+          const current = useAppStore.getState();
+          if (!current.host || !current.workspace) return null;
+          const response = await hostClient.request(
+            "session.list",
+            workspaceContext(current.host, current.workspace),
+            null,
+            30_000,
+          );
+          if (!response.ok) return null;
+          const item = response.result.items.find((entry) => entry.sessionId === sessionId);
+          return item ? { sessionPath: item.sessionPath, archived: item.archived } : null;
+        },
+      },
+    );
+    if (outcome.status === "opened" || outcome.status === "already-active") {
+      useAppStore.getState().setPage("chat");
+      return;
+    }
+    if (outcome.status === "archived") {
+      pushNotification(t("memoSessionArchived"), "info");
+    } else if (outcome.status === "failed") {
+      pushNotification(t("memoSessionOpenFailed"), "error");
+    }
   }
 
   /**
@@ -1051,6 +1130,7 @@ export function MemoPage() {
               onBack={backToList}
               onEdit={() => startEdit(selectedNote)}
               onAgent={() => void openWithAgent(selectedNote)}
+              onOpenSession={() => void openBoundSession(selectedNote)}
               onResult={() => {
                 setConfirmingClearResult(false);
                 setResultModalOpen(true);
@@ -1164,12 +1244,14 @@ function WorkspaceChip({ name }: { name: string }) {
 function memoStatusLabel(status: MemoStatusFilter | MemoNoteStatus, t: Translate): string {
   const key =
     status === "open"
-      ? "memoFilterOpen"
-      : status === "done"
-        ? "memoFilterDone"
-        : status === "archived"
-          ? "memoFilterArchived"
-          : "memoFilterAll";
+      ? "memoFilterTodo"
+      : status === "in_progress"
+        ? "memoFilterInProgress"
+        : status === "done"
+          ? "memoFilterDone"
+          : status === "archived"
+            ? "memoFilterArchived"
+            : "memoFilterAll";
   return t(key);
 }
 
@@ -1234,7 +1316,9 @@ function MemoListItem({
               <Archive size={14} aria-hidden />
             </button>
           )}
-          {note.status === "archived" ? (
+          {note.status === "in_progress" ? (
+            <Loader2 size={14} className="shrink-0 animate-spin text-accent" aria-hidden />
+          ) : note.status === "archived" ? (
             <>
               <Archive
                 size={14}
@@ -1255,29 +1339,21 @@ function MemoListItem({
                 <ArchiveRestore size={14} aria-hidden />
               </button>
             </>
-          ) : (
+          ) : note.status === "done" ? (
             <button
               type="button"
               onClick={(event) => {
                 event.stopPropagation();
                 onToggleStatus(note);
               }}
-              title={note.status === "done" ? t("memoActionReopen") : t("memoActionDone")}
-              aria-label={note.status === "done" ? t("memoActionReopen") : t("memoActionDone")}
+              title={t("memoActionReopen")}
+              aria-label={t("memoActionReopen")}
               data-testid="memo-list-item-status"
-              className={
-                note.status === "done"
-                  ? "flex shrink-0 cursor-pointer items-center rounded transition-colors"
-                  : "hidden shrink-0 cursor-pointer items-center rounded text-muted transition-colors hover:text-success group-hover:flex group-focus-within:flex"
-              }
+              className="flex shrink-0 cursor-pointer items-center rounded transition-colors"
             >
-              <CheckCircle2
-                size={14}
-                className={note.status === "done" ? "text-success" : undefined}
-                aria-hidden
-              />
+              <CheckCircle2 size={14} className="text-success" aria-hidden />
             </button>
-          )}
+          ) : null}
         </span>
         {noteExcerpt(note) && (
           <span className="line-clamp-2 text-[12px] text-muted">{noteExcerpt(note)}</span>
@@ -1323,6 +1399,7 @@ function MemoDetail({
   onBack,
   onEdit,
   onAgent,
+  onOpenSession,
   onResult,
   onDelete,
 }: {
@@ -1333,14 +1410,15 @@ function MemoDetail({
   onBack: () => void;
   onEdit: () => void;
   onAgent: () => void;
+  onOpenSession: () => void;
   onResult: () => void;
   onDelete: () => void;
 }) {
   const t = useT();
   const TypeIcon = TYPE_ICONS[note.type];
-  // 已完成/已归档且有 Agent 总结 → 展示「Agent完成总结」；
-  // 进行中或无总结（手动标记完成）→ 保持「用 Agent 处理」。
-  const showResult = note.status !== "open" && note.result !== null;
+  // 只有 Agent 主动提交总结后才展示「Agent完成总结」；
+  // 待办/进行中或手动完成 → 保持「用 Agent 处理」。
+  const showResult = note.status === "done" && note.result !== null;
   return (
     <div className="flex h-full flex-col" data-testid="memo-detail">
       {/* 标题行：返回（窄屏）+ 图标 + 单行标题（溢出省略），右侧常驻 Agent/编辑/删除。 */}
@@ -1350,6 +1428,18 @@ function MemoDetail({
         <h2 className="min-w-0 flex-1 truncate text-[16px] font-semibold text-foreground">
           {note.title}
         </h2>
+        {note.sessionId && (
+          <button
+            type="button"
+            onClick={onOpenSession}
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-foreground transition-colors hover:bg-surface-overlay"
+            title={t("memoActionOpenSession")}
+            data-testid="memo-detail-session"
+          >
+            <ChevronDown size={14} className="shrink-0 rotate-[-90deg]" />
+            <span>{t("memoActionOpenSession")}</span>
+          </button>
+        )}
         {showResult ? (
           <button
             type="button"

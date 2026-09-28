@@ -173,6 +173,9 @@ export function createMemoHandlers(
       if (rawPatch.status !== undefined) {
         patch.status = asString(rawPatch.status) as MemoUpdatePatch["status"];
       }
+      if (rawPatch.sessionId !== undefined) {
+        patch.sessionId = rawPatch.sessionId === null ? null : asString(rawPatch.sessionId);
+      }
       if (rawPatch.tags !== undefined) patch.tags = asStringArray(rawPatch.tags);
       if (rawPatch.workspaceHint !== undefined) {
         patch.workspaceHint = rawPatch.workspaceHint as string | null;

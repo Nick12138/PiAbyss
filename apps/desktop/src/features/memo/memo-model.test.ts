@@ -31,6 +31,7 @@ function note(overrides: Partial<MemoNote> = {}): MemoNote {
     title: `记录 ${seq}`,
     contentMd: "正文",
     status: "open",
+    sessionId: null,
     tags: [],
     workspaceHint: null,
     images: [],
@@ -93,13 +94,14 @@ describe("extractTags", () => {
 describe("filterNotes / statusCounts / sortNotesForList", () => {
   const notes = [
     note({ status: "open", tags: ["refactor"], contentMd: "alpha", updatedAt: 3 }),
+    note({ status: "in_progress", sessionId: "session-1", updatedAt: 4 }),
     note({ status: "done", tags: ["bug"], completedAt: 9, updatedAt: 1 }),
     note({ status: "done", tags: ["bug"], completedAt: 5, updatedAt: 2 }),
     note({ status: "archived", title: "旧想法 archive", updatedAt: 4 }),
   ];
 
   it("counts statuses", () => {
-    expect(statusCounts(notes)).toEqual({ open: 1, done: 2, archived: 1 });
+    expect(statusCounts(notes)).toEqual({ open: 1, in_progress: 1, done: 2, archived: 1 });
   });
 
   it("filters by status, tag, query", () => {
@@ -115,6 +117,9 @@ describe("filterNotes / statusCounts / sortNotesForList", () => {
     expect(
       filterNotes(notes, { status: "open", tag: "bug", workspace: null, query: "" }),
     ).toHaveLength(0);
+    expect(
+      filterNotes(notes, { status: "in_progress", tag: null, workspace: null, query: "" }),
+    ).toHaveLength(1);
   });
 
   it("sorts done by completedAt, others by updatedAt", () => {
@@ -122,7 +127,7 @@ describe("filterNotes / statusCounts / sortNotesForList", () => {
     const done = sortNotesForList(filterNotes(notes, doneFilter), "done");
     expect(done.map((entry) => entry.completedAt)).toEqual([9, 5]);
     const open = sortNotesForList(notes, "open");
-    expect(open.map((entry) => entry.updatedAt)).toEqual([4, 3, 2, 1]);
+    expect(open.map((entry) => entry.updatedAt)).toEqual([4, 4, 3, 2, 1]);
   });
 });
 

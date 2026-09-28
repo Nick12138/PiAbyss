@@ -45,6 +45,7 @@ describe("MemoStore", () => {
     });
     expect(note.title).toBe("带标签");
     expect(note.status).toBe("open");
+    expect(note.sessionId).toBeNull();
     // 大小写去重 + 去空白 + 丢弃空串，保留首个书写形式。
     expect(note.tags).toEqual(["A", "b"]);
     expect(note.workspaceHint).toBe("PiAbyss");
@@ -69,11 +70,15 @@ describe("MemoStore", () => {
     const { store } = await tempLayout();
     const note = store.create({ type: "idea", title: "t", contentMd: "c" });
 
+    const running = store.update(note.id, { status: "in_progress", sessionId: "session-1" });
+    expect(running.status).toBe("in_progress");
+    expect(running.sessionId).toBe("session-1");
+
     const done = store.update(note.id, { status: "done" });
     expect(done.status).toBe("done");
     expect(done.completedAt).not.toBeNull();
 
-    const reopened = store.update(note.id, { status: "open" });
+    const reopened = store.update(note.id, { status: "open", sessionId: null });
     expect(reopened.status).toBe("open");
     expect(reopened.completedAt).toBeNull();
 
@@ -178,6 +183,7 @@ describe("MemoStore", () => {
     expect(done.result).not.toBeNull();
     expect(done.result?.resultMd).toBe("已修复，测试通过。");
     expect(done.result?.sessionId).toBe("session-1");
+    expect(done.sessionId).toBe("session-1");
     expect(done.result?.sessionTitle).toBe("处理备忘录");
     expect(done.result?.sessionCwd).toBe("D:/work/PiAbyss");
     expect(typeof done.result?.at).toBe("number");

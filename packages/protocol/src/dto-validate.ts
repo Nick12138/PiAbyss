@@ -2399,22 +2399,25 @@ function isMemoAgentResult(value: unknown): boolean {
 function isMemoNote(value: unknown): boolean {
   return (
     isPlainObject(value) &&
-    hasExactKeys(value, [
-      "id",
-      "type",
-      "title",
-      "contentMd",
-      "status",
-      "sessionId",
-      "tags",
-      "workspaceHint",
-      "images",
-      "createdAt",
-      "updatedAt",
-      "completedAt",
-      "result",
-      "deletedAt",
-    ]) &&
+    hasExactKeys(
+      value,
+      [
+        "id",
+        "type",
+        "title",
+        "contentMd",
+        "status",
+        "tags",
+        "workspaceHint",
+        "images",
+        "createdAt",
+        "updatedAt",
+        "completedAt",
+        "result",
+        "deletedAt",
+      ],
+      ["sessionId"],
+    ) &&
     isString(value.id) &&
     (value.type === "memo" || value.type === "idea" || value.type === "task") &&
     isString(value.title) &&
@@ -2423,7 +2426,7 @@ function isMemoNote(value: unknown): boolean {
       value.status === "in_progress" ||
       value.status === "done" ||
       value.status === "archived") &&
-    (value.sessionId === null || isString(value.sessionId)) &&
+    (value.sessionId === undefined || value.sessionId === null || isString(value.sessionId)) &&
     isStringArray(value.tags) &&
     (value.workspaceHint === null || isString(value.workspaceHint)) &&
     Array.isArray(value.images) &&
