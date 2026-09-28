@@ -219,6 +219,14 @@ outcome. It does not retain selected values or freeform answer text in group sta
 For Inline groups, the same card shell remains visible between sequential questions
 and announces that the next question is pending.
 
+An Inline card can be folded into a single summary row, so a questionnaire stops
+dominating the transcript while it waits. Folding is Desktop-local presentation state:
+it never answers, cancels, expires, or re-owns the request, and the composer stays
+blocked for as long as the request is live. The fold belongs to the group shell, so it
+survives the next question of the same group; the folded row then names that question
+and marks it as awaiting an answer. A different group always opens expanded, and the
+fold only renders on the embedded surface — Modal requests keep the full dialog.
+
 ## Waiting and large-decision UX
 
 Desktop derives an expiry-aware `{ count, hasHighRisk }` summary from the active

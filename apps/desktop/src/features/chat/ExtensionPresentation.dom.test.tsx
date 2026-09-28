@@ -105,6 +105,24 @@ function extensionRequest(
   };
 }
 
+/** The built-in questionnaire the desktop always embeds, even when a Host says modal. */
+function embeddedQuestionRequest(
+  overrides: Partial<ExtensionUiRequestState> = {},
+): ExtensionUiRequestState {
+  return extensionRequest({
+    presentation: "modal",
+    origin: {
+      invocationKind: "tool",
+      extensionId: "piabyss",
+      extensionDisplayName: "PiAbyss",
+      sourceKind: "synthetic",
+      toolName: "ask_user_question",
+      toolCallId: "tool-call-embedded",
+    },
+    ...overrides,
+  });
+}
+
 function renderRequestSurfaces() {
   return render(
     <>
@@ -637,6 +655,118 @@ describe("Extension presentation surfaces", () => {
       expect(screen.getByRole("status")).toHaveTextContent("Waiting for the next question"),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("folds the embedded questionnaire into a summary row and restores it on demand", async () => {
+    const groupKey = "tool:ask-user-question-fold";
+    act(() => {
+      useAppStore
+        .getState()
+        .setExtensionUiRequest(embeddedQuestionRequest({ groupKey, title: "Pick a mode" }));
+    });
+    const user = userEvent.setup();
+    const view = renderRequestSurfaces();
+    const card = view.container.querySelector(`[data-extension-ui-group="${groupKey}"]`);
+
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Collapse question" }));
+
+    expect(card).toHaveAttribute("data-extension-ui-collapsed", "true");
+    expect(screen.getByRole("region", { name: "Pick a mode" })).toBeVisible();
+    expect(screen.getByText("Awaiting answer")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    const foldedRow = screen.getByRole("button", { name: /Pick a mode/ });
+    expect(foldedRow).toHaveAttribute("aria-expanded", "false");
+    await user.click(foldedRow);
+
+    expect(card).not.toHaveAttribute("data-extension-ui-collapsed");
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeVisible();
+  });
+
+  it("keeps the folded questionnaire folded while the same group asks the next question", async () => {
+    vi.spyOn(hostClient, "request").mockResolvedValue({ ok: true, result: null } as never);
+    useAppStore.setState({
+      session: {
+        sessionId: CONTEXT.expectedSessionId,
+        revision: CONTEXT.expectedSessionRevision,
+      } as never,
+    });
+    const groupKey = "tool:ask-user-question-refold";
+    act(() => {
+      useAppStore
+        .getState()
+        .setExtensionUiRequest(embeddedQuestionRequest({ groupKey, title: "Pick a mode" }));
+    });
+    const user = userEvent.setup();
+    const view = renderRequestSurfaces();
+    const card = view.container.querySelector(`[data-extension-ui-group="${groupKey}"]`);
+
+    await user.click(screen.getByRole("button", { name: "Collapse question" }));
+    await user.click(screen.getByRole("button", { name: /Pick a mode/ }));
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Waiting for the next question"),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Collapse question" }));
+
+    expect(card).toHaveAttribute("data-extension-ui-collapsed", "true");
+    expect(screen.getByRole("button", { name: /Waiting for the next question/ })).toHaveTextContent(
+      "1 answered",
+    );
+
+    act(() => {
+      useAppStore
+        .getState()
+        .setExtensionUiRequest(embeddedQuestionRequest({ groupKey, title: "Pick a target" }));
+    });
+
+    expect(card).toHaveAttribute("data-extension-ui-collapsed", "true");
+    expect(screen.getByRole("button", { name: /Pick a target/ })).toBeVisible();
+    expect(screen.getByText("Awaiting answer")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+  });
+
+  it("reopens a folded questionnaire when a different group asks", async () => {
+    const first = embeddedQuestionRequest({
+      groupKey: "tool:ask-user-question-first",
+      title: "First questionnaire",
+    });
+    act(() => useAppStore.getState().setExtensionUiRequest(first));
+    const user = userEvent.setup();
+    const view = renderRequestSurfaces();
+
+    await user.click(screen.getByRole("button", { name: "Collapse question" }));
+    expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+
+    act(() => useAppStore.getState().closeExtensionUiRequest(first.requestId, "answered"));
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        embeddedQuestionRequest({
+          groupKey: "tool:ask-user-question-second",
+          title: "Second questionnaire",
+        }),
+      );
+    });
+
+    expect(screen.getByRole("region", { name: "Second questionnaire" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeVisible();
+    expect(view.container.querySelectorAll("[data-extension-ui-collapsed]")).toHaveLength(0);
+  });
+
+  it("keeps the fold control on the embedded surface only", () => {
+    act(() => {
+      useAppStore.setState({
+        extensionUiRequest: extensionRequest({ title: "Legacy modal request" }),
+        extensionUiQueue: [],
+      });
+    });
+    renderRequestSurfaces();
+
+    expect(screen.getByRole("dialog", { name: "Legacy modal request" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Collapse question" })).not.toBeInTheDocument();
   });
 
   it("keeps one Inline group shell across sequential select and input requests", async () => {

@@ -1,5 +1,13 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import {
   Check,
   CircleAlert,
@@ -88,11 +96,14 @@ export function ExtensionUiRequestContent({
   controller,
   titleId,
   variant,
+  headerAction,
 }: {
   request: ExtensionUiRequestState;
   controller: ExtensionUiResponseController;
   titleId: string;
   variant: "inline" | "modal";
+  /** Shell-owned control rendered at the end of the title row, e.g. folding. */
+  headerAction?: ReactNode;
 }) {
   const t = useT();
   const fieldId = useId();
@@ -271,6 +282,7 @@ export function ExtensionUiRequestContent({
             <span className="ml-auto shrink-0 text-[10px] text-muted">
               <ExpiryLabel expiresAt={request.expiresAt} />
             </span>
+            {headerAction}
           </div>
           {request.message && (
             <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-muted">
