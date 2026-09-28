@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { invoke } from "@tauri-apps/api/core";
 import type {
   GitBranchList,
   GitChangeKind,
@@ -22,6 +23,7 @@ import {
   ChevronDown,
   Copy,
   FileCode2,
+  FolderOpen,
   GitBranch,
   GitBranchPlus,
   GitCommitHorizontal,
@@ -41,6 +43,7 @@ import { subscribeValidatedHostEvent } from "../../lib/bridge/validated-host-eve
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { useLocale, useT, type Translate } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
+import { workspaceAbsolutePath } from "./FilesPanel";
 import { workspaceDisplayName } from "../workspaces/WorkspacePicker";
 
 type ReadyStatus = Extract<GitStatusSnapshot, { state: "ready" }>;
@@ -62,6 +65,12 @@ function splitPath(path: string): { name: string; directory: string } {
   return index < 0
     ? { name: path, directory: "" }
     : { name: path.slice(index + 1), directory: path.slice(0, index) };
+}
+
+/** Directory part of a repository-relative path; "" for a repository-root entry. */
+function parentDirectory(path: string): string {
+  const index = path.lastIndexOf("/");
+  return index < 0 ? "" : path.slice(0, index);
 }
 
 export function gitChangeLetter(change: GitChangeKind): string {
@@ -900,15 +909,29 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   };
 
   const copyFilePath = async (file: GitFileChange) => {
-    const absolutePath = ready
-      ? `${ready.repositoryRoot.replace(/[\\/]+$/, "")}/${file.path}`
-      : file.path;
+    const absolutePath = ready ? workspaceAbsolutePath(ready.repositoryRoot, file.path) : file.path;
     try {
       await navigator.clipboard.writeText(absolutePath);
       pushNotification(t("gitPathCopied"), "info");
     } catch {
       // Clipboard unavailable (e.g. missing permission) — the path is also
       // selectable via the row tooltip, so stay silent.
+    }
+  };
+
+  const revealFilePath = async (file: GitFileChange) => {
+    if (!ready) return;
+    // `desktop_open_path` canonicalizes the target, so a path that no longer
+    // exists is rejected outright — and deleted entries are ordinary in this
+    // panel. Fall back to the containing directory, which is still on disk.
+    const gone = file.unstaged === "deleted" || file.staged === "deleted";
+    const relativePath = gone ? parentDirectory(file.path) : file.path;
+    try {
+      await invoke("desktop_open_path", {
+        path: workspaceAbsolutePath(ready.repositoryRoot, relativePath),
+      });
+    } catch {
+      pushNotification(t("gitRevealFailed"), "warning");
     }
   };
 
@@ -1406,6 +1429,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
                             onOpen={() => void loadDiff({ path: row.file.path, area: row.area })}
                             onMutate={() => void mutate(row.file, row.area)}
                             onCopyPath={() => void copyFilePath(row.file)}
+                            onReveal={() => void revealFilePath(row.file)}
                             onDiscard={
                               row.area === "unstaged" && canDiscardGitChange(row.file)
                                 ? () => setDiscardTarget(row.file)
@@ -1618,6 +1642,7 @@ function FileRow({
   onOpen,
   onMutate,
   onCopyPath,
+  onReveal,
   onDiscard,
   t,
 }: {
@@ -1628,6 +1653,7 @@ function FileRow({
   onOpen: () => void;
   onMutate: () => void;
   onCopyPath: () => void;
+  onReveal: () => void;
   onDiscard?: () => void;
   t: Translate;
 }) {
@@ -1649,6 +1675,14 @@ function FileRow({
       y: trigger.getBoundingClientRect().bottom,
       trigger,
       items: [
+        {
+          id: "git-reveal-in-file-manager",
+          label: t("gitRevealInFileManager"),
+          icon: FolderOpen,
+          // Non-UTF-8 paths cannot round-trip through the desktop command.
+          disabled: !row.file.pathSupported,
+          onSelect: onReveal,
+        },
         {
           id: "git-copy-path",
           label: t("gitCopyPath"),

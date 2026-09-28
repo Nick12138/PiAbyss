@@ -16,6 +16,15 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { MenuHost } from "../../components/Menu";
 import { ChangesPanel, formatCommitDate } from "./ChangesPanel";
 
+const invokeMock = vi.fn(async () => undefined);
+
+// Only `invoke` is stubbed — `isTauri` stays real so the rest of the panel
+// keeps seeing the plain (non-Tauri) jsdom environment it saw before.
+vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
+  invoke: (...args: unknown[]) => invokeMock(...(args as [])),
+}));
+
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: ({
     count,
@@ -100,6 +109,7 @@ function success<M extends string>(method: M, result: unknown): HostResponseEnve
 let request: MockInstance<typeof hostClient.request>;
 
 beforeEach(() => {
+  invokeMock.mockClear();
   useAppStore.setState({ host, workspace, desktopSettings: { language: "en" } as never });
   request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
     if (method === "git.setWatching")
@@ -940,6 +950,59 @@ describe("ChangesPanel", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("/repo/src/app.ts"));
     // Matches the Files panel copy toast — informational, not a success check.
     expect(useAppStore.getState().transientNotifications.at(-1)?.level).toBe("info");
+  });
+
+  it("opens the changed file in the OS file manager from the row context menu", async () => {
+    render(
+      <>
+        <MenuHost />
+        <ChangesPanel visible />
+      </>,
+    );
+
+    const row = (await screen.findByRole("button", { name: "Changes: src/app.ts" })).parentElement!;
+    fireEvent.contextMenu(row);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Open in file manager" }));
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("desktop_open_path", { path: "/repo/src/app.ts" }),
+    );
+  });
+
+  it("falls back to the containing directory when revealing a deleted file", async () => {
+    const deleted = status({
+      files: [
+        {
+          path: "src/lib/gone.ts",
+          staged: null,
+          unstaged: "deleted",
+          conflict: false,
+          submodule: false,
+          pathSupported: true,
+        },
+      ],
+    });
+    request.mockImplementation(async (method) => {
+      if (method === "git.setWatching")
+        return success(method, { watching: true, snapshot: deleted }) as never;
+      throw new Error(`Unexpected method ${method}`);
+    });
+    render(
+      <>
+        <MenuHost />
+        <ChangesPanel visible />
+      </>,
+    );
+
+    const row = (await screen.findByRole("button", { name: "Changes: src/lib/gone.ts" }))
+      .parentElement!;
+    fireEvent.contextMenu(row);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Open in file manager" }));
+
+    // A deleted entry has no path on disk, so its directory is opened instead.
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("desktop_open_path", { path: "/repo/src/lib" }),
+    );
   });
 
   it("discards every change at once after confirmation", async () => {

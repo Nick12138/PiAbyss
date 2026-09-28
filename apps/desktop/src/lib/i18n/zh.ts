@@ -1595,6 +1595,8 @@ export const zh: Record<MessageKey, string> = {
   gitDiscardingAll: "正在丢弃…",
   gitCopyPath: "复制路径",
   gitPathCopied: "已复制文件路径",
+  gitRevealInFileManager: "在文件管理器中打开",
+  gitRevealFailed: "无法在文件管理器中打开",
   gitCopyCommitInfo: "复制提交信息",
   gitCommitInfoCopied: "已复制提交信息",
   gitDiscardHunkTitle: "撤销这个改动块？",

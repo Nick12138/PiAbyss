@@ -1664,6 +1664,8 @@ export const en = {
   gitDiscardingAll: "Discarding…",
   gitCopyPath: "Copy path",
   gitPathCopied: "File path copied",
+  gitRevealInFileManager: "Open in file manager",
+  gitRevealFailed: "Could not open in the file manager",
   gitCopyCommitInfo: "Copy commit info",
   gitCommitInfoCopied: "Commit info copied",
   gitDiscardHunkTitle: "Discard this hunk?",
