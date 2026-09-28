@@ -875,6 +875,8 @@ describe("ChangesPanel", () => {
         ].join("\n"),
       ),
     );
+    // Matches the Files panel copy toast — informational, not a success check.
+    expect(useAppStore.getState().transientNotifications.at(-1)?.level).toBe("info");
   });
 
   it("offers a discard button for new (untracked) files that deletes them on confirm", async () => {
@@ -936,6 +938,8 @@ describe("ChangesPanel", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "Copy path" }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("/repo/src/app.ts"));
+    // Matches the Files panel copy toast — informational, not a success check.
+    expect(useAppStore.getState().transientNotifications.at(-1)?.level).toBe("info");
   });
 
   it("discards every change at once after confirmation", async () => {

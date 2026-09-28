@@ -905,7 +905,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
       : file.path;
     try {
       await navigator.clipboard.writeText(absolutePath);
-      pushNotification(t("gitPathCopied"), "success");
+      pushNotification(t("gitPathCopied"), "info");
     } catch {
       // Clipboard unavailable (e.g. missing permission) — the path is also
       // selectable via the row tooltip, so stay silent.
@@ -915,7 +915,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   const copyCommitInfo = async (commit: GitCommitSummary) => {
     try {
       await navigator.clipboard.writeText(commitClipboardText(commit, locale));
-      pushNotification(t("gitCommitInfoCopied"), "success");
+      pushNotification(t("gitCommitInfoCopied"), "info");
     } catch {
       // Clipboard unavailable (e.g. missing permission) — the SHA is also
       // selectable from the row, so stay silent.
