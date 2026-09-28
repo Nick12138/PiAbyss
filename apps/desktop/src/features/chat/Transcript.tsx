@@ -66,6 +66,8 @@ import {
 } from "./transcript-model";
 import { stripAttachmentReferenceBlocks } from "@piabyss/protocol";
 import { InjectedReferenceChip } from "./InjectedReferenceChip";
+import { ResultFilesRow } from "./ResultFilesRow";
+import { declaredResultFiles } from "./result-files";
 import { BranchNavigator } from "../tree/BranchNavigator";
 import { branchAlternatives, type TreeBranchPoint } from "../tree/tree-model";
 import { useSessionTree } from "../tree/tree-data";
@@ -1251,6 +1253,7 @@ export const TranscriptRowView = memo(function TranscriptRowView({
     (block) => block.kind === "tool" || block.kind === "extension",
   ).length;
   const foldMessageCount = foldBlocks.filter((block) => block.kind === "text").length;
+  const declaredFiles = row.sections ? declaredResultFiles(row.sections.ordered) : [];
 
   return (
     <div className="group/assistant relative w-full">
@@ -1289,6 +1292,7 @@ export const TranscriptRowView = memo(function TranscriptRowView({
             turnActive={working}
           />
         )}
+        {declaredFiles.length > 0 && <ResultFilesRow files={declaredFiles} />}
         {row.outcome && (row.outcome.status === "error" || row.outcome.status === "aborted") && (
           <AssistantOutcome outcome={row.outcome} showGoOn={goOnVisible} />
         )}

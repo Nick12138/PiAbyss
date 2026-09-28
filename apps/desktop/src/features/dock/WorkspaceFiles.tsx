@@ -1,10 +1,8 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   AtSign,
-  Check,
   Copy,
-  File,
   FolderOpen,
   FolderTree,
   LoaderCircle,
@@ -13,14 +11,15 @@ import {
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { FilesPanel, workspaceAbsolutePath } from "./FilesPanel";
+import { FilePreviewSurface } from "./FilePreviewSurface";
 import { FileToolButton } from "./FileToolButton";
 import {
+  FILES_SESSION_KEY,
   clearFileSession,
   ensureFileCanLeave,
   fileIsDirty,
   openWorkspaceFile,
   refreshOpenFile,
-  reloadConflict,
   saveOpenFile,
   useFileSession,
 } from "./file-session";
@@ -29,29 +28,12 @@ import { useT } from "../../lib/i18n/use-t";
 import { requestComposerInsert } from "../../lib/composer-insert";
 import { subscribeValidatedHostEvent } from "../../lib/bridge/validated-host-events";
 import { workspaceContext } from "../../lib/bridge/host-context";
-import { Dialog } from "../../components/Dialog";
 import "./file-preview.css";
-
-const CodeEditor = lazy(() =>
-  import("./FileCodeEditor").then((m) => ({ default: m.FileCodeEditor })),
-);
-const ConflictDiff = lazy(() =>
-  import("./FileCodeEditor").then((m) => ({ default: m.FileConflictDiff })),
-);
-const ImagePreview = lazy(() =>
-  import("./FileMediaPreview").then((m) => ({ default: m.ImageFilePreview })),
-);
-const PdfPreview = lazy(() =>
-  import("./FileMediaPreview").then((m) => ({ default: m.PdfFilePreview })),
-);
-const Markdown = lazy(() =>
-  import("../chat/MarkdownMessage").then((m) => ({ default: m.MarkdownMessage })),
-);
 
 export function WorkspaceFiles({ visible }: { visible: boolean }) {
   const t = useT();
-  const session = useFileSession();
-  const { file, path, text, loading, saving, error, conflict } = session;
+  const session = useFileSession(FILES_SESSION_KEY);
+  const { path, loading, saving } = session;
   const workspace = useAppStore((s) => s.workspace);
   const host = useAppStore((s) => s.host);
   const connecting = useAppStore((s) => s.connecting || s.rehydrating);
@@ -59,18 +41,12 @@ export function WorkspaceFiles({ visible }: { visible: boolean }) {
   const [width, setWidth] = useState(460);
   const [showTree, setShowTree] = useState(true);
   const [showContent, setShowContent] = useState(false);
-  const [markdownMode, setMarkdownMode] = useState<"live" | "source" | "preview">("live");
-  const [compare, setCompare] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<"reload" | "overwrite" | "mixed" | null>(null);
   const container = useRef<HTMLDivElement>(null);
   const pendingOpen = useRef(0);
   const wide = width >= 640;
   const dirty = fileIsDirty(session);
   const disconnected = !host || !workspace || connecting || workspace.canonicalCwd !== session.root;
-  const markdown = /\.(md|mdx|markdown)$/i.test(path ?? "");
   const parentPath = path?.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-  const editorReadOnly =
-    disconnected || (file?.kind === "text" && file.mixedLineEndings && !session.mixedConfirmed);
 
   useEffect(() => {
     if (!container.current) return;
@@ -83,16 +59,16 @@ export function WorkspaceFiles({ visible }: { visible: boolean }) {
 
   useEffect(() => {
     if (!visible || !host || !workspace || connecting) return;
-    const current = useFileSession.getState();
+    const current = useFileSession.getState(FILES_SESSION_KEY);
     if (
       current.root &&
       workspace.canonicalCwd !== current.root &&
       !fileIsDirty(current) &&
       !current.saving
     ) {
-      clearFileSession();
+      clearFileSession(FILES_SESSION_KEY);
       setShowContent(false);
-    } else if (current.root === workspace.canonicalCwd) void refreshOpenFile();
+    } else if (current.root === workspace.canonicalCwd) void refreshOpenFile(FILES_SESSION_KEY);
   }, [visible, host, workspace, connecting]);
 
   useEffect(() => {
@@ -104,7 +80,7 @@ export function WorkspaceFiles({ visible }: { visible: boolean }) {
       (event) => {
         if (!event.payload.directories.includes(parentPath)) return;
         clearTimeout(timer);
-        timer = setTimeout(() => void refreshOpenFile(), 200);
+        timer = setTimeout(() => void refreshOpenFile(FILES_SESSION_KEY), 200);
       },
     );
     return () => {
@@ -115,16 +91,14 @@ export function WorkspaceFiles({ visible }: { visible: boolean }) {
 
   const openFile = useCallback(async (selected: string) => {
     const request = ++pendingOpen.current;
-    const previous = useFileSession.getState();
-    const opening = openWorkspaceFile(selected);
+    const previous = useFileSession.getState(FILES_SESSION_KEY);
+    const opening = openWorkspaceFile(selected, FILES_SESSION_KEY);
     // Display the content surface immediately for loading/error feedback.
     if (!fileIsDirty(previous)) setShowContent(true);
     const opened = await opening;
     if (request !== pendingOpen.current) return;
-    if (opened || useFileSession.getState().path === selected) {
+    if (opened || useFileSession.getState(FILES_SESSION_KEY).path === selected) {
       setShowContent(true);
-      setMarkdownMode("live");
-      setCompare(false);
     }
   }, []);
 
@@ -151,8 +125,8 @@ export function WorkspaceFiles({ visible }: { visible: boolean }) {
   };
   const refresh = async () => {
     if (await ensureFileCanLeave()) {
-      if (!file && path) void openWorkspaceFile(path);
-      else await refreshOpenFile();
+      if (!session.file && path) void openWorkspaceFile(path, FILES_SESSION_KEY);
+      else await refreshOpenFile(FILES_SESSION_KEY);
     }
   };
   const treeVisible = wide ? showTree : !showContent;
@@ -167,7 +141,7 @@ export function WorkspaceFiles({ visible }: { visible: boolean }) {
         if (event.defaultPrevented) return;
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
           event.preventDefault();
-          void saveOpenFile();
+          void saveOpenFile(undefined, FILES_SESSION_KEY);
         }
       }}
     >
@@ -185,11 +159,11 @@ export function WorkspaceFiles({ visible }: { visible: boolean }) {
           {parentPath && <div className="truncate text-[11px] text-muted">{parentPath}/</div>}
         </div>
         <div className="flex shrink-0 items-center">
-          {file?.kind === "text" && (
+          {session.file?.kind === "text" && (
             <FileToolButton
               label={saving ? t("fileSaving") : t("fileSave")}
               disabled={!dirty || saving || disconnected}
-              onClick={() => void saveOpenFile()}
+              onClick={() => void saveOpenFile(undefined, FILES_SESSION_KEY)}
             >
               {saving ? <LoaderCircle size={14} className="animate-spin" /> : <Save size={14} />}
             </FileToolButton>
@@ -231,140 +205,11 @@ export function WorkspaceFiles({ visible }: { visible: boolean }) {
       </div>
       <div className="flex min-h-0 flex-1">
         <div className={`${contentVisible ? "flex" : "hidden"} min-h-0 min-w-0 flex-1 flex-col`}>
-          {disconnected && path && (
-            <p role="status" className="border-b border-border p-2 text-xs text-warning">
-              {t("fileDisconnected")}
-            </p>
-          )}
-          {error && (
-            <p role="alert" className="break-words border-b border-border p-2 text-xs text-danger">
-              {error}
-            </p>
-          )}
-          {conflict && (
-            <div className="border-b border-border p-2 text-xs">
-              <p className="text-warning">{t("fileConflict")}</p>
-              <div className="mt-1 flex flex-wrap gap-1">
-                <button
-                  className="rounded border border-border px-2 py-1"
-                  onClick={() => setCompare(!compare)}
-                >
-                  {t(compare ? "fileSource" : "fileCompare")}
-                </button>
-                <button
-                  className="rounded border border-border px-2 py-1"
-                  onClick={() => setConfirmAction("reload")}
-                >
-                  {t("fileReloadDisk")}
-                </button>
-                <button
-                  className="rounded border border-border px-2 py-1"
-                  disabled={saving}
-                  onClick={() => setConfirmAction("overwrite")}
-                >
-                  {t("fileOverwrite")}
-                </button>
-              </div>
-            </div>
-          )}
-          {loading ? (
-            <div className="flex flex-1 items-center justify-center gap-2 text-xs text-muted">
-              <LoaderCircle size={16} className="animate-spin" />
-              {t("fileLoading")}
-            </div>
-          ) : !file ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted">
-              <File size={32} />
-              <span className="text-sm">{t("fileOpen")}</span>
-            </div>
-          ) : (
-            <Suspense fallback={<div className="p-3 text-xs text-muted">{t("fileLoading")}</div>}>
-              {file.kind === "text" && (
-                <>
-                  <div className="file-tools flex-wrap">
-                    {markdown && (
-                      <div
-                        className="flex rounded border border-border text-xs"
-                        role="group"
-                        aria-label={t("fileView")}
-                      >
-                        {(["live", "source", "preview"] as const).map((mode) => (
-                          <button
-                            key={mode}
-                            aria-pressed={markdownMode === mode}
-                            className={`px-2 py-1 ${markdownMode === mode ? "bg-surface-overlay" : ""}`}
-                            onClick={() => setMarkdownMode(mode)}
-                          >
-                            {t(
-                              mode === "live"
-                                ? "fileLivePreview"
-                                : mode === "source"
-                                  ? "fileSource"
-                                  : "filePreview",
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <span className="min-w-0 flex-1 text-[11px] text-muted">
-                      UTF-8{file.bom ? " BOM" : ""} · {file.lineEnding.toUpperCase()}
-                    </span>
-                    {!dirty && <Check size={12} className="text-muted" />}
-                  </div>
-                  {file.mixedLineEndings && !session.mixedConfirmed && (
-                    <div className="border-b border-border p-2 text-xs text-warning">
-                      {t("fileMixedLineEndings", { ending: file.lineEnding.toUpperCase() })}{" "}
-                      <button
-                        className="rounded border border-border px-2 py-1 text-foreground"
-                        onClick={() => setConfirmAction("mixed")}
-                      >
-                        {t("fileEnableEditing")}
-                      </button>
-                    </div>
-                  )}
-                  {compare && conflict && (
-                    <div className="flex min-h-0 flex-1 flex-col">
-                      <div className="flex justify-around p-2 text-xs text-muted">
-                        <span>{t("fileDiskVersion")}</span>
-                        <span>{t("fileLocalVersion")}</span>
-                      </div>
-                      <ConflictDiff disk={conflict.text} local={text} />
-                    </div>
-                  )}
-                  <div
-                    className={`${(compare && conflict) || (markdown && markdownMode === "preview") ? "hidden" : "block"} min-h-0 flex-1`}
-                  >
-                    <CodeEditor
-                      key={`${session.root}:${path}:${session.revision}`}
-                      path={path!}
-                      text={text}
-                      readOnly={editorReadOnly}
-                      livePreview={markdown && markdownMode === "live"}
-                    />
-                  </div>
-                  {markdown && markdownMode === "preview" && !(compare && conflict) && (
-                    <div className="min-h-0 flex-1 overflow-auto p-4">
-                      <Markdown content={text} />
-                    </div>
-                  )}
-                </>
-              )}
-              {file.kind === "image" && (
-                <ImagePreview
-                  key={session.revision}
-                  data={file.data}
-                  mediaType={file.mediaType}
-                  name={file.path}
-                />
-              )}
-              {file.kind === "pdf" && <PdfPreview key={session.revision} data={file.data} />}
-              {file.kind === "unsupported" && (
-                <div className="flex flex-1 items-center justify-center p-6 text-center text-xs text-muted">
-                  {t(file.reason === "tooLarge" ? "fileTooLarge" : "fileUnsupported")}
-                </div>
-              )}
-            </Suspense>
-          )}
+          <FilePreviewSurface
+            sessionKey={FILES_SESSION_KEY}
+            session={session}
+            disconnected={disconnected}
+          />
         </div>
         <div
           className={`${treeVisible ? "flex" : "hidden"} min-h-0 min-w-0 flex-col ${wide ? "w-[220px] shrink-0 border-l border-border" : "flex-1"}`}
@@ -378,42 +223,6 @@ export function WorkspaceFiles({ visible }: { visible: boolean }) {
           />
         </div>
       </div>
-      {confirmAction && (
-        <Dialog
-          title={t(
-            confirmAction === "mixed"
-              ? "fileEnableEditing"
-              : confirmAction === "reload"
-                ? "fileReloadDisk"
-                : "fileOverwrite",
-          )}
-          confirmLabel={t("fileConfirm")}
-          tone="warning"
-          onCancel={() => setConfirmAction(null)}
-          onConfirm={() => {
-            if (confirmAction === "mixed") useFileSession.setState({ mixedConfirmed: true });
-            if (confirmAction === "reload") {
-              reloadConflict();
-              setCompare(false);
-            }
-            if (confirmAction === "overwrite" && conflict) {
-              void saveOpenFile(conflict.version);
-              setCompare(false);
-            }
-            setConfirmAction(null);
-          }}
-        >
-          <p>
-            {t(
-              confirmAction === "mixed"
-                ? "fileNormalizeConfirm"
-                : confirmAction === "reload"
-                  ? "fileReloadConfirm"
-                  : "fileOverwriteConfirm",
-            )}
-          </p>
-        </Dialog>
-      )}
     </div>
   );
 }

@@ -35,6 +35,7 @@ the current Windows development-candidate boundary follow
 | Model health | `packages/pi-host/src/model-health.ts` | via host |
 | Tools refresh | `packages/pi-host/src/tools-refresh.ts` | `tools-refresh.test.ts` |
 | Event normalize | `packages/pi-host/src/event-normalize.ts` | `event-normalize.test.ts` |
+| Delivered-file declaration tool | `packages/pi-host/src/present-files-tool.ts` | `present-files-tool.test.ts` |
 | Transcript reducer | `apps/desktop/src/lib/chat/transcript-reducer.ts` | `transcript-reducer.test.ts` |
 | Release stage | `scripts/package-release-sidecar.mjs` | frozen deploy + hoist + compact zip |
 | Doc link check | `scripts/verify-doc-links.mjs` | `pnpm verify:docs` |
@@ -49,6 +50,8 @@ the current Windows development-candidate boundary follow
 | Stores / epoch / decision groups | `apps/desktop/src/lib/stores/` | `app-store.test.ts` (redacted group transitions), `epoch-store.test.ts` |
 | Session Catalog / runtime projection | `apps/desktop/src/lib/stores/session-catalog.ts` | `session-catalog.test.ts`, `app-store.test.ts` |
 | Chat | `apps/desktop/src/features/chat/` | `transcript-model.test.ts` (row build + stable-row reuse), `ExtensionPresentation.dom.test.tsx` (group continuity, Composer blocking/focus, large-option search/virtualization) |
+| Delivered-file chips | `apps/desktop/src/features/chat/ResultFilesRow.tsx`, `result-files.ts`, `apps/desktop/src/lib/open-result-file.ts` | `result-files.test.ts`, `dock-file-tabs.test.ts` |
+| Dock file pages | `apps/desktop/src/features/dock/WorkspaceFiles.tsx` (Files tree tab), `FileTabPanel.tsx` + `FilePreviewSurface.tsx` (one file per tab), `file-session.ts` (per-key sessions) | `file-session.test.ts` (multi-key sessions, leave guard), `RightDock.test.ts` |
 | Packages | `apps/desktop/src/features/packages/PackagesPage.tsx` | atomic mutation apply |
 | Changes panel / git | `apps/desktop/src/features/dock/ChangesPanel.tsx` (async pull/push spinner driven by `git.taskFinished`) | `ChangesPanel.dom.test.tsx` (spinner lifetime, HEAD-move history reload), `ChangesPanel.test.ts` |
 | Settings | `apps/desktop/src/features/settings/` | `SettingsPage.dom.test.tsx` (nav dirty guard, routing mode sync/rollback, Host split), `ProvidersSettings.dom.test.tsx` (dirty tracking, key-removal safety, number fields), `HostSettings.dom.test.tsx` (capabilities, restart confirm, agent-dir change) |
@@ -64,7 +67,7 @@ the current Windows development-candidate boundary follow
 | Entry | `apps/desktop/src-tauri/src/main.rs`, `lib.rs` | via cargo |
 | Desktop settings | `apps/desktop/src-tauri/src/desktop_settings.rs` | versioning, routing-mode default/validation, migration, corruption recovery, atomic replace unit tests |
 | Host process | `apps/desktop/src-tauri/src/pi_host.rs` | `pi_host_tests.rs` (auto-restart, direct reap, Windows Job Object, Unix session/group descendant cleanup) |
-| Commands | `apps/desktop/src-tauri/src/commands.rs` | open-path validation unit tests |
+| Commands | `apps/desktop/src-tauri/src/commands.rs` | open-path validation unit tests (reveal never executes; `desktop_open_file` launches regular files with the system default app) |
 
 ## Verification and packaging
 

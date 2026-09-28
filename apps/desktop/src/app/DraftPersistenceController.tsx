@@ -7,7 +7,7 @@ import {
 } from "../lib/draft-persistence";
 import { draftKeyForTarget, draftTargetFor } from "../lib/draft-target";
 import { useAppStore } from "../lib/stores/app-store";
-import { ensureFileCanLeave, fileIsDirty } from "../features/dock/file-session";
+import { anyFileSessionBusy, ensureFileCanLeave } from "../features/dock/file-session";
 
 export function shouldAwaitDraftFlushOnClose(
   tauriPlatform = import.meta.env.TAURI_ENV_PLATFORM,
@@ -80,7 +80,7 @@ export function DraftPersistenceController() {
     };
     const flushOnPageHide = () => void flushDraftWrites();
     const preventUnsavedReload = (event: BeforeUnloadEvent) => {
-      if (fileIsDirty()) {
+      if (anyFileSessionBusy()) {
         event.preventDefault();
         event.returnValue = "";
       }

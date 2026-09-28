@@ -29,6 +29,10 @@ import { buildSessionSnapshot } from "./session-snapshot.js";
 import { createReadAttachmentTool } from "./attachment-tool.js";
 import { buildMemoTool, createMemoActivationExtension, memoSessionInfo } from "./memo-tool.js";
 import {
+  buildPresentFilesTool,
+  createPresentFilesActivationExtension,
+} from "./present-files-tool.js";
+import {
   buildAskUserQuestionTool,
   createAskUserQuestionActivationExtension,
   isAskUserQuestionEnabled,
@@ -1320,6 +1324,7 @@ export class WorkspaceLifecycle {
           ...(statusBridge ? [statusBridge.extension] : []),
           createAskUserQuestionActivationExtension(() => isAskUserQuestionEnabled(agentDir)),
           createMemoActivationExtension(),
+          createPresentFilesActivationExtension(),
         ],
       });
       // Workspace selection (including the startup preload) must not reach the
@@ -1384,12 +1389,14 @@ export class WorkspaceLifecycle {
                     createReadAttachmentTool(this.context.deps.attachmentStore),
                     buildAskUserQuestionTool(),
                     buildMemoTool(agentDir, () => memoSessionInfo(sessionManager)),
+                    buildPresentFilesTool(() => sessionManager.getCwd()),
                   ],
                 }
               : {
                   customTools: [
                     buildAskUserQuestionTool(),
                     buildMemoTool(agentDir, () => memoSessionInfo(sessionManager)),
+                    buildPresentFilesTool(() => sessionManager.getCwd()),
                   ],
                 }),
           }),

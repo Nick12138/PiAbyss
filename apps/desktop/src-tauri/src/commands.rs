@@ -83,6 +83,19 @@ pub async fn desktop_open_path(path: String) -> Result<(), String> {
     open_in_file_manager(target)
 }
 
+/// Launch an existing local file with the platform's default application.
+///
+/// This is deliberately separate from `desktop_open_path`: that command only
+/// reveals a path in the file manager and never executes anything, while this
+/// one hands the file to its registered handler. Only regular files that the
+/// same validation accepts are launched, so the webview cannot point a shell
+/// at a directory, a relative path or a UNC/network share.
+#[tauri::command]
+pub async fn desktop_open_file(path: String) -> Result<(), String> {
+    let file = validate_open_file(&path)?;
+    launch_with_default_app(&file)
+}
+
 const MAIN_WINDOW_LABEL: &str = "main";
 
 fn require_main_webview_label(label: &str) -> Result<(), String> {
@@ -624,6 +637,59 @@ pub fn validate_open_path(raw: &str) -> Result<OpenTarget, String> {
     }
 }
 
+/// The webview may only hand a *regular file* to the platform's default
+/// application, so directories are rejected on top of everything
+/// `validate_open_path` already rejects (relative, UNC/network, missing).
+pub fn validate_open_file(raw: &str) -> Result<PathBuf, String> {
+    match validate_open_path(raw)? {
+        OpenTarget::Reveal(file) => Ok(file),
+        OpenTarget::Directory(_) => Err("only regular files can be opened".into()),
+    }
+}
+
+/// Arguments for `cmd /C start <file>`.
+///
+/// `start` reads its first quoted argument as the new window's title, so the
+/// empty placeholder must stay or the path itself would be swallowed.
+#[cfg(any(target_os = "windows", test))]
+fn windows_launch_args(file: &Path) -> Vec<std::ffi::OsString> {
+    vec![
+        std::ffi::OsString::from("/C"),
+        std::ffi::OsString::from("start"),
+        std::ffi::OsString::from(""),
+        file.as_os_str().to_os_string(),
+    ]
+}
+
+fn launch_with_default_app(file: &Path) -> Result<(), String> {
+    use std::process::Command;
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(windows_launch_args(file))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(file)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(file)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+}
+
 #[cfg(any(target_os = "macos", test))]
 fn macos_open_args(target: &OpenTarget) -> Vec<std::ffi::OsString> {
     let path = match target {
@@ -729,6 +795,33 @@ mod tests {
         }
         let _ = std::fs::remove_file(&file);
         let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn only_regular_files_can_be_launched() {
+        let file = temp_test_file("report.pdf", b"%PDF-1.4");
+        let launched = validate_open_file(file.to_str().unwrap()).unwrap();
+        assert_eq!(launched.file_name(), file.file_name());
+        assert!(validate_open_file(file.parent().unwrap().to_str().unwrap()).is_err());
+        assert!(validate_open_file("relative/report.pdf").is_err());
+        assert!(validate_open_file("").is_err());
+        let missing = file.with_file_name("missing.pdf");
+        assert!(validate_open_file(missing.to_str().unwrap()).is_err());
+        let _ = std::fs::remove_file(&file);
+    }
+
+    #[test]
+    fn windows_launch_keeps_the_title_placeholder() {
+        let args = windows_launch_args(Path::new("C:\\tmp\\report.pdf"));
+        assert_eq!(
+            args,
+            vec![
+                std::ffi::OsString::from("/C"),
+                std::ffi::OsString::from("start"),
+                std::ffi::OsString::from(""),
+                std::ffi::OsString::from("C:\\tmp\\report.pdf"),
+            ],
+        );
     }
 
     #[test]

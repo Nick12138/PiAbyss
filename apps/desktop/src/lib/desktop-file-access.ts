@@ -52,6 +52,23 @@ export async function readDesktopSmallFile(path: string): Promise<DesktopSmallFi
   return invoke<DesktopSmallFile>("desktop_read_small_file", { path });
 }
 
+/**
+ * Hand an existing local file to the platform's default application.
+ * Resolves with null on success, or the failure reason for the toast.
+ */
+export async function openFileWithDefaultApp(path: string): Promise<string | null> {
+  if (typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window)) {
+    return "desktop runtime required";
+  }
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("desktop_open_file", { path });
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
 export function isDocumentPath(path: string): boolean {
   return /\.(?:pdf|docx)$/iu.test(path.trim());
 }

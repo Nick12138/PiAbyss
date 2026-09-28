@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ChevronDown,
+  FileText,
   FolderTree,
   GitCompareArrows,
   LoaderCircle,
@@ -26,15 +27,22 @@ import {
   type ShellTerminalStatus,
 } from "../features/dock/ShellTerminal";
 import { WorkspaceFiles } from "../features/dock/WorkspaceFiles";
-import { clearFileSession, ensureFileCanLeave } from "../features/dock/file-session";
+import { FileTabPanel } from "../features/dock/FileTabPanel";
+import {
+  FILES_SESSION_KEY,
+  clearFileSession,
+  ensureFileCanLeave,
+  fileTabSessionKey,
+} from "../features/dock/file-session";
 import { ChangesPanel } from "../features/dock/ChangesPanel";
 import { SubagentsPanel } from "../features/dock/SubagentsPanel";
 import { subscribeChangesPanel } from "../lib/dock-changes";
+import { subscribeOpenWorkspaceFileTab } from "../lib/dock-file-tabs";
 import { useT } from "../lib/i18n/use-t";
 import { subscribeDockCommands } from "../lib/commands/events";
 
 export type DockTabId =
-  "files" | "changes" | "subagents" | `shell:${number}` | `extension:${string}`;
+  "files" | "changes" | "subagents" | `shell:${number}` | `extension:${string}` | `file:${string}`;
 
 type ShellDockTab = {
   id: number;
@@ -58,6 +66,19 @@ function shellTabId(id: number): DockTabId {
 
 function extensionTabId(requestId: string): DockTabId {
   return `extension:${requestId}`;
+}
+
+/** A file tab's id doubles as its dock file-session key. */
+function fileTabId(path: string): DockTabId {
+  return fileTabSessionKey(path);
+}
+
+function fileTabPath(tabId: string): string {
+  return tabId.slice("file:".length);
+}
+
+function fileTabLabel(path: string): string {
+  return path.split("/").pop() || path;
 }
 
 function shellTitle(tab: ShellDockTab, fallback: string): string {
@@ -347,7 +368,6 @@ export function RightDock() {
     setActiveTab("files");
     setAddMenuOpen(false);
   };
-
   const createChanges = () => {
     setTabOrder((current) => (current.includes("changes") ? current : [...current, "changes"]));
     setActiveTab("changes");
@@ -374,6 +394,36 @@ export function RightDock() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
+
+  useEffect(
+    () =>
+      subscribeOpenWorkspaceFileTab((path) => {
+        const tabId = fileTabId(path);
+        setTabOrder((current) => (current.includes(tabId) ? current : [...current, tabId]));
+        setActiveTab(tabId);
+        if (!useAppStore.getState().dockOpen) {
+          setDockOpen(true);
+          setSidebarPref("piabyss.dock.open", true);
+        }
+        return true;
+      }),
+    // Stable state setters only — safe inside the singleton subscription.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  // A file tab belongs to the workspace it was opened in; switching workspaces
+  // drops every one of them instead of leaving sessions pinned to another cwd.
+  const previousWorkspaceCwd = useRef(workspaceCwd);
+  useEffect(() => {
+    if (previousWorkspaceCwd.current === workspaceCwd) return;
+    previousWorkspaceCwd.current = workspaceCwd;
+    const stale = tabOrder.filter((tabId) => tabId.startsWith("file:"));
+    if (stale.length === 0) return;
+    for (const tabId of stale) clearFileSession(tabId);
+    setTabOrder((current) => current.filter((tabId) => !tabId.startsWith("file:")));
+    setActiveTab((active) => (active && active.startsWith("file:") ? null : active));
+  }, [workspaceCwd, tabOrder]);
 
   const createShell = () => {
     if (!workspaceCwd) return;
@@ -434,7 +484,16 @@ export function RightDock() {
     if (tabId === "files") {
       void ensureFileCanLeave().then((allowed) => {
         if (allowed) {
-          clearFileSession();
+          clearFileSession(FILES_SESSION_KEY);
+          closeOrderTab(tabId);
+        }
+      });
+      return;
+    }
+    if (tabId.startsWith("file:")) {
+      void ensureFileCanLeave().then((allowed) => {
+        if (allowed) {
+          clearFileSession(tabId);
           closeOrderTab(tabId);
         }
       });
@@ -453,6 +512,8 @@ export function RightDock() {
 
   const tabInfo = (tabId: DockTabId) => {
     if (tabId === "files") return { label: t("dockFiles"), Icon: FolderTree };
+    if (tabId.startsWith("file:"))
+      return { label: fileTabLabel(fileTabPath(tabId)), Icon: FileText };
     if (tabId === "changes") return { label: t("gitChanges"), Icon: GitCompareArrows };
     if (tabId === "subagents") return { label: t("dockSubagents"), Icon: Users };
     if (tabId.startsWith("shell:")) {
@@ -804,6 +865,19 @@ export function RightDock() {
             <ChangesPanel visible={activeTab === "changes" && dockOpen} />
           </div>
         )}
+        {tabOrder
+          .filter((tabId) => tabId.startsWith("file:"))
+          .map((tabId) => (
+            <div
+              key={tabId}
+              role="tabpanel"
+              id={`dock-panel-${tabId}`}
+              aria-labelledby={`dock-tab-${tabId}`}
+              className={`min-h-0 min-w-0 flex-1 ${activeTab === tabId ? "flex" : "hidden"}`}
+            >
+              <FileTabPanel sessionKey={tabId} path={fileTabPath(tabId)} />
+            </div>
+          ))}
         {tabOrder.includes("subagents") && (
           <div
             role="tabpanel"

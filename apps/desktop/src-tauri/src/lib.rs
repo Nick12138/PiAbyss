@@ -174,6 +174,7 @@ pub fn run() {
             commands::desktop_drafts_apply,
             commands::desktop_drafts_clear_all,
             commands::desktop_open_path,
+            commands::desktop_open_file,
             commands::desktop_allow_exit,
             commands::desktop_exit,
             commands::desktop_read_small_file,

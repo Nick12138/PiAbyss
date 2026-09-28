@@ -9,7 +9,7 @@ import { languages } from "@codemirror/language-data";
 import { MergeView } from "@codemirror/merge";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { markdownLivePreview } from "./markdown-live-preview";
-import { saveOpenFile, useFileSession } from "./file-session";
+import { FILES_SESSION_KEY, saveOpenFile, useFileSession } from "./file-session";
 import { useLocale, useT } from "../../lib/i18n/use-t";
 
 const fileHighlight = syntaxHighlighting(
@@ -70,11 +70,14 @@ const editorTheme = EditorView.theme({
 });
 
 export function FileCodeEditor({
+  sessionKey = FILES_SESSION_KEY,
   path,
   text,
   readOnly,
   livePreview = false,
 }: {
+  /** Which dock file session owns this editor's edits. */
+  sessionKey?: string;
   path: string;
   text: string;
   readOnly: boolean;
@@ -102,7 +105,7 @@ export function FileCodeEditor({
             {
               key: "Mod-s",
               run: () => {
-                void saveOpenFile();
+                void saveOpenFile(undefined, sessionKey);
                 return true;
               },
             },
@@ -116,7 +119,8 @@ export function FileCodeEditor({
           presentation.current.of([]),
           editable.current.of(EditorState.readOnly.of(initial.current.readOnly)),
           EditorView.updateListener.of((update) => {
-            if (update.docChanged) useFileSession.setState({ text: update.state.doc.toString() });
+            if (update.docChanged)
+              useFileSession.setState({ text: update.state.doc.toString() }, sessionKey);
           }),
         ],
       }),
@@ -137,7 +141,7 @@ export function FileCodeEditor({
       view.destroy();
       editor.current = null;
     };
-  }, []);
+  }, [sessionKey]);
   useEffect(() => {
     editor.current?.dispatch({
       effects: editable.current.reconfigure([

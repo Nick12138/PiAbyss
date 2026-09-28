@@ -1,10 +1,10 @@
 import { Dialog } from "../../components/Dialog";
 import { useT } from "../../lib/i18n/use-t";
-import { answerFileLeave, useFileSession } from "./file-session";
+import { answerFileLeave, useFileLeavePrompt } from "./file-session";
 
 export function FileEditorDialogs() {
   const t = useT();
-  const { leavePrompt, path, saving } = useFileSession();
+  const { leavePrompt, path, saving } = useFileLeavePrompt();
   if (!leavePrompt) return null;
   return (
     <Dialog

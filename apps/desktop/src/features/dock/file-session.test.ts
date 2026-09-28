@@ -8,12 +8,14 @@ import {
   ensureFileCanLeave,
   ensureFileCanChangeWorkspace,
   fileIsDirty,
+  fileTabSessionKey,
   fileWorkspaceForRecovery,
   openWorkspaceFile,
   refreshOpenFile,
   reloadConflict,
   saveOpenFile,
   useFileSession,
+  anyFileSessionBusy,
 } from "./file-session";
 
 vi.mock("../../lib/bridge/host-client", () => ({ hostClient: { request: vi.fn() } }));
@@ -200,5 +202,72 @@ describe("unsaved change guard", () => {
     await answerFileLeave("save");
     expect(await leaving).toBe(true);
     expect(fileIsDirty()).toBe(false);
+  });
+});
+
+describe("dock file tabs", () => {
+  const chipKey = fileTabSessionKey("chip.md");
+  const secondKey = fileTabSessionKey("second.md");
+
+  it("keeps the Files tab and file tabs independent", async () => {
+    request.mockResolvedValue(response(file("disk", "b".repeat(64))));
+    await openWorkspaceFile("tree.md");
+    await openWorkspaceFile("chip.md", chipKey);
+    await openWorkspaceFile("second.md", secondKey);
+
+    expect(useFileSession.getState().path).toBe("tree.md");
+    expect(useFileSession.getState(chipKey).path).toBe("chip.md");
+    expect(useFileSession.getState(secondKey).path).toBe("second.md");
+
+    useFileSession.setState({ text: "tree edit" });
+    useFileSession.setState({ text: "chip edit" }, chipKey);
+
+    expect(fileIsDirty()).toBe(true);
+    expect(fileIsDirty(useFileSession.getState(chipKey))).toBe(true);
+    expect(fileIsDirty(useFileSession.getState(secondKey))).toBe(false);
+    expect(anyFileSessionBusy()).toBe(true);
+
+    await saveOpenFile(undefined, secondKey);
+    expect(fileIsDirty(useFileSession.getState(secondKey))).toBe(false);
+    expect(anyFileSessionBusy()).toBe(true);
+  });
+
+  it("saves every dirty session on the leave dialog and drops one tab cleanly", async () => {
+    request.mockResolvedValue(response(file("disk", "b".repeat(64))));
+    await openWorkspaceFile("tree.md");
+    await openWorkspaceFile("chip.md", chipKey);
+    useFileSession.setState({ text: "tree edit" });
+    useFileSession.setState({ text: "chip edit" }, chipKey);
+
+    request.mockClear();
+    request
+      .mockResolvedValueOnce(response(file("tree edit", "b".repeat(64))))
+      .mockResolvedValueOnce(response(file("chip edit", "b".repeat(64))));
+    const leaving = ensureFileCanLeave();
+    expect(useFileSession.getState(chipKey).leavePrompt).toBe(true);
+    await answerFileLeave("save");
+    expect(await leaving).toBe(true);
+    expect(anyFileSessionBusy()).toBe(false);
+    expect(request).toHaveBeenCalledTimes(2);
+
+    await openWorkspaceFile("second.md", secondKey);
+    clearFileSession(secondKey);
+    expect(useFileSession.getState(secondKey).path).toBeNull();
+    expect(useFileSession.getState().path).toBe("tree.md");
+  });
+
+  it("does not block opening a file tab on another tab's unsaved edits", async () => {
+    request.mockResolvedValue(response(file("disk", "b".repeat(64))));
+    await openWorkspaceFile("tree.md");
+    useFileSession.setState({ text: "tree edit" });
+
+    expect(await openWorkspaceFile("chip.md", chipKey)).toBe(true);
+    expect(useFileSession.getState(chipKey).path).toBe("chip.md");
+    expect(useFileSession.getState(chipKey).leavePrompt).toBe(false);
+    expect(anyFileSessionBusy()).toBe(true);
+
+    // A clean tab is replaced freely; only its own unsaved edits guard it.
+    expect(await openWorkspaceFile("other.md", secondKey)).toBe(true);
+    expect(useFileSession.getState(secondKey).leavePrompt).toBe(false);
   });
 });

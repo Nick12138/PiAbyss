@@ -33,6 +33,10 @@ import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { createReadAttachmentTool } from "./attachment-tool.js";
 import { buildMemoTool, createMemoActivationExtension, memoSessionInfo } from "./memo-tool.js";
 import {
+  buildPresentFilesTool,
+  createPresentFilesActivationExtension,
+} from "./present-files-tool.js";
+import {
   buildAskUserQuestionTool,
   createAskUserQuestionActivationExtension,
   isAskUserQuestionEnabled,
@@ -491,6 +495,7 @@ async function createSessionResourceLoader(
         isAskUserQuestionEnabled(factory.deps.agentDir),
       ),
       createMemoActivationExtension(),
+      createPresentFilesActivationExtension(),
     ],
   });
   // Session create/open must not reach the network. Without this the SDK would
@@ -644,12 +649,14 @@ export async function createSession(
               createReadAttachmentTool(factory.deps.attachmentStore),
               buildAskUserQuestionTool(),
               buildMemoTool(factory.deps.agentDir, () => memoSessionInfo(sessionManager)),
+              buildPresentFilesTool(() => sessionManager.getCwd()),
             ],
           }
         : {
             customTools: [
               buildAskUserQuestionTool(),
               buildMemoTool(factory.deps.agentDir, () => memoSessionInfo(sessionManager)),
+              buildPresentFilesTool(() => sessionManager.getCwd()),
             ],
           }),
     });
@@ -790,7 +797,6 @@ export async function createSession(
     extensionUiReplayState = null;
     unsubscribeAgent = null;
     markStep("publish");
-
 
     if (!retainedPrevious) {
       try {
@@ -985,12 +991,14 @@ export async function openSession(
                 createReadAttachmentTool(factory.deps.attachmentStore),
                 buildAskUserQuestionTool(),
                 buildMemoTool(factory.deps.agentDir, () => memoSessionInfo(sessionManager)),
+                buildPresentFilesTool(() => sessionManager.getCwd()),
               ],
             }
           : {
               customTools: [
                 buildAskUserQuestionTool(),
                 buildMemoTool(factory.deps.agentDir, () => memoSessionInfo(sessionManager)),
+                buildPresentFilesTool(() => sessionManager.getCwd()),
               ],
             }),
       });
