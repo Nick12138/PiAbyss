@@ -1592,6 +1592,8 @@ export const zh: Record<MessageKey, string> = {
   gitDiscardingAll: "正在丢弃…",
   gitCopyPath: "复制路径",
   gitPathCopied: "已复制文件路径",
+  gitCopyCommitInfo: "复制提交信息",
+  gitCommitInfoCopied: "已复制提交信息",
   gitDiscardHunkTitle: "撤销这个改动块？",
   gitDiscardHunkConfirm: "这将永久撤销 {path} 中选定的未暂存改动块。",
   gitDiscardHunk: "撤销改动块",

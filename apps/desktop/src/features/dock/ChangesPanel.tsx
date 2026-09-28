@@ -85,6 +85,30 @@ export function gitChangeLetter(change: GitChangeKind): string {
   }
 }
 
+export function formatCommitDate(authoredAt: string, locale: "en" | "zh"): string {
+  const date = new Date(authoredAt);
+  if (Number.isNaN(date.getTime())) return authoredAt;
+  return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+/**
+ * Clipboard payload for a commit row: subject first, then labelled metadata on
+ * plain flush-left lines — no blank line and no indentation, so the whole block
+ * stays compact while still carrying the full (unambiguous) SHA an agent needs
+ * to resolve the revision.
+ */
+export function commitClipboardText(commit: GitCommitSummary, locale: "en" | "zh"): string {
+  return [
+    commit.subject,
+    `commit: ${commit.sha}`,
+    `Author: ${commit.authorName}`,
+    `Date: ${formatCommitDate(commit.authoredAt, locale)}`,
+  ].join("\n");
+}
+
 function changeLabel(change: GitChangeKind, t: Translate): string {
   switch (change) {
     case "added":
@@ -888,6 +912,16 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
     }
   };
 
+  const copyCommitInfo = async (commit: GitCommitSummary) => {
+    try {
+      await navigator.clipboard.writeText(commitClipboardText(commit, locale));
+      pushNotification(t("gitCommitInfoCopied"), "success");
+    } catch {
+      // Clipboard unavailable (e.g. missing permission) — the SHA is also
+      // selectable from the row, so stay silent.
+    }
+  };
+
   const stagedCount = ready?.files.filter((file) => file.staged !== null).length ?? 0;
   const hasConflicts = ready?.files.some((file) => file.conflict) ?? false;
   const canCommit = Boolean(
@@ -1482,6 +1516,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
             loaded={historyLoaded}
             hasMore={historyCursor !== null}
             onOpen={(commit) => void loadCommitDiff(commit)}
+            onCopyCommitInfo={(commit) => void copyCommitInfo(commit)}
             onLoadMore={() => void loadHistory(true)}
             locale={locale}
             t={t}
@@ -1516,9 +1551,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
       {discardAllOpen && (
         <Dialog
           title={t("gitDiscardAllTitle")}
-          confirmLabel={
-            operation === "git.discardAll" ? t("gitDiscardingAll") : t("gitDiscardAll")
-          }
+          confirmLabel={operation === "git.discardAll" ? t("gitDiscardingAll") : t("gitDiscardAll")}
           tone="danger"
           icon={Trash2}
           onCancel={() => {
@@ -1731,6 +1764,7 @@ function HistoryView({
   loaded,
   hasMore,
   onOpen,
+  onCopyCommitInfo,
   onLoadMore,
   locale,
   t,
@@ -1740,6 +1774,7 @@ function HistoryView({
   loaded: boolean;
   hasMore: boolean;
   onOpen: (commit: GitCommitSummary) => void;
+  onCopyCommitInfo: (commit: GitCommitSummary) => void;
   onLoadMore: () => void;
   locale: "en" | "zh";
   t: Translate;
@@ -1757,12 +1792,32 @@ function HistoryView({
   return (
     <div role="list" aria-label={t("gitHistoryList")} className="min-h-0 flex-1 overflow-auto">
       {commits.map((commit) => {
-        const date = new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
-          dateStyle: "medium",
-          timeStyle: "short",
-        }).format(new Date(commit.authoredAt));
+        const date = formatCommitDate(commit.authoredAt, locale);
         return (
-          <div key={commit.sha} role="listitem" className="border-b border-border/60">
+          <div
+            key={commit.sha}
+            role="listitem"
+            className="border-b border-border/60"
+            onContextMenu={(event) => {
+              const trigger = contextMenuTrigger(event.currentTarget);
+              if (!trigger) return;
+              event.preventDefault();
+              const { left, bottom } = trigger.getBoundingClientRect();
+              openContextMenu({
+                x: left,
+                y: bottom,
+                trigger,
+                items: [
+                  {
+                    id: "git-copy-commit-info",
+                    label: t("gitCopyCommitInfo"),
+                    icon: Copy,
+                    onSelect: () => onCopyCommitInfo(commit),
+                  },
+                ],
+              });
+            }}
+          >
             <button
               type="button"
               className="group flex w-full items-start gap-2 px-3 py-2.5 text-left hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus"

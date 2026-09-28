@@ -14,7 +14,7 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { publishValidatedHostEvent } from "../../lib/bridge/validated-host-events";
 import { useAppStore } from "../../lib/stores/app-store";
 import { MenuHost } from "../../components/Menu";
-import { ChangesPanel } from "./ChangesPanel";
+import { ChangesPanel, formatCommitDate } from "./ChangesPanel";
 
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: ({
@@ -826,6 +826,57 @@ describe("ChangesPanel", () => {
     expect(screen.getByRole("button", { name: "Open commit: History change" })).toBeVisible();
   });
 
+  it("copies the commit info from the history row context menu", async () => {
+    const commit = {
+      sha: "8a69eb9688c6ff7659c5f00707ac7db50ee9d726",
+      shortSha: "8a69eb9",
+      parents: ["a".repeat(40)],
+      authorName: "Nick12138",
+      authoredAt: "2026-09-28T14:34:52+08:00",
+      subject: "feat(git): copy commit info",
+      refs: [],
+    };
+    request.mockImplementation(async (method) => {
+      if (method === "git.setWatching")
+        return success(method, { watching: true, snapshot: status() }) as never;
+      if (method === "git.listHistory")
+        return success(method, { commits: [commit], nextCursor: null }) as never;
+      throw new Error(`Unexpected method ${method}`);
+    });
+    // userEvent.setup() installs its own navigator.clipboard stub, so ours
+    // must be defined after it to observe the copy.
+    const user = userEvent.setup();
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    render(
+      <>
+        <MenuHost />
+        <ChangesPanel visible />
+      </>,
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "History" }));
+    const row = (
+      await screen.findByRole("button", { name: "Open commit: feat(git): copy commit info" })
+    ).parentElement!;
+
+    fireEvent.contextMenu(row);
+    await screen.findByRole("menuitem", { name: "Copy commit info" });
+    // The row menu is deliberately a single action — no SHA-only shortcut.
+    expect(screen.getAllByRole("menuitem")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy commit info" }));
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        [
+          commit.subject,
+          `commit: ${commit.sha}`,
+          `Author: ${commit.authorName}`,
+          `Date: ${formatCommitDate(commit.authoredAt, "en")}`,
+        ].join("\n"),
+      ),
+    );
+  });
+
   it("offers a discard button for new (untracked) files that deletes them on confirm", async () => {
     const untracked = status({
       files: [
@@ -843,7 +894,8 @@ describe("ChangesPanel", () => {
     request.mockImplementation(async (method) => {
       if (method === "git.setWatching")
         return success(method, { watching: true, snapshot: untracked }) as never;
-      if (method === "git.discard") return success(method, { applied: true, snapshot: cleaned }) as never;
+      if (method === "git.discard")
+        return success(method, { applied: true, snapshot: cleaned }) as never;
       throw new Error(`Unexpected method ${method}`);
     });
     const user = userEvent.setup();
@@ -879,9 +931,7 @@ describe("ChangesPanel", () => {
       </>,
     );
 
-    const row = (
-      await screen.findByRole("button", { name: "Changes: src/app.ts" })
-    ).parentElement!;
+    const row = (await screen.findByRole("button", { name: "Changes: src/app.ts" })).parentElement!;
     fireEvent.contextMenu(row);
     fireEvent.click(await screen.findByRole("menuitem", { name: "Copy path" }));
 
@@ -893,7 +943,8 @@ describe("ChangesPanel", () => {
     request.mockImplementation(async (method) => {
       if (method === "git.setWatching")
         return success(method, { watching: true, snapshot: status() }) as never;
-      if (method === "git.discardAll") return success(method, { applied: true, snapshot: cleaned }) as never;
+      if (method === "git.discardAll")
+        return success(method, { applied: true, snapshot: cleaned }) as never;
       throw new Error(`Unexpected method ${method}`);
     });
     const user = userEvent.setup();

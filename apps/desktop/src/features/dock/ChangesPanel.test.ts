@@ -4,6 +4,8 @@ import {
   buildGitListRows,
   canDiscardAllGitChanges,
   canDiscardGitChange,
+  commitClipboardText,
+  formatCommitDate,
   gitChangeLetter,
   parseUnifiedDiffLines,
 } from "./ChangesPanel";
@@ -80,6 +82,30 @@ describe("ChangesPanel helpers", () => {
     expect(gitChangeLetter("conflicted")).toBe("!");
   });
 
+  it("builds a flush-left clipboard payload for a commit", () => {
+    const commit = {
+      sha: "8a69eb9688c6ff7659c5f00707ac7db50ee9d726",
+      shortSha: "8a69eb9",
+      parents: ["a".repeat(40)],
+      authorName: "Nick12138",
+      authoredAt: "2026-09-28T14:34:52+08:00",
+      subject: "feat(git):改动管理支持新建文件丢弃、复制路径与一键丢弃",
+      refs: [],
+    };
+    expect(commitClipboardText(commit, "en")).toBe(
+      [
+        "feat(git):改动管理支持新建文件丢弃、复制路径与一键丢弃",
+        "commit: 8a69eb9688c6ff7659c5f00707ac7db50ee9d726",
+        "Author: Nick12138",
+        `Date: ${formatCommitDate(commit.authoredAt, "en")}`,
+      ].join("\n"),
+    );
+  });
+
+  it("falls back to the raw timestamp when a commit date cannot be parsed", () => {
+    expect(formatCommitDate("not-a-date", "zh")).toBe("not-a-date");
+  });
+
   it("allows discard for safe worktree changes including new (untracked) files", () => {
     const file = {
       path: "src/app.ts",
@@ -106,7 +132,7 @@ describe("ChangesPanel helpers", () => {
       submodule: false,
       pathSupported: true,
     };
-    const snapshot = (files: typeof file[]) =>
+    const snapshot = (files: (typeof file)[]) =>
       ({
         state: "ready",
         revision: 7,
