@@ -904,8 +904,9 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
       ? `${ready.repositoryRoot.replace(/[\\/]+$/, "")}/${file.path}`
       : file.path;
     try {
+      // Deliberately silent: no success toast. Like the commit-reference copy,
+      // the row is still on screen and the toast would only cover it.
       await navigator.clipboard.writeText(absolutePath);
-      pushNotification(t("gitPathCopied"), "success");
     } catch {
       // Clipboard unavailable (e.g. missing permission) — the path is also
       // selectable via the row tooltip, so stay silent.

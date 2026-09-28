@@ -1660,7 +1660,6 @@ export const en = {
     "This permanently discards every uncommitted change in the repository: staged and unstaged edits are restored, and new (untracked) files are deleted.",
   gitDiscardingAll: "Discarding…",
   gitCopyPath: "Copy path",
-  gitPathCopied: "File path copied",
   gitCopyCommitInfo: "Copy commit info",
   gitDiscardHunkTitle: "Discard this hunk?",
   gitDiscardHunkConfirm: "This permanently discards the selected unstaged hunk in {path}.",

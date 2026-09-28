@@ -927,6 +927,7 @@ describe("ChangesPanel", () => {
       value: { writeText },
       configurable: true,
     });
+    useAppStore.setState({ transientNotifications: [] });
     render(
       <>
         <MenuHost />
@@ -939,6 +940,8 @@ describe("ChangesPanel", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "Copy path" }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("/repo/src/app.ts"));
+    // Copying a path is deliberately silent — no success toast.
+    expect(useAppStore.getState().transientNotifications).toHaveLength(0);
   });
 
   it("discards every change at once after confirmation", async () => {
