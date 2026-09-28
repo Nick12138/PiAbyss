@@ -2412,6 +2412,20 @@ html.light .pi-working-marquee {
   height: 0.75rem;
 }
 
+/*
+ * 备忘录详情 / Agent 总结弹窗内的 Markdown：沿用备忘录正文的 13px 阅读字号，
+ * 不继承对话区的 --conversation-font-size。双类选择器保证覆盖 .chat-markdown。
+ */
+.chat-markdown.memo-markdown {
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* 纯文本时代正文从首行开始，去掉渲染后首个块的顶部留白以免多出一段空隙。 */
+.chat-markdown.memo-markdown > :first-child {
+  margin-top: 0;
+}
+
 .chat-markdown .katex {
   display: inline-block;
   max-width: 100%;

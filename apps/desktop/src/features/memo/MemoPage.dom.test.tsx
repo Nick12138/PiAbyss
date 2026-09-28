@@ -71,74 +71,105 @@ const runningNote = note({
   status: "in_progress",
   sessionId: "s1",
 });
+const doneNote = note({ id: "memo-3", title: "已完成一条", status: "done", completedAt: 9 });
 
-describe("MemoPage 手动标记完成", () => {
-  beforeEach(() => {
-    for (const mock of Object.values(mocks)) mock.mockReset();
-    mocks.listMemoNotes.mockResolvedValue([openNote, runningNote]);
-    mocks.getMemoDraft.mockResolvedValue(null);
-    mocks.setMemoDraft.mockResolvedValue(null);
-    mocks.clearMemoDraft.mockResolvedValue(undefined);
-    mocks.createMemoNote.mockImplementation(async () => openNote);
-    mocks.deleteMemoNote.mockResolvedValue(undefined);
-    mocks.optimizeMemo.mockResolvedValue({ contentMd: "", type: "memo", workspaceId: null });
-    mocks.readMemoImageDataUrl.mockResolvedValue("");
-    mocks.updateMemoNote.mockImplementation(async (id: string, patch: Partial<MemoNote>) => {
-      const source = [openNote, runningNote].find((entry) => entry.id === id) ?? note({ id });
-      return { ...source, ...patch };
-    });
-    useAppStore.setState({
-      host,
-      workspace,
-      session: null,
-      connecting: false,
-      rehydrating: false,
-      desynchronized: false,
-      hostFatal: null,
-      desktopSettings: null,
-    });
+beforeEach(() => {
+  for (const mock of Object.values(mocks)) mock.mockReset();
+  mocks.listMemoNotes.mockResolvedValue([openNote, runningNote]);
+  mocks.getMemoDraft.mockResolvedValue(null);
+  mocks.setMemoDraft.mockResolvedValue(null);
+  mocks.clearMemoDraft.mockResolvedValue(undefined);
+  mocks.createMemoNote.mockImplementation(async () => openNote);
+  mocks.deleteMemoNote.mockResolvedValue(undefined);
+  mocks.optimizeMemo.mockResolvedValue({ contentMd: "", type: "memo", workspaceId: null });
+  mocks.readMemoImageDataUrl.mockResolvedValue("");
+  mocks.updateMemoNote.mockImplementation(async (id: string, patch: Partial<MemoNote>) => {
+    const source =
+      [openNote, runningNote, doneNote].find((entry) => entry.id === id) ?? note({ id });
+    return { ...source, ...patch };
   });
+  useAppStore.setState({
+    host,
+    workspace,
+    session: null,
+    connecting: false,
+    rehydrating: false,
+    desynchronized: false,
+    hostFatal: null,
+    desktopSettings: null,
+  });
+});
 
-  afterEach(() => cleanup());
+afterEach(() => cleanup());
 
-  it("lets a 待处理 record be completed from its list row", async () => {
+describe("MemoPage 手动标记完成 / 重新打开", () => {
+  it("lets a 待处理 record be completed from its detail header (no row button)", async () => {
     render(<MemoPage />);
 
     const row = (await screen.findByText("手动完成一条")).closest("li");
     expect(row).not.toBeNull();
-    fireEvent.click(within(row as HTMLElement).getByRole("button", { name: "Mark done" }));
+    // 行内不再放「标记完成」——详情页有常驻按钮。
+    expect(within(row as HTMLElement).queryByRole("button", { name: "Mark done" })).toBeNull();
+
+    fireEvent.click(within(row as HTMLElement).getByTestId("memo-list-item"));
+    fireEvent.click(await screen.findByTestId("memo-detail-complete"));
 
     await waitFor(() => {
       expect(mocks.updateMemoNote).toHaveBeenCalledWith("memo-1", { status: "done" });
     });
   });
 
-  it("keeps a 进行中 record completable from its list row (spinner while idle)", async () => {
+  it("keeps a 进行中 record completable from its detail header (spinner in the row)", async () => {
     render(<MemoPage />);
     await screen.findByText("手动完成一条");
 
-    // 进行中记录在「进行中」页签下，行内平时显示加载图标，但仍可标记完成。
     fireEvent.click(screen.getByRole("tab", { name: /In progress/ }));
     const row = (await screen.findByText("进行中一条")).closest("li");
     expect(row?.querySelector(".animate-spin")).not.toBeNull();
-    fireEvent.click(within(row as HTMLElement).getByRole("button", { name: "Mark done" }));
+    expect(within(row as HTMLElement).queryByRole("button", { name: "Mark done" })).toBeNull();
+
+    fireEvent.click(within(row as HTMLElement).getByTestId("memo-list-item"));
+    fireEvent.click(await screen.findByTestId("memo-detail-complete"));
 
     await waitFor(() => {
       expect(mocks.updateMemoNote).toHaveBeenCalledWith("memo-2", { status: "done" });
     });
   });
 
-  it("keeps a 进行中 record completable from its detail header", async () => {
+  it("offers a persistent reopen action for a 已完成 record's detail", async () => {
+    mocks.listMemoNotes.mockResolvedValue([doneNote]);
     render(<MemoPage />);
-    await screen.findByText("手动完成一条");
 
-    fireEvent.click(screen.getByRole("tab", { name: /In progress/ }));
-    fireEvent.click(await screen.findByTestId("memo-list-item"));
-
-    fireEvent.click(await screen.findByTestId("memo-detail-complete"));
+    // 已完成记录在「已完成」页签下；行内绿色对勾已移除，重新打开只保留详情页常驻按钮。
+    fireEvent.click(screen.getByRole("tab", { name: /^Done/ }));
+    const row = (await screen.findByText("已完成一条")).closest("li");
+    expect(within(row as HTMLElement).queryByRole("button", { name: "Reopen" })).toBeNull();
+    fireEvent.click(screen.getByTestId("memo-list-item"));
+    fireEvent.click(await screen.findByTestId("memo-detail-reopen"));
 
     await waitFor(() => {
-      expect(mocks.updateMemoNote).toHaveBeenCalledWith("memo-2", { status: "done" });
+      expect(mocks.updateMemoNote).toHaveBeenCalledWith("memo-3", { status: "open" });
     });
+  });
+});
+
+describe("MemoPage 详情 Markdown 预览", () => {
+  it("renders the detail body as Markdown instead of the raw source", async () => {
+    mocks.listMemoNotes.mockResolvedValue([
+      note({ id: "memo-md", title: "Markdown 记录", contentMd: "Markdown 记录\n\n**加粗**文字" }),
+    ]);
+    render(<MemoPage />);
+
+    fireEvent.click(await screen.findByTestId("memo-list-item"));
+
+    // 渲染器按需加载：Suspense 解析后详情正文才出现。
+    await screen.findByText("加粗", undefined, { timeout: 5_000 });
+
+    // 正文按 Markdown 渲染（Streamdown 用 data-streamdown 标记，项目样式同样按该属性
+    // 匹配），而不是保留 `**加粗**` 源码。列表摘要仍走纯文本，故只断言正文容器。
+    const body = document.querySelector<HTMLElement>(".chat-markdown.memo-markdown");
+    expect(body).not.toBeNull();
+    expect(body?.querySelector('[data-streamdown="strong"]')?.textContent).toBe("加粗");
+    expect(body?.textContent).not.toContain("**加粗**");
   });
 });

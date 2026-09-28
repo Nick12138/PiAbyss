@@ -21,6 +21,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  RotateCcw,
   ScrollText,
   Sparkles,
   StickyNote,
@@ -29,6 +30,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -107,6 +110,24 @@ const TYPE_ICONS: Record<MemoNoteType, LucideIcon> = {
   idea: Lightbulb,
   task: ListChecks,
 };
+
+/**
+ * 查看态的 Markdown 渲染器（Streamdown + shiki/mermaid，体积可观）。
+ * 与文件标签的「预览」模式同源，按需加载以免拖慢备忘录首屏；
+ * 组件内部带渲染边界，增强失败时自行回退为纯文本。
+ */
+const Markdown = lazy(() =>
+  import("../chat/MarkdownMessage").then((m) => ({ default: m.MarkdownMessage })),
+);
+
+/** Markdown 渲染器加载中的占位（高度贴紧，避免内容跳动）。 */
+function MarkdownPending() {
+  return (
+    <div className="flex items-center gap-2 py-1 text-xs text-muted" role="status">
+      <Loader2 size={14} className="animate-spin" aria-hidden />
+    </div>
+  );
+}
 
 /** 下拉选项/触发器共用：图标 + 文本。 */
 function typeOptionLabel(type: MemoNoteType, t: Translate): ReactNode {
@@ -1116,9 +1137,6 @@ export function MemoPage() {
                     setSelectedId(note.id);
                     setPane("detail");
                   }}
-                  onToggleStatus={(target) =>
-                    void setStatus(target, target.status === "done" ? "open" : "done")
-                  }
                   onArchive={(target) => void toggleFromList(target, "archived")}
                   onUnarchive={(target) => void toggleFromList(target, "open")}
                 />
@@ -1162,6 +1180,7 @@ export function MemoPage() {
               onAgent={() => void openWithAgent(selectedNote)}
               onOpenSession={() => void openBoundSession(selectedNote)}
               onComplete={() => void setStatus(selectedNote, "done")}
+              onReopen={() => void setStatus(selectedNote, "open")}
               onResult={() => {
                 setConfirmingClearResult(false);
                 setResultModalOpen(true);
@@ -1230,8 +1249,11 @@ export function MemoPage() {
               <span>·</span>
               <span>{t("memoResultAt", { time: formatMemoDateTime(selectedNote.result.at) })}</span>
             </div>
-            <div className="scrollbar-subtle max-h-80 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-surface-overlay px-3 py-2.5 text-[13px] leading-relaxed text-foreground">
-              {selectedNote.result.resultMd}
+            {/* 总结同为 Markdown 文本，与详情正文共用渲染器（查看态即渲染态）。 */}
+            <div className="scrollbar-subtle max-h-80 overflow-y-auto break-words rounded-md border border-border bg-surface-overlay px-3 py-2.5 text-[13px] leading-relaxed text-foreground">
+              <Suspense fallback={<MarkdownPending />}>
+                <Markdown content={selectedNote.result.resultMd} className="memo-markdown" />
+              </Suspense>
             </div>
           </div>
         </Dialog>
@@ -1291,14 +1313,12 @@ function MemoListItem({
   note,
   selected,
   onSelect,
-  onToggleStatus,
   onArchive,
   onUnarchive,
 }: {
   note: MemoNote;
   selected: boolean;
   onSelect: () => void;
-  onToggleStatus: (note: MemoNote) => void;
   onArchive: (note: MemoNote) => void;
   onUnarchive: (note: MemoNote) => void;
 }) {
@@ -1329,8 +1349,8 @@ function MemoListItem({
           <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
             {note.title}
           </span>
-          {/* 右上角状态图标区：待处理/进行中=悬浮行时出现打勾图标(点击标记完成)，
-              进行中平时显示加载图标；已完成=常显绿色对勾(点击重新打开)+归档(悬浮)；
+          {/* 右上角状态图标区：进行中=加载图标（手动完成/重新打开走详情页的常驻按钮）；
+              已完成=归档(悬浮)；
               已归档=静态归档图标，悬浮换为恢复(点击取消归档)。 */}
           {note.status === "done" && (
             <button
@@ -1368,44 +1388,10 @@ function MemoListItem({
                 <ArchiveRestore size={14} aria-hidden />
               </button>
             </>
-          ) : note.status === "done" ? (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggleStatus(note);
-              }}
-              title={t("memoActionReopen")}
-              aria-label={t("memoActionReopen")}
-              data-testid="memo-list-item-status"
-              className="flex shrink-0 cursor-pointer items-center rounded transition-colors"
-            >
-              <CheckCircle2 size={14} className="text-success" aria-hidden />
-            </button>
-          ) : (
-            <>
-              {note.status === "in_progress" && (
-                <Loader2
-                  size={14}
-                  className="shrink-0 animate-spin text-accent group-hover:hidden group-focus-within:hidden"
-                  aria-hidden
-                />
-              )}
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onToggleStatus(note);
-                }}
-                title={t("memoActionDone")}
-                aria-label={t("memoActionDone")}
-                data-testid="memo-list-item-status"
-                className="hidden shrink-0 cursor-pointer items-center rounded text-muted transition-colors hover:text-foreground group-hover:flex group-focus-within:flex"
-              >
-                <CheckCircle2 size={14} aria-hidden />
-              </button>
-            </>
-          )}
+          ) : note.status === "in_progress" ? (
+            // 静态状态：手动「标记完成 / 重新打开」走详情页的常驻按钮，行内不做快捷切换。
+            <Loader2 size={14} className="shrink-0 animate-spin text-accent" aria-hidden />
+          ) : null}
         </span>
         {noteExcerpt(note) && (
           <span className="line-clamp-2 text-[12px] text-muted">{noteExcerpt(note)}</span>
@@ -1453,6 +1439,7 @@ function MemoDetail({
   onAgent,
   onOpenSession,
   onComplete,
+  onReopen,
   onResult,
   onDelete,
 }: {
@@ -1466,6 +1453,8 @@ function MemoDetail({
   onOpenSession: () => void;
   /** 手动把记录标记为完成（不等 Agent 提交总结）。 */
   onComplete: () => void;
+  /** 把已完成的记录退回「待处理」。 */
+  onReopen: () => void;
   onResult: () => void;
   onDelete: () => void;
 }) {
@@ -1517,7 +1506,18 @@ function MemoDetail({
             <span>{t("memoActionAgent")}</span>
           </button>
         )}
-        {note.status !== "done" && (
+        {note.status === "done" ? (
+          <button
+            type="button"
+            onClick={onReopen}
+            title={t("memoActionReopen")}
+            data-testid="memo-detail-reopen"
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-foreground transition-colors hover:bg-surface-overlay"
+          >
+            <RotateCcw size={14} className="shrink-0" />
+            <span>{t("memoActionReopen")}</span>
+          </button>
+        ) : note.status === "archived" ? null : (
           <button
             type="button"
             onClick={onComplete}
@@ -1593,8 +1593,11 @@ function MemoDetail({
           </div>
         )}
 
-        <div className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-foreground">
-          {note.contentMd}
+        {/* 查看态即渲染态：正文按 Markdown 渲染；编辑态仍为源码（见 MemoEditor）。 */}
+        <div className="break-words text-[13px] leading-relaxed text-foreground">
+          <Suspense fallback={<MarkdownPending />}>
+            <Markdown content={note.contentMd} className="memo-markdown" />
+          </Suspense>
         </div>
       </div>
     </div>
