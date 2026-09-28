@@ -58,6 +58,7 @@ import {
 } from "./ExtensionWidgets";
 import { PiMark } from "../../components/PiMark";
 import { SubagentsPopoverButton } from "../dock/SubagentsPanel";
+import { bindMemoHandoffsToSession } from "../memo/memo-handoff";
 import { LightboxImage } from "../../components/ImageLightbox";
 import {
   activeSessionContext,
@@ -1649,6 +1650,14 @@ export function Composer({
       setDocuments(sentDocuments);
       setDraftReferences(draftTarget, sentReferences);
     };
+    // 备忘录交接（「用 Agent 处理」注入的引用胶囊）只有消息真的发出去才算
+    // 「进行中」：用户没发就离开、或把会话删掉时，不该留下指向死会话的绑定。
+    const bindSentMemoHandoffs = () => {
+      void bindMemoHandoffsToSession(
+        sentReferences,
+        useAppStore.getState().session?.sessionId ?? session?.sessionId ?? null,
+      );
+    };
     // Optimistic echo (idle prompt path only): show the user's bubble
     // immediately instead of waiting for the Host to echo message_start (which
     // can lag behind model preflight/compaction). The authoritative event
@@ -1702,6 +1711,7 @@ export function Composer({
           handleSendFailure(res.error);
         } else {
           commitDraftSend(sendReceipt);
+          bindSentMemoHandoffs();
         }
         return;
       }
@@ -1718,6 +1728,7 @@ export function Composer({
         handleSendFailure(res.error);
       } else {
         commitDraftSend(sendReceipt);
+        bindSentMemoHandoffs();
         // An accepted prompt means credentials resolved; drop any stale banner.
         setAuthBlocked(null);
       }

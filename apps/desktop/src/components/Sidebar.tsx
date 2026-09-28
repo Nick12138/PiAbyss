@@ -15,6 +15,7 @@ import { TelegramSessionList } from "../features/telegram/TelegramSessionList";
 import { useTelegramWorkspaceActive } from "../features/telegram/telegram-view-store";
 import { PiMark } from "./PiMark";
 import { sidebarPref, setSidebarPref } from "../lib/sidebar-prefs";
+import { subscribeSessionReveal } from "../lib/session-reveal";
 import { useSchedulePluginEnabled } from "../features/schedule/schedule-plugin-gate";
 import { resolveConversationMinWidth } from "../features/chat/conversation-layout";
 import {
@@ -245,6 +246,22 @@ export function SidebarLayout({
       return !current;
     });
   }
+
+  // 定位请求（归档会话打不开，只能带到它在列表里的位置，见 lib/session-reveal）：
+  // 侧边栏或「最近会话」分区折叠时列表根本不在树上，先展开再让 SessionList 接手定位，
+  // 否则用户看不到被定位的那一条。
+  useEffect(() => {
+    return subscribeSessionReveal(() => {
+      if (useAppStore.getState().sidebarCollapsed) {
+        useAppStore.getState().setSidebarCollapsed(false);
+      }
+      setSessionsCollapsed((current) => {
+        if (!current) return current;
+        setSidebarPref("piabyss.sidebar.sessionsCollapsed", false);
+        return false;
+      });
+    });
+  }, []);
 
   return (
     <Fragment>

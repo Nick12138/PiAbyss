@@ -1,11 +1,12 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HostStatusSnapshot, SessionSummary, WorkspaceSnapshot } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
 import { closeContextMenu } from "../../lib/context-menu";
+import { clearPendingSessionRevealForTest, requestSessionReveal } from "../../lib/session-reveal";
 import { MenuHost } from "../../components/Menu";
 import { SessionList } from "./SessionList";
 
@@ -48,6 +49,7 @@ const workspace: WorkspaceSnapshot = {
 
 describe("SessionList actions", () => {
   beforeEach(() => {
+    clearPendingSessionRevealForTest();
     useAppStore.setState({
       host,
       workspace,
@@ -300,6 +302,46 @@ describe("SessionList actions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show archived sessions (1)" }));
 
     expect(await screen.findByRole("button", { name: "Restore" })).toBeInTheDocument();
+  });
+
+  it("locates an archived session in the archived group when asked", async () => {
+    const archived: SessionSummary = { ...summary, archived: true };
+    vi.mocked(hostClient.request).mockResolvedValue({
+      ok: true,
+      result: { items: [archived] },
+    } as never);
+    useAppStore.getState().replaceSessionCatalog(workspace.id, [archived]);
+    render(<SessionList />);
+
+    // Archived sessions live behind the archived filter, so they are not listed yet.
+    expect(screen.queryByText("Position the menu")).not.toBeInTheDocument();
+
+    act(() =>
+      requestSessionReveal({
+        workspaceId: workspace.id,
+        sessionId: "session-1",
+        archived: true,
+      }),
+    );
+
+    const row = (await screen.findByText("Position the menu")).closest("li");
+    expect(row).toHaveAttribute("data-session-revealed", "true");
+    expect(screen.getByRole("button", { name: "Restore" })).toBeInTheDocument();
+  });
+
+  it("ignores a reveal aimed at another workspace", () => {
+    render(<SessionList />);
+
+    act(() =>
+      requestSessionReveal({
+        workspaceId: "workspace-2",
+        sessionId: "session-1",
+        archived: true,
+      }),
+    );
+
+    // The filter must stay on the active group: the target is not this workspace's.
+    expect(screen.getByText("Position the menu")).toBeInTheDocument();
   });
 
   it("shows an unacknowledged done marker and clears it when reopened", async () => {

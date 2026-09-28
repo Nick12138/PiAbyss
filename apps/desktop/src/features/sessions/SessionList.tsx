@@ -47,6 +47,7 @@ import { workspaceActivityFor } from "../../lib/workspace-activity";
 import { useImeComposition } from "../../lib/use-ime-composition";
 import { createNewSession } from "../../lib/commands/actions";
 import { sidebarJsonPref, setSidebarJsonPref } from "../../lib/sidebar-prefs";
+import { subscribeSessionReveal, type SessionRevealRequest } from "../../lib/session-reveal";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
@@ -73,6 +74,11 @@ type SessionConfirmAction =
   { kind: "delete"; item: SessionCatalogEntry } | { kind: "cleanup"; count: number };
 
 const SESSION_GROUPS_COLLAPSED_KEY = "piabyss.sidebar.sessionGroupsCollapsed.v1";
+
+/** 展开动画（CollapsibleRegion 的 grid-template-rows 过渡 180ms）走完再滚动。 */
+const REVEAL_SCROLL_DELAY_MS = 260;
+/** 定位高亮只是「看这里」的提示，几秒后褪去，避免看起来像多了一种选中态。 */
+const REVEAL_HIGHLIGHT_MS = 2600;
 
 function sessionGroupLabelKey(
   group: SessionTimeGroup,
@@ -144,6 +150,12 @@ export function SessionList({
   const [pinnedSessionIds, setPinnedSessionIds] = useState<string[]>(() =>
     readPinnedSessionIds(useAppStore.getState().workspace?.id),
   );
+  // 「定位到某条会话」（归档会话打不开，只能把用户带到它在列表里的位置）。
+  const [revealRequest, setRevealRequest] = useState<SessionRevealRequest | null>(null);
+  const [revealedSessionId, setRevealedSessionId] = useState<string | null>(null);
+  const listContainerRef = useRef<HTMLDivElement | null>(null);
+  /** 已经滚过的目标：目录刷新时不要反复抢用户的滚动位置。 */
+  const scrolledRevealRef = useRef<string | null>(null);
   const sessionOpenBlocked = connecting || rehydrating || desynchronized || Boolean(hostFatal);
   const sessionMutationBlocked = sessionMutationPending || sessionOpenPending || sessionOpenBlocked;
   const refreshRequest = useRef(0);
@@ -773,6 +785,65 @@ export function SessionList({
   const allItems = prioritizePinnedSessions(sessionCatalogItems(sessionCatalog), pinnedSessionIds);
   const visibleItems = filterSessionItems(allItems, filter);
   const groupedItems = groupSessionItemsByTime(visibleItems);
+
+  // ── 定位请求：归档会话打不开，改为在列表里把它找出来并点亮 ──────────────────
+  useEffect(() => subscribeSessionReveal(setRevealRequest), []);
+
+  // 目标归档与否决定要先切到哪个分组（「已归档」/「活动」），否则它在列表里根本不渲染。
+  useEffect(() => {
+    if (!revealRequest || !workspace) return;
+    if (revealRequest.workspaceId && revealRequest.workspaceId !== workspace.id) return;
+    setFilter(revealRequest.archived ? "archived" : "active");
+  }, [revealRequest, workspace]);
+
+  const revealTarget = revealRequest
+    ? (allItems.find((item) => item.sessionId === revealRequest.sessionId) ?? null)
+    : null;
+
+  // 展开目标所在的时间分组并点亮它；目录尚未加载到这条时保持等待，出现即执行。
+  useEffect(() => {
+    if (!revealRequest || !revealTarget) return;
+    if (revealRequest.workspaceId && revealRequest.workspaceId !== workspace?.id) return;
+    const [bucket] = groupSessionItemsByTime([revealTarget]).filter(
+      (entry) => entry.items.length > 0,
+    );
+    const group = bucket?.group;
+    if (group) {
+      setCollapsedGroups((current) => {
+        if (!current.has(group)) return current;
+        const next = new Set(current);
+        next.delete(group);
+        return next;
+      });
+    }
+    // 已点亮时不重复置位（否则每次目录刷新都会重置高亮的倒计时）。
+    setRevealedSessionId((current) => current ?? revealRequest.sessionId);
+  }, [revealRequest, revealTarget, workspace]);
+
+  // 滚进可视区：等展开过渡走完再滚，否则会停在半展开的位置。
+  useEffect(() => {
+    if (!revealedSessionId || scrolledRevealRef.current === revealedSessionId) return;
+    const timer = window.setTimeout(() => {
+      const container = listContainerRef.current;
+      if (!container) return;
+      const element = Array.from(container.querySelectorAll<HTMLElement>("[data-session-id]")).find(
+        (node) => node.dataset.sessionId === revealedSessionId,
+      );
+      if (!element) return;
+      // jsdom 没有实现 scrollIntoView，用可选调用兜住测试环境。
+      element.scrollIntoView?.({ block: "nearest" });
+      scrolledRevealRef.current = revealedSessionId;
+    }, REVEAL_SCROLL_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [revealedSessionId, visibleItems]);
+
+  // 高亮只是短暂提示，自动褪去。
+  useEffect(() => {
+    if (!revealedSessionId) return;
+    const timer = window.setTimeout(() => setRevealedSessionId(null), REVEAL_HIGHLIGHT_MS);
+    return () => window.clearTimeout(timer);
+  }, [revealedSessionId]);
+
   const archivedCount = allItems.filter((item) => item.archived).length;
   const showArchivedToggle = archivedCount > 0 || filter === "archived";
   const extensionUiWaitingBySession = deriveExtensionUiWaitingBySession(
@@ -859,7 +930,7 @@ export function SessionList({
           {!workspace?.servicesReady && (
             <p className="px-1 text-xs text-muted">{t("sessionsSelectWorkspaceFirst")}</p>
           )}
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2" ref={listContainerRef}>
             {groupedItems.map(({ group, items }) =>
               items.length === 0 ? null : (
                 <div key={group} className="flex flex-col gap-0.5">
@@ -892,6 +963,7 @@ export function SessionList({
                         const active = !item.archived && session?.sessionId === item.sessionId;
                         const editing = editingSessionId === item.sessionId;
                         const pinned = pinnedSessionIds.includes(item.sessionId);
+                        const revealed = revealedSessionId === item.sessionId;
                         const canRename = canRenameSession(item, session);
                         const canDelete = canDeleteSession(item, session);
                         const canArchive = canArchiveSession(item, session);
@@ -922,10 +994,16 @@ export function SessionList({
                             key={item.sessionId}
                             data-ui="nav-item"
                             data-state={active ? "active" : "inactive"}
+                            data-session-id={item.sessionId}
+                            data-session-revealed={revealed ? "true" : undefined}
                             className={`interface-density-nav-row group flex h-9 items-center rounded-md text-[13px] ${
                               active
                                 ? "theme-nav-active bg-nav-active text-nav-active-foreground"
                                 : "hover:bg-surface-overlay/70"
+                            } ${
+                              revealed && !active
+                                ? "ring-1 ring-accent/70 ring-inset transition-shadow"
+                                : ""
                             }`}
                             onContextMenu={(event) => {
                               if (shouldKeepNativeContextMenu(event.nativeEvent)) return;

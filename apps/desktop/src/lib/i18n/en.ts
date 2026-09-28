@@ -109,7 +109,7 @@ export const en = {
   globalSearchTruncated: "Showing the first {count} results",
   globalSearchMatchCount: "{count} matching messages",
   globalSearchArchivedRestoreHint:
-    "This session is archived — restore it from the session list to open it",
+    "This session is archived — located it under “Archived” in the sidebar; restore it to open it",
   globalSearchCurrentWorkspace: "Current",
   workspacesSwitchingTo: "Opening {name}…",
 
@@ -1966,8 +1966,12 @@ export const en = {
     "Please handle the memo note referenced above. Once the work described in it is finished, call the complete action of the piabyss_memo tool to mark that note as complete, and always pass a `result` parameter containing a summary of what was done, the outcome, and any remaining follow-ups.",
   memoActionResult: "Agent summary",
   memoActionOpenSession: "Open linked session",
-  memoSessionOpenFailed: "Failed to open linked session",
-  memoSessionArchived: "Linked session is archived",
+  memoSessionOpenFailed: "Could not open the linked session — please try again",
+  memoSessionArchived: "Linked session is archived — located it under “Archived” in the sidebar",
+  memoSessionMissingReset:
+    "The linked session no longer exists (it may have been deleted) — this note is back to pending",
+  memoSessionMissingUnbound:
+    "The linked session no longer exists (it may have been deleted) — the link was removed",
   memoResultTitle: "Agent completion summary",
   memoResultEmpty: "This note has no Agent summary yet.",
   memoResultFromSession: "From session: {name}",

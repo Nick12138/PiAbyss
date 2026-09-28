@@ -58,6 +58,7 @@ import {
   activateWorkspaceAcrossWorkspaces,
   openSessionAcrossWorkspaces,
 } from "../../lib/bridge/session-navigation";
+import { requestSessionReveal } from "../../lib/session-reveal";
 import { hostClient } from "../../lib/bridge/host-client";
 import { workspaceContext } from "../../lib/bridge/host-context";
 import { waitForWorkspaceServicesReady } from "../workspaces/workspace-switch-policy";
@@ -682,43 +683,28 @@ export function MemoPage() {
       return;
     }
     const state = useAppStore.getState();
-    const sessionId = state.session?.sessionId ?? null;
-    if (!sessionId) {
+    const target = draftTargetFor(state.workspace, state.session);
+    if (!target) {
       pushNotification(t("memoAgentCreateFailed"), "error");
       return;
     }
-    let runningNote: MemoNote = { ...note, status: "in_progress", sessionId, result: null };
-    try {
-      const updated = await updateMemoNote(note.id, {
-        status: "in_progress",
-        sessionId,
-        clearResult: true,
-      });
-      runningNote = updated;
-      setNotes((current) =>
-        current ? current.map((entry) => (entry.id === updated.id ? updated : entry)) : current,
-      );
-    } catch (error) {
-      pushNotification(
-        `${t("memoSaveFailed")}: ${error instanceof Error ? error.message : String(error)}`,
-        "error",
-      );
-      return;
-    }
-    const target = draftTargetFor(state.workspace, state.session);
-    if (!target) {
-      pushNotification(t("memoAgentNoWorkspace"), "warning");
-      return;
-    }
+    // 这里只「预约」：注入引用胶囊并跳转聊天。记录置为「进行中」并绑定会话
+    // 推迟到消息真正发出时（见 memo-handoff.ts）——否则用户没发消息就离开、
+    // 或把新会话删掉，记录就会卡在「进行中」并指向一个打不开的会话。
     injectMemoReference(
       target,
-      runningNote,
-      withMemoPrompt("", composeMemoPrompt(runningNote), t("memoAgentPrompt")),
+      note,
+      withMemoPrompt("", composeMemoPrompt(note), t("memoAgentPrompt")),
     );
     state.setPage("chat");
   }
 
-  /** 打开记录绑定的会话；跨工作区时复用统一导航。 */
+  /**
+   * 打开记录绑定的会话；跨工作区时复用统一导航。
+   * 导航层的失败提示统一静音（quiet），由这里合并成一条，避免「打开会话失败」+
+   * 「打开关联会话失败」两条提示；若会话已不存在（多是被用户删掉），顺手把绑定清掉，
+   * 让记录回到「待处理」而不是永远卡在「进行中」。
+   */
   async function openBoundSession(note: MemoNote) {
     if (!note.sessionId) return;
     const state = useAppStore.getState();
@@ -743,8 +729,10 @@ export function MemoPage() {
       pushNotification(t("memoSessionOpenFailed"), "error");
       return;
     }
+    /** 会话在 session.list 里查无此条 → 已被删除（区别于其他打开失败）。 */
+    let sessionMissing = false;
     const outcome = await openSessionAcrossWorkspaces(
-      { cwd: targetCwd, sessionId: note.sessionId },
+      { cwd: targetCwd, sessionId: note.sessionId, quiet: true },
       {
         resolveSessionPath: async (sessionId) => {
           const current = useAppStore.getState();
@@ -757,7 +745,11 @@ export function MemoPage() {
           );
           if (!response.ok) return null;
           const item = response.result.items.find((entry) => entry.sessionId === sessionId);
-          return item ? { sessionPath: item.sessionPath, archived: item.archived } : null;
+          if (!item) {
+            sessionMissing = true;
+            return null;
+          }
+          return { sessionPath: item.sessionPath, archived: item.archived };
         },
       },
     );
@@ -766,8 +758,46 @@ export function MemoPage() {
       return;
     }
     if (outcome.status === "archived") {
+      // 归档会话打不开（Host 的 session.open 只在活动目录里找）：改为在侧边栏
+      // 「已归档」分组里定位它，用户自己决定要不要恢复。
+      requestSessionReveal({
+        workspaceId: useAppStore.getState().workspace?.id ?? null,
+        sessionId: note.sessionId,
+        archived: true,
+      });
       pushNotification(t("memoSessionArchived"), "info");
-    } else if (outcome.status === "failed") {
+      return;
+    }
+    if (sessionMissing) {
+      await unbindMissingSession(note);
+      return;
+    }
+    if (outcome.status === "failed" || outcome.status === "blocked") {
+      pushNotification(t("memoSessionOpenFailed"), "error");
+    }
+  }
+
+  /**
+   * 关联会话已不存在：解除失效的会话绑定，避免记录永远指向一个打不开的会话。
+   * 进行中/待处理的记录顺带退回「待处理」（可以重新交给 Agent）；已完成/已归档的
+   * 记录只解绑、不动状态，免得把已完成记录的总结入口一起弄没了。
+   */
+  async function unbindMissingSession(note: MemoNote) {
+    const backToPending = note.status === "open" || note.status === "in_progress";
+    try {
+      const updated = await updateMemoNote(note.id, {
+        ...(backToPending ? { status: "open" as const } : {}),
+        sessionId: null,
+      });
+      setNotes((current) =>
+        current ? current.map((entry) => (entry.id === updated.id ? updated : entry)) : current,
+      );
+      pushNotification(
+        t(backToPending ? "memoSessionMissingReset" : "memoSessionMissingUnbound"),
+        "warning",
+      );
+    } catch (error) {
+      console.warn("[piabyss] memo session unbind failed", error);
       pushNotification(t("memoSessionOpenFailed"), "error");
     }
   }

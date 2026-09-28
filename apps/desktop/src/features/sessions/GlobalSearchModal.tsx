@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { SessionSearchReport, SessionSearchResultItem } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { openSessionAcrossWorkspaces } from "../../lib/bridge/session-navigation";
+import { requestSessionReveal } from "../../lib/session-reveal";
 import { hostContext } from "../../lib/bridge/host-context";
 import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import { subscribeGlobalSearchOpen } from "../../lib/commands/events";
@@ -131,6 +132,12 @@ export function GlobalSearchModal({ onClose }: { onClose: () => void }) {
       if (outcome.status === "opened" || outcome.status === "already-active") {
         onClose();
       } else if (outcome.status === "archived") {
+        // 归档会话打不开：把用户带到它在侧边栏「已归档」分组里的位置。
+        requestSessionReveal({
+          workspaceId: useAppStore.getState().workspace?.id ?? null,
+          sessionId: item.sessionId,
+          archived: true,
+        });
         useAppStore.getState().pushNotification(t("globalSearchArchivedRestoreHint"), "info");
         onClose();
       }
