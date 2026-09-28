@@ -1676,7 +1676,7 @@ export type ScheduleStatus = {
 /** 备忘录记录类型。 */
 export type MemoNoteType = "memo" | "idea" | "task";
 
-/** 备忘录状态：待办 / 进行中 / 已完成 / 已归档。 */
+/** 备忘录状态：待处理 / 进行中 / 已完成 / 已归档。 */
 export type MemoNoteStatus = "open" | "in_progress" | "done" | "archived";
 
 /** 备忘录记录的图片引用（图片文件由 Host 存储在备忘录目录下）。 */

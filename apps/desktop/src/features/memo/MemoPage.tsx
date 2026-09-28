@@ -1417,7 +1417,7 @@ function MemoDetail({
   const t = useT();
   const TypeIcon = TYPE_ICONS[note.type];
   // 只有 Agent 主动提交总结后才展示「Agent完成总结」；
-  // 待办/进行中或手动完成 → 保持「用 Agent 处理」。
+  // 待处理/进行中或手动完成 → 保持「用 Agent 处理」。
   const showResult = note.status === "done" && note.result !== null;
   return (
     <div className="flex h-full flex-col" data-testid="memo-detail">
