@@ -126,7 +126,7 @@ afterEach(() => {
 
 describe("ChangesPanel", () => {
   it("watches only while visible and renders staged plus unstaged groups", async () => {
-    const { rerender } = render(<ChangesPanel visible />);
+    const { container, rerender } = render(<ChangesPanel visible />);
 
     expect(await screen.findByText("Staged Changes")).toBeVisible();
     expect(screen.getByText("Changes", { selector: "span" })).toBeVisible();
@@ -137,6 +137,9 @@ describe("ChangesPanel", () => {
     ).toBeVisible();
     expect(screen.getByRole("button", { name: "Changes: src/app.ts" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Staged Changes: src/app.ts" })).toBeVisible();
+    const discardAll = screen.getByRole("button", { name: "Discard all changes" });
+    expect(discardAll.closest('[data-git-change-group="unstaged"]')).not.toBeNull();
+    expect(container.querySelector("header")).not.toContainElement(discardAll);
 
     rerender(<ChangesPanel visible={false} />);
     await waitFor(() => {

@@ -1269,26 +1269,6 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
             </button>
             <button
               type="button"
-              title={t("gitDiscardAll")}
-              aria-label={t("gitDiscardAll")}
-              disabled={
-                loading ||
-                historyLoading ||
-                Boolean(operation) ||
-                !ready ||
-                !canDiscardAllGitChanges(ready)
-              }
-              className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-danger disabled:opacity-40"
-              onClick={() => setDiscardAllOpen(true)}
-            >
-              {operation === "git.discardAll" ? (
-                <LoaderCircle size={14} className="animate-spin" />
-              ) : (
-                <Trash2 size={14} />
-              )}
-            </button>
-            <button
-              type="button"
               title={t("gitPull")}
               aria-label={t("gitPull")}
               disabled={loading || historyLoading || Boolean(operation) || !ready}
@@ -1388,35 +1368,63 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
                         }}
                       >
                         {row.kind === "header" ? (
-                          <div className="flex h-full items-center border-b border-border bg-surface-raised/55 px-3 text-[11px] font-semibold uppercase text-muted">
+                          <div
+                            data-git-change-group={row.area}
+                            className="flex h-full items-center border-b border-border bg-surface-raised/55 px-3 text-[11px] font-semibold uppercase text-muted"
+                          >
                             <span>
                               {row.area === "staged" ? t("gitStagedChanges") : t("gitChanges")}
                             </span>
-                            <span className="ml-auto tabular-nums">{row.count}</span>
-                            <button
-                              type="button"
-                              title={row.area === "staged" ? t("gitUnstageAll") : t("gitStageAll")}
-                              aria-label={
-                                row.area === "staged" ? t("gitUnstageAll") : t("gitStageAll")
-                              }
-                              disabled={
-                                Boolean(operation) ||
-                                ready.files.some(
-                                  (file) => file[row.area] !== null && !file.pathSupported,
-                                )
-                              }
-                              className="ml-1 flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-30"
-                              onClick={() => void mutateAll(row.area)}
-                            >
-                              {operation ===
-                              (row.area === "staged" ? "git.unstageAll" : "git.stageAll") ? (
-                                <LoaderCircle size={12} className="animate-spin" />
-                              ) : row.area === "staged" ? (
-                                <Undo2 size={12} />
-                              ) : (
-                                <Plus size={12} />
+                            <div className="ml-auto flex items-center gap-2">
+                              {row.area === "unstaged" && (
+                                <button
+                                  type="button"
+                                  title={t("gitDiscardAll")}
+                                  aria-label={t("gitDiscardAll")}
+                                  disabled={
+                                    loading ||
+                                    historyLoading ||
+                                    Boolean(operation) ||
+                                    !canDiscardAllGitChanges(ready)
+                                  }
+                                  className="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-danger disabled:opacity-40"
+                                  onClick={() => setDiscardAllOpen(true)}
+                                >
+                                  {operation === "git.discardAll" ? (
+                                    <LoaderCircle size={13} className="animate-spin" />
+                                  ) : (
+                                    <Trash2 size={13} />
+                                  )}
+                                </button>
                               )}
-                            </button>
+                              <span className="tabular-nums">{row.count}</span>
+                              <button
+                                type="button"
+                                title={
+                                  row.area === "staged" ? t("gitUnstageAll") : t("gitStageAll")
+                                }
+                                aria-label={
+                                  row.area === "staged" ? t("gitUnstageAll") : t("gitStageAll")
+                                }
+                                disabled={
+                                  Boolean(operation) ||
+                                  ready.files.some(
+                                    (file) => file[row.area] !== null && !file.pathSupported,
+                                  )
+                                }
+                                className="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-30"
+                                onClick={() => void mutateAll(row.area)}
+                              >
+                                {operation ===
+                                (row.area === "staged" ? "git.unstageAll" : "git.stageAll") ? (
+                                  <LoaderCircle size={12} className="animate-spin" />
+                                ) : row.area === "staged" ? (
+                                  <Undo2 size={12} />
+                                ) : (
+                                  <Plus size={12} />
+                                )}
+                              </button>
+                            </div>
                           </div>
                         ) : (
                           <FileRow
