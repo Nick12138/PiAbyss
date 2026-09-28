@@ -848,7 +848,6 @@ describe("ChangesPanel", () => {
     const user = userEvent.setup();
     const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
-    useAppStore.setState({ transientNotifications: [] });
     render(
       <>
         <MenuHost />
@@ -876,8 +875,6 @@ describe("ChangesPanel", () => {
         ].join("\n"),
       ),
     );
-    // Copying a commit reference is deliberately silent — no success toast.
-    expect(useAppStore.getState().transientNotifications).toHaveLength(0);
   });
 
   it("offers a discard button for new (untracked) files that deletes them on confirm", async () => {
@@ -927,7 +924,6 @@ describe("ChangesPanel", () => {
       value: { writeText },
       configurable: true,
     });
-    useAppStore.setState({ transientNotifications: [] });
     render(
       <>
         <MenuHost />
@@ -940,8 +936,6 @@ describe("ChangesPanel", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "Copy path" }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("/repo/src/app.ts"));
-    // Copying a path is deliberately silent — no success toast.
-    expect(useAppStore.getState().transientNotifications).toHaveLength(0);
   });
 
   it("discards every change at once after confirmation", async () => {

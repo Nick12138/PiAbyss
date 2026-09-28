@@ -904,9 +904,8 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
       ? `${ready.repositoryRoot.replace(/[\\/]+$/, "")}/${file.path}`
       : file.path;
     try {
-      // Deliberately silent: no success toast. Like the commit-reference copy,
-      // the row is still on screen and the toast would only cover it.
       await navigator.clipboard.writeText(absolutePath);
+      pushNotification(t("gitPathCopied"), "success");
     } catch {
       // Clipboard unavailable (e.g. missing permission) — the path is also
       // selectable via the row tooltip, so stay silent.
@@ -915,13 +914,11 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
 
   const copyCommitInfo = async (commit: GitCommitSummary) => {
     try {
-      // Deliberately silent: no success toast. Copying a commit reference is a
-      // throwaway action, and a toast covering the history list right after the
-      // user right-clicked it is pure noise.
       await navigator.clipboard.writeText(commitClipboardText(commit, locale));
+      pushNotification(t("gitCommitInfoCopied"), "success");
     } catch {
-      // Clipboard unavailable (e.g. missing permission) — stay silent too; the
-      // SHA is selectable from the row.
+      // Clipboard unavailable (e.g. missing permission) — the SHA is also
+      // selectable from the row, so stay silent.
     }
   };
 
