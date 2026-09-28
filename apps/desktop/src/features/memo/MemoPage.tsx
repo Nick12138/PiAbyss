@@ -1161,6 +1161,7 @@ export function MemoPage() {
               onEdit={() => startEdit(selectedNote)}
               onAgent={() => void openWithAgent(selectedNote)}
               onOpenSession={() => void openBoundSession(selectedNote)}
+              onComplete={() => void setStatus(selectedNote, "done")}
               onResult={() => {
                 setConfirmingClearResult(false);
                 setResultModalOpen(true);
@@ -1328,8 +1329,8 @@ function MemoListItem({
           <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
             {note.title}
           </span>
-          {/* 右上角状态图标区：进行中=平时不显示，悬浮行时出现打勾图标(点击完成)；
-              已完成=常显绿色对勾(点击恢复)+归档(悬浮)；
+          {/* 右上角状态图标区：待处理/进行中=悬浮行时出现打勾图标(点击标记完成)，
+              进行中平时显示加载图标；已完成=常显绿色对勾(点击重新打开)+归档(悬浮)；
               已归档=静态归档图标，悬浮换为恢复(点击取消归档)。 */}
           {note.status === "done" && (
             <button
@@ -1346,9 +1347,7 @@ function MemoListItem({
               <Archive size={14} aria-hidden />
             </button>
           )}
-          {note.status === "in_progress" ? (
-            <Loader2 size={14} className="shrink-0 animate-spin text-accent" aria-hidden />
-          ) : note.status === "archived" ? (
+          {note.status === "archived" ? (
             <>
               <Archive
                 size={14}
@@ -1383,7 +1382,30 @@ function MemoListItem({
             >
               <CheckCircle2 size={14} className="text-success" aria-hidden />
             </button>
-          ) : null}
+          ) : (
+            <>
+              {note.status === "in_progress" && (
+                <Loader2
+                  size={14}
+                  className="shrink-0 animate-spin text-accent group-hover:hidden group-focus-within:hidden"
+                  aria-hidden
+                />
+              )}
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleStatus(note);
+                }}
+                title={t("memoActionDone")}
+                aria-label={t("memoActionDone")}
+                data-testid="memo-list-item-status"
+                className="hidden shrink-0 cursor-pointer items-center rounded text-muted transition-colors hover:text-foreground group-hover:flex group-focus-within:flex"
+              >
+                <CheckCircle2 size={14} aria-hidden />
+              </button>
+            </>
+          )}
         </span>
         {noteExcerpt(note) && (
           <span className="line-clamp-2 text-[12px] text-muted">{noteExcerpt(note)}</span>
@@ -1430,6 +1452,7 @@ function MemoDetail({
   onEdit,
   onAgent,
   onOpenSession,
+  onComplete,
   onResult,
   onDelete,
 }: {
@@ -1441,6 +1464,8 @@ function MemoDetail({
   onEdit: () => void;
   onAgent: () => void;
   onOpenSession: () => void;
+  /** 手动把记录标记为完成（不等 Agent 提交总结）。 */
+  onComplete: () => void;
   onResult: () => void;
   onDelete: () => void;
 }) {
@@ -1490,6 +1515,18 @@ function MemoDetail({
           >
             <Bot size={14} className="shrink-0" />
             <span>{t("memoActionAgent")}</span>
+          </button>
+        )}
+        {note.status !== "done" && (
+          <button
+            type="button"
+            onClick={onComplete}
+            title={t("memoActionDone")}
+            data-testid="memo-detail-complete"
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-foreground transition-colors hover:bg-surface-overlay"
+          >
+            <CheckCircle2 size={14} className="shrink-0" />
+            <span>{t("memoActionDone")}</span>
           </button>
         )}
         <button
