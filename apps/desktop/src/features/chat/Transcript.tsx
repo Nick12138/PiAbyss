@@ -1239,18 +1239,21 @@ export const TranscriptRowView = memo(function TranscriptRowView({
   // 前端隐藏只喂 UI 的工具调用（如 piabyss_present_files）：不渲染卡片、
   // 不计入折叠统计，但数据仍在 sections 里驱动结尾的文件胶囊。
   const declaredFiles = row.sections ? declaredResultFiles(row.sections.ordered) : [];
-  const orderedBlocks = filterRenderableBlocks(sections.ordered);
-  const hiddenSteps = sections.ordered.length - orderedBlocks.length;
-  const stepCount = Math.max(0, sections.stepCount - hiddenSteps);
-  const finalBlocks: TranscriptBlock[] = orderedBlocks.filter((block) => block.kind !== "thinking");
+  const finalBlocks: TranscriptBlock[] = sections.final.filter(
+    (block) => block.kind !== "thinking",
+  );
   // 折叠条件：回合已完成（不在 working 状态且不在 streaming）
   // 有 endedAt 的是新回合（实时记录了结束时间）
   // 没有 endedAt 的是历史回合（持久化时没有这个字段），也应该折叠
   const isActiveRound = working || mode === "streaming";
   const turnEnded = !isActiveRound;
-  const canFold =
-    turnFold && turnEnded && stepCount > 0 && orderedBlocks.length > finalBlocks.length;
-  const foldBlocks = canFold ? orderedBlocks.filter((block) => !finalBlocks.includes(block)) : [];
+  const shouldFold =
+    turnFold && turnEnded && sections.stepCount > 0 && sections.ordered.length > finalBlocks.length;
+  // 隐藏工具从折叠区剔除；若剔除后折叠区已为空，则整个回合保持展开渲染。
+  const foldBlocks = shouldFold
+    ? filterRenderableBlocks(sections.ordered.filter((block) => !finalBlocks.includes(block)))
+    : [];
+  const canFold = shouldFold && foldBlocks.length > 0;
   const foldToolCount = foldBlocks.filter(
     (block) => block.kind === "tool" || block.kind === "extension",
   ).length;
@@ -1286,7 +1289,7 @@ export const TranscriptRowView = memo(function TranscriptRowView({
           </>
         ) : (
           <AssistantOrderedContent
-            blocks={orderedBlocks}
+            blocks={filterRenderableBlocks(sections.ordered)}
             mode={mode}
             showCaret={showCaret}
             lastTextBlock={lastTextBlock}
