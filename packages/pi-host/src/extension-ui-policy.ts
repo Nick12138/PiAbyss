@@ -76,7 +76,7 @@ function resolveDecisionRisk(input: DecisionRouteInput): ExtensionUiRisk {
     : "normal";
 }
 
-export function isAskUserQuestionOrigin(origin: ExtensionUiOrigin): boolean {
+function isAskUserQuestionOrigin(origin: ExtensionUiOrigin): boolean {
   return origin.invocationKind === "tool" && origin.toolName === "ask_user_question";
 }
 
