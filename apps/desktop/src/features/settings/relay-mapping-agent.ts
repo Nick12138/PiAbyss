@@ -11,6 +11,7 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { createNewSession } from "../../lib/commands/actions";
 import { activateWorkspaceAcrossWorkspaces } from "../../lib/bridge/session-navigation";
 import { setDraftReferencesPersisted } from "../../lib/draft-persistence";
+import { draftTargetFor } from "../../lib/draft-target";
 import { waitForWorkspaceServicesReady } from "../workspaces/workspace-switch-policy";
 import { defaultProjectWorkspacePath } from "../memo/memo-model";
 import { relayMappingReference } from "./relay-mapping-handoff";
@@ -72,20 +73,11 @@ export async function openRelayMappingAgent(
   }
 
   const after = useAppStore.getState();
-  const target = after.workspace
-    ? after.session
-      ? {
-          kind: "session" as const,
-          canonicalCwd: after.workspace.canonicalCwd,
-          sessionId: after.session.sessionId,
-        }
-      : {
-          kind: "new-conversation" as const,
-          canonicalCwd: after.workspace.canonicalCwd,
-        }
-    : null;
+  // 与 memo「用 Agent 处理」同一判定：新建会话消息为空时草稿键是
+  // new-conversation（new:<cwd>），必须用 draftTargetFor 而不是看 session 是否存在。
+  const target = draftTargetFor(after.workspace, after.session);
   if (!target) {
-    state.pushNotification(t("providersMappingHandoffFailed"), "error");
+    after.pushNotification(t("providersMappingHandoffFailed"), "error");
     return false;
   }
   const reference = relayMappingReference(
