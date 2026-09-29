@@ -686,6 +686,126 @@ export type RelayRechargeRatio = {
   balance: number;
 };
 
+/**
+ * Local canonical relay-station fields. Every provider's responses are mapped
+ * onto these through a per-station mapping table, so adapting a new provider
+ * never touches source code — only the mapping JSON.
+ */
+export type RelayFieldKey =
+  /** Group multiplier map: groupName → multiplier on top of the base ratio. */
+  | "groups"
+  /** Optional groupName → description map. */
+  | "groupDescriptions"
+  /** groupName list whose group the configured key routes through. */
+  | "autoGroups"
+  /** Model list (array of objects) holding per-model pricing fields. */
+  | "models"
+  /** Model id field inside a model entry. */
+  | "modelId"
+  /** vendor name (string) or vendor id (number joined with vendors) per model. */
+  | "modelVendor"
+  /** Per-model token multiplier: input $ = BASE_PRICE × multiplier × groupRatio. */
+  | "modelInputRatio"
+  /** Output/input price multiplier. */
+  | "modelCompletionRatio"
+  /** Cached-input/input price multiplier. */
+  | "modelCacheRatio"
+  /** Per-call base price (quota_type ≠ 0 style billing). */
+  | "modelCallPrice"
+  /** Per-call marker field: nonzero/true means per-call billing. */
+  | "modelPerCallFlag"
+  /** Group names this model is offered in. */
+  | "modelGroups"
+  /** Supported endpoint type strings. */
+  | "modelEndpoints"
+  /** Key-visible model id list (the key's own /models view). */
+  | "keyModels"
+  /** Remaining balance in balance units (USD-equivalent). */
+  | "balanceRemaining"
+  /** Used amount; unit/scale chosen by the mapping's unit/scale options. */
+  | "balanceUsed"
+  /** Balance marker: value ≥ this threshold means unlimited. */
+  | "balanceUnlimitedValue"
+  /** Vendor registry: vendorId → vendorName (for numeric modelVendor). */
+  | "vendors";
+
+/** How to interpret a mapped value. Defaults to "value" when omitted. */
+export type RelayFieldReader = "value" | "entries" | "array";
+
+/**
+ * One mapping rule: where a canonical field lives in the provider's response
+ * and (optionally) how to read/convert it. Paths are dot-delimited, `[]` at
+ * the end marks "map over the enclosing array" (only meaningful inside
+ * `models` / `vendors` item mappings or when the parent is an array).
+ */
+export type RelayFieldMapping = {
+  /** Dot path from the endpoint payload root, e.g. "data[].model_ratio". */
+  path: string;
+  /** "entries" reads an object as name→value pairs; "array" reads a string[]. */
+  reader?: RelayFieldReader;
+  /** Item field name for "array"/entries-of-objects readers. */
+  itemField?: string;
+  /** Multiply the raw value by this factor (default 1). */
+  scale?: number;
+  /** Subtract from the raw value before scale (used by cent → unit). */
+  offset?: number;
+  /** Values at/above this threshold mean "unlimited balance". */
+  unlimitedAbove?: number;
+  /** Fixed fallback when the path is missing (field omitted otherwise). */
+  fallback?: number | string;
+};
+
+/** Mapping rules for one upstream endpoint, keyed by canonical field. */
+export type RelayEndpointMapping = {
+  /** Endpoint path relative to the station base URL, e.g. "api/pricing". */
+  path: string;
+  /** Requires the API key (Authorization: Bearer). */
+  auth: boolean;
+  /** Per-field mapping rules for this endpoint. */
+  fields: Partial<Record<RelayFieldKey, RelayFieldMapping>>;
+  /**
+   * Optional item-level mapping for list endpoints: when present, the field
+   * paths are resolved relative to each item of the array at `path` instead
+   * of a shared single payload (per-model/per-vendor fields).
+   */
+  fieldsApplyTo?: "root" | "items";
+  /** For fieldsApplyTo "items": which canonical field carries the item list. */
+  itemsField?: Extract<RelayFieldKey, "models" | "vendors" | "keyModels" | "autoGroups">;
+  /**
+   * For fieldsApplyTo "items": payload path of the record array (default: the
+   * response root itself). Use "data" for {data:[...]}-style envelopes.
+   */
+  itemsPath?: string;
+};
+
+/**
+ * Per-station field mapping table. `null` means "no custom mapping — use the
+ * built-in new-api/one-api defaults". Written by the Agent via the robot-icon
+ * handoff; users review it before it takes effect.
+ */
+export type RelayFieldMap = {
+  schemaVersion: 1;
+  /** Station/provider id this table applies to. */
+  stationId: string;
+  /** ISO timestamp of the last Agent/user edit. */
+  updatedAt?: string;
+  /** Set false to fall back to built-in defaults without deleting the table. */
+  enabled?: boolean;
+  /** Notes from the Agent (what it probed, what failed). */
+  notes?: string;
+  /** Endpoint mapping rules, keyed by canonical endpoint role. */
+  endpoints: {
+    /** Group ratios / model ratios / vendors (usually public). */
+    pricing?: RelayEndpointMapping;
+    /** Key-visible model list. */
+    models?: RelayEndpointMapping;
+    /** Remaining balance. */
+    balance?: RelayEndpointMapping;
+    /** Used amount (optional; often same endpoint as balance). */
+    usage?: RelayEndpointMapping;
+  };
+};
+
 /** Result of provider.pricing.get / provider.pricing.fetch. */
 export type RelayPricingResult = {
   table: RelayPricingTable;
@@ -693,6 +813,35 @@ export type RelayPricingResult = {
   rechargeRatios: Record<string, RelayRechargeRatio>;
   /** True when the table came from disk cache (provider.pricing.get). */
   cached: boolean;
+};
+
+/** Result of provider.mapping.get: the station's mapping table (or null). */
+export type RelayMappingResult = {
+  stationId: string;
+  /** Null when no custom mapping exists (built-in defaults are in effect). */
+  mapping: RelayFieldMap | null;
+};
+
+/** Params for provider.mapping.set. */
+export type RelayMappingSetParams = {
+  stationId: string;
+  /** Pass null to delete the custom mapping and return to defaults. */
+  mapping: RelayFieldMap | null;
+};
+
+/** Absolute path of the mapping file the Agent should write, plus context. */
+export type RelayMappingHandoffResult = {
+  stationId: string;
+  /** <agentDir>/piabyss/relay-pricing/mappings/<stationId>.json */
+  mappingPath: string;
+  /** The station base URL (baseUrl without trailing slash). */
+  baseUrl: string;
+  /** Whether an API key is configured for the provider. */
+  hasApiKey: boolean;
+  /** Where the Agent can read the API key (auth.json path). */
+  authJsonPath: string;
+  /** Current mapping (null → built-in defaults). */
+  mapping: RelayFieldMap | null;
 };
 
 /** Params for provider.pricing.fetch. */
@@ -1772,6 +1921,65 @@ export type ScheduleStatus = {
   available: boolean;
   health: ScheduleHealth | null;
   error: string | null;
+};
+
+/* ── 小精灵（pixie）───────────────────────────────────────────────
+ * 宿主持有的常驻助手会话（自建通道，不进工作区会话列表）。
+ * 委派：pixie 会话通过 pixie_dispatch 工具把任务派给工作区正式会话；
+ * 回调：被委派会话通过宿主注入的 pixie_report 工具把结果回流。
+ */
+
+/** 一条委派记录的生命周期状态。 */
+export type PixieDispatchStatus = "dispatched" | "reported" | "failed";
+
+/** 小精灵会话的流式消息，形状与 schedule agent 的投影一致。 */
+export type PixieAgentMessage = {
+  role: string;
+  text: string;
+  reasoning?: string;
+  content?: unknown[];
+  toolCallId?: string;
+  toolName?: string;
+  isError?: boolean;
+};
+
+/** 一条委派记录（注册表 + 前端展示共用）。 */
+export type PixieDispatchRecord = {
+  id: string;
+  status: PixieDispatchStatus;
+  /** 目标工作区 cwd（Host 规范化后）。 */
+  cwd: string;
+  /** 目标会话 id（存在时）。 */
+  sessionId: string | null;
+  /** 目标会话文件路径（新建会话后回填）。 */
+  sessionPath: string | null;
+  /** 委派给目标会话的任务说明（用户可读）。 */
+  task: string;
+  /** pixie_report 回传的结果摘要（reported 后有值）。 */
+  report: string | null;
+  createdAt: number;
+  reportedAt: number | null;
+  /** 回调超时标记：超过阈值未回调时置 true（V1 默认 30 分钟）。 */
+  stale: boolean;
+};
+
+/** pixie.state 结果：常驻会话快照 + 活跃委派列表。 */
+export type PixieAgentState = {
+  /** 常驻会话是否在宿主内存中（宿主重启后 false，走 fork 续聊）。 */
+  resident: boolean;
+  /** 常驻会话文件路径（持久化定位用；无会话时 null）。 */
+  sessionPath: string | null;
+  running: boolean;
+  error: string | null;
+  messages: PixieAgentMessage[];
+  /** 进行中/最近完成的委派（按创建时间倒序，上限 20 条）。 */
+  dispatches: PixieDispatchRecord[];
+};
+
+/** pixie.usage 结果：留存判定埋点（按天计数）。 */
+export type PixieUsageStats = {
+  /** 按天（本地日期 YYYY-MM-DD）计数，仅保留最近 30 天。 */
+  days: Record<string, { interactions: number; dispatches: number }>;
 };
 
 /** 备忘录记录类型。 */

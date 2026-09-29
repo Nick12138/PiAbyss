@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createRelayPricingHandlers } from "./relay-pricing-controller.js";
@@ -339,11 +339,8 @@ describe("relay pricing handlers", () => {
     const baseUrl = await startRelayServer({ authExpected: "sk-secret" });
     const config = structuredClone(RELAY_PROVIDER);
     config.providers.hetune.baseUrl = baseUrl;
-    const { layout, credentialStore, handlers } = await setup(config);
+    const { credentialStore, handlers } = await setup(config);
     await putApiKey(credentialStore, "hetune", "sk-secret");
-    // Force /v1/models to 401 via a mismatched key: pricing has no auth, so
-    // point the relay server's expected key at a different value by using a
-    // second server that rejects everything.
     const result = await handlers["provider.pricing.fetch"]!({
       id: "req-4",
       method: "provider.pricing.fetch",
@@ -351,7 +348,6 @@ describe("relay pricing handlers", () => {
       context: { expectedHostInstanceId: "x" },
     } as never);
     if (!("result" in result)) throw new Error(JSON.stringify(result));
-    const resultr = result.result as RelayBalance;
     const serialized = JSON.stringify(result.result);
     expect(serialized).not.toContain("sk-secret");
   });
@@ -389,5 +385,168 @@ describe("relay pricing handlers", () => {
     const clearedr = cleared.result as { ratio: unknown };
     expect(clearedr.ratio).toBeNull();
     expect(new RelayPricingStore(layout.agentDir).getRatios().hetune).toBeUndefined();
+  });
+
+  it("fetches through a custom field mapping and handsoff context for the Agent", async () => {
+    // veloera 风格站点：字段名与 new-api 不同，余额单位是 quota（1 美元 = 500000）。
+    const baseUrl = await startRelayServer({});
+    const server = httpServers[0]!;
+    // Swap the request handler for a veloera-style fixture.
+    server.removeAllListeners("request");
+    server.on("request", (request, response) => {
+      const auth = request.headers.authorization;
+      const body = (payload: unknown) => {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify(payload));
+      };
+      if (request.url === "/custom/pricing" && auth === "Bearer sk-test") {
+        body({
+          group_ratio: { default: 1 },
+          records: [
+            { name: "glm-x", ratio: 0.1, completion_ratio: 2, groups: ["default"] },
+          ],
+        });
+        return;
+      }
+      if (request.url === "/custom/models") {
+        body({ models: ["glm-x"] });
+        return;
+      }
+      if (request.url === "/custom/balance") {
+        body({ quota: 2500000, used: 500000 });
+        return;
+      }
+      response.writeHead(404);
+      response.end();
+    });
+
+    const config = structuredClone(RELAY_PROVIDER);
+    config.providers.hetune.baseUrl = baseUrl;
+    const { layout, credentialStore, handlers } = await setup(config);
+    await putApiKey(credentialStore, "hetune", "sk-test");
+
+    // Handoff first: no mapping yet — path + context for the Agent prompt.
+    const handoff = await handlers["provider.mapping.handoff"]!({
+      id: "req-m0",
+      method: "provider.mapping.handoff",
+      params: { stationId: "hetune" },
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+    if (!("result" in handoff)) throw new Error(JSON.stringify(handoff));
+    const handoffr = handoff.result as {
+      mappingPath: string;
+      baseUrl: string;
+      hasApiKey: boolean;
+      mapping: unknown;
+    };
+    expect(handoffr.mapping).toBeNull();
+    expect(handoffr.hasApiKey).toBe(true);
+    expect(handoffr.baseUrl).toBe(baseUrl);
+    expect(handoffr.mappingPath).toContain(join("mappings", "hetune.json"));
+
+    // Get mapping: null before the table exists.
+    const before = await handlers["provider.mapping.get"]!({
+      id: "req-m1",
+      method: "provider.mapping.get",
+      params: { stationId: "hetune" },
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+    if (!("result" in before)) throw new Error(JSON.stringify(before));
+    expect((before.result as { mapping: unknown }).mapping).toBeNull();
+
+    // The Agent's mapping table: everything points at the custom endpoints.
+    const mappingTable = {
+      schemaVersion: 1 as const,
+      stationId: "hetune",
+      endpoints: {
+        pricing: {
+          path: "custom/pricing",
+          auth: true,
+          fieldsApplyTo: "items" as const,
+          itemsField: "models" as const,
+          itemsPath: "records",
+          fields: {
+            groups: { path: "group_ratio", reader: "entries" as const },
+            modelId: { path: "name" },
+            modelInputRatio: { path: "ratio" },
+            modelCompletionRatio: { path: "completion_ratio", fallback: 1 },
+            modelGroups: { path: "groups", reader: "array" as const },
+          },
+        },
+        models: {
+          path: "custom/models",
+          auth: true,
+          fields: { keyModels: { path: "models", reader: "array" as const } },
+        },
+        balance: {
+          path: "custom/balance",
+          auth: true,
+          fields: {
+            balanceRemaining: { path: "quota", scale: 0.000002 },
+            balanceUsed: { path: "used", scale: 0.000002 },
+          },
+        },
+      },
+    };
+
+    const set = await handlers["provider.mapping.set"]!({
+      id: "req-m2",
+      method: "provider.mapping.set",
+      params: { stationId: "hetune", mapping: mappingTable },
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+    if (!("result" in set)) throw new Error(JSON.stringify(set));
+    expect((set.result as { mapping: { stationId: string } }).mapping.stationId).toBe("hetune");
+
+    // Fetch now flows through the mapping: custom paths, custom field names.
+    const fetchResult = await handlers["provider.pricing.fetch"]!({
+      id: "req-m3",
+      method: "provider.pricing.fetch",
+      params: { providerId: "hetune" },
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+    if (!("result" in fetchResult)) throw new Error(JSON.stringify(fetchResult));
+    const station = (fetchResult.result as RelayPricingResult).table.stations[0]!;
+    expect(station.error).toBeUndefined();
+    expect(station.keyModels).toEqual(["glm-x"]);
+    const row = station.rows.find((entry) => entry.modelId === "glm-x");
+    // input = $2 × 0.1 × 1 = 0.2; output = ×2.
+    expect(row?.inputPer1M).toBeCloseTo(0.2, 6);
+    expect(row?.outputPer1M).toBeCloseTo(0.4, 6);
+    expect(row?.keyAvailable).toBe(true);
+    // Balance: 2500000 × 0.000002 = $5 remaining; used $1.
+    expect(station.balance?.ok).toBe(true);
+    expect(station.balance?.remainingUsd).toBeCloseTo(5, 5);
+    expect(station.balance?.totalUsageUsd).toBeCloseTo(1, 5);
+
+    // Handoff now returns the saved table.
+    const handoffAfter = await handlers["provider.mapping.handoff"]!({
+      id: "req-m4",
+      method: "provider.mapping.handoff",
+      params: { stationId: "hetune" },
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+    if (!("result" in handoffAfter)) throw new Error(JSON.stringify(handoffAfter));
+    expect((handoffAfter.result as { mapping: { stationId: string } | null }).mapping?.stationId).toBe(
+      "hetune",
+    );
+
+    // Clearing the table restores built-in defaults (404 on custom paths → error field).
+    await handlers["provider.mapping.set"]!({
+      id: "req-m5",
+      method: "provider.mapping.set",
+      params: { stationId: "hetune", mapping: null },
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+    const fallback = await handlers["provider.pricing.fetch"]!({
+      id: "req-m6",
+      method: "provider.pricing.fetch",
+      params: { providerId: "hetune" },
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+    if (!("result" in fallback)) throw new Error(JSON.stringify(fallback));
+    const fallbackStation = (fallback.result as RelayPricingResult).table.stations[0]!;
+    expect(fallbackStation.error).toBeTruthy();
+    void layout;
   });
 });

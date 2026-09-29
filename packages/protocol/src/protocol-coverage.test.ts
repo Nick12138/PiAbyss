@@ -210,6 +210,9 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
     providerId: "hetune",
     ratio: { cny: 1, balance: 5 },
   },
+  "provider.mapping.get": { stationId: "hetune" },
+  "provider.mapping.set": { stationId: "hetune", mapping: null },
+  "provider.mapping.handoff": { stationId: "hetune" },
   "model.list": null,
   "model.setCurrent": { provider: "openai", modelId: "gpt" },
   "model.setThinkingLevel": { level: "off" },
@@ -367,6 +370,13 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
     },
   },
   "memo.syncNow": null,
+  "pixie.state": null,
+  "pixie.send": { text: "今天有什么工作需要做？" },
+  "pixie.continue": { sessionPath: "C:/s.jsonl", text: "继续" },
+  "pixie.abort": null,
+  "pixie.transcript": { sessionPath: "C:/s.jsonl" },
+  "pixie.dispatches": { limit: 20 },
+  "pixie.usage": null,
 };
 
 function contextFor(method: HostMethod): Record<string, unknown> {
@@ -569,6 +579,11 @@ function invalidParams(method: HostMethod): unknown {
       return { providerId: "", refresh: "yes" };
     case "provider.pricing.setRechargeRatio":
       return { providerId: "hetune", ratio: { cny: -1, balance: 0 } };
+    case "provider.mapping.get":
+    case "provider.mapping.handoff":
+      return { stationId: "" };
+    case "provider.mapping.set":
+      return { stationId: "hetune", mapping: { schemaVersion: 2 } };
     case "provider.loginStart":
       return { providerId: "anthropic", authType: "device" };
     case "provider.loginRespond":
@@ -663,7 +678,18 @@ function invalidParams(method: HostMethod): unknown {
       return { draft: { type: "nope", contentMd: 42 } };
     case "memo.getSyncConfig":
     case "memo.syncNow":
+    case "pixie.state":
+    case "pixie.abort":
+    case "pixie.usage":
       return { unexpected: true };
+    case "pixie.send":
+      return { text: "   " };
+    case "pixie.continue":
+      return { sessionPath: "", text: "x" };
+    case "pixie.transcript":
+      return { sessionPath: "" };
+    case "pixie.dispatches":
+      return { limit: 0 };
     case "memo.setSyncConfig":
     case "memo.testSync":
       return { settings: { accountId: "", bucket: 42 } };
@@ -1085,6 +1111,7 @@ describe("protocol coverage — events", () => {
     },
     "extensionUi.customFrame": { requestId: EXTENSION_REQUEST_ID, data: "\x1b[2J" },
     "extensionUi.customClosed": { requestId: EXTENSION_REQUEST_ID },
+    "pixie.reportReceived": { dispatchId: RUN_ID, summary: "已完成，总结如下" },
   };
 
   for (const event of HOST_EVENT_NAMES) {

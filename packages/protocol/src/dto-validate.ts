@@ -711,7 +711,15 @@ function isRelayBalance(value: unknown): boolean {
     isPlainObject(value) &&
     hasExactKeys(
       value,
-      ["stationId", "hardLimitUsd", "totalUsageUsd", "remainingUsd", "unlimited", "fetchedAt", "ok"],
+      [
+        "stationId",
+        "hardLimitUsd",
+        "totalUsageUsd",
+        "remainingUsd",
+        "unlimited",
+        "fetchedAt",
+        "ok",
+      ],
       ["error"],
     ) &&
     isNonEmptyString(value.stationId) &&
@@ -761,6 +769,93 @@ function isRelayPricingTable(value: unknown): boolean {
 function isRechargeRatioRecord(value: unknown): boolean {
   if (!isPlainObject(value)) return false;
   return Object.values(value).every(isRechargeRatio);
+}
+
+function isRelayFieldMappingDto(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      ["path"],
+      ["reader", "itemField", "scale", "offset", "unlimitedAbove", "fallback"],
+    ) &&
+    isNonEmptyString(value.path) &&
+    (value.reader === undefined || ["value", "entries", "array"].includes(String(value.reader))) &&
+    (value.itemField === undefined || isOptionalString(value.itemField)) &&
+    (value.scale === undefined || typeof value.scale === "number") &&
+    (value.offset === undefined || typeof value.offset === "number") &&
+    (value.unlimitedAbove === undefined || typeof value.unlimitedAbove === "number") &&
+    (value.fallback === undefined || typeof value.fallback === "number" || isString(value.fallback))
+  );
+}
+
+function isRelayEndpointMappingDto(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["path", "auth", "fields"], [
+      "fieldsApplyTo",
+      "itemsField",
+      "itemsPath",
+    ]) &&
+    isNonEmptyString(value.path) &&
+    isBoolean(value.auth) &&
+    (value.itemsPath === undefined || isString(value.itemsPath)) &&
+    isPlainObject(value.fields) &&
+    Object.values(value.fields).every(isRelayFieldMappingDto) &&
+    (value.fieldsApplyTo === undefined ||
+      ["root", "items"].includes(String(value.fieldsApplyTo))) &&
+    (value.itemsField === undefined ||
+      ["models", "vendors", "keyModels", "autoGroups"].includes(String(value.itemsField)))
+  );
+}
+
+function isRelayFieldMapDto(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      ["schemaVersion", "stationId", "endpoints"],
+      ["updatedAt", "enabled", "notes"],
+    ) &&
+    value.schemaVersion === 1 &&
+    isNonEmptyString(value.stationId) &&
+    isOptionalString(value.updatedAt) &&
+    (value.enabled === undefined || isBoolean(value.enabled)) &&
+    isOptionalString(value.notes) &&
+    isPlainObject(value.endpoints) &&
+    Object.values(value.endpoints).every(
+      (endpoint) => endpoint === undefined || isRelayEndpointMappingDto(endpoint),
+    )
+  );
+}
+
+function isRelayMappingResult(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["stationId", "mapping"]) &&
+    isNonEmptyString(value.stationId) &&
+    (value.mapping === null || isRelayFieldMapDto(value.mapping))
+  );
+}
+
+function isRelayMappingHandoffResult(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "stationId",
+      "mappingPath",
+      "baseUrl",
+      "hasApiKey",
+      "authJsonPath",
+      "mapping",
+    ]) &&
+    isNonEmptyString(value.stationId) &&
+    isNonEmptyString(value.mappingPath) &&
+    isString(value.baseUrl) &&
+    isBoolean(value.hasApiKey) &&
+    isNonEmptyString(value.authJsonPath) &&
+    (value.mapping === null || isRelayFieldMapDto(value.mapping))
+  );
 }
 
 function isBuiltinProviderAuthStatus(value: unknown): boolean {
@@ -2475,6 +2570,38 @@ function isScheduleAgentMessage(value: unknown): boolean {
   );
 }
 
+/** 小精灵委派记录的 DTO 校验。 */
+function isPixieDispatchRecord(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "id",
+      "status",
+      "cwd",
+      "sessionId",
+      "sessionPath",
+      "task",
+      "report",
+      "createdAt",
+      "reportedAt",
+      "stale",
+    ]) &&
+    isString(value.id) &&
+    value.id.length > 0 &&
+    (value.status === "dispatched" || value.status === "reported" || value.status === "failed") &&
+    isString(value.cwd) &&
+    (value.sessionId === null || isString(value.sessionId)) &&
+    (value.sessionPath === null || isString(value.sessionPath)) &&
+    isString(value.task) &&
+    (value.report === null || isString(value.report)) &&
+    typeof value.createdAt === "number" &&
+    Number.isSafeInteger(value.createdAt) &&
+    (value.reportedAt === null ||
+      (typeof value.reportedAt === "number" && Number.isSafeInteger(value.reportedAt))) &&
+    typeof value.stale === "boolean"
+  );
+}
+
 /** 备忘录图片引用的 DTO 校验。 */
 function isMemoImage(value: unknown): boolean {
   return (
@@ -3130,6 +3257,11 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         : `invalid ${method} result`;
     case "provider.balance.get":
       return isRelayBalance(result) ? null : "invalid provider.balance.get result";
+    case "provider.mapping.get":
+    case "provider.mapping.set":
+      return isRelayMappingResult(result) ? null : `invalid ${method} result`;
+    case "provider.mapping.handoff":
+      return isRelayMappingHandoffResult(result) ? null : "invalid provider.mapping.handoff result";
     case "provider.pricing.setRechargeRatio":
       return isPlainObject(result) &&
         hasExactKeys(result, ["providerId", "ratio"]) &&
@@ -3453,6 +3585,78 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         Number.isSafeInteger(result.at)
         ? null
         : "invalid memo.syncNow result";
+    case "pixie.state":
+      return isPlainObject(result) &&
+        hasExactKeys(result, [
+          "resident",
+          "sessionPath",
+          "running",
+          "error",
+          "messages",
+          "dispatches",
+        ]) &&
+        typeof result.resident === "boolean" &&
+        (result.sessionPath === null || isString(result.sessionPath)) &&
+        typeof result.running === "boolean" &&
+        (result.error === null || isString(result.error)) &&
+        Array.isArray(result.messages) &&
+        result.messages.every(isScheduleAgentMessage) &&
+        Array.isArray(result.dispatches) &&
+        result.dispatches.every(isPixieDispatchRecord)
+        ? null
+        : "invalid pixie.state result";
+    case "pixie.send":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["sessionId"]) &&
+        isString(result.sessionId) &&
+        result.sessionId.length > 0
+        ? null
+        : "invalid pixie.send result";
+    case "pixie.continue":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["sessionId", "sessionPath"]) &&
+        isString(result.sessionId) &&
+        result.sessionId.length > 0 &&
+        isString(result.sessionPath)
+        ? null
+        : "invalid pixie.continue result";
+    case "pixie.abort":
+      return isPlainObject(result) && hasExactKeys(result, ["ok"]) && typeof result.ok === "boolean"
+        ? null
+        : "invalid pixie.abort result";
+    case "pixie.transcript":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["found", "messages"]) &&
+        typeof result.found === "boolean" &&
+        Array.isArray(result.messages) &&
+        result.messages.every(isScheduleAgentMessage)
+        ? null
+        : "invalid pixie.transcript result";
+    case "pixie.dispatches":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["dispatches"]) &&
+        Array.isArray(result.dispatches) &&
+        result.dispatches.every(isPixieDispatchRecord)
+        ? null
+        : "invalid pixie.dispatches result";
+    case "pixie.usage":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["days"]) &&
+        isPlainObject(result.days) &&
+        Object.entries(result.days).every(([key, value]) => {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || !isPlainObject(value)) return false;
+          return (
+            hasExactKeys(value, ["interactions", "dispatches"]) &&
+            typeof value.interactions === "number" &&
+            Number.isSafeInteger(value.interactions) &&
+            value.interactions >= 0 &&
+            typeof value.dispatches === "number" &&
+            Number.isSafeInteger(value.dispatches) &&
+            value.dispatches >= 0
+          );
+        })
+        ? null
+        : "invalid pixie.usage result";
     case "model.list":
       return isPlainObject(result) &&
         hasExactKeys(
@@ -3761,6 +3965,14 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
         isString(payload.requestId)
         ? null
         : "invalid extensionUi.customClosed payload";
+    case "pixie.reportReceived":
+      return isPlainObject(payload) &&
+        hasExactKeys(payload, ["dispatchId", "summary"]) &&
+        isString(payload.dispatchId) &&
+        payload.dispatchId.length > 0 &&
+        isString(payload.summary)
+        ? null
+        : "invalid pixie.reportReceived payload";
     default:
       // Exhaustiveness guard — same contract as validateMethodResultShape.
       return assertNeverShape(event, "event payload");

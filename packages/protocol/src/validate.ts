@@ -124,6 +124,106 @@ function isRechargeRatio(value: unknown): value is {
   );
 }
 
+const RELAY_FIELD_READERS = ["value", "entries", "array"];
+
+function isRelayFieldReader(value: unknown): boolean {
+  return value === undefined || RELAY_FIELD_READERS.includes(String(value));
+}
+
+function isRelayFieldMapping(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      ["path"],
+      ["reader", "itemField", "scale", "offset", "unlimitedAbove", "fallback"],
+    ) &&
+    isNonEmptyString(value.path) &&
+    isRelayFieldReader(value.reader) &&
+    (value.itemField === undefined || isNonEmptyString(value.itemField)) &&
+    (value.scale === undefined ||
+      (typeof value.scale === "number" && Number.isFinite(value.scale))) &&
+    (value.offset === undefined ||
+      (typeof value.offset === "number" && Number.isFinite(value.offset))) &&
+    (value.unlimitedAbove === undefined ||
+      (typeof value.unlimitedAbove === "number" && Number.isFinite(value.unlimitedAbove))) &&
+    (value.fallback === undefined || typeof value.fallback === "number" || isString(value.fallback))
+  );
+}
+
+function isRelayEndpointMapping(value: unknown): boolean {
+  if (
+    !isPlainObject(value) ||
+    !hasExactKeys(value, ["path", "auth", "fields"], [
+      "fieldsApplyTo",
+      "itemsField",
+      "itemsPath",
+    ])
+  ) {
+    return false;
+  }
+  if (!isNonEmptyString(value.path) || !isBoolean(value.auth)) return false;
+  if (
+    value.itemsPath !== undefined &&
+    (typeof value.itemsPath !== "string" || value.itemsPath.length === 0)
+  ) {
+    return false;
+  }
+  if (!isPlainObject(value.fields)) return false;
+  for (const mapping of Object.values(value.fields)) {
+    if (!isRelayFieldMapping(mapping)) return false;
+  }
+  if (
+    value.fieldsApplyTo !== undefined &&
+    value.fieldsApplyTo !== "root" &&
+    value.fieldsApplyTo !== "items"
+  ) {
+    return false;
+  }
+  if (
+    value.itemsField !== undefined &&
+    !["models", "vendors", "keyModels", "autoGroups"].includes(String(value.itemsField))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Relay per-station field mapping table (null entries fall back to defaults). */
+function isRelayFieldMap(value: unknown): value is {
+  schemaVersion: 1;
+  stationId: string;
+  endpoints: Record<string, unknown>;
+} {
+  if (
+    !isPlainObject(value) ||
+    !hasExactKeys(
+      value,
+      ["schemaVersion", "stationId", "endpoints"],
+      ["updatedAt", "enabled", "notes"],
+    )
+  ) {
+    return false;
+  }
+  if (value.schemaVersion !== 1 || !isNonEmptyString(value.stationId)) return false;
+  if (
+    value.updatedAt !== undefined &&
+    (typeof value.updatedAt !== "string" || value.updatedAt.length === 0)
+  ) {
+    return false;
+  }
+  if (value.enabled !== undefined && !isBoolean(value.enabled)) return false;
+  if (value.notes !== undefined && (typeof value.notes !== "string" || value.notes.length > 4000)) {
+    return false;
+  }
+  if (!isPlainObject(value.endpoints)) return false;
+  for (const endpoint of Object.values(value.endpoints)) {
+    if (endpoint === undefined) continue;
+    if (!isRelayEndpointMapping(endpoint)) return false;
+  }
+  return true;
+}
+
 /** Reject plugin-library patterns that could escape the package root. */
 function paramsPatternUnsafe(pattern: string): boolean {
   return (
@@ -984,17 +1084,13 @@ export function validateRequestParams<M extends HostMethod>(
         ? ok(params)
         : fail("invalid provider.checkConnection params", { method });
     case "provider.pricing.fetch":
-      return (
-        params === null ||
+      return params === null ||
         (exactObject(params, [], ["providerId"]) &&
           (params.providerId === undefined || isNonEmptyString(params.providerId)))
-      )
         ? ok(params)
         : fail("invalid provider.pricing.fetch params", { method });
     case "provider.pricing.get":
-      return params === null
-        ? ok(params)
-        : fail("invalid provider.pricing.get params", { method });
+      return params === null ? ok(params) : fail("invalid provider.pricing.get params", { method });
     case "provider.balance.get":
       return exactObject(params, ["providerId"], ["refresh"]) &&
         isNonEmptyString(params.providerId) &&
@@ -1007,6 +1103,17 @@ export function validateRequestParams<M extends HostMethod>(
         isRechargeRatio(params.ratio)
         ? ok(params)
         : fail("invalid provider.pricing.setRechargeRatio params", { method });
+    case "provider.mapping.get":
+    case "provider.mapping.handoff":
+      return exactObject(params, ["stationId"]) && isNonEmptyString(params.stationId)
+        ? ok(params)
+        : fail(`invalid ${method} params`, { method });
+    case "provider.mapping.set":
+      return exactObject(params, ["stationId", "mapping"]) &&
+        isNonEmptyString(params.stationId) &&
+        (params.mapping === null || isRelayFieldMap(params.mapping))
+        ? ok(params)
+        : fail("invalid provider.mapping.set params", { method });
     case "model.setCurrent":
       return exactObject(params, ["provider", "modelId"]) &&
         isNonEmptyString(params.provider) &&
@@ -1462,6 +1569,40 @@ export function validateRequestParams<M extends HostMethod>(
         : fail("invalid memo sync settings params", { method });
     case "memo.syncNow":
       return params === null ? ok(null) : fail("params must be null", { method });
+    case "pixie.state":
+    case "pixie.abort":
+    case "pixie.usage":
+      return params === null ? ok(null) : fail("params must be null", { method });
+    case "pixie.send":
+      return exactObject(params, ["text"]) &&
+        isNonEmptyString(params.text) &&
+        params.text.trim().length > 0 &&
+        params.text.length <= 20_000
+        ? ok(params)
+        : fail("invalid pixie.send params", { method });
+    case "pixie.continue":
+      return exactObject(params, ["sessionPath", "text"]) &&
+        isNonEmptyString(params.sessionPath) &&
+        params.sessionPath.length <= 1_024 &&
+        isNonEmptyString(params.text) &&
+        params.text.trim().length > 0 &&
+        params.text.length <= 20_000
+        ? ok(params)
+        : fail("invalid pixie.continue params", { method });
+    case "pixie.transcript":
+      return exactObject(params, ["sessionPath"]) &&
+        isNonEmptyString(params.sessionPath) &&
+        params.sessionPath.length <= 1_024
+        ? ok(params)
+        : fail("invalid pixie.transcript params", { method });
+    case "pixie.dispatches":
+      return exactObject(params, [], ["limit"]) &&
+        (params.limit === undefined ||
+          (typeof params.limit === "number" &&
+            Number.isSafeInteger(params.limit) &&
+            params.limit > 0))
+        ? ok(params)
+        : fail("invalid pixie.dispatches params", { method });
     default:
       // Exhaustiveness guard: adding a HostMethod without a params validator
       // is a compile error here, not a silently-undefined result at runtime.

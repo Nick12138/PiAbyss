@@ -96,6 +96,9 @@ export const HOST_METHODS = [
   "provider.pricing.get",
   "provider.balance.get",
   "provider.pricing.setRechargeRatio",
+  "provider.mapping.get",
+  "provider.mapping.set",
+  "provider.mapping.handoff",
   "model.list",
   "model.setCurrent",
   "model.setThinkingLevel",
@@ -163,6 +166,13 @@ export const HOST_METHODS = [
   "memo.setSyncConfig",
   "memo.testSync",
   "memo.syncNow",
+  "pixie.state",
+  "pixie.send",
+  "pixie.continue",
+  "pixie.abort",
+  "pixie.transcript",
+  "pixie.dispatches",
+  "pixie.usage",
 ] as const;
 
 export type HostMethod = (typeof HOST_METHODS)[number];
@@ -231,6 +241,9 @@ export type HostOnlyMethod =
   | "provider.pricing.get"
   | "provider.balance.get"
   | "provider.pricing.setRechargeRatio"
+  | "provider.mapping.get"
+  | "provider.mapping.set"
+  | "provider.mapping.handoff"
   | "session.searchAll"
   | "package.catalog"
   | "pluginLibrary.catalog"
@@ -264,7 +277,14 @@ export type HostOnlyMethod =
   | "schedule.agentState"
   | "schedule.agentTranscript"
   | "schedule.agentAbort"
-  | "schedule.agentDelete";
+  | "schedule.agentDelete"
+  | "pixie.state"
+  | "pixie.send"
+  | "pixie.continue"
+  | "pixie.abort"
+  | "pixie.transcript"
+  | "pixie.dispatches"
+  | "pixie.usage";
 export type WorkspaceOnlyMethod =
   | "workspace.setCurrent"
   | "workspace.getCurrent"
@@ -486,6 +506,9 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "provider.pricing.get": "host",
   "provider.balance.get": "host",
   "provider.pricing.setRechargeRatio": "host",
+  "provider.mapping.get": "host",
+  "provider.mapping.set": "host",
+  "provider.mapping.handoff": "host",
   "model.list": "activeSession",
   "model.setCurrent": "activeSession",
   "model.setThinkingLevel": "activeSession",
@@ -550,6 +573,13 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "memo.setSyncConfig": "host",
   "memo.testSync": "host",
   "memo.syncNow": "host",
+  "pixie.state": "host",
+  "pixie.send": "host",
+  "pixie.continue": "host",
+  "pixie.abort": "host",
+  "pixie.transcript": "host",
+  "pixie.dispatches": "host",
+  "pixie.usage": "host",
   "extensionUi.respond": "sessionTarget",
   "extensionUi.customInput": "sessionTarget",
   "extensionUi.customResize": "sessionTarget",

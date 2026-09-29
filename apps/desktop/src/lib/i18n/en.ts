@@ -463,6 +463,15 @@ export const en = {
   providersCopy: "Duplicate",
   providersCopyTitle:
     'Duplicate this provider\'s settings into a new unsaved draft named "<name> copy" (the API key must be re-entered)',
+  providersMappingBot: "Field mapping",
+  providersMappingBotTitle:
+    "Let the Agent probe this station's balance/pricing APIs and generate the field mapping table (handled in the default workspace)",
+  providersMappingHandoffFailed:
+    "Could not load station info; the field-mapping task was not started",
+  providersMappingPrompt:
+    "Please handle the field-mapping task above: probe the APIs, verify each field, write the mapping table to the given path, and report per-endpoint findings plus any fields that could not be obtained.",
+  providersMappingNoWorkspace:
+    "Could not resolve the default workspace; the field-mapping task was not started",
   providersConnectionOk: "Generation check passed",
   providersUseSystemRole: "Use system role",
   providersOmitReasoningEffort: "Omit reasoning_effort",
@@ -1159,6 +1168,7 @@ export const en = {
   injectedRefMemoResult: "Memo summary",
   injectedRefSchedulePreamble: "Schedule prompt",
   injectedRefScheduleJob: "Schedule plan",
+  injectedRefRelayMapping: "Field mapping",
   injectedRefShowDetail: "Show injected content",
   injectedRefHideDetail: "Hide injected content",
   resultFileOpen: "Open {name}",
@@ -1973,6 +1983,20 @@ export const en = {
   scheduleFormMaxRunsInvalid: "Max runs must be a positive integer",
 
   // Memo (备忘录)
+
+  // Pixie
+  pixieTitle: "Pixie",
+  pixieHeaderHint:
+    "Resident helper · answers quick queries, delegates heavy work to workspace sessions",
+  pixieEmptyTitle: "Hi, I'm Pixie",
+  pixieEmptyHint: "Ask what work is due today, or have me check how a project is doing.",
+  pixieThinking: "Pixie is thinking…",
+  pixieLoadFailed: "Failed to load Pixie",
+  pixieInputPlaceholder: "Say something to Pixie… (Enter to send, Shift+Enter for newline)",
+  pixieDispatchPanelTitle: "Delegated tasks",
+  pixieDispatchEmpty: "No delegated tasks yet",
+  pixieDispatchActiveCount: "{count} in progress",
+
   memoTitle: "Memos",
   memoNew: "New note",
   memoSearchPlaceholder: "Search memos…",

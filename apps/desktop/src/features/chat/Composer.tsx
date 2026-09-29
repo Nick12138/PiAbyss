@@ -11,6 +11,7 @@ import {
   ArrowUp,
   CircleAlert,
   CircleCheck,
+  Bot,
   ClipboardPaste,
   FileArchive,
   FileText,
@@ -1976,6 +1977,26 @@ export function Composer({
                     <Quote size={12} className="shrink-0 text-muted" />
                     <span className="max-w-40 truncate">
                       {t("injectedRefQuote")} · {reference.label}
+                    </span>
+                    <button
+                      type="button"
+                      title={t("composerReferenceRemove")}
+                      aria-label={t("composerReferenceRemoveNamed", { name: reference.label })}
+                      className="text-muted hover:text-danger"
+                      onClick={() => removeReference(reference.id)}
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                ) : reference.kind === "relay-mapping" ? (
+                  <div
+                    key={reference.id}
+                    className="group flex h-7 items-center gap-1.5 rounded-md border border-accent/35 bg-accent/5 px-2 text-xs"
+                    title={`@${t("injectedRefRelayMapping")} · ${reference.label}`}
+                  >
+                    <Bot size={12} className="shrink-0 text-accent" />
+                    <span className="max-w-40 truncate">
+                      @{t("injectedRefRelayMapping")} · {reference.label}
                     </span>
                     <button
                       type="button"

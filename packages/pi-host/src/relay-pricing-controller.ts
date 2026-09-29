@@ -19,6 +19,11 @@
 import { join } from "node:path";
 import type {
   RelayBalance,
+  RelayFieldMap,
+  RelayFieldMapping,
+  RelayMappingHandoffResult,
+  RelayMappingResult,
+  RelayMappingSetParams,
   RelayPricingFetchParams,
   RelayPricingGroup,
   RelayPricingResult,
@@ -32,6 +37,14 @@ import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { logger } from "./logger.js";
 import { isObject, readModelsConfig, type JsonObject } from "./provider-models-config.js";
 import { RelayPricingStore, UNLIMITED_LIMIT_USD } from "./relay-pricing-store.js";
+import { RelayMappingStore } from "./relay-mapping-store.js";
+import {
+  applyBalanceMapping,
+  applyModelsMapping,
+  applyPricingMapping,
+  balanceFromMapping,
+  resolveEndpoint,
+} from "./relay-field-mapping.js";
 
 /** 基准价：new-api 体系下 model_ratio=1、group_ratio=1 时的输入价（$/1M）。 */
 const BASE_PRICE_PER_1M = 2;
@@ -303,24 +316,35 @@ async function fetchKeyModels(
     .map((item) => (isObject(item) && typeof item.id === "string" ? item.id : ""))
     .filter((id) => id.length > 0);
 }
-
 async function fetchBalance(
   stationId: string,
   baseUrl: string,
   apiKey: string,
   sensitiveValues: string[],
   signal: AbortSignal,
+  mapping: RelayFieldMap | null,
 ): Promise<RelayBalance> {
   const fetchedAt = new Date().toISOString();
   const headers = { Authorization: `Bearer ${apiKey}` };
   const base = baseUrl.replace(/\/+$/, "");
   try {
+    if (mapping?.endpoints.balance) {
+      // 映射路径：余额端点可自定义（可能合并 remaining/used 于同一响应）。
+      const balanceEndpoint = mapping.endpoints.balance;
+      const payload = await fetchJson(
+        joinUrl(base, balanceEndpoint.path),
+        balanceEndpoint.auth ? headers : {},
+        signal,
+      );
+      const resolved = resolveEndpoint(payload, balanceEndpoint);
+      const mapped = applyBalanceMapping(resolved);
+      return balanceFromMapping(stationId, mapped, fetchedAt);
+    }
     const subscription = await fetchJson(
       `${base}/v1/dashboard/billing/subscription`,
       headers,
       signal,
     );
-    const usage = await fetchJson(`${base}/v1/dashboard/billing/usage`, headers, signal);
     // one-api/new-api 语义（模仿 OpenAI billing API 但口径不同）：
     //   subscription.hard_limit_usd = 剩余额度（美元）——不是总额度；
     //   usage.total_usage = 已用额度（美分），需 /100 换算成美元。
@@ -329,6 +353,33 @@ async function fetchBalance(
       isObject(subscription) && typeof subscription.hard_limit_usd === "number"
         ? subscription.hard_limit_usd
         : 0;
+    const usageEndpoint = mapping?.endpoints.usage;
+    const usage = usageEndpoint
+      ? await fetchJson(
+          joinUrl(base, usageEndpoint.path),
+          usageEndpoint.auth ? headers : {},
+          signal,
+        )
+      : await fetchJson(`${base}/v1/dashboard/billing/usage`, headers, signal);
+    if (usageEndpoint) {
+      // 自定义 usage 端点：remaining 来自上面的 subscription，used 由映射规则
+      // 换算（美分 → 美元等）。
+      const resolvedUsage = resolveEndpoint(usage, usageEndpoint);
+      const used = applyNumericMappingValue(
+        resolvedUsage.scalars.get("balanceUsed"),
+        usageEndpoint.fields.balanceUsed,
+      );
+      const unlimited = remainingUsd >= UNLIMITED_LIMIT_USD;
+      return {
+        stationId,
+        hardLimitUsd: remainingUsd,
+        totalUsageUsd: used ?? 0,
+        remainingUsd: unlimited ? null : remainingUsd,
+        unlimited,
+        fetchedAt,
+        ok: true,
+      };
+    }
     const totalUsageUsd =
       isObject(usage) && typeof usage.total_usage === "number" ? usage.total_usage / 100 : 0;
     const unlimited = remainingUsd >= UNLIMITED_LIMIT_USD;
@@ -357,17 +408,52 @@ async function fetchBalance(
   }
 }
 
+/** Join an endpoint path (possibly with leading slash) to a base URL. */
+function joinUrl(base: string, path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${base}/${path.replace(/^\/+/, "")}`;
+}
+
+/** Single-value numeric mapping helper (no nested list context). */
+function applyNumericMappingValue(
+  raw: unknown,
+  mapping: RelayFieldMapping | undefined,
+): number | undefined {
+  if (!mapping) return undefined;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    let value = raw;
+    if (mapping.offset !== undefined) value -= mapping.offset;
+    if (mapping.scale !== undefined) value *= mapping.scale;
+    return value;
+  }
+  return undefined;
+}
+
 async function fetchStation(
   stationId: string,
   providerId: string | null,
   baseUrl: string,
   apiKey: string | undefined,
   signal: AbortSignal,
+  mapping: RelayFieldMap | null,
 ): Promise<RelayPricingStation> {
   const sensitiveValues = relaySensitiveValues(apiKey);
   const base = baseUrl.replace(/\/+$/, "");
   const fetchedAt = new Date().toISOString();
   try {
+    // 有映射表：全部端点按映射解析；没有：走内置 new-api 默认（与旧版一致）。
+    if (mapping) {
+      return await fetchStationWithMapping(
+        stationId,
+        providerId,
+        base,
+        apiKey,
+        signal,
+        mapping,
+        fetchedAt,
+        sensitiveValues,
+      );
+    }
     const pricing = (await fetchJson(`${base}/api/pricing`, {}, signal)) as RawPricing;
     const keyModels = apiKey
       ? await fetchKeyModels(base, apiKey, signal).catch((error) => {
@@ -385,7 +471,7 @@ async function fetchStation(
       new Set(keyModels),
     );
     const balance = apiKey
-      ? await fetchBalance(stationId, base, apiKey, sensitiveValues, signal)
+      ? await fetchBalance(stationId, base, apiKey, sensitiveValues, signal, null)
       : null;
     return {
       stationId,
@@ -413,12 +499,89 @@ async function fetchStation(
   }
 }
 
+/** 映射化抓取路径：pricing/models/balance/usage 端点全部来自映射表。 */
+async function fetchStationWithMapping(
+  stationId: string,
+  providerId: string | null,
+  base: string,
+  apiKey: string | undefined,
+  signal: AbortSignal,
+  mapping: RelayFieldMap,
+  fetchedAt: string,
+  sensitiveValues: string[],
+): Promise<RelayPricingStation> {
+  const pricingEndpoint = mapping.endpoints.pricing;
+  const modelsEndpoint = mapping.endpoints.models;
+  const headers: Record<string, string> = apiKey
+    ? { Authorization: `Bearer ${apiKey}` }
+    : {};
+
+  let groups: RelayPricingGroup[] = [];
+  let rows: RelayPricingRow[] = [];
+  if (pricingEndpoint) {
+    const payload = await fetchJson(
+      joinUrl(base, pricingEndpoint.path),
+      pricingEndpoint.auth ? headers : {},
+      signal,
+    );
+    const resolved = resolveEndpoint(payload, pricingEndpoint);
+    ({ rows, groups } = applyPricingMapping(resolved, stationId, new Set<string>()));
+  }
+
+  let keyModels: string[] = [];
+  if (apiKey && modelsEndpoint) {
+    try {
+      const payload = await fetchJson(
+        joinUrl(base, modelsEndpoint.path),
+        modelsEndpoint.auth ? headers : {},
+        signal,
+      );
+      keyModels = applyModelsMapping(resolveEndpoint(payload, modelsEndpoint)).keyModels;
+    } catch (error) {
+      signal.throwIfAborted();
+      logger.warn("relay pricing: mapped models endpoint failed", {
+        stationId,
+        error: relayErrorMessage(error, sensitiveValues),
+      });
+    }
+  }
+
+  // keyAvailable 需要在 keyModels 已知后重算一次。
+  if (pricingEndpoint) {
+    const payload = await fetchJson(
+      joinUrl(base, pricingEndpoint.path),
+      pricingEndpoint.auth ? headers : {},
+      signal,
+    );
+    ({ rows, groups } = applyPricingMapping(
+      resolveEndpoint(payload, pricingEndpoint),
+      stationId,
+      new Set(keyModels),
+    ));
+  }
+
+  const balance = apiKey
+    ? await fetchBalance(stationId, base, apiKey, sensitiveValues, signal, mapping)
+    : null;
+  return {
+    stationId,
+    providerId,
+    baseUrl: base,
+    groups,
+    rows,
+    keyModels,
+    balance,
+    fetchedAt,
+  };
+}
+
 /** 供 balance.get 等复用的单站抓取入口。 */
 export async function fetchRelayBalanceForProvider(
   providerId: string,
   baseUrl: string,
   apiKey: string | undefined,
   signal: AbortSignal,
+  mapping: RelayFieldMap | null = null,
 ): Promise<RelayBalance> {
   const stationId = providerId;
   if (!apiKey) {
@@ -433,7 +596,14 @@ export async function fetchRelayBalanceForProvider(
       error: "No API key configured for this provider",
     };
   }
-  return fetchBalance(stationId, baseUrl, apiKey, relaySensitiveValues(apiKey), signal);
+  return fetchBalance(
+    stationId,
+    baseUrl,
+    apiKey,
+    relaySensitiveValues(apiKey),
+    signal,
+    mapping,
+  );
 }
 
 export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
@@ -441,8 +611,12 @@ export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
   "provider.pricing.get": MethodHandler;
   "provider.balance.get": MethodHandler;
   "provider.pricing.setRechargeRatio": MethodHandler;
+  "provider.mapping.get": MethodHandler;
+  "provider.mapping.set": MethodHandler;
+  "provider.mapping.handoff": MethodHandler;
 } {
   const store = new RelayPricingStore(factory.deps.agentDir);
+  const mappingStore = new RelayMappingStore(factory.deps.agentDir);
   const modelsPath = join(factory.deps.agentDir, "models.json");
 
   /** models.json 里的自定义 provider 清单（id + baseUrl）。 */
@@ -482,12 +656,15 @@ export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
     for (const provider of targets) {
       if (shutdownSignal.aborted) break;
       const apiKey = await factory.deps.modelRegistry.getApiKeyForProvider(provider.id);
+      // 每站独立的映射表：有则按映射解析（零源码适配），无则内置默认。
+      const mapping = mappingStore.getActive(provider.id);
       const station = await fetchStation(
         provider.id,
         provider.id,
         provider.baseUrl,
         apiKey ?? undefined,
         shutdownSignal,
+        mapping,
       );
       // 站点名只在本地展示用，不落盘（跟随 provider.name 动态取）。
       store.upsertStation(station);
@@ -569,6 +746,7 @@ export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
           provider.baseUrl,
           apiKey ?? undefined,
           server.getShutdownSignal(),
+          mappingStore.getActive(providerId),
         );
         // 余额落盘进对应 station 快照，供下次快速显示。
         const table = store.getTable();
@@ -615,6 +793,76 @@ export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
           error: createHostError(
             "SETTINGS_WRITE_FAILED",
             error instanceof Error ? error.message : "Could not save recharge ratio",
+          ),
+        };
+      }
+    },
+
+    "provider.mapping.get": async (ctx) => {
+      const { stationId } = ctx.params as { stationId: string };
+      try {
+        return {
+          result: { stationId, mapping: mappingStore.get(stationId) } satisfies RelayMappingResult,
+        };
+      } catch (error) {
+        return {
+          error: createHostError(
+            "SETTINGS_READ_FAILED",
+            error instanceof Error ? error.message : "Could not read field mapping",
+          ),
+        };
+      }
+    },
+
+    "provider.mapping.set": async (ctx) => {
+      const params = ctx.params as RelayMappingSetParams;
+      try {
+        const mapping = mappingStore.set(params.stationId, params.mapping);
+        return {
+          result: {
+            stationId: params.stationId,
+            mapping,
+          } satisfies RelayMappingResult,
+        };
+      } catch (error) {
+        return {
+          error: createHostError(
+            "SETTINGS_WRITE_FAILED",
+            error instanceof Error ? error.message : "Could not save field mapping",
+          ),
+        };
+      }
+    },
+
+    /**
+     * Agent 交接信息：映射文件路径、站点 baseUrl、key 位置、当前映射。
+     * 桌面端机器人图标按钮调用后，把这些事实拼进提示词发给 DefaultProject。
+     */
+    "provider.mapping.handoff": async (ctx) => {
+      const { stationId } = ctx.params as { stationId: string };
+      try {
+        const providers = await listRelayProviders();
+        const provider = providers.find((entry) => entry.id === stationId);
+        if (!provider) {
+          return {
+            error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${stationId}`),
+          };
+        }
+        const apiKey = await factory.deps.modelRegistry.getApiKeyForProvider(stationId);
+        const result: RelayMappingHandoffResult = {
+          stationId,
+          mappingPath: mappingStore.mappingPath(stationId),
+          baseUrl: provider.baseUrl.replace(/\/+$/, ""),
+          hasApiKey: Boolean(apiKey),
+          authJsonPath: join(factory.deps.agentDir, "auth.json"),
+          mapping: mappingStore.get(stationId),
+        };
+        return { result };
+      } catch (error) {
+        return {
+          error: createHostError(
+            "INTERNAL_ERROR",
+            error instanceof Error ? error.message : "Could not build mapping handoff",
           ),
         };
       }

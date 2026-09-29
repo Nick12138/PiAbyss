@@ -10,7 +10,8 @@
  */
 
 /** Reference kinds the transcript knows how to label. */
-export type InjectedReferenceKind = "memo" | "memo-result" | "schedule-preamble" | "schedule-job";
+export type InjectedReferenceKind =
+  "memo" | "memo-result" | "schedule-preamble" | "schedule-job" | "relay-mapping";
 
 export type InjectedReference = {
   kind: InjectedReferenceKind;
@@ -48,6 +49,7 @@ const REFERENCE_KINDS: readonly InjectedReferenceKind[] = [
   "memo-result",
   "schedule-preamble",
   "schedule-job",
+  "relay-mapping",
 ];
 
 function isReferenceKind(value: string): value is InjectedReferenceKind {

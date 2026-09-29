@@ -2,6 +2,7 @@ import {
   Activity,
   AlertTriangle,
   ArrowLeft,
+  Bot,
   Brain,
   Check,
   ChevronDown,
@@ -50,6 +51,7 @@ import {
 } from "../../lib/format-token-count";
 import { ProviderLoginPage } from "./ProviderLoginSection";
 import { RelayPricingDialog } from "./RelayPricingDialog";
+import { openRelayMappingAgent } from "./relay-mapping-agent";
 import {
   automaticThinkingConfig,
   customThinkingMap,
@@ -263,6 +265,8 @@ export function ProvidersSettings() {
     { kind: "select"; id: string } | { kind: "new" } | { kind: "oauth" } | null
   >(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // 字段映射任务派发中（机器人图标按钮）。
+  const [mappingBusy, setMappingBusy] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   // Serialized shape of the draft as loaded/saved; any divergence means unsaved edits.
   const baselineRef = useRef<string | null>(null);
@@ -494,7 +498,10 @@ export function ProvidersSettings() {
       setRatios((current) => ({ ...current, [providerId]: { cny, balance } }));
       setRatioDraft(null);
     } catch (error) {
-      pushNotification(error instanceof Error ? error.message : t("relayPricingRechargeRatioSaved"), "error");
+      pushNotification(
+        error instanceof Error ? error.message : t("relayPricingRechargeRatioSaved"),
+        "error",
+      );
     }
   }
 
@@ -813,8 +820,10 @@ export function ProvidersSettings() {
     if (!unchanged && !saved) return;
     const providerId = saved?.id ?? draft.originalId!;
     const modelId =
-      modelIdOverride ?? draft.models.find((model) => model.id === testModelId)?.id ??
-      saved?.models[0]?.id ?? draft.models[0]?.id;
+      modelIdOverride ??
+      draft.models.find((model) => model.id === testModelId)?.id ??
+      saved?.models[0]?.id ??
+      draft.models[0]?.id;
     if (!modelId) {
       pushNotification(t("notifNeedModelToTest"), "error");
       refreshProviderConfig();
@@ -1189,6 +1198,28 @@ export function ProvidersSettings() {
                       <Copy size={14} />
                     </button>
                   )}
+                  {draft.originalId && (
+                    <button
+                      type="button"
+                      className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs text-accent hover:bg-surface-overlay disabled:opacity-50"
+                      disabled={saving || fetching || testing || mappingBusy}
+                      title={t("providersMappingBotTitle")}
+                      aria-label={t("providersMappingBot")}
+                      onClick={() => {
+                        setMappingBusy(true);
+                        void openRelayMappingAgent(
+                          draft.originalId!,
+                          draft.name.trim() || draft.originalId!,
+                        ).finally(() => setMappingBusy(false));
+                      }}
+                    >
+                      {mappingBusy ? (
+                        <RefreshCw className="animate-spin" size={14} />
+                      ) : (
+                        <Bot size={14} />
+                      )}
+                    </button>
+                  )}
                   <div className="relative flex items-stretch">
                     {testMenuOpen && (
                       <>
@@ -1225,7 +1256,10 @@ export function ProvidersSettings() {
                                   className={`shrink-0 ${model.id === testModel ? "text-accent" : "opacity-0"}`}
                                   size={13}
                                 />
-                                <span className="min-w-0 flex-1 truncate font-mono" title={model.id}>
+                                <span
+                                  className="min-w-0 flex-1 truncate font-mono"
+                                  title={model.id}
+                                >
                                   {model.id}
                                 </span>
                               </button>
@@ -1238,7 +1272,11 @@ export function ProvidersSettings() {
                       type="button"
                       className="flex h-8 items-center gap-1.5 rounded-l-md border border-border px-2.5 text-xs hover:bg-surface-overlay disabled:opacity-50"
                       disabled={saving || fetching || testing || draft.models.length === 0}
-                      title={testModel ? t("providersTestModelTitle", { model: testModel }) : t("providersTestNoModel")}
+                      title={
+                        testModel
+                          ? t("providersTestModelTitle", { model: testModel })
+                          : t("providersTestNoModel")
+                      }
                       aria-label={testing ? t("providersTesting") : t("providersSaveAndTest")}
                       onClick={() => void testConnection()}
                     >
@@ -1502,7 +1540,8 @@ export function ProvidersSettings() {
                               <span className="text-foreground">
                                 ${balance.remainingUsd?.toFixed(4) ?? "0.00"}
                                 <span className="ml-1 text-[11px] text-muted">
-                                  ({t("relayPricingBalanceUsed")} ${balance.totalUsageUsd.toFixed(4)})
+                                  ({t("relayPricingBalanceUsed")} $
+                                  {balance.totalUsageUsd.toFixed(4)})
                                 </span>
                               </span>
                             );
@@ -1573,10 +1612,14 @@ export function ProvidersSettings() {
                           title={t("relayPricingRechargeRatioHint")}
                           onClick={() => {
                             const saved = ratios[draft.originalId!] ?? { cny: 1, balance: 1 };
-                            setRatioDraft({ cny: String(saved.cny), balance: String(saved.balance) });
+                            setRatioDraft({
+                              cny: String(saved.cny),
+                              balance: String(saved.balance),
+                            });
                           }}
                         >
-                          {formatRatio(ratios[draft.originalId!])} <Coins className="ml-1" size={11} />
+                          {formatRatio(ratios[draft.originalId!])}{" "}
+                          <Coins className="ml-1" size={11} />
                         </button>
                       )}
                     </div>
@@ -1944,7 +1987,9 @@ export function ProvidersSettings() {
           </p>
         </Dialog>
       )}
-      {pricingOpen && <RelayPricingDialog providers={providers} onClose={() => setPricingOpen(false)} />}
+      {pricingOpen && (
+        <RelayPricingDialog providers={providers} onClose={() => setPricingOpen(false)} />
+      )}
     </div>
   );
 }

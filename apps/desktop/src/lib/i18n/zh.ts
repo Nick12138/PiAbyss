@@ -434,6 +434,13 @@ export const zh: Record<MessageKey, string> = {
   providersTestNoModel: "没有可测试的模型",
   providersCopy: "复制",
   providersCopyTitle: "复制该供应商信息为新的未保存草稿（名称后加 “copy”，API Key 需重新填写）",
+  providersMappingBot: "字段映射",
+  providersMappingBotTitle:
+    "让 Agent 探测该站点的余额/价格接口，生成字段映射表（在默认工作区处理）",
+  providersMappingHandoffFailed: "无法获取站点信息，未能发起字段映射任务",
+  providersMappingPrompt:
+    "请处理上面的字段映射任务：探测接口、验证字段、把映射表写入指定路径，并在回复里给出每个端点的探测结论与无法获取的字段清单。",
+  providersMappingNoWorkspace: "无法定位默认工作区，未能发起字段映射任务",
   providersConnectionOk: "生成检查通过",
   providersUseSystemRole: "改用 system 角色",
   providersOmitReasoningEffort: "省略 reasoning_effort",
@@ -545,8 +552,7 @@ export const zh: Record<MessageKey, string> = {
   relayPricingBalanceRefresh: "刷新余额",
   relayPricingBalanceUsed: "已用",
   relayPricingRechargeRatio: "充值比例（每 1 单位余额付费）",
-  relayPricingRechargeRatioHint:
-    "仅作显示换算。例如 1:5 表示实付 1 元到账 5 元余额；默认 1:1。",
+  relayPricingRechargeRatioHint: "仅作显示换算。例如 1:5 表示实付 1 元到账 5 元余额；默认 1:1。",
   relayPricingRechargeRatioSaved: "充值比例已保存",
   relayPricingRechargeRatioInvalid: "比例必须是正数",
   relayPricingRowsCount: "{count} 行",
@@ -1100,6 +1106,7 @@ export const zh: Record<MessageKey, string> = {
   injectedRefMemoResult: "备忘录总结",
   injectedRefSchedulePreamble: "周期计划提示词",
   injectedRefScheduleJob: "周期计划",
+  injectedRefRelayMapping: "字段映射",
   injectedRefShowDetail: "展开注入内容",
   injectedRefHideDetail: "收起注入内容",
   resultFileOpen: "打开 {name}",
@@ -1894,6 +1901,18 @@ export const zh: Record<MessageKey, string> = {
   scheduleFormCronInvalid: "Cron 需要 5 段，如 0 9 * * 1-5",
   scheduleFormTimeoutInvalid: "超时需在 1–360 分钟之间",
   scheduleFormMaxRunsInvalid: "执行上限需为正整数",
+
+  // 小精灵（pixie）
+  pixieTitle: "小精灵",
+  pixieHeaderHint: "常驻助手 · 轻量查询直接答，重活委派给工作区会话",
+  pixieEmptyTitle: "嗨，我是小精灵",
+  pixieEmptyHint: "可以问我今天有什么工作需要做，或者让我帮你查看某个项目的运行情况。",
+  pixieThinking: "小精灵思考中…",
+  pixieLoadFailed: "小精灵加载失败",
+  pixieInputPlaceholder: "跟小精灵说点什么…（Enter 发送，Shift+Enter 换行）",
+  pixieDispatchPanelTitle: "委派任务",
+  pixieDispatchEmpty: "暂无委派任务",
+  pixieDispatchActiveCount: "进行中的委派：{count} 个",
 
   // 备忘录
   memoTitle: "备忘录",

@@ -55,6 +55,9 @@ import type {
   RelayPricingResult,
   RelayBalance,
   RelayRechargeRatio,
+  RelayMappingResult,
+  RelayMappingSetParams,
+  RelayMappingHandoffResult,
   TelegramValidateTokenResult,
   TelegramProfileSummary,
   TelegramSessionListResult,
@@ -103,6 +106,10 @@ import type {
   ScheduleAgentSessionSummary,
   ScheduleAgentEditJob,
   ScheduleAgentState,
+  PixieAgentState,
+  PixieAgentMessage,
+  PixieDispatchRecord,
+  PixieUsageStats,
   ScheduleAgentTranscript,
   MemoNote,
   MemoNoteStatus,
@@ -211,6 +218,9 @@ export type HostContextMap = {
   "provider.pricing.get": HostContext;
   "provider.balance.get": HostContext;
   "provider.pricing.setRechargeRatio": HostContext;
+  "provider.mapping.get": HostContext;
+  "provider.mapping.set": HostContext;
+  "provider.mapping.handoff": HostContext;
   "model.list": ActiveSessionContext;
   "model.setCurrent": ActiveSessionContext;
   "model.setThinkingLevel": ActiveSessionContext;
@@ -278,6 +288,13 @@ export type HostContextMap = {
   "memo.setSyncConfig": HostContext;
   "memo.testSync": HostContext;
   "memo.syncNow": HostContext;
+  "pixie.state": HostContext;
+  "pixie.send": HostContext;
+  "pixie.continue": HostContext;
+  "pixie.abort": HostContext;
+  "pixie.transcript": HostContext;
+  "pixie.dispatches": HostContext;
+  "pixie.usage": HostContext;
 };
 
 export type HostRequestParams = {
@@ -419,6 +436,9 @@ export type HostRequestParams = {
     providerId: string;
     ratio: RelayRechargeRatio;
   };
+  "provider.mapping.get": { stationId: string };
+  "provider.mapping.set": RelayMappingSetParams;
+  "provider.mapping.handoff": { stationId: string };
   "model.list": null;
   "model.setCurrent": { provider: string; modelId: string };
   "model.setThinkingLevel": { level: string };
@@ -543,6 +563,13 @@ export type HostRequestParams = {
   "memo.setSyncConfig": { settings: MemoSyncConfig };
   "memo.testSync": { settings: MemoSyncConfig };
   "memo.syncNow": null;
+  "pixie.state": null;
+  "pixie.send": { text: string };
+  "pixie.continue": { sessionPath: string; text: string };
+  "pixie.abort": null;
+  "pixie.transcript": { sessionPath: string };
+  "pixie.dispatches": { limit?: number };
+  "pixie.usage": null;
 };
 
 export type HostResultMap = {
@@ -683,6 +710,9 @@ export type HostResultMap = {
     providerId: string;
     ratio: RelayRechargeRatio | null;
   };
+  "provider.mapping.get": RelayMappingResult;
+  "provider.mapping.set": RelayMappingResult;
+  "provider.mapping.handoff": RelayMappingHandoffResult;
   "model.list": {
     models: ModelSummary[];
     current?: ModelSummary;
@@ -788,6 +818,13 @@ export type HostResultMap = {
     bytes: number;
     at: number;
   };
+  "pixie.state": PixieAgentState;
+  "pixie.send": { sessionId: string };
+  "pixie.continue": { sessionId: string; sessionPath: string };
+  "pixie.abort": { ok: boolean };
+  "pixie.transcript": { found: boolean; messages: PixieAgentMessage[] };
+  "pixie.dispatches": { dispatches: PixieDispatchRecord[] };
+  "pixie.usage": PixieUsageStats;
 };
 
 export type HostEventPayloadMap = {
@@ -881,6 +918,8 @@ export type HostEventPayloadMap = {
   };
   "extensionUi.customFrame": { requestId: string; data: string };
   "extensionUi.customClosed": { requestId: string };
+  /** 小精灵收到委派回调（结果回流，前端刷新对话与委派列表）。 */
+  "pixie.reportReceived": { dispatchId: string; summary: string };
 };
 
 // Compile-time completeness: every HostMethod/HostEventName key present
