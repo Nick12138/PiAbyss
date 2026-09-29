@@ -321,18 +321,23 @@ async function fetchBalance(
       signal,
     );
     const usage = await fetchJson(`${base}/v1/dashboard/billing/usage`, headers, signal);
-    const hardLimitUsd =
+    // one-api/new-api 语义（模仿 OpenAI billing API 但口径不同）：
+    //   subscription.hard_limit_usd = 剩余额度（美元）——不是总额度；
+    //   usage.total_usage = 已用额度（美分），需 /100 换算成美元。
+    // 即：余额 = hard_limit_usd，已用 = total_usage / 100。
+    const remainingUsd =
       isObject(subscription) && typeof subscription.hard_limit_usd === "number"
         ? subscription.hard_limit_usd
         : 0;
     const totalUsageUsd =
-      isObject(usage) && typeof usage.total_usage === "number" ? usage.total_usage : 0;
-    const unlimited = hardLimitUsd >= UNLIMITED_LIMIT_USD;
+      isObject(usage) && typeof usage.total_usage === "number" ? usage.total_usage / 100 : 0;
+    const unlimited = remainingUsd >= UNLIMITED_LIMIT_USD;
     return {
       stationId,
-      hardLimitUsd,
+      // 语义修正：这里存「剩余额度」，与字段名 remainingUsd 对齐。
+      hardLimitUsd: remainingUsd,
       totalUsageUsd,
-      remainingUsd: unlimited ? null : Math.max(hardLimitUsd - totalUsageUsd, 0),
+      remainingUsd: unlimited ? null : remainingUsd,
       unlimited,
       fetchedAt,
       ok: true,
@@ -465,10 +470,13 @@ export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
     const shutdownSignal = server.getShutdownSignal();
     shutdownSignal.throwIfAborted();
     const all = await listRelayProviders();
-    console.log("DBG listRelayProviders:", JSON.stringify(all));
     const targets = providerIds
       ? all.filter((provider) => providerIds.includes(provider.id))
       : all;
+    // 全量刷新时顺手清掉已删除 provider 遗留的站点快照。
+    if (providerIds === null) {
+      store.pruneStations(new Set(all.map((provider) => provider.id)));
+    }
     // 有 key 的站才值得抓 keyModels/余额；没 key 的站只抓公开价目。
     const results: RelayPricingStation[] = [];
     for (const provider of targets) {

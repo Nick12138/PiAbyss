@@ -151,21 +151,30 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
 
   const stations = useMemo(() => pricing?.table.stations ?? [], [pricing]);
 
-  const groupOptions = useMemo(() => {
-    const names = new Set<string>();
-    for (const station of stations) {
-      if (stationFilter !== "all" && station.stationId !== stationFilter) continue;
-      for (const group of station.groups) names.add(group.name);
-    }
-    return [...names].sort((left, right) => left.localeCompare(right));
-  }, [stations, stationFilter]);
-
   /** providerId → 显示名（host 不落盘站名，跟随 provider.name 动态取）。 */
   const providerNames = useMemo(() => {
     const map = new Map<string, string>();
     for (const provider of providers) map.set(provider.id, provider.name);
     return map;
   }, [providers]);
+
+  /** 只展示仍存在的 provider 对应的站点（手动条目 providerId===null 保留）。 */
+  const visibleStations = useMemo(
+    () =>
+      stations.filter(
+        (station) => station.providerId === null || providerNames.has(station.providerId),
+      ),
+    [stations, providerNames],
+  );
+
+  const groupOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const station of visibleStations) {
+      if (stationFilter !== "all" && station.stationId !== stationFilter) continue;
+      for (const group of station.groups) names.add(group.name);
+    }
+    return [...names].sort((left, right) => left.localeCompare(right));
+  }, [visibleStations, stationFilter]);
 
   /** baseUrl →（已配置且有 key 的）provider 及其模型集合。 */
   const providerByBaseUrl = useMemo(() => {
@@ -184,11 +193,11 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
     const providerNamesByStation = providerNames;
     const query = search.trim().toLowerCase();
     const all: Array<{ row: RelayPricingRow; stationName: string }> = [];
-    for (const station of stations) {
+    for (const station of visibleStations) {
       if (stationFilter !== "all" && station.stationId !== stationFilter) continue;
-      const stationName =
-        (station.providerId && providerNamesByStation.get(station.providerId)) ||
-        station.stationId;
+      const stationName = station.providerId
+        ? providerNamesByStation.get(station.providerId) ?? station.stationId
+        : station.stationId;
       for (const row of station.rows) {
         if (groupFilter !== "all" && row.group !== groupFilter) continue;
         if (keyOnly && !row.keyAvailable) continue;
@@ -206,7 +215,7 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
         left.row.modelId.localeCompare(right.row.modelId) ||
         left.row.group.localeCompare(right.row.group),
     );
-  }, [stations, stationFilter, groupFilter, keyOnly, search, providerNames]);
+  }, [visibleStations, stationFilter, groupFilter, keyOnly, search, providerNames]);
 
   const rechargeRatioFor = (providerId: string | null): RelayRechargeRatio =>
     (providerId && pricing?.rechargeRatios[providerId]) || { cny: 1, balance: 1 };
@@ -249,9 +258,11 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
             }}
           >
             <option value="all">{t("relayPricingAllStations")}</option>
-            {stations.map((station) => (
+            {visibleStations.map((station) => (
               <option key={station.stationId} value={station.stationId}>
-                {station.name ?? station.stationId}
+                {station.providerId
+                  ? providerNames.get(station.providerId) ?? station.stationId
+                  : station.stationId}
               </option>
             ))}
           </select>
@@ -288,9 +299,9 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
         </div>
 
         {/* 站点余额概览 */}
-        {stations.length > 0 && (
+        {visibleStations.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {stations.map((station) => {
+            {visibleStations.map((station) => {
               const ratio = rechargeRatioFor(station.providerId);
               const balance = station.balance;
               return (
@@ -299,7 +310,9 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                   className="flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs"
                 >
                   <span className="font-medium text-foreground">
-                    {station.name ?? station.stationId}
+                    {station.providerId
+                      ? providerNames.get(station.providerId) ?? station.stationId
+                      : station.stationId}
                   </span>
                   {station.providerId === null ? (
                     <span className="text-[11px] text-muted">{t("relayPricingNotConfigured")}</span>

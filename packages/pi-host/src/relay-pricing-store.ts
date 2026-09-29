@@ -128,6 +128,24 @@ export class RelayPricingStore {
     return station?.balance ?? null;
   }
 
+  /**
+   * Drop stations whose providerId is not in the given live set (provider was
+   * deleted from models.json). Stations with providerId === null are manual
+   * entries and are always kept.
+   */
+  pruneStations(liveProviderIds: ReadonlySet<string>): number {
+    const table = this.getTable();
+    const kept = table.stations.filter(
+      (station) =>
+        station.providerId === null || liveProviderIds.has(station.providerId),
+    );
+    const removed = table.stations.length - kept.length;
+    if (removed > 0) {
+      this.saveTable({ schemaVersion: SCHEMA_VERSION, stations: kept });
+    }
+    return removed;
+  }
+
   private readConfigFile(): PricingConfigFile {
     if (!existsSync(this.configPath)) {
       return { schemaVersion: SCHEMA_VERSION, ratios: {} };

@@ -28,6 +28,8 @@ import type {
   ProviderDraft,
   ProviderSnapshot,
   RelayBalance,
+  RelayPricingResult,
+  RelayRechargeRatio,
 } from "@piabyss/protocol";
 import { THINKING_LEVELS } from "@piabyss/protocol";
 import { hostClient, isHostEpochError } from "../../lib/bridge/host-client";
@@ -183,6 +185,13 @@ function formatBalance(balance: RelayBalance | undefined): string | null {
   return balance.unlimited ? "∞" : `$${(balance.remainingUsd ?? 0).toFixed(2)}`;
 }
 
+/** 格式化充值比例显示：去掉多余小数（1:1 / 1:5 / 1.5:1）。 */
+function formatRatio(ratio: RelayRechargeRatio | undefined): string {
+  const cny = ratio?.cny ?? 1;
+  const balance = ratio?.balance ?? 1;
+  return `${Number.isInteger(cny) ? cny : cny.toFixed(2)} : ${Number.isInteger(balance) ? balance : balance.toFixed(2)}`;
+}
+
 function RelayBalanceBadge({ balance }: { balance: RelayBalance | undefined }) {
   const text = formatBalance(balance);
   if (text === null) return null;
@@ -238,6 +247,8 @@ export function ProvidersSettings() {
   // 列表徽标余额：providerId → 余额（懒加载，每次 providers 变化后静默拉一次）。
   const [balances, setBalances] = useState<Record<string, RelayBalance>>({});
   const [balanceLoadingId, setBalanceLoadingId] = useState<string | null>(null);
+
+  const [ratios, setRatios] = useState<Record<string, RelayRechargeRatio>>({});
   // 充值比例编辑：仅详情页展开。
   const [ratioDraft, setRatioDraft] = useState<{ cny: string; balance: string } | null>(null);
   const [manualId, setManualId] = useState("");
@@ -324,9 +335,25 @@ export function ProvidersSettings() {
   }, [hostInstanceId, selectedId, selectedConfigured, keyPreviewNonce]);
 
   // 选中 provider 时懒加载一次余额（有缓存则跳过）；打开设置页时不批量拉取。
+  // 同时拉一次该 provider 的充值比例（provider.pricing.get 走宿主端磁盘缓存，无网络开销）。
   useEffect(() => {
     if (!selectedId || !selectedConfigured) return;
     void fetchBalance(selectedId);
+    const requestHost = useAppStore.getState().host;
+    if (!requestHost) return;
+    let cancelled = false;
+    void hostClient
+      .request("provider.pricing.get", hostContext(requestHost), null)
+      .then((response) => {
+        if (cancelled || !response?.ok) return;
+        setRatios((response.result as RelayPricingResult).rechargeRatios);
+      })
+      .catch(() => {
+        /* 显示用；失败时回落到默认 1:1。 */
+      });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, selectedConfigured]);
 
@@ -339,6 +366,7 @@ export function ProvidersSettings() {
       baselineRef.current = null;
       draftEpochRef.current += 1;
       setPendingSwitch(null);
+      setRatios({});
       return;
     }
     const requestHost = useAppStore.getState().host;
@@ -463,6 +491,7 @@ export function ProvidersSettings() {
         return;
       }
       pushNotification(t("relayPricingRechargeRatioSaved"));
+      setRatios((current) => ({ ...current, [providerId]: { cny, balance } }));
       setRatioDraft(null);
     } catch (error) {
       pushNotification(error instanceof Error ? error.message : t("relayPricingRechargeRatioSaved"), "error");
@@ -1137,7 +1166,7 @@ export function ProvidersSettings() {
                     </h1>
                     <p className="mt-1 text-xs text-muted">
                       {draft.originalId
-                        ? `${t("providersServiceId")} ${draft.originalId}`
+                        ? draft.name.trim() || draft.originalId
                         : t("providersCustom")}
                     </p>
                   </div>
@@ -1473,7 +1502,7 @@ export function ProvidersSettings() {
                               <span className="text-foreground">
                                 ${balance.remainingUsd?.toFixed(4) ?? "0.00"}
                                 <span className="ml-1 text-[11px] text-muted">
-                                  ({t("relayPricingColInput")} ${balance.totalUsageUsd.toFixed(4)})
+                                  ({t("relayPricingBalanceUsed")} ${balance.totalUsageUsd.toFixed(4)})
                                 </span>
                               </span>
                             );
@@ -1542,9 +1571,12 @@ export function ProvidersSettings() {
                           type="button"
                           className="flex h-7 items-center rounded border border-border px-2 text-xs tabular-nums hover:bg-surface-overlay"
                           title={t("relayPricingRechargeRatioHint")}
-                          onClick={() => setRatioDraft({ cny: "1", balance: "1" })}
+                          onClick={() => {
+                            const saved = ratios[draft.originalId!] ?? { cny: 1, balance: 1 };
+                            setRatioDraft({ cny: String(saved.cny), balance: String(saved.balance) });
+                          }}
                         >
-                          1 : 1 <Coins className="ml-1" size={11} />
+                          {formatRatio(ratios[draft.originalId!])} <Coins className="ml-1" size={11} />
                         </button>
                       )}
                     </div>

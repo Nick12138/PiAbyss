@@ -543,6 +543,7 @@ export const zh: Record<MessageKey, string> = {
   relayPricingBalanceUnlimited: "不限量",
   relayPricingBalanceError: "余额查询失败",
   relayPricingBalanceRefresh: "刷新余额",
+  relayPricingBalanceUsed: "已用",
   relayPricingRechargeRatio: "充值比例（每 1 单位余额付费）",
   relayPricingRechargeRatioHint:
     "仅作显示换算。例如 1:5 表示实付 1 元到账 5 元余额；默认 1:1。",

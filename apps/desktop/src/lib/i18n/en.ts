@@ -572,6 +572,7 @@ export const en = {
   relayPricingBalanceUnlimited: "Unlimited",
   relayPricingBalanceError: "Balance query failed",
   relayPricingBalanceRefresh: "Refresh balance",
+  relayPricingBalanceUsed: "used",
   relayPricingRechargeRatio: "Recharge ratio (CNY per balance unit)",
   relayPricingRechargeRatioHint:
     "Display-only conversion. Example 1:5 means 1 CNY paid gives 5 units of station balance.",

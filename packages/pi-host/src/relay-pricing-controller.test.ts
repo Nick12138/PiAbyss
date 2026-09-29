@@ -182,6 +182,33 @@ describe("RelayPricingStore", () => {
     writeFileSync(join(layout.agentDir, "piabyss", "relay-pricing", "pricing.json"), "{broken");
     expect(store.getTable().stations).toEqual([]);
   });
+
+  it("prunes stations whose provider no longer exists, keeping manual ones", () => {
+    const layout = createTempAgentLayout("pi-relay-store-test-");
+    layouts.push(layout);
+    const store = new RelayPricingStore(layout.agentDir);
+    const base = {
+      groups: [],
+      rows: [],
+      keyModels: [],
+      balance: null,
+      fetchedAt: "now",
+    };
+    store.saveTable({
+      schemaVersion: 1,
+      stations: [
+        { stationId: "live", providerId: "live", baseUrl: "http://live", ...base },
+        { stationId: "dead", providerId: "dead", baseUrl: "http://dead", ...base },
+        { stationId: "manual", providerId: null, baseUrl: "http://manual", ...base },
+      ],
+    });
+    const removed = store.pruneStations(new Set(["live"]));
+    expect(removed).toBe(1);
+    const stations = store.getTable().stations;
+    expect(stations.map((station) => station.stationId)).toEqual(["live", "manual"]);
+    // No-op prune leaves the file untouched.
+    expect(store.pruneStations(new Set(["live", "other"]))).toBe(0);
+  });
 });
 
 describe("relay pricing handlers", () => {
@@ -211,7 +238,9 @@ describe("relay pricing handlers", () => {
     expect(station.stationId).toBe("hetune");
     expect(station.providerId).toBe("hetune");
     expect(station.balance?.ok).toBe(true);
-    expect(station.balance?.remainingUsd).toBeCloseTo(1.941634, 5);
+    // one-api 语义：hard_limit_usd 即剩余额度；total_usage 为美分，/100 换算美元。
+    expect(station.balance?.remainingUsd).toBeCloseTo(2.000034, 5);
+    expect(station.balance?.totalUsageUsd).toBeCloseTo(0.000584, 6);
     // Token row: $2 × 0.052 × 1 = 0.104 in; ×3.5 = 0.364 out; ×0.1 cache.
     const tokenRow = station.rows.find((row) => row.modelId === "glm-5.3-flash");
     expect(tokenRow?.inputPer1M).toBeCloseTo(0.104, 6);
@@ -272,7 +301,9 @@ describe("relay pricing handlers", () => {
     } as never);
     if (!("result" in first)) throw new Error(JSON.stringify(first));
     const firstr = first.result as RelayBalance;
-    expect(firstr.remainingUsd).toBeCloseTo(4, 5);
+    // hard_limit_usd = 剩余 5；total_usage = 1 美分 = $0.01 已用。
+    expect(firstr.remainingUsd).toBeCloseTo(5, 5);
+    expect(firstr.totalUsageUsd).toBeCloseTo(0.01, 6);
 
     // Kill the server: the cached path must not touch the network.
     await new Promise<void>((resolve) => {
