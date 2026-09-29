@@ -68,7 +68,7 @@ function composeRelayMappingPrompt(handoff: RelayMappingHandoff): string {
         stationId,
         endpoints: {
           pricing: {
-            path: "api/pricing 或实际路径（相对 baseUrl）",
+            path: "api/pricing 或实际路径（注意 URL 相对语义：baseUrl 带 /v1 时根路径需写 /api/pricing）",
             auth: false,
             fieldsApplyTo: "items（响应是模型记录数组时）/ root",
             itemsField: "models",
@@ -112,7 +112,7 @@ function composeRelayMappingPrompt(handoff: RelayMappingHandoff): string {
     ),
     "```",
     "",
-    '字段规则：`path` 为相对响应根的点路径（`data[].x` 不需要——items 模式下相对每条记录）；`reader`：entries=对象展开为键值对，array=取字符串数组（itemField 指定字段）；`scale` 乘法换算；`fallback` 缺失时的兜底；`path: "$"` 表示常量（配 fallback 用）。',
+    '字段规则：`path` 为端点路径，遵循 URL 相对语义 —— baseUrl 形如 `https://x.top/v1` 时，`api/pricing` 拼成 `/v1/api/pricing`，而 `/api/pricing`（以 / 开头）相对站点根拼成 `/api/pricing`；响应内字段路径相对响应根（items 模式下相对每条记录，记录数组位置用 itemsPath）。`reader`：entries=对象展开为键值对，array=取字符串数组（itemField 指定字段）；`scale` 乘法换算；`fallback` 缺失时的兜底；`path: "$"` 表示常量（配 fallback 用）。探测时若相对路径 404，先试站点根的 /api/... 变体。',
     "不要修改映射表路径、stationId 与 schemaVersion 以外的任何系统文件。",
     "</piabyss-relay-mapping>",
   ];

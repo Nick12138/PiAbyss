@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createRelayPricingHandlers } from "./relay-pricing-controller.js";
+import { createRelayPricingHandlers, joinRelayEndpointUrl } from "./relay-pricing-controller.js";
 import { RelayPricingStore } from "./relay-pricing-store.js";
 import { PiHostServer } from "./server.js";
 import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp-agent.js";
@@ -212,6 +212,27 @@ describe("RelayPricingStore", () => {
 });
 
 describe("relay pricing handlers", () => {
+  describe("joinRelayEndpointUrl", () => {
+    it("resolves endpoint paths with real URL semantics", () => {
+      // baseUrl 带 /v1 后缀的站：根相对 /api/pricing 不得拼成 /v1/api/pricing。
+      expect(joinRelayEndpointUrl("https://yujianwudi.top/v1", "/api/pricing")).toBe(
+        "https://yujianwudi.top/api/pricing",
+      );
+      expect(joinRelayEndpointUrl("https://yujianwudi.top/v1", "models")).toBe(
+        "https://yujianwudi.top/models",
+      );
+      expect(joinRelayEndpointUrl("https://api.rivoapi.com", "/api/pricing")).toBe(
+        "https://api.rivoapi.com/api/pricing",
+      );
+      expect(joinRelayEndpointUrl("https://x.top/v1/", "../v2/models")).toBe(
+        "https://x.top/v2/models",
+      );
+      expect(joinRelayEndpointUrl("https://x.top/v1", "https://other.io/pricing")).toBe(
+        "https://other.io/pricing",
+      );
+    });
+  });
+
   it("fetches pricing, expands rows, and persists balance", async () => {
     const baseUrl = await startRelayServer({
       pricing: PRICING_FIXTURE,

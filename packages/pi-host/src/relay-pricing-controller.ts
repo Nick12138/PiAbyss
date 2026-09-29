@@ -409,9 +409,41 @@ async function fetchBalance(
 }
 
 /** Join an endpoint path (possibly with leading slash) to a base URL. */
+/**
+ * 把映射表里的端点路径接到 baseUrl 上。遵循 URL 相对路径语义：
+ *   - 绝对 URL（http(s)://）原样使用
+ *   - 以 / 开头：相对站点根（base 的 scheme+host+port）
+ *   - ../ 逐级去掉 base 路径的末段
+ *   - 其余：相对 base 路径拼接
+ * baseUrl 为 https://x.top/v1 时，"api/pricing" → https://x.top/v1/api/pricing，
+ * "/api/pricing" → https://x.top/api/pricing，"../v1/models" → https://x.top/v1/models。
+ */
+export function joinRelayEndpointUrl(base: string, path: string): string {
+  return joinUrl(base, path);
+}
+
 function joinUrl(base: string, path: string): string {
   if (/^https?:\/\//i.test(path)) return path;
-  return `${base}/${path.replace(/^\/+/, "")}`;
+  let url: URL;
+  try {
+    url = new URL(base);
+  } catch {
+    return `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+  }
+  if (path.startsWith("/")) {
+    url.pathname = path;
+    return url.toString();
+  }
+  // 逐段处理 ../ 与普通段：基路径去掉末段文件名（或空段）。
+  const segments = url.pathname.split("/").filter((segment) => segment.length > 0);
+  if (segments.length > 0 && !url.pathname.endsWith("/")) segments.pop();
+  for (const segment of path.split("/")) {
+    if (segment === "..") segments.pop();
+    else if (segment === "." || segment === "") continue;
+    else segments.push(segment);
+  }
+  url.pathname = `/${segments.join("/")}`;
+  return url.toString();
 }
 
 /** Single-value numeric mapping helper (no nested list context). */
