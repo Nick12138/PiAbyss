@@ -57,6 +57,7 @@ const handoffResult: RelayMappingHandoffResult = {
   hasApiKey: true,
   authJsonPath: "/agent/auth.json",
   mapping: null,
+  sharedWith: [],
 };
 
 beforeEach(() => {

@@ -8,7 +8,11 @@ import {
   readMappedField,
   resolveEndpoint,
 } from "./relay-field-mapping.js";
-import { RelayMappingStore } from "./relay-mapping-store.js";
+import {
+  normalizeRelayBaseUrl,
+  RelayMappingStore,
+  relayMainDomain,
+} from "./relay-mapping-store.js";
 import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp-agent.js";
 import type { RelayFieldMap } from "@piabyss/protocol";
 
@@ -201,5 +205,48 @@ describe("relay mapping store", () => {
     store.set("x", { ...veloeraStyleMapping(), stationId: "x" });
     writeFileSync(path, "{broken");
     expect(store.get("x")).toBeNull();
+  });
+
+  it("shares one mapping across providers with the same baseUrl", () => {
+    const layout = createTempAgentLayout("pi-relay-mapping-test-");
+    layouts.push(layout);
+    const store = new RelayMappingStore(layout.agentDir);
+
+    // 主站 "7" 生成映射并声明按主域共享（cf./api./cdn. 镜像入口同站）。
+    store.set("7", {
+      ...veloeraStyleMapping(),
+      stationId: "7",
+      shareByBaseUrl: "https://hetune.top/v1",
+      shareScope: "domain",
+    });
+
+    // 同主域镜像入口：复用 "7" 的表。
+    expect(store.resolve("6", "https://cf.hetune.top/v1")?.stationId).toBe("7");
+    // 同 URL 但未声明自己的表：复用。
+    expect(store.resolve("13", "https://hetune.top/v1/")?.stationId).toBe("7");
+    // 无关站点：不共享，回退内置默认。
+    expect(store.resolve("10", "https://api.deepseek.com/v1")).toBeNull();
+
+    // 显式本站表优先于共享表。
+    store.set("6", { ...veloeraStyleMapping(), stationId: "6" });
+    expect(store.resolve("6", "https://cf.hetune.top/v1")?.stationId).toBe("6");
+
+    // 默认 scope "url"：主域相同但地址不同不算同一站。
+    store.set("6", null);
+    store.set("7", null);
+    store.set("urlonly", {
+      ...veloeraStyleMapping(),
+      stationId: "urlonly",
+      shareByBaseUrl: "https://hetune.top/v1",
+    });
+    expect(store.resolve("13", "https://hetune.top/v1")?.stationId).toBe("urlonly");
+    expect(store.resolve("6", "https://cf.hetune.top/v1")).toBeNull();
+
+    // 归一化与主域键。
+    expect(normalizeRelayBaseUrl("HTTPS://HETUNE.top/v1/")).toBe("https://hetune.top/v1");
+    expect(relayMainDomain("https://cf.hetune.top/v1")).toBe("hetune.top");
+    expect(relayMainDomain("https://localhost:3117")).toBe("localhost");
+    expect(relayMainDomain("https://192.168.1.2:3117")).toBe("192.168.1.2");
+    expect(relayMainDomain("not a url")).toBeNull();
   });
 });

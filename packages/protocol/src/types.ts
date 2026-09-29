@@ -787,6 +787,16 @@ export type RelayFieldMap = {
   schemaVersion: 1;
   /** Station/provider id this table applies to. */
   stationId: string;
+  /**
+   * When set, the mapping is shared by other providers pointing at the same
+   * station. Match semantics: providers whose normalized baseUrl equals the
+   * normalized value here always share; with shareScope "domain", providers
+   * whose host ends with the same main domain (cf.x ≈ x.top) share too —
+   * mirror entrances of one station. A provider's own explicit table wins.
+   */
+  shareByBaseUrl?: string;
+  /** How shareByBaseUrl matches other providers (default "url"). */
+  shareScope?: "url" | "domain";
   /** ISO timestamp of the last Agent/user edit. */
   updatedAt?: string;
   /** Set false to fall back to built-in defaults without deleting the table. */
@@ -842,6 +852,12 @@ export type RelayMappingHandoffResult = {
   authJsonPath: string;
   /** Current mapping (null → built-in defaults). */
   mapping: RelayFieldMap | null;
+  /**
+   * Same-station provider ids already sharing a mapping via shareByBaseUrl
+   * (the own table counts). Empty when this provider is the first of its
+   * station. Lets the Agent extend sharing instead of re-probing.
+   */
+  sharedWith: string[];
 };
 
 /** Params for provider.pricing.fetch. */

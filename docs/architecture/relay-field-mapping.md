@@ -11,6 +11,10 @@
 - **每站一张映射表**：`<agentDir>/piabyss/relay-pricing/mappings/<stationId>.json`，
   把该站响应字段映射到标准字段。Agent 探测生成 → 用户核对 → 生效。
 - 没有映射表（或 `enabled: false`）时走内置 new-api 默认路径，与改造前行为一致。
+- **同站共享**：一张表声明 `shareByBaseUrl`（站点地址）后，同址 provider 自动复用；
+  `shareScope: "domain"` 进一步放宽到主域一致（`cf.hetune.top` ≈ `hetune.top` 的镜像
+  入口共享主站映射）。解析顺序：本站显式表 > URL 一致的共享表 > 主域一致的共享表 >
+  内置默认。同一站点只需探测/映射一次。
 
 ## 映射表格式
 
@@ -18,6 +22,8 @@
 {
   "schemaVersion": 1,
   "stationId": "12",
+  "shareByBaseUrl": "https://hetune.top/v1",
+  "shareScope": "domain",
   "endpoints": {
     "pricing": {
       "path": "api/pricing",

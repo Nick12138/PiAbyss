@@ -200,12 +200,25 @@ function isRelayFieldMap(value: unknown): value is {
     !hasExactKeys(
       value,
       ["schemaVersion", "stationId", "endpoints"],
-      ["updatedAt", "enabled", "notes"],
+      ["shareByBaseUrl", "shareScope", "updatedAt", "enabled", "notes"],
     )
   ) {
     return false;
   }
   if (value.schemaVersion !== 1 || !isNonEmptyString(value.stationId)) return false;
+  if (
+    value.shareByBaseUrl !== undefined &&
+    (typeof value.shareByBaseUrl !== "string" || value.shareByBaseUrl.length === 0)
+  ) {
+    return false;
+  }
+  if (
+    value.shareScope !== undefined &&
+    value.shareScope !== "url" &&
+    value.shareScope !== "domain"
+  ) {
+    return false;
+  }
   if (
     value.updatedAt !== undefined &&
     (typeof value.updatedAt !== "string" || value.updatedAt.length === 0)

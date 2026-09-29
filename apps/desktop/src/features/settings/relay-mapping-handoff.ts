@@ -44,7 +44,8 @@ function composeRelayMappingPrompt(handoff: RelayMappingHandoff): string {
     "## 站点事实（由桌面端提供，直接可用）",
     `- Base URL：\`${info.baseUrl}\``,
     `- API Key：${info.hasApiKey ? `已配置，存于 \`${info.authJsonPath}\`（JSON，providers → ${stationId} → key；敏感信息不要写进回复）` : "未配置——只探测无需鉴权的接口，余额字段标记为无法获取"}`,
-    `- 映射表写入路径（必须原样使用）：\`${info.mappingPath}\``,
+    `- 映射表写入路径（必须原样使用）：\`${info.mappingPath}\`${info.sharedWith.length ? `
+- 同站镜像入口：provider ${info.sharedWith.join("、")} 指向同一站点（主域或地址相同）——写入映射表时加上 \`shareByBaseUrl\`（站点地址）与 \`shareScope: "domain"\`，它们会自动复用这张表，无需逐个映射` : ""}`,
     "",
     mappingBlock,
     "",
@@ -66,6 +67,8 @@ function composeRelayMappingPrompt(handoff: RelayMappingHandoff): string {
       {
         schemaVersion: 1,
         stationId,
+        shareByBaseUrl: "https://站点地址（同站镜像自动复用时填写）",
+        shareScope: "domain",
         endpoints: {
           pricing: {
             path: "api/pricing 或实际路径（注意 URL 相对语义：baseUrl 带 /v1 时根路径需写 /api/pricing）",

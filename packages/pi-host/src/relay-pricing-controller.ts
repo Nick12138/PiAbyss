@@ -37,7 +37,11 @@ import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { logger } from "./logger.js";
 import { isObject, readModelsConfig, type JsonObject } from "./provider-models-config.js";
 import { RelayPricingStore, UNLIMITED_LIMIT_USD } from "./relay-pricing-store.js";
-import { RelayMappingStore } from "./relay-mapping-store.js";
+import {
+  normalizeRelayBaseUrl,
+  RelayMappingStore,
+  relayMainDomain,
+} from "./relay-mapping-store.js";
 import {
   applyBalanceMapping,
   applyModelsMapping,
@@ -688,8 +692,8 @@ export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
     for (const provider of targets) {
       if (shutdownSignal.aborted) break;
       const apiKey = await factory.deps.modelRegistry.getApiKeyForProvider(provider.id);
-      // 每站独立的映射表：有则按映射解析（零源码适配），无则内置默认。
-      const mapping = mappingStore.getActive(provider.id);
+      // 映射表解析：本站显式表 > 同 baseUrl/主域共享表 > 内置默认。
+      const mapping = mappingStore.resolve(provider.id, provider.baseUrl);
       const station = await fetchStation(
         provider.id,
         provider.id,
@@ -778,7 +782,7 @@ export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
           provider.baseUrl,
           apiKey ?? undefined,
           server.getShutdownSignal(),
-          mappingStore.getActive(providerId),
+          mappingStore.resolve(providerId, provider.baseUrl),
         );
         // 余额落盘进对应 station 快照，供下次快速显示。
         const table = store.getTable();
@@ -881,6 +885,18 @@ export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
           };
         }
         const apiKey = await factory.deps.modelRegistry.getApiKeyForProvider(stationId);
+        // 同站镜像清单：主域一致（或 URL 完全一致）的其它 provider。
+        // 供 Agent 判断「已有共享映射则只需扩展 shareByBaseUrl，不用重复探测」。
+        const mainDomain = relayMainDomain(provider.baseUrl);
+        const sharedWith = providers
+          .filter(
+            (entry) =>
+              entry.id !== stationId &&
+              (normalizeRelayBaseUrl(entry.baseUrl) ===
+                normalizeRelayBaseUrl(provider.baseUrl) ||
+                (mainDomain !== null && relayMainDomain(entry.baseUrl) === mainDomain)),
+          )
+          .map((entry) => entry.id);
         const result: RelayMappingHandoffResult = {
           stationId,
           mappingPath: mappingStore.mappingPath(stationId),
@@ -888,6 +904,7 @@ export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
           hasApiKey: Boolean(apiKey),
           authJsonPath: join(factory.deps.agentDir, "auth.json"),
           mapping: mappingStore.get(stationId),
+          sharedWith,
         };
         return { result };
       } catch (error) {

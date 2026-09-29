@@ -815,10 +815,12 @@ function isRelayFieldMapDto(value: unknown): boolean {
     hasExactKeys(
       value,
       ["schemaVersion", "stationId", "endpoints"],
-      ["updatedAt", "enabled", "notes"],
+      ["shareByBaseUrl", "shareScope", "updatedAt", "enabled", "notes"],
     ) &&
     value.schemaVersion === 1 &&
     isNonEmptyString(value.stationId) &&
+    isOptionalString(value.shareByBaseUrl) &&
+    (value.shareScope === undefined || ["url", "domain"].includes(String(value.shareScope))) &&
     isOptionalString(value.updatedAt) &&
     (value.enabled === undefined || isBoolean(value.enabled)) &&
     isOptionalString(value.notes) &&
@@ -848,13 +850,15 @@ function isRelayMappingHandoffResult(value: unknown): boolean {
       "hasApiKey",
       "authJsonPath",
       "mapping",
+      "sharedWith",
     ]) &&
     isNonEmptyString(value.stationId) &&
     isNonEmptyString(value.mappingPath) &&
     isString(value.baseUrl) &&
     isBoolean(value.hasApiKey) &&
     isNonEmptyString(value.authJsonPath) &&
-    (value.mapping === null || isRelayFieldMapDto(value.mapping))
+    (value.mapping === null || isRelayFieldMapDto(value.mapping)) &&
+    isStringArray(value.sharedWith)
   );
 }
 
