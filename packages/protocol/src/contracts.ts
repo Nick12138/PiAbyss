@@ -51,6 +51,10 @@ import type {
   ProviderSnapshot,
   DiscoveredProviderModel,
   ProviderConnectionResult,
+  RelayPricingFetchParams,
+  RelayPricingResult,
+  RelayBalance,
+  RelayRechargeRatio,
   TelegramValidateTokenResult,
   TelegramProfileSummary,
   TelegramSessionListResult,
@@ -203,6 +207,10 @@ export type HostContextMap = {
   "provider.logout": HostContext;
   "provider.builtinModels": HostContext;
   "provider.setBuiltinModels": HostContext;
+  "provider.pricing.fetch": HostContext;
+  "provider.pricing.get": HostContext;
+  "provider.balance.get": HostContext;
+  "provider.pricing.setRechargeRatio": HostContext;
   "model.list": ActiveSessionContext;
   "model.setCurrent": ActiveSessionContext;
   "model.setThinkingLevel": ActiveSessionContext;
@@ -404,6 +412,13 @@ export type HostRequestParams = {
   "provider.logout": { providerId: string };
   "provider.builtinModels": { providerId: string };
   "provider.setBuiltinModels": { providerId: string; modelIds: string[] };
+  "provider.pricing.fetch": RelayPricingFetchParams | null;
+  "provider.pricing.get": null;
+  "provider.balance.get": { providerId: string; refresh?: boolean };
+  "provider.pricing.setRechargeRatio": {
+    providerId: string;
+    ratio: RelayRechargeRatio;
+  };
   "model.list": null;
   "model.setCurrent": { provider: string; modelId: string };
   "model.setThinkingLevel": { level: string };
@@ -661,6 +676,13 @@ export type HostResultMap = {
   "provider.logout": { providerId: string; loggedOut: true };
   "provider.builtinModels": BuiltinProviderModelsResult;
   "provider.setBuiltinModels": BuiltinProviderModelsResult;
+  "provider.pricing.fetch": RelayPricingResult;
+  "provider.pricing.get": RelayPricingResult;
+  "provider.balance.get": RelayBalance;
+  "provider.pricing.setRechargeRatio": {
+    providerId: string;
+    ratio: RelayRechargeRatio | null;
+  };
   "model.list": {
     models: ModelSummary[];
     current?: ModelSummary;

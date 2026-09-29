@@ -30,6 +30,7 @@ import { createSessionHandlers } from "./session-controller.js";
 import { createAgentHandlers } from "./agent-controller.js";
 import { createPackageHandlers } from "./package-controller.js";
 import { createProviderHandlers } from "./provider-controller.js";
+import { createRelayPricingHandlers } from "./relay-pricing-controller.js";
 import { createExtensionUiHandlers } from "./extension-ui-bridge.js";
 import { createTelegramHandlers } from "./telegram-controller.js";
 import { createTelegramSessionHandlers } from "./telegram-sessions-controller.js";
@@ -350,6 +351,7 @@ async function main(): Promise<void> {
     ...createSessionHandlers(graphFactory),
     ...createAgentHandlers(graphFactory),
     ...createProviderHandlers(graphFactory),
+    ...createRelayPricingHandlers(graphFactory),
     ...createPackageHandlers(graphFactory),
     ...createExtensionUiHandlers(graphFactory),
     ...createTelegramHandlers(agentDir),

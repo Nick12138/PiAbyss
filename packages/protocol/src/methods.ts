@@ -92,6 +92,10 @@ export const HOST_METHODS = [
   "provider.logout",
   "provider.builtinModels",
   "provider.setBuiltinModels",
+  "provider.pricing.fetch",
+  "provider.pricing.get",
+  "provider.balance.get",
+  "provider.pricing.setRechargeRatio",
   "model.list",
   "model.setCurrent",
   "model.setThinkingLevel",
@@ -223,6 +227,10 @@ export type HostOnlyMethod =
   | "provider.logout"
   | "provider.builtinModels"
   | "provider.setBuiltinModels"
+  | "provider.pricing.fetch"
+  | "provider.pricing.get"
+  | "provider.balance.get"
+  | "provider.pricing.setRechargeRatio"
   | "session.searchAll"
   | "package.catalog"
   | "pluginLibrary.catalog"
@@ -474,6 +482,10 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "provider.logout": "host",
   "provider.builtinModels": "host",
   "provider.setBuiltinModels": "host",
+  "provider.pricing.fetch": "host",
+  "provider.pricing.get": "host",
+  "provider.balance.get": "host",
+  "provider.pricing.setRechargeRatio": "host",
   "model.list": "activeSession",
   "model.setCurrent": "activeSession",
   "model.setThinkingLevel": "activeSession",

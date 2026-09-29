@@ -105,6 +105,25 @@ function isBoolean(value: unknown): value is boolean {
   return typeof value === "boolean";
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+/** Relay recharge ratio: CNY paid per balance unit received. */
+function isRechargeRatio(value: unknown): value is {
+  cny: number;
+  balance: number;
+} {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["cny", "balance"]) &&
+    isFiniteNumber(value.cny) &&
+    value.cny > 0 &&
+    isFiniteNumber(value.balance) &&
+    value.balance > 0
+  );
+}
+
 /** Reject plugin-library patterns that could escape the package root. */
 function paramsPatternUnsafe(pattern: string): boolean {
   return (
@@ -964,6 +983,30 @@ export function validateRequestParams<M extends HostMethod>(
         (params.modelId === undefined || isNonEmptyString(params.modelId))
         ? ok(params)
         : fail("invalid provider.checkConnection params", { method });
+    case "provider.pricing.fetch":
+      return (
+        params === null ||
+        (exactObject(params, [], ["providerId"]) &&
+          (params.providerId === undefined || isNonEmptyString(params.providerId)))
+      )
+        ? ok(params)
+        : fail("invalid provider.pricing.fetch params", { method });
+    case "provider.pricing.get":
+      return params === null
+        ? ok(params)
+        : fail("invalid provider.pricing.get params", { method });
+    case "provider.balance.get":
+      return exactObject(params, ["providerId"], ["refresh"]) &&
+        isNonEmptyString(params.providerId) &&
+        (params.refresh === undefined || isBoolean(params.refresh))
+        ? ok(params)
+        : fail("invalid provider.balance.get params", { method });
+    case "provider.pricing.setRechargeRatio":
+      return exactObject(params, ["providerId", "ratio"]) &&
+        isNonEmptyString(params.providerId) &&
+        isRechargeRatio(params.ratio)
+        ? ok(params)
+        : fail("invalid provider.pricing.setRechargeRatio params", { method });
     case "model.setCurrent":
       return exactObject(params, ["provider", "modelId"]) &&
         isNonEmptyString(params.provider) &&

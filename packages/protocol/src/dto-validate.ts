@@ -647,6 +647,122 @@ function isBuiltinProviderModelChoice(value: unknown): boolean {
   );
 }
 
+/** Recharge ratio: CNY paid per balance unit received. */
+function isRechargeRatio(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["cny", "balance"]) &&
+    isNonNegativeNumber(value.cny) &&
+    value.cny > 0 &&
+    isNonNegativeNumber(value.balance) &&
+    value.balance > 0
+  );
+}
+
+function isRelayPricingGroup(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["name", "ratio"], ["description", "isAuto"]) &&
+    isNonEmptyString(value.name) &&
+    isNonNegativeNumber(value.ratio) &&
+    isOptionalString(value.description) &&
+    (value.isAuto === undefined || isBoolean(value.isAuto))
+  );
+}
+
+function isRelayPricingRow(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      [
+        "stationId",
+        "modelId",
+        "modelName",
+        "group",
+        "groupRatio",
+        "inputPer1M",
+        "outputPer1M",
+        "cachePer1M",
+        "callPrice",
+        "endpoints",
+        "keyAvailable",
+      ],
+      ["vendor", "billingExpr"],
+    ) &&
+    isNonEmptyString(value.stationId) &&
+    isNonEmptyString(value.modelId) &&
+    isNonEmptyString(value.modelName) &&
+    isOptionalString(value.vendor) &&
+    isNonEmptyString(value.group) &&
+    isNonNegativeNumber(value.groupRatio) &&
+    (value.inputPer1M === null || isNonNegativeNumber(value.inputPer1M)) &&
+    (value.outputPer1M === null || isNonNegativeNumber(value.outputPer1M)) &&
+    (value.cachePer1M === null || isNonNegativeNumber(value.cachePer1M)) &&
+    (value.callPrice === null || isNonNegativeNumber(value.callPrice)) &&
+    isStringArray(value.endpoints) &&
+    isBoolean(value.keyAvailable) &&
+    isOptionalString(value.billingExpr)
+  );
+}
+
+function isRelayBalance(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      ["stationId", "hardLimitUsd", "totalUsageUsd", "remainingUsd", "unlimited", "fetchedAt", "ok"],
+      ["error"],
+    ) &&
+    isNonEmptyString(value.stationId) &&
+    isNonNegativeNumber(value.hardLimitUsd) &&
+    isNonNegativeNumber(value.totalUsageUsd) &&
+    (value.remainingUsd === null || isNonNegativeNumber(value.remainingUsd)) &&
+    isBoolean(value.unlimited) &&
+    isString(value.fetchedAt) &&
+    isBoolean(value.ok) &&
+    isOptionalString(value.error)
+  );
+}
+
+function isRelayPricingStation(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      ["stationId", "providerId", "baseUrl", "groups", "rows", "keyModels", "balance", "fetchedAt"],
+      ["name", "error"],
+    ) &&
+    isNonEmptyString(value.stationId) &&
+    (value.providerId === null || isNonEmptyString(value.providerId)) &&
+    isString(value.baseUrl) &&
+    isOptionalString(value.name) &&
+    Array.isArray(value.groups) &&
+    value.groups.every(isRelayPricingGroup) &&
+    Array.isArray(value.rows) &&
+    value.rows.every(isRelayPricingRow) &&
+    isStringArray(value.keyModels) &&
+    (value.balance === null || isRelayBalance(value.balance)) &&
+    (value.fetchedAt === null || isString(value.fetchedAt)) &&
+    isOptionalString(value.error)
+  );
+}
+
+function isRelayPricingTable(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["schemaVersion", "stations"]) &&
+    value.schemaVersion === 1 &&
+    Array.isArray(value.stations) &&
+    value.stations.every(isRelayPricingStation)
+  );
+}
+
+function isRechargeRatioRecord(value: unknown): boolean {
+  if (!isPlainObject(value)) return false;
+  return Object.values(value).every(isRechargeRatio);
+}
+
 function isBuiltinProviderAuthStatus(value: unknown): boolean {
   return (
     isPlainObject(value) &&
@@ -3003,6 +3119,24 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         isOptionalString(result.suggestion)
         ? null
         : "invalid provider.checkConnection result";
+    case "provider.pricing.fetch":
+    case "provider.pricing.get":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["table", "rechargeRatios", "cached"]) &&
+        isRelayPricingTable(result.table) &&
+        isRechargeRatioRecord(result.rechargeRatios) &&
+        isBoolean(result.cached)
+        ? null
+        : `invalid ${method} result`;
+    case "provider.balance.get":
+      return isRelayBalance(result) ? null : "invalid provider.balance.get result";
+    case "provider.pricing.setRechargeRatio":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["providerId", "ratio"]) &&
+        isNonEmptyString(result.providerId) &&
+        (result.ratio === null || isRechargeRatio(result.ratio))
+        ? null
+        : "invalid provider.pricing.setRechargeRatio result";
     case "telegram.validateToken":
       return isPlainObject(result) &&
         hasExactKeys(

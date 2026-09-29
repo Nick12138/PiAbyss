@@ -6,6 +6,7 @@ import {
   Check,
   ChevronDown,
   CircleCheck,
+  Coins,
   Copy,
   Eye,
   EyeOff,
@@ -26,6 +27,7 @@ import type {
   ProviderCompatibilityDraft,
   ProviderDraft,
   ProviderSnapshot,
+  RelayBalance,
 } from "@piabyss/protocol";
 import { THINKING_LEVELS } from "@piabyss/protocol";
 import { hostClient, isHostEpochError } from "../../lib/bridge/host-client";
@@ -45,6 +47,7 @@ import {
   parseTokenCount,
 } from "../../lib/format-token-count";
 import { ProviderLoginPage } from "./ProviderLoginSection";
+import { RelayPricingDialog } from "./RelayPricingDialog";
 import {
   automaticThinkingConfig,
   customThinkingMap,
@@ -174,6 +177,18 @@ function authLabel(t: Translate, provider: ProviderSnapshot | undefined): string
   return provider.auth.source === "stored" ? t("providersKeyStored") : t("providersKeyConfigured");
 }
 
+/** 格式化余额徽标文案： unlimited / $x.xx / 错误。 */
+function formatBalance(balance: RelayBalance | undefined): string | null {
+  if (!balance || !balance.ok) return null;
+  return balance.unlimited ? "∞" : `$${(balance.remainingUsd ?? 0).toFixed(2)}`;
+}
+
+function RelayBalanceBadge({ balance }: { balance: RelayBalance | undefined }) {
+  const text = formatBalance(balance);
+  if (text === null) return null;
+  return <span className="text-success">{text}</span>;
+}
+
 export function ProvidersSettings() {
   const t = useT();
   const host = useAppStore((state) => state.host);
@@ -218,6 +233,13 @@ export function ProvidersSettings() {
   const [connectionResult, setConnectionResult] = useState<ProviderConnectionResult | null>(null);
   const [updatingProviderId, setUpdatingProviderId] = useState<string | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
+  // 中转站价格表弹窗。
+  const [pricingOpen, setPricingOpen] = useState(false);
+  // 列表徽标余额：providerId → 余额（懒加载，每次 providers 变化后静默拉一次）。
+  const [balances, setBalances] = useState<Record<string, RelayBalance>>({});
+  const [balanceLoadingId, setBalanceLoadingId] = useState<string | null>(null);
+  // 充值比例编辑：仅详情页展开。
+  const [ratioDraft, setRatioDraft] = useState<{ cny: string; balance: string } | null>(null);
   const [manualId, setManualId] = useState("");
   const ime = useImeComposition();
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
@@ -300,6 +322,13 @@ export function ProvidersSettings() {
       cancelled = true;
     };
   }, [hostInstanceId, selectedId, selectedConfigured, keyPreviewNonce]);
+
+  // 选中 provider 时懒加载一次余额（有缓存则跳过）；打开设置页时不批量拉取。
+  useEffect(() => {
+    if (!selectedId || !selectedConfigured) return;
+    void fetchBalance(selectedId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, selectedConfigured]);
 
   useEffect(() => {
     if (!hostInstanceId) {
@@ -387,6 +416,58 @@ export function ProvidersSettings() {
     if (!query) return catalog;
     return catalog.filter((model) => `${model.name} ${model.id}`.toLowerCase().includes(query));
   }, [catalog, modelSearch]);
+
+  /** 拉取单个 provider 的余额（缓存优先；refresh=true 强制出网）。 */
+  async function fetchBalance(providerId: string, refresh = false) {
+    if (!host) return;
+    if (!refresh && balances[providerId]) return;
+    if (balanceLoadingId) return;
+    setBalanceLoadingId(providerId);
+    try {
+      const response = await hostClient.request(
+        "provider.balance.get",
+        hostContext(host),
+        { providerId, ...(refresh ? { refresh: true } : {}) },
+        30_000,
+      );
+      if (!response) return;
+      if (!response.ok) {
+        if (refresh) pushNotification(localizeHostError(response.error, t), "error");
+        return;
+      }
+      setBalances((current) => ({ ...current, [providerId]: response.result as RelayBalance }));
+    } catch {
+      /* 徽标是装饰性的；失败静默，手动刷新时再报。 */
+    } finally {
+      setBalanceLoadingId(null);
+    }
+  }
+
+  async function saveRechargeRatio(providerId: string) {
+    if (!host || !ratioDraft) return;
+    const cny = Number(ratioDraft.cny);
+    const balance = Number(ratioDraft.balance);
+    if (!Number.isFinite(cny) || cny <= 0 || !Number.isFinite(balance) || balance <= 0) {
+      pushNotification(t("relayPricingRechargeRatioInvalid"), "error");
+      return;
+    }
+    try {
+      const response = await hostClient.request(
+        "provider.pricing.setRechargeRatio",
+        hostContext(host),
+        { providerId, ratio: { cny, balance } },
+      );
+      if (!response) return;
+      if (!response.ok) {
+        pushNotification(localizeHostError(response.error, t), "error");
+        return;
+      }
+      pushNotification(t("relayPricingRechargeRatioSaved"));
+      setRatioDraft(null);
+    } catch (error) {
+      pushNotification(error instanceof Error ? error.message : t("relayPricingRechargeRatioSaved"), "error");
+    }
+  }
 
   function selectProvider(provider: ProviderSnapshot) {
     const nextDraft = snapshotToDraft(provider);
@@ -915,10 +996,29 @@ export function ProvidersSettings() {
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">{provider.name}</span>
-                      <span className="block truncate text-[11px]">
-                        {provider.enabled
-                          ? t("providersModelsCountEnabled", { count: provider.models.length })
-                          : t("providersModelsCount", { count: provider.models.length })}
+                      <span className="flex items-center gap-1.5">
+                        <span className="block truncate text-[11px]">
+                          {provider.enabled
+                            ? t("providersModelsCountEnabled", { count: provider.models.length })
+                            : t("providersModelsCount", { count: provider.models.length })}
+                        </span>
+                        {provider.auth.configured && (
+                          <button
+                            type="button"
+                            className="ml-auto shrink-0 text-[11px] tabular-nums text-muted hover:text-foreground"
+                            title={t("relayPricingBalanceRefresh")}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void fetchBalance(provider.id, true);
+                            }}
+                          >
+                            {balanceLoadingId === provider.id ? (
+                              <RefreshCw className="animate-spin" size={10} />
+                            ) : (
+                              <RelayBalanceBadge balance={balances[provider.id]} />
+                            )}
+                          </button>
+                        )}
                       </span>
                     </span>
                   </button>
@@ -938,7 +1038,15 @@ export function ProvidersSettings() {
               ))
             )}
           </div>
-          <div className="border-t border-border p-2">
+          <div className="flex flex-col gap-1 border-t border-border p-2">
+            <button
+              type="button"
+              data-ui="nav-item"
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium text-muted hover:bg-control-hover hover:text-foreground"
+              onClick={() => setPricingOpen(true)}
+            >
+              <Coins size={14} /> {t("relayPricingButton")}
+            </button>
             <button
               type="button"
               data-ui="nav-item"
@@ -1342,6 +1450,108 @@ export function ProvidersSettings() {
                 </div>
               </section>
 
+              {/* 余额 + 充值比例（仅已配置 key 的已保存 provider） */}
+              {draft.originalId && selectedConfigured && (
+                <section className="rounded-lg border border-border bg-surface p-3">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <div className="min-w-0">
+                      <h2 className="text-sm font-medium">{t("relayPricingBalanceRefresh")}</h2>
+                      <p className="mt-0.5 text-xs tabular-nums">
+                        {balanceLoadingId === draft.originalId ? (
+                          <RefreshCw className="inline animate-spin" size={12} />
+                        ) : balances[draft.originalId]?.ok ? (
+                          (() => {
+                            const balance = balances[draft.originalId]!;
+                            if (balance.unlimited) {
+                              return (
+                                <span className="text-success">
+                                  {t("relayPricingBalanceUnlimited")}
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="text-foreground">
+                                ${balance.remainingUsd?.toFixed(4) ?? "0.00"}
+                                <span className="ml-1 text-[11px] text-muted">
+                                  ({t("relayPricingColInput")} ${balance.totalUsageUsd.toFixed(4)})
+                                </span>
+                              </span>
+                            );
+                          })()
+                        ) : balances[draft.originalId] && !balances[draft.originalId]!.ok ? (
+                          <span className="text-danger" title={balances[draft.originalId]!.error}>
+                            {t("relayPricingBalanceError")}
+                          </span>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs hover:bg-surface-overlay"
+                      disabled={balanceLoadingId !== null}
+                      onClick={() => void fetchBalance(draft.originalId!, true)}
+                    >
+                      <RefreshCw
+                        className={balanceLoadingId === draft.originalId ? "animate-spin" : ""}
+                        size={12}
+                      />
+                      {t("relayPricingBalanceRefresh")}
+                    </button>
+                    <div className="ml-auto flex items-center gap-1.5">
+                      <span className="text-[11px] text-muted">
+                        {t("relayPricingRechargeRatio")}
+                      </span>
+                      {ratioDraft ? (
+                        <>
+                          <input
+                            className="h-7 w-16 rounded border border-border bg-surface px-1.5 text-xs tabular-nums outline-none focus:border-focus"
+                            value={ratioDraft.cny}
+                            aria-label="CNY"
+                            onChange={(event) =>
+                              setRatioDraft({ ...ratioDraft, cny: event.target.value })
+                            }
+                          />
+                          <span className="text-xs text-muted">:</span>
+                          <input
+                            className="h-7 w-16 rounded border border-border bg-surface px-1.5 text-xs tabular-nums outline-none focus:border-focus"
+                            value={ratioDraft.balance}
+                            aria-label="Balance"
+                            onChange={(event) =>
+                              setRatioDraft({ ...ratioDraft, balance: event.target.value })
+                            }
+                          />
+                          <button
+                            type="button"
+                            className="flex h-7 items-center rounded bg-accent px-2 text-xs text-accent-foreground hover:bg-accent-hover"
+                            onClick={() => void saveRechargeRatio(draft.originalId!)}
+                          >
+                            <Check size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            className="flex h-7 items-center rounded border border-border px-2 text-xs hover:bg-surface-overlay"
+                            onClick={() => setRatioDraft(null)}
+                          >
+                            <X size={12} />
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="flex h-7 items-center rounded border border-border px-2 text-xs tabular-nums hover:bg-surface-overlay"
+                          title={t("relayPricingRechargeRatioHint")}
+                          onClick={() => setRatioDraft({ cny: "1", balance: "1" })}
+                        >
+                          1 : 1 <Coins className="ml-1" size={11} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              )}
+
               <section>
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <div>
@@ -1702,6 +1912,7 @@ export function ProvidersSettings() {
           </p>
         </Dialog>
       )}
+      {pricingOpen && <RelayPricingDialog providers={providers} onClose={() => setPricingOpen(false)} />}
     </div>
   );
 }

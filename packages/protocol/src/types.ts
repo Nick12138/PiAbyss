@@ -600,6 +600,107 @@ export type ProviderConnectionResult = {
   suggestion?: string;
 };
 
+/**
+ * Per-station relay pricing snapshot (new-api / one-api style gateways).
+ * All monetary values are in station balance units (USD-equivalent); CNY
+ * display conversion is a pure frontend concern driven by the recharge ratio.
+ */
+export type RelayPricingGroup = {
+  /** Group name as used in /api/pricing `group_ratio`, e.g. "Claude-kiro". */
+  name: string;
+  /** Multiplier applied on top of the base model ratio. */
+  ratio: number;
+  /** Human description from `usable_group`, when provided. */
+  description?: string;
+  /** True when this station's key routes through this group (auto groups). */
+  isAuto?: boolean;
+};
+
+/** One expandable pricing row: model × group, final per-1M prices. */
+export type RelayPricingRow = {
+  stationId: string;
+  modelId: string;
+  modelName: string;
+  vendor?: string;
+  group: string;
+  groupRatio: number;
+  /** Token-priced rows carry per-1M USD prices; per-call rows carry callPrice. */
+  inputPer1M: number | null;
+  outputPer1M: number | null;
+  cachePer1M: number | null;
+  /** Per-call price (image/video/music); null for token-priced rows. */
+  callPrice: number | null;
+  /** Endpoint types, e.g. ["openai","anthropic"]. */
+  endpoints: string[];
+  /** Free-form tiered billing expression; surfaced as-is. */
+  billingExpr?: string;
+  /** True when the configured key's /v1/models list includes this model. */
+  keyAvailable: boolean;
+};
+
+/** Balance snapshot for one station key. */
+export type RelayBalance = {
+  stationId: string;
+  /** hard_limit_usd; a very large value is reported as unlimited. */
+  hardLimitUsd: number;
+  /** total_usage from /v1/dashboard/billing/usage. */
+  totalUsageUsd: number;
+  /** hardLimitUsd - totalUsageUsd, clamped at 0. */
+  remainingUsd: number | null;
+  unlimited: boolean;
+  fetchedAt: string;
+  ok: boolean;
+  /** Error message when ok is false. */
+  error?: string;
+};
+
+/** One station entry inside the pricing table snapshot. */
+export type RelayPricingStation = {
+  stationId: string;
+  /** models.json provider id this station is bound to, when configured. */
+  providerId: string | null;
+  baseUrl: string;
+  name?: string;
+  groups: RelayPricingGroup[];
+  rows: RelayPricingRow[];
+  /** Model ids returned by /v1/models for the configured key. */
+  keyModels: string[];
+  balance: RelayBalance | null;
+  /** ISO timestamp of this station's last successful fetch. */
+  fetchedAt: string | null;
+  /** Present when the last fetch for this station failed. */
+  error?: string;
+};
+
+/** Full pricing table snapshot persisted to piabyss/pricing.json. */
+export type RelayPricingTable = {
+  schemaVersion: 1;
+  stations: RelayPricingStation[];
+};
+
+/** Recharge ratio for one station: CNY paid per 1 unit of balance. */
+export type RelayRechargeRatio = {
+  /** CNY actually paid. */
+  cny: number;
+  /** Balance units received. Defaults to 1 (1 CNY = 1 USD balance). */
+  balance: number;
+};
+
+/** Result of provider.pricing.get / provider.pricing.fetch. */
+export type RelayPricingResult = {
+  table: RelayPricingTable;
+  /** providerId → recharge ratio, from piabyss/pricing-config.json. */
+  rechargeRatios: Record<string, RelayRechargeRatio>;
+  /** True when the table came from disk cache (provider.pricing.get). */
+  cached: boolean;
+};
+
+/** Params for provider.pricing.fetch. */
+export type RelayPricingFetchParams = {
+  /** Omit to refresh every configured station. */
+  providerId?: string;
+};
+
 /** Result of validating a Telegram bot token via `getMe`. */
 export type TelegramValidateTokenResult = {
   /** Whether the getMe call succeeded with a bot-shaped result. */

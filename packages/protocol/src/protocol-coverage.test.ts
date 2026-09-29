@@ -203,6 +203,13 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "provider.logout": { providerId: "anthropic" },
   "provider.builtinModels": { providerId: "anthropic" },
   "provider.setBuiltinModels": { providerId: "anthropic", modelIds: ["claude-1"] },
+  "provider.pricing.fetch": { providerId: "hetune" },
+  "provider.pricing.get": null,
+  "provider.balance.get": { providerId: "hetune" },
+  "provider.pricing.setRechargeRatio": {
+    providerId: "hetune",
+    ratio: { cny: 1, balance: 5 },
+  },
   "model.list": null,
   "model.setCurrent": { provider: "openai", modelId: "gpt" },
   "model.setThinkingLevel": { level: "off" },
@@ -554,6 +561,14 @@ function invalidParams(method: HostMethod): unknown {
       return { providerId: "local", reveal: "yes" };
     case "provider.setBuiltinModels":
       return { providerId: "anthropic", modelIds: "all" };
+    case "provider.pricing.fetch":
+      return { providerId: "" };
+    case "provider.pricing.get":
+      return { unexpected: true };
+    case "provider.balance.get":
+      return { providerId: "", refresh: "yes" };
+    case "provider.pricing.setRechargeRatio":
+      return { providerId: "hetune", ratio: { cny: -1, balance: 0 } };
     case "provider.loginStart":
       return { providerId: "anthropic", authType: "device" };
     case "provider.loginRespond":
