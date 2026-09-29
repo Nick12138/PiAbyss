@@ -568,10 +568,7 @@ describe("SkillsSettings", () => {
       useAppStore.getState().setDesktopSettings(null);
     });
 
-    async function selectWorkspace(
-      user: ReturnType<typeof userEvent.setup>,
-      label: string,
-    ) {
+    async function selectWorkspace(user: ReturnType<typeof userEvent.setup>, label: string) {
       // Scope chips are direct toggle buttons named by workspace basename.
       await user.click(screen.getByRole("button", { name: label }));
     }
@@ -587,12 +584,13 @@ describe("SkillsSettings", () => {
           targetWorkspaceCwd: "C:/other",
         });
       });
-      expect(
-        request.mock.calls.find(([method]) => method === "package.list")?.[2],
-      ).toMatchObject({ scope: "all", targetWorkspaceCwd: "C:/other" });
-      expect(
-        request.mock.calls.find(([method]) => method === "prompt.list")?.[2],
-      ).toEqual({ targetWorkspaceCwd: "C:/other" });
+      expect(request.mock.calls.find(([method]) => method === "package.list")?.[2]).toMatchObject({
+        scope: "all",
+        targetWorkspaceCwd: "C:/other",
+      });
+      expect(request.mock.calls.find(([method]) => method === "prompt.list")?.[2]).toEqual({
+        targetWorkspaceCwd: "C:/other",
+      });
       expect(screen.getByText(/Managing the selected workspace/)).toBeInTheDocument();
     });
 

@@ -70,7 +70,8 @@ import {
   type ExtensionUiRequestState,
 } from "./extension-ui-state";
 
-export type NavPage = "chat" | "packages" | "schedule" | "schedule-agent" | "memo" | "settings";
+export type NavPage =
+  "chat" | "packages" | "schedule" | "schedule-agent" | "memo" | "pixie" | "settings";
 
 /** Frozen empty map shared as the initial `providerNames` value so unrelated
  *  sessions don't reallocate a new Map on every reset. */

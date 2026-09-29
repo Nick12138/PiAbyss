@@ -18,6 +18,7 @@ import { SettingsPage } from "../features/settings/SettingsPage";
 import { SchedulePage } from "../features/schedule/SchedulePage";
 import { ScheduleAgentPage } from "../features/schedule/ScheduleAgentPage";
 import { MemoPage } from "../features/memo/MemoPage";
+import { PixiePage } from "../features/pixie/PixiePage";
 import { startSchedulePushPolling } from "../features/schedule/schedule-push";
 import { SettingsTopBarActionsContext } from "../features/settings/settings-top-bar";
 import { ExtensionUiModal } from "../features/chat/ExtensionUiModal";
@@ -1418,6 +1419,8 @@ export function App() {
                 <ScheduleAgentPage />
               ) : page === "memo" ? (
                 <MemoPage />
+              ) : page === "pixie" ? (
+                <PixiePage />
               ) : (
                 <WorkspaceSwitchTransition>
                   <ChatPage />

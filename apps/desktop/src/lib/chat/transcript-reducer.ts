@@ -495,7 +495,8 @@ function messagesMatchByContent(
       leftImages.length === rightImages.length &&
       leftImages.every(
         (image, index) =>
-          image.data === rightImages[index]?.data && image.mimeType === rightImages[index]?.mimeType,
+          image.data === rightImages[index]?.data &&
+          image.mimeType === rightImages[index]?.mimeType,
       )
     );
   }

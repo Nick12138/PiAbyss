@@ -369,7 +369,10 @@ describe("PluginLibraryPage DOM workflows", () => {
   let currentCatalog: PluginLibraryCatalog;
   let visionModels: readonly ModelSummary[] | null;
   let visionModelsShouldFail: boolean;
-  let updateCheckResult: { supported: boolean; updates: Array<{ packageId: string; source: string; current?: string; available?: string }> };
+  let updateCheckResult: {
+    supported: boolean;
+    updates: Array<{ packageId: string; source: string; current?: string; available?: string }>;
+  };
 
   beforeEach(() => {
     currentSnapshot = emptySnapshot();
@@ -583,7 +586,12 @@ describe("PluginLibraryPage DOM workflows", () => {
     updateCheckResult = {
       supported: true,
       updates: [
-        { packageId: "pkg-browser", source: "npm:betterwright", current: "1.9.0", available: "1.10.0" },
+        {
+          packageId: "pkg-browser",
+          source: "npm:betterwright",
+          current: "1.9.0",
+          available: "1.10.0",
+        },
       ],
     };
     const user = userEvent.setup();

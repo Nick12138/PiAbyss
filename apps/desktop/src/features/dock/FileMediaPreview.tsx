@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Maximize, Maximize2, ZoomIn, ZoomOut, Scan } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Maximize,
+  Maximize2,
+  ZoomIn,
+  ZoomOut,
+  Scan,
+} from "lucide-react";
 import type { PDFDocumentProxy, RenderTask, TextLayer } from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { useT } from "../../lib/i18n/use-t";

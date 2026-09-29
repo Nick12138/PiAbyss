@@ -26,13 +26,27 @@ function clampScale(scale: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
 }
 
-export function ImageLightbox({ url, alt, onClose }: { url: string; alt: string; onClose: () => void }) {
+export function ImageLightbox({
+  url,
+  alt,
+  onClose,
+}: {
+  url: string;
+  alt: string;
+  onClose: () => void;
+}) {
   const t = useT();
   // null = 适应窗口；数字 = 相对原始尺寸的缩放比例。
   const [scale, setScale] = useState<number | null>(null);
   const [error, setError] = useState(false);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const drag = useRef<{ pointerId: number; startX: number; startY: number; baseX: number; baseY: number } | null>(null);
+  const drag = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    baseX: number;
+    baseY: number;
+  } | null>(null);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -62,21 +76,27 @@ export function ImageLightbox({ url, alt, onClose }: { url: string; alt: string;
     setScale((current) => clampScale((current ?? 1) - event.deltaY * 0.002));
   }, []);
 
-  const onPointerDown = useCallback((event: ReactPointerEvent<HTMLImageElement>) => {
-    drag.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      baseX: offset.x,
-      baseY: offset.y,
-    };
-    // jsdom 等环境可能未实现 Pointer Capture API，做可选调用兜底。
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  }, [offset]);
+  const onPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLImageElement>) => {
+      drag.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        baseX: offset.x,
+        baseY: offset.y,
+      };
+      // jsdom 等环境可能未实现 Pointer Capture API，做可选调用兜底。
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    },
+    [offset],
+  );
   const onPointerMove = useCallback((event: ReactPointerEvent<HTMLImageElement>) => {
     const state = drag.current;
     if (!state || state.pointerId !== event.pointerId) return;
-    setOffset({ x: state.baseX + (event.clientX - state.startX), y: state.baseY + (event.clientY - state.startY) });
+    setOffset({
+      x: state.baseX + (event.clientX - state.startX),
+      y: state.baseY + (event.clientY - state.startY),
+    });
   }, []);
   const onPointerUp = useCallback((event: ReactPointerEvent<HTMLImageElement>) => {
     if (drag.current?.pointerId !== event.pointerId) return;
@@ -99,7 +119,11 @@ export function ImageLightbox({ url, alt, onClose }: { url: string; alt: string;
       onClick={(event) => {
         // 点击图片、工具栏以外的任何位置（遮罩 / 图片四周留白 / 错误提示）都关闭预览。
         // 注意用 Element 判断：按钮内的 lucide 图标是 SVGElement，不是 HTMLElement。
-        if (!(event.target instanceof Element) || !event.target.closest("[data-lightbox-interactive]")) onClose();
+        if (
+          !(event.target instanceof Element) ||
+          !event.target.closest("[data-lightbox-interactive]")
+        )
+          onClose();
       }}
       data-testid="image-lightbox"
     >
@@ -207,7 +231,9 @@ export function useImageLightbox(): {
   const [lightbox, setLightbox] = useState<{ url: string; alt: string } | null>(null);
   const open = useCallback((url: string, alt: string) => setLightbox({ url, alt }), []);
   const close = useCallback(() => setLightbox(null), []);
-  const element = lightbox ? <ImageLightbox url={lightbox.url} alt={lightbox.alt} onClose={close} /> : null;
+  const element = lightbox ? (
+    <ImageLightbox url={lightbox.url} alt={lightbox.alt} onClose={close} />
+  ) : null;
   return { lightbox, open, close, element };
 }
 

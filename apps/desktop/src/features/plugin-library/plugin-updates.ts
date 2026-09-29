@@ -43,9 +43,7 @@ export function cachedPluginLibraryUpdates(
   hostId: string,
   workspaceId: string,
 ): PackageUpdateSummary[] | null {
-  return updatesCache &&
-    updatesCache.hostId === hostId &&
-    updatesCache.workspaceId === workspaceId
+  return updatesCache && updatesCache.hostId === hostId && updatesCache.workspaceId === workspaceId
     ? updatesCache.updates
     : null;
 }
@@ -84,11 +82,7 @@ export function markPluginLibraryUpdatesApplied(
   workspaceId: string,
   packageIds: ReadonlySet<string>,
 ): void {
-  if (
-    !updatesCache ||
-    updatesCache.hostId !== hostId ||
-    updatesCache.workspaceId !== workspaceId
-  ) {
+  if (!updatesCache || updatesCache.hostId !== hostId || updatesCache.workspaceId !== workspaceId) {
     return;
   }
   updatesCache = {
@@ -123,9 +117,7 @@ export function computePluginUpdateRows(
     const summary = byPackageId.get(record.id);
     if (!summary) continue;
     if (entry.install.type === "repo") {
-      const existing = rows.find(
-        (row) => row.key === `repo:${record.id}`,
-      );
+      const existing = rows.find((row) => row.key === `repo:${record.id}`);
       if (existing) {
         existing.repoPluginCount = (existing.repoPluginCount ?? 0) + 1;
       } else {

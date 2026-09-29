@@ -40,6 +40,8 @@ import { createMemoHandlers } from "./memo-controller.js";
 import { createShellJobHandlers } from "./shelljob-controller.js";
 import { startShellJobWatcher } from "./shelljob-watcher.js";
 import { configureScheduleAgentRuntime } from "./schedule-agent-runner.js";
+import { configurePixieRuntime } from "./pixie-agent-runner.js";
+import { createPixieHandlers } from "./pixie-controller.js";
 import { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { applyKnownThinkingProfiles } from "./model-thinking.js";
 import { FileCredentialStore } from "./credential-store.js";
@@ -343,6 +345,8 @@ async function main(): Promise<void> {
   // Schedule "smart create" conversations are user-visible agent sessions:
   // build them on the Host-owned runtime instead of a private one.
   configureScheduleAgentRuntime(modelRuntime);
+  // The pixie (小精灵) resident session shares the same authoritative runtime.
+  configurePixieRuntime(modelRuntime);
 
   const handlers = {
     ...createWorkspaceHandlers(graphFactory, workspaceFiles, gitService),
@@ -358,6 +362,7 @@ async function main(): Promise<void> {
     ...createTelegramSessionHandlers(agentDir),
     ...createScheduleHandlers(agentDir),
     ...createMemoHandlers(agentDir, modelRuntime, modelRegistry),
+    ...createPixieHandlers(graphFactory),
     ...createShellJobHandlers(),
     ...createPiSettingsHandlers(graphFactory, agentDir),
     ...createSkillHandlers(graphFactory),

@@ -41,6 +41,8 @@ import {
   createAskUserQuestionActivationExtension,
   isAskUserQuestionEnabled,
 } from "./ask-user-question-tool.js";
+import { buildPixieReportTool, createPixieReportActivationExtension } from "./pixie-tool.js";
+import { deliverReportToPixie, findDispatchBySession } from "./pixie-agent-runner.js";
 import { createHostAgentSession } from "./agent-session-factory.js";
 
 function sessionStorageDirs(factory: WorkspaceGraphFactory, g: WorkspaceGraph) {
@@ -496,6 +498,7 @@ async function createSessionResourceLoader(
       ),
       createMemoActivationExtension(),
       createPresentFilesActivationExtension(),
+      createPixieReportActivationExtension(),
     ],
   });
   // Session create/open must not reach the network. Without this the SDK would
@@ -650,6 +653,20 @@ export async function createSession(
               buildAskUserQuestionTool(),
               buildMemoTool(factory.deps.agentDir, () => memoSessionInfo(sessionManager)),
               buildPresentFilesTool(() => sessionManager.getCwd()),
+              buildPixieReportTool({
+                agentDir: factory.deps.agentDir,
+                getSessionId: () => sessionManager.getSessionId(),
+                report: (input) =>
+                  deliverReportToPixie({
+                    agentDir: factory.deps.agentDir,
+                    dispatchId: input.dispatchId,
+                    summary: input.summary,
+                  }),
+                findDispatch: (sessionId) => {
+                  const found = findDispatchBySession(sessionId);
+                  return found ? { id: found.id } : undefined;
+                },
+              }),
             ],
           }
         : {
@@ -657,6 +674,20 @@ export async function createSession(
               buildAskUserQuestionTool(),
               buildMemoTool(factory.deps.agentDir, () => memoSessionInfo(sessionManager)),
               buildPresentFilesTool(() => sessionManager.getCwd()),
+              buildPixieReportTool({
+                agentDir: factory.deps.agentDir,
+                getSessionId: () => sessionManager.getSessionId(),
+                report: (input) =>
+                  deliverReportToPixie({
+                    agentDir: factory.deps.agentDir,
+                    dispatchId: input.dispatchId,
+                    summary: input.summary,
+                  }),
+                findDispatch: (sessionId) => {
+                  const found = findDispatchBySession(sessionId);
+                  return found ? { id: found.id } : undefined;
+                },
+              }),
             ],
           }),
     });
@@ -992,6 +1023,20 @@ export async function openSession(
                 buildAskUserQuestionTool(),
                 buildMemoTool(factory.deps.agentDir, () => memoSessionInfo(sessionManager)),
                 buildPresentFilesTool(() => sessionManager.getCwd()),
+                buildPixieReportTool({
+                  agentDir: factory.deps.agentDir,
+                  getSessionId: () => sessionManager.getSessionId(),
+                  report: (input) =>
+                    deliverReportToPixie({
+                      agentDir: factory.deps.agentDir,
+                      dispatchId: input.dispatchId,
+                      summary: input.summary,
+                    }),
+                  findDispatch: (sessionId) => {
+                    const found = findDispatchBySession(sessionId);
+                    return found ? { id: found.id } : undefined;
+                  },
+                }),
               ],
             }
           : {
@@ -999,6 +1044,20 @@ export async function openSession(
                 buildAskUserQuestionTool(),
                 buildMemoTool(factory.deps.agentDir, () => memoSessionInfo(sessionManager)),
                 buildPresentFilesTool(() => sessionManager.getCwd()),
+                buildPixieReportTool({
+                  agentDir: factory.deps.agentDir,
+                  getSessionId: () => sessionManager.getSessionId(),
+                  report: (input) =>
+                    deliverReportToPixie({
+                      agentDir: factory.deps.agentDir,
+                      dispatchId: input.dispatchId,
+                      summary: input.summary,
+                    }),
+                  findDispatch: (sessionId) => {
+                    const found = findDispatchBySession(sessionId);
+                    return found ? { id: found.id } : undefined;
+                  },
+                }),
               ],
             }),
       });

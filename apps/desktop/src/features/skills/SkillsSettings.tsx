@@ -238,9 +238,7 @@ export function SkillsSettings() {
         ? [activeCwd, ...knownWorkspaces]
         : [...knownWorkspaces];
     if (activeCwd) {
-      paths.sort((left, right) =>
-        left === activeCwd ? -1 : right === activeCwd ? 1 : 0,
-      );
+      paths.sort((left, right) => (left === activeCwd ? -1 : right === activeCwd ? 1 : 0));
     }
     return paths.map((path) => ({
       path,
@@ -410,7 +408,10 @@ export function SkillsSettings() {
             hostClient.request(
               "resource.setPreferences",
               sessionPackageContext(host, workspace),
-              { updates: [params], ...target } satisfies HostRequestParams["resource.setPreferences"],
+              {
+                updates: [params],
+                ...target,
+              } satisfies HostRequestParams["resource.setPreferences"],
               120_000,
             ),
           )
@@ -585,8 +586,8 @@ export function SkillsSettings() {
                 {targetParams() && (
                   <p className="text-[11px] text-muted">{t("skillsWorkspaceTargetHint")}</p>
                 )}
-            </div>
-          )}
+              </div>
+            )}
           </div>
 
           {snapshot?.resourceReloadRequired && (

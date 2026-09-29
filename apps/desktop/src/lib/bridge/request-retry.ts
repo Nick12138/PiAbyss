@@ -20,11 +20,7 @@ export async function requestWithRetry<T extends RetryableResponse>(
   for (let attempt = 0; ; attempt += 1) {
     if (!shouldContinue()) return null;
     const response = await request();
-    if (
-      response.ok ||
-      response.error?.retryable !== true ||
-      attempt === delays.length
-    ) {
+    if (response.ok || response.error?.retryable !== true || attempt === delays.length) {
       return response;
     }
     await wait(delays[attempt]!);

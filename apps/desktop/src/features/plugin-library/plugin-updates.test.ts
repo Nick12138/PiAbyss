@@ -124,9 +124,7 @@ describe("computePluginUpdateRows", () => {
   });
 
   it("collapses every installed repo plugin into a single bundled repo row", () => {
-    const updates: PackageUpdateSummary[] = [
-      { packageId: "pkg-repo", source: REPO_SOURCE },
-    ];
+    const updates: PackageUpdateSummary[] = [{ packageId: "pkg-repo", source: REPO_SOURCE }];
     const rows = computePluginUpdateRows(catalog(), snapshot(), updates);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -139,7 +137,12 @@ describe("computePluginUpdateRows", () => {
 
   it("combines npm and repo updates in catalog order (npm first here)", () => {
     const updates: PackageUpdateSummary[] = [
-      { packageId: "pkg-browser", source: "npm:betterwright", current: "1.0.0", available: "2.0.0" },
+      {
+        packageId: "pkg-browser",
+        source: "npm:betterwright",
+        current: "1.0.0",
+        available: "2.0.0",
+      },
       { packageId: "pkg-repo", source: REPO_SOURCE },
     ];
     const rows = computePluginUpdateRows(catalog(), snapshot(), updates);
@@ -157,7 +160,12 @@ describe("computePluginUpdateRows", () => {
     const packages = snapshot();
     packages.configured = packages.configured.filter((r) => r.id !== "pkg-browser");
     const updates: PackageUpdateSummary[] = [
-      { packageId: "pkg-browser", source: "npm:betterwright", current: "1.0.0", available: "2.0.0" },
+      {
+        packageId: "pkg-browser",
+        source: "npm:betterwright",
+        current: "1.0.0",
+        available: "2.0.0",
+      },
     ];
     expect(computePluginUpdateRows(catalog(), packages, updates)).toEqual([]);
   });

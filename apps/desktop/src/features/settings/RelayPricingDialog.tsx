@@ -33,7 +33,10 @@ type PriceTableDialogProps = {
 
 function formatPrice(value: number | null): string {
   if (value === null) return "—";
-  return `$${value.toFixed(value < 0.1 ? 4 : 3).replace(/0+$/, "").replace(/\.$/, "")}`;
+  return `$${value
+    .toFixed(value < 0.1 ? 4 : 3)
+    .replace(/0+$/, "")
+    .replace(/\.$/, "")}`;
 }
 
 type RelayTestState = {
@@ -46,9 +49,7 @@ function useRelayTest(t: Translate): RelayTestState {
   const pushNotification = useAppStore((state) => state.pushNotification);
   const refreshProviderConfig = useAppStore((state) => state.refreshProviderConfig);
   const [testingKey, setTestingKey] = useState<string | null>(null);
-  const [result, setResult] = useState<{ key: string; ok: boolean; message: string } | null>(
-    null,
-  );
+  const [result, setResult] = useState<{ key: string; ok: boolean; message: string } | null>(null);
 
   async function runTest(providerId: string, modelId: string, rowKey: string): Promise<void> {
     const host = useAppStore.getState().host;
@@ -196,7 +197,7 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
     for (const station of visibleStations) {
       if (stationFilter !== "all" && station.stationId !== stationFilter) continue;
       const stationName = station.providerId
-        ? providerNamesByStation.get(station.providerId) ?? station.stationId
+        ? (providerNamesByStation.get(station.providerId) ?? station.stationId)
         : station.stationId;
       for (const row of station.rows) {
         if (groupFilter !== "all" && row.group !== groupFilter) continue;
@@ -261,7 +262,7 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
             {visibleStations.map((station) => (
               <option key={station.stationId} value={station.stationId}>
                 {station.providerId
-                  ? providerNames.get(station.providerId) ?? station.stationId
+                  ? (providerNames.get(station.providerId) ?? station.stationId)
                   : station.stationId}
               </option>
             ))}
@@ -311,7 +312,7 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                 >
                   <span className="font-medium text-foreground">
                     {station.providerId
-                      ? providerNames.get(station.providerId) ?? station.stationId
+                      ? (providerNames.get(station.providerId) ?? station.stationId)
                       : station.stationId}
                   </span>
                   {station.providerId === null ? (
@@ -422,9 +423,7 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                               type="button"
                               className="flex h-6 items-center gap-1 rounded border border-border px-1.5 text-[11px] hover:bg-surface-overlay disabled:opacity-50"
                               disabled={testingKey !== null}
-                              onClick={() =>
-                                void test(configured.providerId, row.modelId, rowKey)
-                              }
+                              onClick={() => void test(configured.providerId, row.modelId, rowKey)}
                             >
                               {testingKey === rowKey ? (
                                 <RefreshCw className="animate-spin" size={11} />

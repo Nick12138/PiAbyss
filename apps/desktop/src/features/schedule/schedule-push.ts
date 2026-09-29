@@ -67,7 +67,9 @@ async function deliver(entry: ScheduleNotification): Promise<void> {
 }
 
 /** Per-plan notify config, refreshed each poll (jobId → notify mode). */
-async function loadNotifyMap(host: NonNullable<ReturnType<typeof useAppStore.getState>["host"]>): Promise<Map<string, string>> {
+async function loadNotifyMap(
+  host: NonNullable<ReturnType<typeof useAppStore.getState>["host"]>,
+): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   try {
     const response = await hostClient.request(

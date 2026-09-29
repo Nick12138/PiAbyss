@@ -37,6 +37,8 @@ import {
   createAskUserQuestionActivationExtension,
   isAskUserQuestionEnabled,
 } from "./ask-user-question-tool.js";
+import { buildPixieReportTool, createPixieReportActivationExtension } from "./pixie-tool.js";
+import { deliverReportToPixie, findDispatchBySession } from "./pixie-agent-runner.js";
 import type { SessionRuntimeCache } from "./session-runtime-cache.js";
 import type { PiHostServer } from "./server.js";
 import type { GraphFactoryDeps, WorkspaceGraph } from "./workspace-graph-types.js";
@@ -1325,6 +1327,7 @@ export class WorkspaceLifecycle {
           createAskUserQuestionActivationExtension(() => isAskUserQuestionEnabled(agentDir)),
           createMemoActivationExtension(),
           createPresentFilesActivationExtension(),
+          createPixieReportActivationExtension(),
         ],
       });
       // Workspace selection (including the startup preload) must not reach the
@@ -1390,6 +1393,20 @@ export class WorkspaceLifecycle {
                     buildAskUserQuestionTool(),
                     buildMemoTool(agentDir, () => memoSessionInfo(sessionManager)),
                     buildPresentFilesTool(() => sessionManager.getCwd()),
+                    buildPixieReportTool({
+                      agentDir,
+                      getSessionId: () => sessionManager.getSessionId(),
+                      report: (input) =>
+                        deliverReportToPixie({
+                          agentDir,
+                          dispatchId: input.dispatchId,
+                          summary: input.summary,
+                        }),
+                      findDispatch: (sessionId) => {
+                        const found = findDispatchBySession(sessionId);
+                        return found ? { id: found.id } : undefined;
+                      },
+                    }),
                   ],
                 }
               : {
@@ -1397,6 +1414,20 @@ export class WorkspaceLifecycle {
                     buildAskUserQuestionTool(),
                     buildMemoTool(agentDir, () => memoSessionInfo(sessionManager)),
                     buildPresentFilesTool(() => sessionManager.getCwd()),
+                    buildPixieReportTool({
+                      agentDir,
+                      getSessionId: () => sessionManager.getSessionId(),
+                      report: (input) =>
+                        deliverReportToPixie({
+                          agentDir,
+                          dispatchId: input.dispatchId,
+                          summary: input.summary,
+                        }),
+                      findDispatch: (sessionId) => {
+                        const found = findDispatchBySession(sessionId);
+                        return found ? { id: found.id } : undefined;
+                      },
+                    }),
                   ],
                 }),
           }),

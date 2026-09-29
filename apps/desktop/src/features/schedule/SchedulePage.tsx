@@ -423,28 +423,28 @@ export function SchedulePage() {
           )}
 
           <div className="ml-auto flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            className="flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
-            title={t("scheduleRefresh")}
-            aria-label={t("scheduleRefresh")}
-            onClick={() => {
-              void refreshStatusAndJobs();
-              void refreshRuns();
-            }}
-          >
-            <RefreshCw size={14} />
-          </button>
-          <button
-            type="button"
-            className="flex size-8 items-center justify-center rounded-md theme-primary-control bg-accent text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
-            title={t("scheduleNewJob")}
-            aria-label={t("scheduleNewJob")}
-            disabled={!status?.available}
-            onClick={() => setDialog({ mode: "create" })}
-          >
-            <Plus size={14} />
-          </button>
+            <button
+              type="button"
+              className="flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
+              title={t("scheduleRefresh")}
+              aria-label={t("scheduleRefresh")}
+              onClick={() => {
+                void refreshStatusAndJobs();
+                void refreshRuns();
+              }}
+            >
+              <RefreshCw size={14} />
+            </button>
+            <button
+              type="button"
+              className="flex size-8 items-center justify-center rounded-md theme-primary-control bg-accent text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+              title={t("scheduleNewJob")}
+              aria-label={t("scheduleNewJob")}
+              disabled={!status?.available}
+              onClick={() => setDialog({ mode: "create" })}
+            >
+              <Plus size={14} />
+            </button>
           </div>
         </div>
       </div>

@@ -247,14 +247,10 @@ function ModelSelectWithThinking({
               <Brain size={13} className="shrink-0" aria-hidden="true" />
               <span className="whitespace-nowrap">{t("modelThinkingDepth")}</span>
               <span className="ml-auto flex shrink-0 items-center gap-1">
-                <span className="whitespace-nowrap text-foreground">
-                  {thinkingValue}
-                </span>
+                <span className="whitespace-nowrap text-foreground">{thinkingValue}</span>
                 <ChevronRight
                   size={13}
-                  className={`shrink-0 transition-transform ${
-                    thinkingOpen ? "rotate-90" : ""
-                  }`}
+                  className={`shrink-0 transition-transform ${thinkingOpen ? "rotate-90" : ""}`}
                   aria-hidden="true"
                 />
               </span>
@@ -314,9 +310,7 @@ export function ScheduleJobDialog({
   const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces);
   const prefilled = !job && prefill !== undefined;
   const [form, setForm] = useState<ScheduleFormState>(() =>
-    job
-      ? jobToForm(job)
-      : (prefill ?? defaultScheduleForm(workspace?.cwd ?? "")),
+    job ? jobToForm(job) : (prefill ?? defaultScheduleForm(workspace?.cwd ?? "")),
   );
   const [pending, setPending] = useState(false);
   const [mode, setMode] = useState<"smart" | "manual">(prefilled ? "manual" : "smart");
@@ -549,9 +543,7 @@ export function ScheduleJobDialog({
                     if (error) setSaveError(error);
                   })
                   .catch((error: unknown) => {
-                    setSaveError(
-                      error instanceof Error ? error.message : t("scheduleLoadFailed"),
-                    );
+                    setSaveError(error instanceof Error ? error.message : t("scheduleLoadFailed"));
                   })
                   .finally(() => setOptimizePending(false));
               }}
@@ -566,42 +558,42 @@ export function ScheduleJobDialog({
           ) : undefined
         ) : (
           !prefilled && (
-          <div
-            data-ui="segmented"
-            role="group"
-            aria-label={t("scheduleFormModeGroup")}
-            className="interface-density-control grid shrink-0 grid-cols-2 overflow-hidden rounded-md border border-border bg-surface"
-          >
-            {(["smart", "manual"] as const).map((value, index) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setMode(value)}
-                aria-pressed={mode === value}
-                data-ui="segmented-item"
-                data-state={mode === value ? "active" : "inactive"}
-                title={
-                  value === "smart"
-                    ? t("scheduleFormModeSmartHint")
-                    : t("scheduleFormModeManualHint")
-                }
-                className={`inline-flex h-full min-w-16 items-center justify-center gap-1.5 px-2.5 text-xs transition-colors ${
-                  index > 0 ? "border-l border-border" : ""
-                } ${
-                  mode === value
-                    ? "bg-selection font-medium text-selection-foreground"
-                    : "text-muted hover:bg-surface-overlay/70 hover:text-foreground"
-                }`}
-              >
-                {value === "smart" ? (
-                  <Sparkles size={12} aria-hidden="true" />
-                ) : (
-                  <Settings2 size={12} aria-hidden="true" />
-                )}
-                {value === "smart" ? t("scheduleFormModeSmart") : t("scheduleFormModeManual")}
-              </button>
-            ))}
-          </div>
+            <div
+              data-ui="segmented"
+              role="group"
+              aria-label={t("scheduleFormModeGroup")}
+              className="interface-density-control grid shrink-0 grid-cols-2 overflow-hidden rounded-md border border-border bg-surface"
+            >
+              {(["smart", "manual"] as const).map((value, index) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setMode(value)}
+                  aria-pressed={mode === value}
+                  data-ui="segmented-item"
+                  data-state={mode === value ? "active" : "inactive"}
+                  title={
+                    value === "smart"
+                      ? t("scheduleFormModeSmartHint")
+                      : t("scheduleFormModeManualHint")
+                  }
+                  className={`inline-flex h-full min-w-16 items-center justify-center gap-1.5 px-2.5 text-xs transition-colors ${
+                    index > 0 ? "border-l border-border" : ""
+                  } ${
+                    mode === value
+                      ? "bg-selection font-medium text-selection-foreground"
+                      : "text-muted hover:bg-surface-overlay/70 hover:text-foreground"
+                  }`}
+                >
+                  {value === "smart" ? (
+                    <Sparkles size={12} aria-hidden="true" />
+                  ) : (
+                    <Settings2 size={12} aria-hidden="true" />
+                  )}
+                  {value === "smart" ? t("scheduleFormModeSmart") : t("scheduleFormModeManual")}
+                </button>
+              ))}
+            </div>
           )
         )
       }
@@ -789,9 +781,7 @@ export function ScheduleJobDialog({
                           type="number"
                           min={1}
                           value={form.intervalValue}
-                          onChange={(event) =>
-                            patch({ intervalValue: Number(event.target.value) })
-                          }
+                          onChange={(event) => patch({ intervalValue: Number(event.target.value) })}
                           className={`${fieldClass} interface-density-control w-20 shrink-0 text-right`}
                         />
                         <Select
@@ -847,9 +837,7 @@ export function ScheduleJobDialog({
                     </span>
                   </div>
                   {form.triggerType === "cron" && cronCheck && (
-                    <span
-                      className={`text-xs ${cronCheck.valid ? "text-success" : "text-danger"}`}
-                    >
+                    <span className={`text-xs ${cronCheck.valid ? "text-success" : "text-danger"}`}>
                       {cronCheck.valid
                         ? t("scheduleFormCronValid")
                         : (cronCheck.reason ?? t("scheduleFormCronInvalid"))}

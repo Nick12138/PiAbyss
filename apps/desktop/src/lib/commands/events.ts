@@ -1,7 +1,5 @@
 export type DockCommandRequest =
-  | { kind: "toggle" }
-  | { kind: "activate-visible"; index: number }
-  | { kind: "activate-subagents" };
+  { kind: "toggle" } | { kind: "activate-visible"; index: number } | { kind: "activate-subagents" };
 
 type VoidHandler = () => void;
 type DockHandler = (request: DockCommandRequest) => void;

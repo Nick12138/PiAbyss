@@ -178,7 +178,9 @@ export function Select({
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="min-w-0 flex-1 truncate text-left">{selectedLabel ?? selected?.label ?? ""}</span>
+        <span className="min-w-0 flex-1 truncate text-left">
+          {selectedLabel ?? selected?.label ?? ""}
+        </span>
         <ChevronDown
           size={13}
           className={`shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`}
@@ -204,40 +206,40 @@ export function Select({
               style={{ maxHeight: menuPosition.maxHeight }}
             >
               {options.map((option) => {
-              const isSelected = option.value === value;
-              const header = groupHeaders.get(option.value);
-              return (
-                <Fragment key={option.value}>
-                  {header !== undefined && (
-                    <div
-                      role="presentation"
-                      className="flex h-7 items-center px-2.5 pt-1 text-xs font-medium text-foreground"
-                    >
-                      {header}
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={isSelected}
-                    className={`flex h-8 w-full items-center gap-1.5 whitespace-nowrap px-2.5 text-left text-xs transition-colors hover:bg-surface-overlay ${
-                      isSelected ? "font-medium text-foreground" : "text-muted"
-                    }`}
-                    onClick={() => {
-                      setOpen(false);
-                      onChange(option.value);
-                    }}
-                  >
-                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                    {isSelected && (
-                      <span className="flex shrink-0 items-center justify-center">
-                        <Check size={16} strokeWidth={2.5} />
-                      </span>
+                const isSelected = option.value === value;
+                const header = groupHeaders.get(option.value);
+                return (
+                  <Fragment key={option.value}>
+                    {header !== undefined && (
+                      <div
+                        role="presentation"
+                        className="flex h-7 items-center px-2.5 pt-1 text-xs font-medium text-foreground"
+                      >
+                        {header}
+                      </div>
                     )}
-                  </button>
-                </Fragment>
-              );
-            })}
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={isSelected}
+                      className={`flex h-8 w-full items-center gap-1.5 whitespace-nowrap px-2.5 text-left text-xs transition-colors hover:bg-surface-overlay ${
+                        isSelected ? "font-medium text-foreground" : "text-muted"
+                      }`}
+                      onClick={() => {
+                        setOpen(false);
+                        onChange(option.value);
+                      }}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                      {isSelected && (
+                        <span className="flex shrink-0 items-center justify-center">
+                          <Check size={16} strokeWidth={2.5} />
+                        </span>
+                      )}
+                    </button>
+                  </Fragment>
+                );
+              })}
             </div>
             {footer && <div className="relative">{footer}</div>}
           </div>,
