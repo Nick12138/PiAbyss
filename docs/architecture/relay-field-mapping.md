@@ -62,12 +62,63 @@
 - `path`：相对**响应根**的点路径（items 模式下相对每条记录）。
 - `reader`：`entries` = 对象展开为键值对（分组表）；`array` = 字符串数组（`itemField`
   指定字段名）；缺省 `value` = 直取标量。
-- `scale`：乘法换算（美分→美元 `0.01`；quota→美元 `1/500000` 等）；`offset`：先减后乘。
+- `scale`：乘法换算，**只用于小数位/数值口径修正**（如上游返回 1358 实为 13.58 → `0.01`；
+  美分计数的 `total_usage` → `0.01`）；余额一律 1:1 等值，**不做任何货币汇率换算**；
+  `offset`：先减后乘。
 - `unlimitedAbove`：余额 ≥ 该值视为不限量。
 - `fallback`：路径缺失时的兜底；`path: "$"` + `fallback` 可写常量。
 - `fieldsApplyTo: "items"` 的端点：`path` 是端点 URL，`itemsPath` 是记录数组在响应内的
   位置（响应本体即数组时省略）。
 - item 级字段（`modelId/modelInputRatio/...`）按记录解析；其余（`groups` 等）从响应根取。
+- `entries` reader 也接受**对象数组**：`itemField` 指定条目名字段（如 `name`），
+  `itemValueField` 指定值字段（如 `multiplier`/`description`）；缺省值为记录去掉名字字段。
+
+## 逐模型分组详情（二次请求，groupsDetail）
+
+部分站点的分组按模型隔离：主 pricing 端点只有模型与价格，每个模型属于自己的分组
+列表需要再请求一次（如 CodeFlow：`/api/pricing` 给模型，`/api/pricing/{id}` 给分组）。
+这类站点在 `endpoints` 里加 `groupsDetail` 端点：
+
+```json
+{
+  "pricing": {
+    "path": "/api/pricing",
+    "auth": false,
+    "fieldsApplyTo": "items",
+    "itemsPath": "models",
+    "fields": {
+      "modelId": { "path": "model" },
+      "modelDetailKey": { "path": "id" },
+      "modelInputRatio": { "path": "inputPricePerMillionTokens", "scale": 0.002 }
+    }
+  },
+  "groupsDetail": {
+    "path": "api/pricing/{modelDetailKey}",
+    "auth": false,
+    "fields": {
+      "groups": {
+        "path": "groups",
+        "reader": "entries",
+        "itemField": "name",
+        "itemValueField": "multiplier"
+      },
+      "groupDescriptions": {
+        "path": "groups",
+        "reader": "entries",
+        "itemField": "name",
+        "itemValueField": "description"
+      }
+    }
+  }
+}
+```
+
+- `path` 支持 `{行字段名}` 占位符（通常 `{modelDetailKey}`），值来自该行映射后的
+  字段（string/number 均可）；按占位符组合去重后逐条请求。
+- 响应解析复用 `groups`/`groupDescriptions`/`autoGroups` 规则；分组倍率合入分组表，
+  每行按自己的分组展开（一模型 N 组 = N 行，各带各的倍率）。
+- 详情端点失败不否定整个抓取：保留主端点的行（分组回退为 default）。
+- `modelDetailKey` 仅作请求占位符，不在界面显示。
 
 ## 机器人图标入口
 
@@ -82,11 +133,11 @@
 
 ## 协议与实现
 
-| 层 | 内容 |
-|---|---|
-| protocol | `RelayFieldMap`/`RelayEndpointMapping`/`RelayFieldMapping` 类型；`provider.mapping.get/set/handoff` 三方法（params/result 校验齐全） |
-| pi-host | `relay-field-mapping.ts`（路径解析 + items/root 双模式 + scale/offset 换算）；`relay-mapping-store.ts`（按站文件、原子写、防路径逃逸）；`relay-pricing-controller.ts` 接线（fetch/balance 全走映射路径） |
-| desktop | 编辑页机器人按钮（`relay-mapping-agent.ts` + `relay-mapping-handoff.ts` 任务书）；composer `@字段映射` 胶囊；transcript `relay-mapping` chip |
+| 层       | 内容                                                                                                                                                                                                     |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| protocol | `RelayFieldMap`/`RelayEndpointMapping`/`RelayFieldMapping` 类型；`provider.mapping.get/set/handoff` 三方法（params/result 校验齐全）                                                                     |
+| pi-host  | `relay-field-mapping.ts`（路径解析 + items/root 双模式 + scale/offset 换算）；`relay-mapping-store.ts`（按站文件、原子写、防路径逃逸）；`relay-pricing-controller.ts` 接线（fetch/balance 全走映射路径） |
+| desktop  | 编辑页机器人按钮（`relay-mapping-agent.ts` + `relay-mapping-handoff.ts` 任务书）；composer `@字段映射` 胶囊；transcript `relay-mapping` chip                                                             |
 
 ## 测试
 

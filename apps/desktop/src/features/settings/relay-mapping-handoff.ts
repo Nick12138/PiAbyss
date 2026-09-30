@@ -44,8 +44,12 @@ function composeRelayMappingPrompt(handoff: RelayMappingHandoff): string {
     "## 站点事实（由桌面端提供，直接可用）",
     `- Base URL：\`${info.baseUrl}\``,
     `- API Key：${info.hasApiKey ? `已配置，存于 \`${info.authJsonPath}\`（JSON，providers → ${stationId} → key；敏感信息不要写进回复）` : "未配置——只探测无需鉴权的接口，余额字段标记为无法获取"}`,
-    `- 映射表写入路径（必须原样使用）：\`${info.mappingPath}\`${info.sharedWith.length ? `
-- 同站镜像入口：provider ${info.sharedWith.join("、")} 指向同一站点（主域或地址相同）——写入映射表时加上 \`shareByBaseUrl\`（站点地址）与 \`shareScope: "domain"\`，它们会自动复用这张表，无需逐个映射` : ""}`,
+    `- 映射表写入路径（必须原样使用）：\`${info.mappingPath}\`${
+      info.sharedWith.length
+        ? `
+- 同站镜像入口：provider ${info.sharedWith.join("、")} 指向同一站点（主域或地址相同）——写入映射表时加上 \`shareByBaseUrl\`（站点地址）与 \`shareScope: "domain"\`，它们会自动复用这张表，无需逐个映射`
+        : ""
+    }`,
     "",
     mappingBlock,
     "",
@@ -56,10 +60,15 @@ function composeRelayMappingPrompt(handoff: RelayMappingHandoff): string {
     "   - 分组描述（groupDescriptions，可选）",
     "   - 模型列表及每模型的：输入倍率（modelInputRatio）、输出倍率（modelCompletionRatio）、缓存倍率（modelCacheRatio）、按次价格（modelCallPrice）、按次标记（modelPerCallFlag）、可用分组（modelGroups）",
     "   - Key 可见模型列表（keyModels）",
-    "   - 余额（balanceRemaining）与已用（balanceUsed），注意单位换算用 scale（如美分→美元 scale=0.01，quota→美元 scale=1/500000）",
+    "   - 余额（balanceRemaining）与已用（balanceUsed）：只做小数位/数值口径修正（scale 乘法，如上游返回 1358 实为 13.58 → scale=0.01），货币与汇率完全不管（见下方硬性规则）",
     "3. 测试确认每个字段真的能取到数据；取不到的字段不要编造路径，直接省略（该功能对该站不可用）。",
     "4. 按「映射表格式」写出完整 JSON，写入上述映射表路径（UTF-8，2 空格缩进）。",
     "5. 回复：每个端点的探测结论（HTTP 状态 + 是否取到数据）、字段路径清单、无法获取的字段及原因。",
+    "",
+    "## 硬性规则：余额只处理小数位，绝不做货币换算",
+    "- 不要管上游余额/已用是美元还是人民币，一律按 1:1 等值处理（1 就是 1）；严禁按汇率（如 ×7）折算。",
+    "- 只需修正小数点位置：上游返回 1358 而实际余额是 13.58 时写 scale=0.01；返回值本身就是最终数值时不要写 scale。",
+    "- 价格倍率（groups、model*Ratio 等）同样按站点原始数值原样映射，不做任何货币换算。",
     "",
     "## 映射表格式",
     "```json",
@@ -75,7 +84,8 @@ function composeRelayMappingPrompt(handoff: RelayMappingHandoff): string {
             auth: false,
             fieldsApplyTo: "items（响应是模型记录数组时）/ root",
             itemsField: "models",
-            itemsPath: "记录数组在响应内的位置：响应本体就是数组时省略；形如 {data:[...]} 时填 data",
+            itemsPath:
+              "记录数组在响应内的位置：响应本体就是数组时省略；形如 {data:[...]} 时填 data",
             fields: {
               groups: { path: "group_ratio", reader: "entries" },
               groupDescriptions: { path: "usable_group", reader: "entries" },
@@ -115,7 +125,7 @@ function composeRelayMappingPrompt(handoff: RelayMappingHandoff): string {
     ),
     "```",
     "",
-    '字段规则：`path` 为端点路径，遵循 URL 相对语义 —— baseUrl 形如 `https://x.top/v1` 时，`api/pricing` 拼成 `/v1/api/pricing`，而 `/api/pricing`（以 / 开头）相对站点根拼成 `/api/pricing`；响应内字段路径相对响应根（items 模式下相对每条记录，记录数组位置用 itemsPath）。`reader`：entries=对象展开为键值对，array=取字符串数组（itemField 指定字段）；`scale` 乘法换算；`fallback` 缺失时的兜底；`path: "$"` 表示常量（配 fallback 用）。探测时若相对路径 404，先试站点根的 /api/... 变体。',
+    '字段规则：`path` 为端点路径，遵循 URL 相对语义 —— baseUrl 形如 `https://x.top/v1` 时，`api/pricing` 拼成 `/v1/api/pricing`，而 `/api/pricing`（以 / 开头）相对站点根拼成 `/api/pricing`；响应内字段路径相对响应根（items 模式下相对每条记录，记录数组位置用 itemsPath）。`reader`：entries=对象展开为键值对，array=取字符串数组（itemField 指定字段）；`scale` 乘法换算（仅用于小数位/数值口径修正，余额永远不做货币汇率换算）；`fallback` 缺失时的兜底；`path: "$"` 表示常量（配 fallback 用）。探测时若相对路径 404，先试站点根的 /api/... 变体。',
     "不要修改映射表路径、stationId 与 schemaVersion 以外的任何系统文件。",
     "</piabyss-relay-mapping>",
   ];

@@ -467,24 +467,17 @@ export const en = {
   providersCopy: "Duplicate",
   providersCopyTitle:
     'Duplicate this provider\'s settings into a new unsaved draft named "<name> copy" (the API key must be re-entered)',
-  providersMappingBot: "Field mapping",
   providersMappingBotTitle:
     "Let the Agent probe this station's balance/pricing APIs and generate the field mapping table (handled in the default workspace)",
   providersMappingHandoffFailed:
     "Could not load station info; the field-mapping task was not started",
   providersMappingPrompt:
-    "Please handle the field-mapping task above: probe the APIs, verify each field, write the mapping table to the given path, and report per-endpoint findings plus any fields that could not be obtained.",
+    "Please handle the field-mapping task above: probe the APIs, verify each field, write the mapping table to the given path, and report per-endpoint findings plus any fields that could not be obtained. Again: treat all balances as 1:1 at face value — never apply any currency exchange rate, only fix the decimal point (e.g. upstream returns 1358 when the real balance is 13.58).",
   providersMappingNoWorkspace:
     "Could not resolve the default workspace; the field-mapping task was not started",
   providersMappingPartialHandoff: "{count} station(s) could not be loaded and were skipped",
-  providersMappingPickerTitle: "Choose relay stations to map",
-  providersMappingPickerHint:
-    "Mirror hosts (cf.x / api.x and friends) are merged by main domain. Confirm to create one session in the default workspace with a mapping task per selected station. Selecting an already-mapped station means re-testing and overwriting its mapping table.",
-  providersMappingPickerSearch: "Search stations",
   providersMappingPickerEmpty:
     "No relay station to map (add and configure a key under Model services first)",
-  providersMappingPickerConfirm: "Start mapping",
-  providersMappingPickerDispatching: "Starting",
   providersMappingPickerHasMapping: "Mapped",
   providersMappingPickerHasMappingHint:
     "This station already has an active field mapping; selecting it re-tests and overwrites",
@@ -573,10 +566,10 @@ export const en = {
   // Relay pricing (new-api style gateway price tables)
   relayPricingButton: "Station price table",
   relayPricingDialogTitle: "Relay station price table",
-  relayPricingRefresh: "Refresh price table",
   relayPricingRefreshing: "Fetching...",
   relayPricingSearch: "Search model / vendor",
-  relayPricingAllStations: "All stations",
+  relayPricingStationsSelectAll: "Select all",
+  relayPricingStationsSelectNone: "Select none",
   relayPricingAllGroups: "All groups",
   relayPricingKeyOnly: "Key-available only",
   relayPricingColModel: "Model",
@@ -609,6 +602,14 @@ export const en = {
   relayPricingSortAsc: "Ascending",
   relayPricingSortDesc: "Descending",
   relayPricingRowsCount: "{count} rows",
+  relayPricingStationsTitle: "Stations",
+  relayPricingStationsHint:
+    "Refresh prices per station and start field mapping; select stations to update prices or dispatch mapping in batch",
+  relayPricingStationSync: "Refresh this station's prices",
+  relayPricingStationSyncing: "Syncing...",
+  relayPricingStationSyncOk: "{count} rows · {time}",
+  relayPricingStationsUpdatePrices: "Update prices",
+  relayPricingStationsStartMapping: "Start mapping",
   notifRelayBalanceFailed: "Could not query station balance",
   notifRelayTestFromPricing: "Test requires the model to belong to a configured Provider",
 

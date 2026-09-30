@@ -22,7 +22,6 @@ import {
   CircleCheck,
   ChevronDown,
   ChevronUp,
-  Bot,
   Coins,
   RefreshCw,
   Search,
@@ -34,7 +33,8 @@ import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import { useAppStore } from "../../lib/stores/app-store";
 import { Dialog, secondaryButton } from "../../components/Dialog";
 import { useT, type Translate } from "../../lib/i18n/use-t";
-import { RelayMappingPickerDialog } from "./RelayMappingPickerDialog";
+import { RelayStationsDialog } from "./RelayStationsDialog";
+import { Settings2 } from "lucide-react";
 
 type PriceTableDialogProps = {
   providers: ProviderSnapshot[];
@@ -123,18 +123,17 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
   const t = useT();
   const host = useAppStore((state) => state.host);
   const hostInstanceId = host?.hostInstanceId;
-  const pushNotification = useAppStore((state) => state.pushNotification);
   const [pricing, setPricing] = useState<RelayPricingResult | null>(null);
   const [loading, setLoading] = useState(true);
-  const [fetching, setFetching] = useState(false);
-  const [stationFilter, setStationFilter] = useState<string>("all");
+  /** 站点多选筛选：空集合 = 全部站点（与「全不选」等价）。 */
+  const [stationFilter, setStationFilter] = useState<ReadonlySet<string>>(new Set());
   const [groupFilter, setGroupFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [keyOnly, setKeyOnly] = useState(false);
   /** 唯一排序：null = 不排序；非空 = 该列按折算后价格排序。 */
   const [sort, setSort] = useState<{ field: PriceSortField; desc: boolean } | null>(null);
-  // 映射机器人弹窗（站点多选 → 发起映射会话）。
-  const [mappingPickerOpen, setMappingPickerOpen] = useState(false);
+  // 站点管理弹窗（字段映射 + 按站刷新合并入口）。
+  const [stationsOpen, setStationsOpen] = useState(false);
   const { testingKeys, results: testResults, test } = useRelayTest(t);
 
   useEffect(() => {
@@ -158,33 +157,16 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
     };
   }, [hostInstanceId]);
 
-  async function refresh(providerId?: string) {
-    if (!host || fetching) return;
-    setFetching(true);
-    try {
-      const response = await hostClient.request(
-        "provider.pricing.fetch",
-        hostContext(host),
-        providerId ? { providerId } : null,
-        120_000,
-      );
-      if (!response) return;
-      if (!response.ok) {
-        pushNotification(localizeHostError(response.error, t), "error");
-        return;
-      }
-      setPricing(response.result as RelayPricingResult);
-    } catch (error) {
-      pushNotification(
-        error instanceof Error ? error.message : t("relayPricingFetchFailed"),
-        "error",
-      );
-    } finally {
-      setFetching(false);
-    }
-  }
+  /** 站点面板刷新（单站/批量）后回传新快照；同时更新本地排序依据。 */
+  const applyPricing = (result: RelayPricingResult) => setPricing(result);
 
   const stations = useMemo(() => pricing?.table.stations ?? [], [pricing]);
+
+  /** 已配置的 providerId 集合（站点面板刷新按钮的可用性判断）。 */
+  const configuredProviderIdSet = useMemo(
+    () => new Set(providers.map((provider) => provider.id)),
+    [providers],
+  );
 
   /** providerId → 显示名（host 不落盘站名，跟随 provider.name 动态取）。 */
   const providerNames = useMemo(() => {
@@ -205,7 +187,7 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
   const groupOptions = useMemo(() => {
     const names = new Set<string>();
     for (const station of visibleStations) {
-      if (stationFilter !== "all" && station.stationId !== stationFilter) continue;
+      if (stationFilter.size > 0 && !stationFilter.has(station.stationId)) continue;
       for (const group of station.groups) names.add(group.name);
     }
     return [...names].sort((left, right) => left.localeCompare(right));
@@ -225,7 +207,7 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
     const query = search.trim().toLowerCase();
     const all: Array<{ row: RelayPricingRow; stationName: string }> = [];
     for (const station of visibleStations) {
-      if (stationFilter !== "all" && station.stationId !== stationFilter) continue;
+      if (stationFilter.size > 0 && !stationFilter.has(station.stationId)) continue;
       const stationName = station.providerId
         ? (providerNamesByStation.get(station.providerId) ?? station.stationId)
         : station.stationId;
@@ -339,21 +321,11 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
             <button
               type="button"
               className={`${secondaryButton} h-7`}
-              disabled={fetching || loading}
-              onClick={() => void refresh()}
+              title={t("relayPricingStationsHint")}
+              onClick={() => setStationsOpen(true)}
             >
-              <RefreshCw className={fetching ? "animate-spin" : ""} size={13} />
-              {fetching ? t("relayPricingRefreshing") : t("relayPricingRefresh")}
-            </button>
-            <button
-              type="button"
-              className={`${secondaryButton} h-7`}
-              title={t("providersMappingBotTitle")}
-              aria-label={t("providersMappingBot")}
-              onClick={() => setMappingPickerOpen(true)}
-            >
-              <Bot size={13} />
-              {t("providersMappingBot")}
+              <Settings2 size={13} />
+              {t("relayPricingStationsTitle")}
             </button>
           </div>
         }
@@ -361,24 +333,6 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
         <div className="flex flex-col gap-3">
           {/* 筛选行 */}
           <div className="flex flex-wrap items-center gap-2">
-            <select
-              className="h-8 rounded-md border border-border bg-surface px-2 text-xs outline-none focus:border-focus"
-              value={stationFilter}
-              aria-label={t("relayPricingAllStations")}
-              onChange={(event) => {
-                setStationFilter(event.target.value);
-                setGroupFilter("all");
-              }}
-            >
-              <option value="all">{t("relayPricingAllStations")}</option>
-              {visibleStations.map((station) => (
-                <option key={station.stationId} value={station.stationId}>
-                  {station.providerId
-                    ? (providerNames.get(station.providerId) ?? station.stationId)
-                    : station.stationId}
-                </option>
-              ))}
-            </select>
             <select
               className="h-8 max-w-48 rounded-md border border-border bg-surface px-2 text-xs outline-none focus:border-focus"
               value={groupFilter}
@@ -411,18 +365,65 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
             </label>
           </div>
 
-          {/* 站点余额概览 */}
+          {/* 站点余额概览：chip 即多选筛选；空选 = 全部站点（「全不选」高亮） */}
           {visibleStations.length > 0 && (
-            <div className="flex flex-wrap gap-2">
+            <div
+              className="flex flex-wrap items-center gap-2"
+              role="group"
+              aria-label={t("relayPricingDialogTitle")}
+            >
+              <button
+                type="button"
+                className={`h-7 rounded-md border px-2 text-xs transition-colors ${
+                  stationFilter.size === visibleStations.length
+                    ? "border-accent/60 bg-accent/10 text-foreground"
+                    : "border-border bg-surface text-muted hover:bg-surface-overlay hover:text-foreground"
+                }`}
+                aria-pressed={stationFilter.size === visibleStations.length}
+                title={t("relayPricingStationsSelectAll")}
+                onClick={() =>
+                  setStationFilter(new Set(visibleStations.map((station) => station.stationId)))
+                }
+              >
+                {t("relayPricingStationsSelectAll")}
+              </button>
+              <button
+                type="button"
+                className={`h-7 rounded-md border px-2 text-xs transition-colors ${
+                  stationFilter.size === 0
+                    ? "border-accent/60 bg-accent/10 text-foreground"
+                    : "border-border bg-surface text-muted hover:bg-surface-overlay hover:text-foreground"
+                }`}
+                aria-pressed={stationFilter.size === 0}
+                title={t("relayPricingStationsSelectNone")}
+                onClick={() => setStationFilter(new Set())}
+              >
+                {t("relayPricingStationsSelectNone")}
+              </button>
               {visibleStations.map((station) => {
                 const ratio = rechargeRatioFor(station.providerId);
                 const balance = station.balance;
+                const selected = stationFilter.has(station.stationId);
                 return (
-                  <div
+                  <button
                     key={station.stationId}
-                    className="flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs"
+                    type="button"
+                    aria-pressed={selected}
+                    className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-colors ${
+                      selected
+                        ? "border-accent/60 bg-accent/10 text-foreground"
+                        : "border-border bg-surface text-muted hover:bg-surface-overlay hover:text-foreground"
+                    }`}
+                    onClick={() =>
+                      setStationFilter((current) => {
+                        const next = new Set(current);
+                        if (next.has(station.stationId)) next.delete(station.stationId);
+                        else next.add(station.stationId);
+                        return next;
+                      })
+                    }
                   >
-                    <span className="font-medium text-foreground">
+                    <span className={selected ? "font-medium text-foreground" : "font-medium"}>
                       {station.providerId
                         ? (providerNames.get(station.providerId) ?? station.stationId)
                         : station.stationId}
@@ -450,7 +451,7 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                         ∞
                       </span>
                     ) : (
-                      <span className="tabular-nums text-foreground">
+                      <span className="tabular-nums text-success">
                         {balance.currency === "CNY" ? "¥" : "$"}
                         {balance.remainingUsd?.toFixed(2) ?? "0.00"}
                         {balance.currency !== "CNY" && !isOneToOneRatio(ratio) && (
@@ -460,7 +461,7 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                         )}
                       </span>
                     )}
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -632,8 +633,14 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
           </p>
         </div>
       </Dialog>
-      {mappingPickerOpen && (
-        <RelayMappingPickerDialog onClose={() => setMappingPickerOpen(false)} />
+      {stationsOpen && (
+        <RelayStationsDialog
+          providerIds={configuredProviderIdSet}
+          pricing={pricing}
+          onPricingRefreshed={applyPricing}
+          onMappingStarted={onClose}
+          onClose={() => setStationsOpen(false)}
+        />
       )}
     </>
   );
