@@ -641,15 +641,23 @@ describe("relay pricing handlers", () => {
     expect(station.groups.find((g) => g.name === "官方分组")?.ratio).toBe(9);
     expect(station.groups.find((g) => g.name === "官方分组")?.description).toBe("Max");
 
-    // 每行按详情端点返回的分组展开（一个模型 N 组 = N 行，各带各的倍率）。
+    // 每行按详情端点返回的分组展开（一个模型 N 组 = N 行，各带各的倍率），
+    // 且价格按该分组的倍率重算（主端点解析时倍率表还没有）。
     expect(station.rows).toHaveLength(3);
     const rowALow = station.rows.find((r) => r.modelId === "model-a" && r.group === "低价分组")!;
     expect(rowALow.groupRatio).toBe(1);
+    // model-a input = 5 百万分/1M × 0.002 = 0.01 相对倍率 → $2 × 0.01 × 1 = $0.02。
+    expect(rowALow.inputPer1M).toBeCloseTo(0.02, 6);
     const rowAOff = station.rows.find((r) => r.modelId === "model-a" && r.group === "官方分组")!;
     expect(rowAOff.groupRatio).toBe(9);
+    // ×9 分组价格是 ×1 的 9 倍。
+    expect(rowAOff.inputPer1M).toBeCloseTo(0.18, 6);
+    expect(rowAOff.outputPer1M).toBeCloseTo(rowALow.outputPer1M! * 9, 6);
     const rowB = station.rows.find((r) => r.modelId === "model-b")!;
     expect(rowB.group).toBe("Codex 官方分组");
     expect(rowB.groupRatio).toBe(2);
+    // model-b input = 1 × 0.002 = 0.002 → $2 × 0.002 × 2(组倍率) = $0.008。
+    expect(rowB.inputPer1M).toBeCloseTo(0.008, 6);
   });
 
   it("maps CodeFlow-style absolute per-1M prices and per-model group details", async () => {
