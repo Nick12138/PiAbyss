@@ -1796,16 +1796,56 @@ export function createProviderHandlers(
             identity,
           };
         }
-        const model = factory.deps.modelRegistry.find(providerId, targetModelId);
+        let model = factory.deps.modelRegistry.find(providerId, targetModelId);
+        let ephemeralProvider: string | undefined;
         if (!model) {
-          return {
-            error: createHostError(
-              "MODEL_NOT_FOUND",
-              `Model not found in Provider ${providerId}: ${targetModelId}`,
-            ),
-            identity,
-          };
+          // 模型未加入 provider 的模型清单（价格总表可测试任意 key 可用模型）：
+          // 现场注册一个只含该模型的临时 provider 变体（同一 baseUrl/key），
+          // 测完立即注销，不污染 models.json 与常驻注册表。
+          const apiKey = await factory.deps.modelRegistry.getApiKeyForProvider(providerId);
+          if (!apiKey) {
+            return {
+              error: createHostError(
+                "MODEL_NOT_FOUND",
+                `Model not found in Provider ${providerId}: ${targetModelId}`,
+              ),
+              identity,
+            };
+          }
+          const registry = factory.deps.modelRegistry;
+          ephemeralProvider = `__probe_${providerId}`;
+          registry.registerProvider(ephemeralProvider, {
+            name: provider.name,
+            baseUrl: provider.baseUrl,
+            apiKey,
+            api: provider.api,
+            authHeader: provider.authHeader,
+            headers: provider.headers,
+            models: [
+              {
+                id: targetModelId,
+                name: targetModelId,
+                reasoning: true,
+                input: ["text"],
+                contextWindow: DEFAULT_MODEL_CONTEXT_WINDOW,
+                maxTokens: DEFAULT_MODEL_MAX_TOKENS,
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              },
+            ],
+          });
+          model = registry.find(ephemeralProvider, targetModelId);
+          if (!model) {
+            registry.unregisterProvider(ephemeralProvider);
+            return {
+              error: createHostError(
+                "MODEL_NOT_FOUND",
+                `Model not found in Provider ${providerId}: ${targetModelId}`,
+              ),
+              identity,
+            };
+          }
         }
+        try {
         const auth = await factory.deps.modelRegistry.getApiKeyAndHeaders(model);
 
         const result = await checkProviderConnection(provider, model, auth, shutdownSignal);
@@ -1848,6 +1888,16 @@ export function createProviderHandlers(
           /* Persistence is optional; the test result stands. */
         }
         return { result: { ...retry, message: detectedMessage }, identity };
+        } finally {
+          // 临时探测 provider 用完即注销（常驻注册表不受影响）。
+          if (ephemeralProvider) {
+            try {
+              factory.deps.modelRegistry.unregisterProvider(ephemeralProvider);
+            } catch {
+              /* best-effort */
+            }
+          }
+        }
       } catch (error) {
         if (shutdownSignal.aborted) return { error: hostShuttingDownError() };
         return {

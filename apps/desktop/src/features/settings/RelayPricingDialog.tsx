@@ -456,8 +456,9 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                     key={field}
                     className="group/th px-2.5 py-1.5 text-right font-medium"
                   >
-                    {label}
+                    {/* 按钮放文字前面：表头文字右缘与单元格数字右缘对齐。 */}
                     <SortButton field={field} />
+                    {label}
                   </th>
                 ))}
                 <th className="px-2.5 py-1.5" />
@@ -484,10 +485,9 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                           <span className="ml-1 text-[10px] text-muted">{cnyApprox(value, rowRatio)}</span>
                         ) : null
                     : () => null;
-                  const testable =
-                    configured !== undefined &&
-                    row.keyAvailable &&
-                    configured.models.has(row.modelId);
+                  // 可测试：站点已配置（baseUrl 匹配到有 key 的 provider）且 key 可用。
+                  // 模型未加入清单也允许——host 端会用临时探测 provider 现场测。
+                  const testable = configured !== undefined && row.keyAvailable;
                   return (
                     <tr
                       key={rowKey}

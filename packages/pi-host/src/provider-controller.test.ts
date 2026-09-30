@@ -1477,6 +1477,51 @@ describe("Provider controller", () => {
     }
   });
 
+  it("tests a key-available model that is not in the provider's model list", async () => {
+    // 价格总表场景：key 的 /v1/models 有 10 个模型但用户只勾选了 2 个，
+    // 未勾选的模型也应可测试（host 现场注册临时探测 provider）。
+    const probeRequests: Array<Record<string, unknown>> = [];
+    const apiServer = createServer((request, response) => {
+      probeRequests.push({ ...request.headers, url: request.url });
+      writeAnthropicSuccess(response);
+    });
+    httpServers.push(apiServer);
+    await new Promise<void>((resolve) => apiServer.listen(0, "127.0.0.1", resolve));
+    const address = apiServer.address();
+    if (!address || typeof address === "string") throw new Error("No HTTP address");
+
+    const { credentialStore, handlers, factory } = await setup({
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: `http://127.0.0.1:${address.port}`,
+          api: "anthropic-messages",
+          authHeader: false,
+          models: [{ id: "only-checked-model" }],
+        },
+      },
+    });
+    await putApiKey(credentialStore, "custom", "do-not-expose");
+    // 确认目标模型确实不在清单中。
+    expect(factory.deps.modelRegistry.find("custom", "unchecked-model")).toBeUndefined();
+
+    const outcome = await handlers["provider.checkConnection"]!({
+      id: "check-unlisted",
+      params: { providerId: "custom", modelId: "unchecked-model" },
+    } as never);
+    expect("error" in outcome ? outcome.error.message : null).toBeNull();
+    if (!("error" in outcome)) {
+      expect(outcome.result).toEqual(
+        expect.objectContaining({ ok: true, category: "ok", modelId: "unchecked-model" }),
+      );
+    }
+    // 临时探测 provider 用完即注销。
+    expect(factory.deps.modelRegistry.getRegisteredProviderIds()).not.toContain("__probe_custom");
+    // 请求头里带原 provider 的 key（anthropic-messages 走 x-api-key）。
+    const sentHeaders = JSON.stringify(probeRequests[0] ?? {});
+    expect(/do-not-expose/.test(sentHeaders) || sentHeaders.includes("x-api-key")).toBe(true);
+  });
+
   it("detects and persists Bearer authentication after a native-auth 401", async () => {
     const authorizations: Array<string | undefined> = [];
     const apiServer = createServer((request, response) => {
