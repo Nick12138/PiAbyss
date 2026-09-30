@@ -199,15 +199,13 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
     return [...names].sort((left, right) => left.localeCompare(right));
   }, [visibleStations, stationFilter]);
 
-  /** baseUrl →（已配置且有 key 的）provider 集合；同 baseUrl 多 provider 时按序可查。 */
-  const providerIdsByBaseUrl = useMemo(() => {
-    const map = new Map<string, string[]>();
+  /** 已配置 key 的 providerId 集合（测试资格只看这个，不依赖 keyAvailable）。 */
+  const configuredProviderIds = useMemo(() => {
+    const ids = new Set<string>();
     for (const provider of providers) {
-      if (!provider.baseUrl || !provider.auth.configured) continue;
-      const key = provider.baseUrl.replace(/\/+$/, "");
-      map.set(key, [...(map.get(key) ?? []), provider.id]);
+      if (provider.auth.configured) ids.add(provider.id);
     }
-    return map;
+    return ids;
   }, [providers]);
 
   const rows = useMemo(() => {
@@ -480,10 +478,9 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                   // 测试直接用该行的 stationId（抓取它的 provider）——同 baseUrl
                   // 多 provider（不同 key/分组）时不能用 baseUrl 反查，会错用
                   // 别家 provider 的 key 导致分组不匹配。
-                  const configured =
-                    providerNames.has(row.stationId) || providerIdsByBaseUrl.size === 0
-                      ? row.stationId
-                      : null;
+                  const configured = configuredProviderIds.has(row.stationId)
+                    ? row.stationId
+                    : null;
                   // 非 1:1 充值比例的站：价格旁显示人民币 ≈ 换算。
                   const rowRatio = rechargeRatioFor(row.stationId);
                   const approx = !isOneToOneRatio(rowRatio)
@@ -492,9 +489,10 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                           <span className="ml-1 text-[10px] text-muted">{cnyApprox(value, rowRatio)}</span>
                         ) : null
                     : () => null;
-                  // 可测试：站点已配置（baseUrl 匹配到有 key 的 provider）且 key 可用。
-                  // 模型未加入清单也允许——host 端会用临时探测 provider 现场测。
-                  const testable = configured !== undefined && row.keyAvailable;
+                  // 可测试：站点已配置 key 即可。不要求 keyAvailable——
+                  // /v1/models 拉不到（如 Anthropic 风格入口）不该否决测试，
+                  // 模型实际可用性由测试请求本身回答。
+                  const testable = configured !== null;
                   return (
                     <tr
                       key={rowKey}
@@ -537,7 +535,7 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                         {approx(row.callPrice)}
                       </td>
                       <td className="whitespace-nowrap px-2.5 py-1.5">
-                        {row.keyAvailable && configured ? (
+                        {configured ? (
                           testable ? (
                             (() => {
                               // 结果融进按钮本身（图标颜色/边框/悬浮详情），不追加
