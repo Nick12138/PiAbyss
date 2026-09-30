@@ -10,6 +10,10 @@ const DEFAULT_INTERFACE_DENSITY: DesktopInterfaceDensity = "standard";
 const DEFAULT_CONVERSATION_FONT_SIZE = 15;
 export const MIN_CONVERSATION_FONT_SIZE = 12;
 export const MAX_CONVERSATION_FONT_SIZE = 18;
+export const DEFAULT_CONVERSATION_LINE_HEIGHT = 1.7;
+export const MIN_CONVERSATION_LINE_HEIGHT = 1;
+export const MAX_CONVERSATION_LINE_HEIGHT = 2.5;
+export const CONVERSATION_LINE_HEIGHT_STEP = 0.1;
 const DEFAULT_CODE_FONT_SIZE = 12;
 export const MIN_CODE_FONT_SIZE = 10;
 export const MAX_CODE_FONT_SIZE = 18;
@@ -57,6 +61,21 @@ export function resolveCodeFontSize(value: unknown): number {
   return clampInteger(value, DEFAULT_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, MAX_CODE_FONT_SIZE);
 }
 
+export function resolveConversationLineHeight(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_CONVERSATION_LINE_HEIGHT;
+  }
+  const clamped = Math.min(
+    MAX_CONVERSATION_LINE_HEIGHT,
+    Math.max(MIN_CONVERSATION_LINE_HEIGHT, value),
+  );
+  return Number(
+    (Math.round(clamped / CONVERSATION_LINE_HEIGHT_STEP) * CONVERSATION_LINE_HEIGHT_STEP).toFixed(
+      1,
+    ),
+  );
+}
+
 export function applyAppearancePreferences(settings: DesktopSettings | null | undefined): void {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
@@ -69,6 +88,10 @@ export function applyAppearancePreferences(settings: DesktopSettings | null | un
   root.style.setProperty(
     "--conversation-font-size",
     `${resolveConversationFontSize(settings?.conversationFontSize)}px`,
+  );
+  root.style.setProperty(
+    "--conversation-line-height",
+    String(resolveConversationLineHeight(settings?.conversationLineHeight)),
   );
   root.style.setProperty("--code-font-size", `${resolveCodeFontSize(settings?.codeFontSize)}px`);
 }

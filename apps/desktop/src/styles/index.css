@@ -90,6 +90,7 @@
   --interface-card-gap: 1rem;
   --interface-section-gap: 2rem;
   --conversation-font-size: 15px;
+  --conversation-line-height: 1.7;
   --code-font-size: 12px;
   --theme-control-shadow: none;
   --theme-nav-shadow: none;
@@ -433,7 +434,7 @@ select option {
 
 .appearance-preview-copy {
   font-size: var(--conversation-font-size);
-  line-height: 1.65;
+  line-height: var(--conversation-line-height);
 }
 
 .appearance-preview-copy code {
@@ -2179,7 +2180,7 @@ html.light .pi-working-marquee {
   overflow-wrap: anywhere;
   color: var(--color-foreground);
   font-size: var(--conversation-font-size);
-  line-height: 1.71;
+  line-height: var(--conversation-line-height);
 }
 
 .chat-markdown p {
@@ -2277,7 +2278,7 @@ html.light .pi-working-marquee {
 .chat-markdown li,
 .chat-markdown [data-streamdown="list-item"] {
   padding-left: 0.2rem;
-  line-height: 1.62;
+  line-height: var(--conversation-line-height);
 }
 
 .chat-markdown .contains-task-list {

@@ -1726,6 +1726,8 @@ export type DesktopSettings = {
   conversationMaxWidth?: number;
   /** Base font size for conversation content, in CSS pixels. */
   conversationFontSize?: number;
+  /** Line-height multiplier for conversation content, bounded to a readable range. */
+  conversationLineHeight?: number;
   /** Font size for inline and fenced conversation code, in CSS pixels. */
   codeFontSize?: number;
   /** All workspaces share one Host process (opt-in). Switching rebinds the

@@ -169,8 +169,8 @@ export const en = {
   appearanceConversationFontSizeDesc: "Text size for messages and rendered Markdown.",
   appearanceConversationLineHeight: "Conversation line spacing",
   appearanceConversationLineHeightDesc:
-    "Line-height multiplier for messages and Markdown, limited to 1.4–2.0.",
-  appearanceConversationLineHeightUnit: "×",
+    "Line-height multiplier for messages and Markdown, limited to 1–2.5.",
+  appearanceConversationLineHeightUnit: "x",
   appearanceCodeFontSize: "Code font size",
   appearanceCodeFontSizeDesc: "Text size for inline and fenced conversation code.",
   appearanceDecrease: "Decrease {setting}",

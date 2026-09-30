@@ -68,6 +68,7 @@ afterEach(() => {
   document.documentElement.removeAttribute("data-theme-family");
   document.documentElement.classList.remove("light", "dark");
   document.documentElement.style.removeProperty("--conversation-font-size");
+  document.documentElement.style.removeProperty("--conversation-line-height");
   document.documentElement.style.removeProperty("--code-font-size");
   vi.restoreAllMocks();
 });
@@ -182,6 +183,7 @@ describe("SettingsPage navigation guard", () => {
     expect(screen.getByLabelText(/Language/)).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Interface density" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Conversation font size" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Conversation line spacing" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Code font size" })).toBeInTheDocument();
   });
 
@@ -203,6 +205,15 @@ describe("SettingsPage navigation guard", () => {
     expect(document.documentElement.style.getPropertyValue("--conversation-font-size")).toBe(
       "16px",
     );
+
+    await user.click(screen.getByRole("button", { name: "Increase Conversation line spacing" }));
+    await waitFor(() =>
+      expect(useAppStore.getState().desktopSettings?.conversationLineHeight).toBe(1.8),
+    );
+    expect(document.documentElement.style.getPropertyValue("--conversation-line-height")).toBe(
+      "1.8",
+    );
+    expect(screen.getByText("1.8x")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Increase Code font size" }));
     await waitFor(() => expect(useAppStore.getState().desktopSettings?.codeFontSize).toBe(13));

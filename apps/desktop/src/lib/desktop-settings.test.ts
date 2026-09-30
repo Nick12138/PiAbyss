@@ -74,6 +74,7 @@ describe("persistDesktopSettings", () => {
       themeFamily: "vercel",
       interfaceDensity: "compact",
       conversationFontSize: 17,
+      conversationLineHeight: 1.8,
       codeFontSize: 15,
     });
 
@@ -82,6 +83,7 @@ describe("persistDesktopSettings", () => {
       themeFamily: "vercel",
       interfaceDensity: "compact",
       conversationFontSize: 17,
+      conversationLineHeight: 1.8,
       codeFontSize: 15,
     });
 
@@ -122,6 +124,12 @@ describe("persistDesktopSettings", () => {
     );
     await expect(persistDesktopSettings({ conversationFontSize: 11 })).rejects.toThrow(
       "conversationFontSize must be an integer between 12 and 18",
+    );
+    await expect(persistDesktopSettings({ conversationLineHeight: 0.9 })).rejects.toThrow(
+      "conversationLineHeight must be a number between 1 and 2.5",
+    );
+    await expect(persistDesktopSettings({ conversationLineHeight: 1.75 })).rejects.toThrow(
+      "conversationLineHeight must be a number between 1 and 2.5 in increments of 0.1",
     );
     await expect(persistDesktopSettings({ codeFontSize: 19 })).rejects.toThrow(
       "codeFontSize must be an integer between 10 and 18",

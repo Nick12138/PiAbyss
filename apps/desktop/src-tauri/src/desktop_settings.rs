@@ -18,6 +18,10 @@ const HARD_MAX_CONVERSATION_WIDTH: u32 = 2400;
 const DEFAULT_CONVERSATION_FONT_SIZE: u32 = 14;
 const MIN_CONVERSATION_FONT_SIZE: u32 = 12;
 const MAX_CONVERSATION_FONT_SIZE: u32 = 18;
+const DEFAULT_CONVERSATION_LINE_HEIGHT: f32 = 1.7;
+const MIN_CONVERSATION_LINE_HEIGHT: f32 = 1.0;
+const MAX_CONVERSATION_LINE_HEIGHT: f32 = 2.5;
+const CONVERSATION_LINE_HEIGHT_STEP: f32 = 0.1;
 const DEFAULT_CODE_FONT_SIZE: u32 = 12;
 const MIN_CODE_FONT_SIZE: u32 = 10;
 const MAX_CODE_FONT_SIZE: u32 = 18;
@@ -112,6 +116,10 @@ fn legacy_extension_decision_presentation() -> ExtensionDecisionPresentation {
     ExtensionDecisionPresentation::LegacyModal
 }
 
+fn default_conversation_line_height() -> f32 {
+    DEFAULT_CONVERSATION_LINE_HEIGHT
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct DesktopSettings {
@@ -141,6 +149,8 @@ pub struct DesktopSettings {
     pub conversation_min_width: u32,
     pub conversation_max_width: u32,
     pub conversation_font_size: u32,
+    #[serde(default = "default_conversation_line_height")]
+    pub conversation_line_height: f32,
     pub code_font_size: u32,
     /// Opt-in RSS-aware idle retirement for background Hosts (MiB working
     /// set). `0` disables the probe and keeps the time-based rule only.
@@ -181,6 +191,7 @@ impl Default for DesktopSettings {
             conversation_min_width: DEFAULT_CONVERSATION_MIN_WIDTH,
             conversation_max_width: DEFAULT_CONVERSATION_MAX_WIDTH,
             conversation_font_size: DEFAULT_CONVERSATION_FONT_SIZE,
+            conversation_line_height: DEFAULT_CONVERSATION_LINE_HEIGHT,
             code_font_size: DEFAULT_CODE_FONT_SIZE,
             host_idle_rss_retire_mb: 0,
             shared_host_mode: true,
@@ -334,6 +345,15 @@ impl DesktopSettingsStore {
         settings.conversation_font_size = settings
             .conversation_font_size
             .clamp(MIN_CONVERSATION_FONT_SIZE, MAX_CONVERSATION_FONT_SIZE);
+        settings.conversation_line_height =
+            (((settings.conversation_line_height / CONVERSATION_LINE_HEIGHT_STEP).round()
+                * CONVERSATION_LINE_HEIGHT_STEP
+                * 10.0)
+                .round())
+                / 10.0;
+        settings.conversation_line_height = settings
+            .conversation_line_height
+            .clamp(MIN_CONVERSATION_LINE_HEIGHT, MAX_CONVERSATION_LINE_HEIGHT);
         settings.code_font_size = settings
             .code_font_size
             .clamp(MIN_CODE_FONT_SIZE, MAX_CODE_FONT_SIZE);
@@ -385,6 +405,15 @@ impl DesktopSettingsStore {
         {
             return Err(format!(
                 "conversationFontSize must be between {MIN_CONVERSATION_FONT_SIZE} and {MAX_CONVERSATION_FONT_SIZE}"
+            ));
+        }
+        let line_height_steps = settings.conversation_line_height / CONVERSATION_LINE_HEIGHT_STEP;
+        if !(MIN_CONVERSATION_LINE_HEIGHT..=MAX_CONVERSATION_LINE_HEIGHT)
+            .contains(&settings.conversation_line_height)
+            || (line_height_steps - line_height_steps.round()).abs() > 0.001
+        {
+            return Err(format!(
+                "conversationLineHeight must be between {MIN_CONVERSATION_LINE_HEIGHT} and {MAX_CONVERSATION_LINE_HEIGHT} in increments of {CONVERSATION_LINE_HEIGHT_STEP}"
             ));
         }
         if !(MIN_CODE_FONT_SIZE..=MAX_CODE_FONT_SIZE).contains(&settings.code_font_size) {
@@ -542,6 +571,7 @@ impl DesktopSettingsStore {
                     | "conversationMinWidth"
                     | "conversationMaxWidth"
                     | "conversationFontSize"
+                    | "conversationLineHeight"
                     | "codeFontSize"
                     | "hostIdleRssRetireMb"
                     | "sharedHostMode"
@@ -716,6 +746,8 @@ mod tests {
             serde_json::json!({ "language": "fr" }),
             serde_json::json!({ "interfaceDensity": "dense" }),
             serde_json::json!({ "conversationFontSize": 11 }),
+            serde_json::json!({ "conversationLineHeight": 0.9 }),
+            serde_json::json!({ "conversationLineHeight": 1.75 }),
             serde_json::json!({ "codeFontSize": 19 }),
             serde_json::json!({ "terminalProfile": "nu" }),
             serde_json::json!({ "futureSetting": true }),
@@ -740,6 +772,10 @@ mod tests {
             store.settings.conversation_font_size,
             DEFAULT_CONVERSATION_FONT_SIZE
         );
+        assert_eq!(
+            store.settings.conversation_line_height,
+            DEFAULT_CONVERSATION_LINE_HEIGHT
+        );
         assert_eq!(store.settings.code_font_size, DEFAULT_CODE_FONT_SIZE);
 
         store
@@ -747,6 +783,7 @@ mod tests {
                 "themeFamily": "vercel",
                 "interfaceDensity": "compact",
                 "conversationFontSize": 17,
+                "conversationLineHeight": 1.8,
                 "codeFontSize": 15
             }))
             .unwrap();
@@ -757,6 +794,7 @@ mod tests {
         );
         assert_eq!(reloaded.settings.theme_family, DesktopThemeFamily::Vercel);
         assert_eq!(reloaded.settings.conversation_font_size, 17);
+        assert_eq!(reloaded.settings.conversation_line_height, 1.8);
         assert_eq!(reloaded.settings.code_font_size, 15);
 
         let mut apple = reloaded;

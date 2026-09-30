@@ -9,12 +9,17 @@ import { Minus, Plus } from "lucide-react";
 import { Select } from "../../components/Select";
 import {
   applyAppearancePreferences,
+  CONVERSATION_LINE_HEIGHT_STEP,
+  DEFAULT_CONVERSATION_LINE_HEIGHT,
   MAX_CODE_FONT_SIZE,
   MAX_CONVERSATION_FONT_SIZE,
+  MAX_CONVERSATION_LINE_HEIGHT,
   MIN_CODE_FONT_SIZE,
   MIN_CONVERSATION_FONT_SIZE,
+  MIN_CONVERSATION_LINE_HEIGHT,
   resolveCodeFontSize,
   resolveConversationFontSize,
+  resolveConversationLineHeight,
   resolveInterfaceDensity,
   resolveInterfaceFont,
 } from "../../lib/appearance-preferences";
@@ -40,12 +45,16 @@ function FontSizeStepper({
   max,
   decreaseLabel,
   increaseLabel,
+  step = 1,
+  formatValue = (nextValue) => `${nextValue}px`,
   onChange,
 }: {
   label: string;
   value: number;
   min: number;
   max: number;
+  step?: number;
+  formatValue?: (value: number) => string;
   decreaseLabel: string;
   increaseLabel: string;
   onChange: (value: number) => void;
@@ -62,12 +71,12 @@ function FontSizeStepper({
         disabled={value <= min}
         title={decreaseLabel}
         aria-label={decreaseLabel}
-        onClick={() => onChange(value - 1)}
+        onClick={() => onChange(Number((value - step).toFixed(2)))}
       >
         <Minus size={13} />
       </button>
       <output className="flex h-full min-w-14 items-center justify-center border-x border-border px-2 text-xs tabular-nums">
-        {value}px
+        {formatValue(value)}
       </output>
       <button
         type="button"
@@ -75,7 +84,7 @@ function FontSizeStepper({
         disabled={value >= max}
         title={increaseLabel}
         aria-label={increaseLabel}
-        onClick={() => onChange(value + 1)}
+        onClick={() => onChange(Number((value + step).toFixed(2)))}
       >
         <Plus size={13} />
       </button>
@@ -115,6 +124,9 @@ export function AppearanceSettings() {
   const conversationMinWidth = resolveConversationMinWidth(desktopSettings?.conversationMinWidth);
   const conversationMaxWidth = resolveConversationMaxWidth(desktopSettings?.conversationMaxWidth);
   const conversationFontSize = resolveConversationFontSize(desktopSettings?.conversationFontSize);
+  const conversationLineHeight = resolveConversationLineHeight(
+    desktopSettings?.conversationLineHeight ?? DEFAULT_CONVERSATION_LINE_HEIGHT,
+  );
   const [conversationMaxDraft, setConversationMaxDraft] = useState(String(conversationMaxWidth));
   const [conversationMinDraft, setConversationMinDraft] = useState(String(conversationMinWidth));
 
@@ -191,6 +203,7 @@ export function AppearanceSettings() {
 
   const previewStyle = {
     "--conversation-font-size": `${conversationFontSize}px`,
+    "--conversation-line-height": String(conversationLineHeight),
     "--code-font-size": `${codeFontSize}px`,
   } as CSSProperties;
 
@@ -555,6 +568,32 @@ export function AppearanceSettings() {
                     setting: t("appearanceConversationFontSize"),
                   })}
                   onChange={(value) => void patchDesktop({ conversationFontSize: value })}
+                />
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <span className="min-w-0">
+                  <span className="block text-sm">{t("appearanceConversationLineHeight")}</span>
+                  <span className="block text-xs text-muted">
+                    {t("appearanceConversationLineHeightDesc")}
+                  </span>
+                </span>
+                <FontSizeStepper
+                  label={t("appearanceConversationLineHeight")}
+                  value={conversationLineHeight}
+                  min={MIN_CONVERSATION_LINE_HEIGHT}
+                  max={MAX_CONVERSATION_LINE_HEIGHT}
+                  step={CONVERSATION_LINE_HEIGHT_STEP}
+                  formatValue={(value) =>
+                    `${value.toFixed(1)}${t("appearanceConversationLineHeightUnit")}`
+                  }
+                  decreaseLabel={t("appearanceDecrease", {
+                    setting: t("appearanceConversationLineHeight"),
+                  })}
+                  increaseLabel={t("appearanceIncrease", {
+                    setting: t("appearanceConversationLineHeight"),
+                  })}
+                  onChange={(value) => void patchDesktop({ conversationLineHeight: value })}
                 />
               </div>
 

@@ -11,8 +11,11 @@ import {
 import {
   MAX_CODE_FONT_SIZE,
   MAX_CONVERSATION_FONT_SIZE,
+  MAX_CONVERSATION_LINE_HEIGHT,
   MIN_CODE_FONT_SIZE,
   MIN_CONVERSATION_FONT_SIZE,
+  MIN_CONVERSATION_LINE_HEIGHT,
+  CONVERSATION_LINE_HEIGHT_STEP,
 } from "./appearance-preferences";
 import {
   HARD_MAX_CONVERSATION_WIDTH,
@@ -58,6 +61,7 @@ const DESKTOP_SETTINGS_KEYS = new Set([
   "conversationMinWidth",
   "conversationMaxWidth",
   "conversationFontSize",
+  "conversationLineHeight",
   "codeFontSize",
   "sharedHostMode",
   "knownWorkspaces",
@@ -150,14 +154,26 @@ function assertDesktopSettingsUpdate(patch: DesktopSettingsUpdate): void {
   }
   for (const [key, min, max] of [
     ["conversationFontSize", MIN_CONVERSATION_FONT_SIZE, MAX_CONVERSATION_FONT_SIZE],
+    ["conversationLineHeight", MIN_CONVERSATION_LINE_HEIGHT, MAX_CONVERSATION_LINE_HEIGHT],
     ["codeFontSize", MIN_CODE_FONT_SIZE, MAX_CODE_FONT_SIZE],
   ] as const) {
     const value = values[key];
-    if (
-      value !== undefined &&
-      (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max)
-    ) {
-      throw new Error(`${key} must be an integer between ${min} and ${max}`);
+    const isLineHeight = key === "conversationLineHeight";
+    const isValidNumber =
+      typeof value === "number" &&
+      Number.isFinite(value) &&
+      (isLineHeight
+        ? Math.abs(
+            value / CONVERSATION_LINE_HEIGHT_STEP -
+              Math.round(value / CONVERSATION_LINE_HEIGHT_STEP),
+          ) < 1e-9
+        : Number.isInteger(value));
+    if (value !== undefined && (!isValidNumber || value < min || value > max)) {
+      throw new Error(
+        isLineHeight
+          ? `${key} must be a number between ${min} and ${max} in increments of ${CONVERSATION_LINE_HEIGHT_STEP}`
+          : `${key} must be an integer between ${min} and ${max}`,
+      );
     }
   }
   for (const key of [
