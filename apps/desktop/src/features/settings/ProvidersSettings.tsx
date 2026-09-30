@@ -9,6 +9,7 @@ import {
   CircleCheck,
   Coins,
   Copy,
+  CircleAlert,
   Eye,
   EyeOff,
   Image as ImageIcon,
@@ -1594,8 +1595,11 @@ export function ProvidersSettings() {
                             const balance = balances[draft.originalId]!;
                             if (balance.unlimited) {
                               return (
-                                <span className="text-success">
-                                  {t("relayPricingBalanceUnlimited")}
+                                <span
+                                  className="text-success"
+                                  title={t("relayPricingBalanceUnlimited")}
+                                >
+                                  ∞
                                 </span>
                               );
                             }
@@ -1611,8 +1615,12 @@ export function ProvidersSettings() {
                             );
                           })()
                         ) : balances[draft.originalId] && !balances[draft.originalId]!.ok ? (
-                          <span className="text-danger" title={balances[draft.originalId]!.error}>
-                            {t("relayPricingBalanceError")}
+                          <span
+                            className="inline-flex items-center text-danger"
+                            title={balances[draft.originalId]!.error}
+                            aria-label={t("relayPricingBalanceError")}
+                          >
+                            <CircleAlert size={14} />
                           </span>
                         ) : (
                           <span className="text-muted">—</span>

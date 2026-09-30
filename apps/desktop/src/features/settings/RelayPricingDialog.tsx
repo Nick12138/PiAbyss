@@ -17,7 +17,7 @@ import type {
   RelayPricingRow,
   RelayRechargeRatio,
 } from "@piabyss/protocol";
-import { CircleCheck, ChevronDown, ChevronUp, Coins, RefreshCw, Search } from "lucide-react";
+import { CircleAlert, CircleCheck, ChevronDown, ChevronUp, Coins, RefreshCw, Search } from "lucide-react";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
@@ -405,12 +405,20 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                   ) : balance === null ? (
                     <span className="text-[11px] text-muted">—</span>
                   ) : !balance.ok ? (
-                    <span className="text-[11px] text-danger" title={balance.error}>
-                      {t("relayPricingBalanceError")}
+                    <span
+                      className="inline-flex items-center text-danger"
+                      title={balance.error}
+                      aria-label={t("relayPricingBalanceError")}
+                    >
+                      <CircleAlert size={13} />
                     </span>
                   ) : balance.unlimited ? (
-                    <span className="text-[11px] text-success">
-                      {t("relayPricingBalanceUnlimited")}
+                    <span
+                      className="text-success"
+                      title={t("relayPricingBalanceUnlimited")}
+                      aria-label={t("relayPricingBalanceUnlimited")}
+                    >
+                      ∞
                     </span>
                   ) : (
                     <span className="tabular-nums text-foreground">
