@@ -181,10 +181,16 @@ function authLabel(t: Translate, provider: ProviderSnapshot | undefined): string
   return provider.auth.source === "stored" ? t("providersKeyStored") : t("providersKeyConfigured");
 }
 
+/** 余额币种符号：按账户原生币种显示，不折算。 */
+function balanceSymbol(balance: RelayBalance | undefined): string {
+  return balance?.currency === "CNY" ? "¥" : "$";
+}
+
 /** 格式化余额徽标文案： unlimited / $x.xx / 错误。 */
 function formatBalance(balance: RelayBalance | undefined): string | null {
   if (!balance || !balance.ok) return null;
-  return balance.unlimited ? "∞" : `$${(balance.remainingUsd ?? 0).toFixed(2)}`;
+  const symbol = balanceSymbol(balance);
+  return balance.unlimited ? "∞" : `${symbol}${(balance.remainingUsd ?? 0).toFixed(2)}`;
 }
 
 /** 格式化充值比例显示：去掉多余小数（1:1 / 1:5 / 1.5:1）。 */
@@ -1595,9 +1601,10 @@ export function ProvidersSettings() {
                             }
                             return (
                               <span className="text-foreground">
-                                ${balance.remainingUsd?.toFixed(4) ?? "0.00"}
+                                {balanceSymbol(balance)}
+                                {balance.remainingUsd?.toFixed(4) ?? "0.00"}
                                 <span className="ml-1 text-[11px] text-muted">
-                                  ({t("relayPricingBalanceUsed")} $
+                                  ({t("relayPricingBalanceUsed")} {balanceSymbol(balance)}
                                   {balance.totalUsageUsd.toFixed(4)})
                                 </span>
                               </span>

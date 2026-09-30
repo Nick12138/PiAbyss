@@ -116,14 +116,15 @@ function balanceFromExtracted(
   extracted: RelayBalanceExtraction,
   fetchedAt: string,
 ): RelayBalance {
-  const totalUsageUsd = extracted.totalUsageUsd ?? 0;
-  const unlimited = extracted.remainingUsd >= UNLIMITED_LIMIT_USD;
+  const totalUsageUsd = extracted.used ?? 0;
+  const unlimited = extracted.remaining >= UNLIMITED_LIMIT_USD;
   return {
     stationId,
-    hardLimitUsd: extracted.remainingUsd + totalUsageUsd,
+    hardLimitUsd: extracted.remaining + totalUsageUsd,
     totalUsageUsd,
-    remainingUsd: unlimited ? null : extracted.remainingUsd,
+    remainingUsd: unlimited ? null : extracted.remaining,
     unlimited,
+    ...(extracted.currency === "CNY" ? { currency: "CNY" as const } : {}),
     fetchedAt,
     ok: true,
   };

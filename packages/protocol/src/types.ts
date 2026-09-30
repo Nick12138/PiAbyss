@@ -648,6 +648,13 @@ export type RelayBalance = {
   /** hardLimitUsd - totalUsageUsd, clamped at 0. */
   remainingUsd: number | null;
   unlimited: boolean;
+  /**
+   * Account currency of the balance values: "USD" (default) or "CNY".
+   * Built-in new-api endpoints always report USD; presets may report the
+   * station's native currency (e.g. DeepSeek CNY). Display-only — values
+   * are shown with the currency's symbol, never converted.
+   */
+  currency?: "USD" | "CNY";
   fetchedAt: string;
   ok: boolean;
   /** Error message when ok is false. */

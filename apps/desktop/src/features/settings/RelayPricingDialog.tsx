@@ -329,10 +329,13 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                     </span>
                   ) : (
                     <span className="tabular-nums text-foreground">
-                      ${balance.remainingUsd?.toFixed(2) ?? "0.00"}
-                      <span className="ml-1 text-[11px] text-muted">
-                        ≈¥{(((balance.remainingUsd ?? 0) / ratio.balance) * ratio.cny).toFixed(2)}
-                      </span>
+                      {balance.currency === "CNY" ? "¥" : "$"}
+                      {balance.remainingUsd?.toFixed(2) ?? "0.00"}
+                      {balance.currency !== "CNY" && (
+                        <span className="ml-1 text-[11px] text-muted">
+                          ≈¥{(((balance.remainingUsd ?? 0) / ratio.balance) * ratio.cny).toFixed(2)}
+                        </span>
+                      )}
                     </span>
                   )}
                 </div>

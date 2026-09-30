@@ -720,13 +720,14 @@ function isRelayBalance(value: unknown): boolean {
         "fetchedAt",
         "ok",
       ],
-      ["error"],
+      ["currency", "error"],
     ) &&
     isNonEmptyString(value.stationId) &&
     isNonNegativeNumber(value.hardLimitUsd) &&
     isNonNegativeNumber(value.totalUsageUsd) &&
     (value.remainingUsd === null || isNonNegativeNumber(value.remainingUsd)) &&
     isBoolean(value.unlimited) &&
+    (value.currency === undefined || value.currency === "USD" || value.currency === "CNY") &&
     isString(value.fetchedAt) &&
     isBoolean(value.ok) &&
     isOptionalString(value.error)
