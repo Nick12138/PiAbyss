@@ -2058,7 +2058,10 @@ export const en = {
   memoActionAgent: "Handle with Agent",
   memoActionCreate: "New note",
   memoAgentPrompt:
-    "Please handle the memo note referenced above. Once the work described in it is finished, call the complete action of the piabyss_memo tool to mark that note as complete, and always pass a `result` parameter containing a summary of what was done, the outcome, and any remaining follow-ups.",
+    "Please handle the memo note referenced above. Rules:\n" +
+    "1. Instructions the user sends manually in the session have the highest priority; if they conflict with this prompt (e.g. do not mark it done yet), follow the user.\n" +
+    "2. Only call the complete action of the piabyss_memo tool once the task has produced a final result and nothing is awaited from the user, always passing a `result` parameter containing a summary of what was done, the outcome, and any remaining follow-ups.\n" +
+    "3. If you need the user to decide (e.g. choose between options) or the task is not finished, do NOT mark it complete — reply and wait for the user's input, then complete once there is a conclusion.",
   memoActionResult: "Agent summary",
   memoActionOpenSession: "Open linked session",
   memoSessionOpenFailed: "Could not open the linked session — please try again",
@@ -2076,7 +2079,10 @@ export const en = {
   memoResultClearHint: "Delete the Agent completion summary of this note",
   memoResultClearFail: "Failed to clear summary",
   memoFollowupPrompt:
-    "Referenced above is a memo note together with the latest Agent completion summary. Please continue the discussion or the work based on it; once you reach a new conclusion, call the complete action of piabyss_memo again and pass an updated summary in `result` (it overwrites the previous one).",
+    "Referenced above is a memo note together with the latest Agent completion summary. Please continue the discussion or the work based on it. Rules:\n" +
+    "1. Instructions the user sends manually in the session have the highest priority; if they conflict with this prompt (e.g. do not mark it done yet), follow the user.\n" +
+    "2. Only call the complete action of piabyss_memo again once a final conclusion is reached and nothing is awaited from the user, passing an updated summary in `result` (it overwrites the previous one).\n" +
+    "3. If the user's decision is needed or the discussion has not converged, do NOT mark it complete — reply and wait for the user's input.",
   memoContinueFailed: "Failed to continue: could not open or create a session",
   memoAgentCreateFailed: "Failed to open a new session — memo prompt was not injected",
   memoSyncTitle: "Cloud sync (Cloudflare R2)",

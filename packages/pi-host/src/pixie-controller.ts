@@ -47,6 +47,8 @@ export function buildDispatchTaskPrompt(input: { task: string; from: string }): 
     "- result 字段填「已完成/未完成 + 结果摘要 + 关键数据」，不要粘贴全文；",
     "- 失败或部分完成时把 success 设为 false 并说明原因。",
     "如果本任务源自某条备忘录，先调用 piabyss_memo complete 回填该备忘录（提交结果总结），再调用 pixie_report。",
+    "用户在会话中手动发送的指令优先级最高，与上述要求冲突时以用户指令为准。",
+    "只有任务已产出最终结果、不再等待用户输入时才回填备忘录 complete；若需要用户决策（如让用户选择方案）或任务未完成，先回调 pixie_report 如实报告进度，等有结论再回填。",
     "不要代用户下结论；做不完就如实报告进度。",
     "</pixie-dispatch>",
   ].join("\n");

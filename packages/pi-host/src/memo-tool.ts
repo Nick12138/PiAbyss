@@ -5,6 +5,12 @@
  * agent 处理完后通过本工具把该记录标记为已完成（或重新打开 / 更新正文），
  * complete 时必须提交结果总结（覆盖式写入 MemoNote.result），
  * 并自动捕获提交时所在的会话（id/路径/标题/cwd）供「继续讨论」跳转。
+ *
+ * 完成时机约束（工具描述 + 注入提示词双重约束）：
+ *   - 只有任务已产出最终结果、不再等待用户输入时才允许 complete；
+ *   - 需要用户决策（如选择方案）时不标记完成，等结论出来再回填；
+ *   - 用户会话中手动发送的指令优先级最高，可覆盖备忘录内嵌提示词。
+ *
  * 与 `ask_user_question` 一样是 Host 内置 customTool：磁盘包同名工具无法
  * 遮蔽它。工具直接读写 MemoStore（磁盘权威，无缓存），与协议 handler、
  * 未来的云同步引擎共享同一份数据。
@@ -32,7 +38,7 @@ const ParamsSchema = Type.Object({
     ],
     {
       description:
-        "list = show all memo notes with ids and statuses; complete = mark a note as done after finishing the work it asked for; reopen = mark a done note as open again; update = change a note's title/content/tags.",
+        "list = show all memo notes with ids and statuses; complete = mark a note as done, ONLY when the work it asked for is truly finished and nothing is awaited from the user; reopen = mark a done note as open again; update = change a note's title/content/tags.",
     },
   ),
   id: Type.Optional(
@@ -65,7 +71,9 @@ export type MemoSessionInfo = {
 
 const TOOL_DESCRIPTION = [
   "Access the user's PiAbyss memo board (备忘录).",
-  "Use it to list pending notes, and to mark a note as complete (complete) once the task described in it has been handled, or to reopen/update notes.",
+  "Use it to list pending notes, to mark a note as complete (complete) once the task described in it has been handled, or to reopen/update notes.",
+  "Before calling complete, self-check: has the task produced a final result? Are you still waiting for user input or a user decision? If anything is still awaited (e.g. you asked the user to pick an option), do NOT call complete — reply and wait instead.",
+  "Instructions the user sends manually in the session always override memo prompts: if the user says not to mark a note done yet, do not call complete.",
   "complete REQUIRES a `result` parameter: a concise markdown summary of what was done and the outcome; it overwrites any previous summary.",
   "A note id is required for complete/reopen/update; call list first if you don't have one.",
 ].join(" ");

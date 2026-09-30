@@ -95,6 +95,16 @@ describe("dispatch task prompt template", () => {
     expect(prompt).toContain("piabyss_memo complete");
     expect(prompt).toContain("<pixie-dispatch>");
   });
+
+  it("states manual-user-message priority and the no-complete-while-awaiting-user rule", () => {
+    const prompt = buildDispatchTaskPrompt({ task: "t", from: "小精灵委派" });
+    // 用户手动消息优先级最高，可覆盖内嵌提示词。
+    expect(prompt).toContain("优先级最高");
+    expect(prompt).toContain("以用户指令为准");
+    // 等待用户决策时不回填备忘录 complete。
+    expect(prompt).toContain("不再等待用户输入");
+    expect(prompt).toContain("需要用户决策");
+  });
 });
 
 describe("pixie transcript from disk", () => {

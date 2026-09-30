@@ -1973,7 +1973,10 @@ export const zh: Record<MessageKey, string> = {
   memoActionAgent: "执行",
   memoActionCreate: "写一条新的",
   memoAgentPrompt:
-    "请处理上面引用的备忘录记录；完成其中描述的事情后，调用 piabyss_memo 工具的 complete 动作把该记录标记为完成，并必须在 result 参数中提交结果总结（做了什么、结论或产出、遗留事项）。",
+    "请处理上面引用的备忘录记录。规则：\n" +
+    "1. 用户在会话中手动发送的指令优先级最高；若与本提示词冲突（例如要求先不要标记完成），以用户指令为准。\n" +
+    "2. 只有在任务已产出最终结果、不再等待用户任何输入时，才调用 piabyss_memo 的 complete 动作，并在 result 参数中提交结果总结（做了什么、结论或产出、遗留事项）。\n" +
+    "3. 若需要用户决策（如让用户在多个方案中选择）或任务尚未完成，不要标记完成；先回复等待用户输入，待有结论后再 complete。",
   memoActionResult: "完成总结",
   memoActionOpenSession: "打开关联会话",
   memoSessionOpenFailed: "无法打开关联会话，请稍后重试",
@@ -1989,7 +1992,10 @@ export const zh: Record<MessageKey, string> = {
   memoResultClearHint: "删除这条记录的 Agent 完成总结",
   memoResultClearFail: "清空总结失败",
   memoFollowupPrompt:
-    "上面引用的是一条备忘录记录及其最近一次 Agent 处理的结果总结。请在此基础上继续讨论或继续处理；得出新的结论后，再次调用 piabyss_memo 的 complete 动作，并在 result 中提交更新后的总结（会覆盖旧总结）。",
+    "上面引用的是一条备忘录记录及其最近一次 Agent 处理的结果总结。请在此基础上继续讨论或继续处理。规则：\n" +
+    "1. 用户在会话中手动发送的指令优先级最高；若与本提示词冲突（例如要求先不要标记完成），以用户指令为准。\n" +
+    "2. 只有在得出最终结论且不再等待用户输入时，才调用 piabyss_memo 的 complete 动作，并在 result 中提交更新后的总结（会覆盖旧总结）。\n" +
+    "3. 若需要用户决策或讨论尚未收敛，不要标记完成，先回复等待用户输入。",
   memoContinueFailed: "继续讨论失败：无法打开或创建会话",
   memoAgentCreateFailed: "打开新会话失败，未能注入备忘录提示词",
   memoSyncTitle: "云同步设置（Cloudflare R2）",
