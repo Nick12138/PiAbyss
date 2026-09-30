@@ -203,7 +203,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "provider.logout": { providerId: "anthropic" },
   "provider.builtinModels": { providerId: "anthropic" },
   "provider.setBuiltinModels": { providerId: "anthropic", modelIds: ["claude-1"] },
-  "provider.pricing.fetch": { providerId: "hetune" },
+  "provider.pricing.fetch": { providerIds: ["hetune", "other"] },
   "provider.pricing.get": null,
   "provider.balance.get": { providerId: "hetune" },
   "provider.pricing.setRechargeRatio": {
@@ -573,7 +573,7 @@ function invalidParams(method: HostMethod): unknown {
     case "provider.setBuiltinModels":
       return { providerId: "anthropic", modelIds: "all" };
     case "provider.pricing.fetch":
-      return { providerId: "" };
+      return { providerIds: ["hetune", 1] };
     case "provider.pricing.get":
       return { unexpected: true };
     case "provider.balance.get":

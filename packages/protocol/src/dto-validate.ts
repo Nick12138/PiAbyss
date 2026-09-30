@@ -22,6 +22,7 @@ import type {
   RehydrateSnapshot,
   ToolSnapshot,
 } from "./types.js";
+import { RELAY_ITEM_FIELD_KEYS } from "./types.js";
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -688,7 +689,7 @@ function isRelayPricingRow(value: unknown): boolean {
         "endpoints",
         "keyAvailable",
       ],
-      ["vendor", "billingExpr"],
+      ["vendor", "detailKey", "billingExpr"],
     ) &&
     isNonEmptyString(value.stationId) &&
     isNonEmptyString(value.modelId) &&
@@ -702,6 +703,9 @@ function isRelayPricingRow(value: unknown): boolean {
     (value.callPrice === null || isNonNegativeNumber(value.callPrice)) &&
     isStringArray(value.endpoints) &&
     isBoolean(value.keyAvailable) &&
+    (value.detailKey === undefined ||
+      isString(value.detailKey) ||
+      isNonNegativeNumber(value.detailKey)) &&
     isOptionalString(value.billingExpr)
   );
 }
@@ -778,13 +782,30 @@ function isRelayFieldMappingDto(value: unknown): boolean {
     hasExactKeys(
       value,
       ["path"],
-      ["reader", "itemField", "scale", "offset", "unlimitedAbove", "fallback"],
+      [
+        "reader",
+        "itemField",
+        "itemValueField",
+        "scale",
+        "offset",
+        "divideBy",
+        "equals",
+        "unlimitedAbove",
+        "fallback",
+      ],
     ) &&
     isNonEmptyString(value.path) &&
     (value.reader === undefined || ["value", "entries", "array"].includes(String(value.reader))) &&
     (value.itemField === undefined || isOptionalString(value.itemField)) &&
+    (value.itemValueField === undefined || isOptionalString(value.itemValueField)) &&
     (value.scale === undefined || typeof value.scale === "number") &&
     (value.offset === undefined || typeof value.offset === "number") &&
+    (value.divideBy === undefined ||
+      (typeof value.divideBy === "string" &&
+        (RELAY_ITEM_FIELD_KEYS as readonly string[]).includes(value.divideBy))) &&
+    (value.equals === undefined ||
+      typeof value.equals === "string" ||
+      typeof value.equals === "number") &&
     (value.unlimitedAbove === undefined || typeof value.unlimitedAbove === "number") &&
     (value.fallback === undefined || typeof value.fallback === "number" || isString(value.fallback))
   );
@@ -795,6 +816,9 @@ function isRelayEndpointMappingDto(value: unknown): boolean {
     isPlainObject(value) &&
     hasExactKeys(value, ["path", "auth", "fields"], ["fieldsApplyTo", "itemsField", "itemsPath"]) &&
     isNonEmptyString(value.path) &&
+    // groupsDetail 端点的 path 允许 {fieldName} 占位符（逐模型二次请求），
+    // 其余端点 path 不允许 —— 占位符只从 pricing 行字段取值。
+    (value.path.includes("{") ? /^[^{}]*\{[A-Za-z]\w*\}[^{}]*$/.test(value.path) : true) &&
     isBoolean(value.auth) &&
     (value.itemsPath === undefined || isString(value.itemsPath)) &&
     isPlainObject(value.fields) &&

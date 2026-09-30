@@ -1,4 +1,5 @@
 import type { HostContextMap, HostRequestParams } from "./contracts.js";
+import { RELAY_ITEM_FIELD_KEYS } from "./types.js";
 import {
   MAX_AGENT_IMAGE_BYTES,
   MAX_AGENT_REQUEST_IMAGES,
@@ -136,15 +137,32 @@ function isRelayFieldMapping(value: unknown): boolean {
     hasExactKeys(
       value,
       ["path"],
-      ["reader", "itemField", "scale", "offset", "unlimitedAbove", "fallback"],
+      [
+        "reader",
+        "itemField",
+        "itemValueField",
+        "scale",
+        "offset",
+        "divideBy",
+        "equals",
+        "unlimitedAbove",
+        "fallback",
+      ],
     ) &&
     isNonEmptyString(value.path) &&
     isRelayFieldReader(value.reader) &&
     (value.itemField === undefined || isNonEmptyString(value.itemField)) &&
+    (value.itemValueField === undefined || isNonEmptyString(value.itemValueField)) &&
     (value.scale === undefined ||
       (typeof value.scale === "number" && Number.isFinite(value.scale))) &&
     (value.offset === undefined ||
       (typeof value.offset === "number" && Number.isFinite(value.offset))) &&
+    (value.divideBy === undefined ||
+      (typeof value.divideBy === "string" &&
+        (RELAY_ITEM_FIELD_KEYS as readonly string[]).includes(value.divideBy))) &&
+    (value.equals === undefined ||
+      typeof value.equals === "string" ||
+      typeof value.equals === "number") &&
     (value.unlimitedAbove === undefined ||
       (typeof value.unlimitedAbove === "number" && Number.isFinite(value.unlimitedAbove))) &&
     (value.fallback === undefined || typeof value.fallback === "number" || isString(value.fallback))
@@ -1094,8 +1112,10 @@ export function validateRequestParams<M extends HostMethod>(
         : fail("invalid provider.checkConnection params", { method });
     case "provider.pricing.fetch":
       return params === null ||
-        (exactObject(params, [], ["providerId"]) &&
-          (params.providerId === undefined || isNonEmptyString(params.providerId)))
+        (exactObject(params, [], ["providerId", "providerIds"]) &&
+          (params.providerId === undefined || isNonEmptyString(params.providerId)) &&
+          (params.providerIds === undefined ||
+            (Array.isArray(params.providerIds) && params.providerIds.every(isNonEmptyString))))
         ? ok(params)
         : fail("invalid provider.pricing.fetch params", { method });
     case "provider.pricing.get":

@@ -632,6 +632,11 @@ export type RelayPricingRow = {
   callPrice: number | null;
   /** Endpoint types, e.g. ["openai","anthropic"]. */
   endpoints: string[];
+  /**
+   * Per-model lookup key for groupsDetail second requests (raw value from
+   * the modelDetailKey mapping; string or number). Never displayed.
+   */
+  detailKey?: string | number;
   /** Free-form tiered billing expression; surfaced as-is. */
   billingExpr?: string;
   /** True when the configured key's /v1/models list includes this model. */
@@ -723,6 +728,11 @@ export type RelayFieldKey =
   | "modelPerCallFlag"
   /** Group names this model is offered in. */
   | "modelGroups"
+  /**
+   * Detail lookup key for per-model second-request endpoints (e.g. a numeric
+   * pricing id used as {modelDetailKey} in groupsDetail.path). Never shown.
+   */
+  | "modelDetailKey"
   /** Supported endpoint type strings. */
   | "modelEndpoints"
   /** Key-visible model id list (the key's own /models view). */
@@ -735,6 +745,20 @@ export type RelayFieldKey =
   | "balanceUnlimitedValue"
   /** Vendor registry: vendorId → vendorName (for numeric modelVendor). */
   | "vendors";
+
+/** Item-level canonical fields (valid divideBy targets). */
+export const RELAY_ITEM_FIELD_KEYS = [
+  "modelId",
+  "modelVendor",
+  "modelInputRatio",
+  "modelCompletionRatio",
+  "modelCacheRatio",
+  "modelCallPrice",
+  "modelPerCallFlag",
+  "modelGroups",
+  "modelEndpoints",
+  "modelDetailKey",
+] as const;
 
 /** How to interpret a mapped value. Defaults to "value" when omitted. */
 export type RelayFieldReader = "value" | "entries" | "array";
@@ -752,8 +776,27 @@ export type RelayFieldMapping = {
   reader?: RelayFieldReader;
   /** Item field name for "array"/entries-of-objects readers. */
   itemField?: string;
+  /**
+   * For entries reader over an object array: the field holding the entry's
+   * value (e.g. "multiplier"). Without it the value is the record minus the
+   * name field. Ignored by other readers.
+   */
+  itemValueField?: string;
   /** Multiply the raw value by this factor (default 1). */
   scale?: number;
+  /**
+   * Divide the raw value by another field's value from the same record
+   * (items mode) — e.g. output price ÷ input price to express a relative
+   * ratio. The named field must be an item-level canonical field key; its
+   * own scale (if any) is applied before dividing.
+   */
+  divideBy?: (typeof RELAY_ITEM_FIELD_KEYS)[number];
+  /**
+   * Flag match (modelPerCallFlag): the field counts as flagged when the raw
+   * value equals this string/number — e.g. path "billing_mode", equals
+   * "flat" marks per-call rows on stations without a numeric marker.
+   */
+  equals?: string | number;
   /** Subtract from the raw value before scale (used by cent → unit). */
   offset?: number;
   /** Values at/above this threshold mean "unlimited balance". */
@@ -820,6 +863,16 @@ export type RelayFieldMap = {
     balance?: RelayEndpointMapping;
     /** Used amount (optional; often same endpoint as balance). */
     usage?: RelayEndpointMapping;
+    /**
+     * Per-model group detail endpoint (second request). The path may contain
+     * `{fieldName}` placeholders resolved from each pricing model row's
+     * mapped field value (e.g. "api/pricing/{modelId}"); one request is made
+     * per distinct placeholder combination. Fields parse like any pricing
+     * endpoint: groups / groupDescriptions / autoGroups. Group multipliers
+     * found here are merged into the pricing table and each model row is
+     * bound to its own groups.
+     */
+    groupsDetail?: RelayEndpointMapping;
   };
 };
 
@@ -892,6 +945,8 @@ export type RelayMappingPickerResult = {
 export type RelayPricingFetchParams = {
   /** Omit to refresh every configured station. */
   providerId?: string;
+  /** Subset of provider ids to refresh (per-station refresh in the dialog). */
+  providerIds?: string[];
 };
 
 /** Result of validating a Telegram bot token via `getMe`. */
