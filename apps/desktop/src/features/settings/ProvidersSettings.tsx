@@ -1562,7 +1562,24 @@ export function ProvidersSettings() {
                 <section className="rounded-lg border border-border bg-surface p-3">
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                     <div className="min-w-0">
-                      <h2 className="text-sm font-medium">{t("relayPricingBalanceCurrent")}</h2>
+                      <h2 className="flex items-center gap-1.5 text-sm font-medium">
+                        {t("relayPricingBalanceCurrent")}
+                        <button
+                          type="button"
+                          className="flex size-5 shrink-0 items-center justify-center rounded text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
+                          title={t("relayPricingBalanceRefresh")}
+                          aria-label={t("relayPricingBalanceRefresh")}
+                          disabled={balanceLoadingIds.size > 0}
+                          onClick={() => void fetchBalance(draft.originalId!, true)}
+                        >
+                          <RefreshCw
+                            className={
+                              balanceLoadingIds.has(draft.originalId ?? "") ? "animate-spin" : ""
+                            }
+                            size={11}
+                          />
+                        </button>
+                      </h2>
                       <p className="mt-0.5 text-xs tabular-nums">
                         {balanceLoadingIds.has(draft.originalId ?? "") ? (
                           <RefreshCw className="inline animate-spin" size={12} />
@@ -1595,19 +1612,6 @@ export function ProvidersSettings() {
                         )}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border text-muted hover:bg-surface-overlay hover:text-foreground"
-                      title={t("relayPricingBalanceRefresh")}
-                      aria-label={t("relayPricingBalanceRefresh")}
-                      disabled={balanceLoadingIds.size > 0}
-                      onClick={() => void fetchBalance(draft.originalId!, true)}
-                    >
-                      <RefreshCw
-                        className={balanceLoadingIds.has(draft.originalId ?? "") ? "animate-spin" : ""}
-                        size={12}
-                      />
-                    </button>
                     <div className="ml-auto flex items-center gap-1.5">
                       <span className="text-[11px] text-muted">
                         {(() => {
