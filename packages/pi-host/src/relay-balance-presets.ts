@@ -9,7 +9,7 @@
  * 预设优先级：映射表 > 域名预设 > new-api 默认 > 形态兜底。
  */
 
-export type RelayBalanceCurrency = "USD" | "CNY";
+type RelayBalanceCurrency = "USD" | "CNY";
 
 export type RelayBalanceExtraction = {
   /** 账户原生币种的剩余余额（不折算）。 */
