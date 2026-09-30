@@ -28,6 +28,8 @@ function startRelayServer(options: {
   models?: unknown;
   subscription?: unknown;
   usage?: unknown;
+  /** /api/pricing/{id} 二次请求：id → 响应体。 */
+  groupDetail?: Record<string, unknown>;
   authExpected?: string;
 }): Promise<string> {
   const server = createServer((request, response) => {
@@ -46,6 +48,19 @@ function startRelayServer(options: {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify(payload));
     };
+    const detailMatch = options.groupDetail
+      ? /^\/api\/pricing\/(\d+)$/.exec(request.url ?? "")
+      : null;
+    if (detailMatch && options.groupDetail) {
+      const payload = options.groupDetail[detailMatch[1]!];
+      if (payload === undefined) {
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "not found" } }));
+        return;
+      }
+      body(payload);
+      return;
+    }
     if (request.url === "/api/pricing") {
       body(options.pricing ?? { data: [], group_ratio: {}, usable_group: {} });
       return;
@@ -123,6 +138,12 @@ const RELAY_PROVIDER = {
           maxTokens: 16384,
         },
       ],
+    },
+    other: {
+      name: "别家",
+      baseUrl: "https://other.example.com",
+      api: "openai-completions",
+      models: [],
     },
   },
 };
@@ -482,6 +503,153 @@ describe("relay pricing handlers", () => {
     expect(balance.ok).toBe(true);
     expect(balance.remainingUsd).toBeCloseTo(7.17589596, 6);
     expect(balance.totalUsageUsd).toBeCloseTo(0.018, 6);
+  });
+
+  it("refreshes only the requested providers when providerIds is given", async () => {
+    const baseUrl = await startRelayServer({
+      pricing: PRICING_FIXTURE,
+      authExpected: "sk-test",
+    });
+    const config = structuredClone(RELAY_PROVIDER);
+    config.providers.hetune.baseUrl = baseUrl;
+    config.providers.other = {
+      name: "别家",
+      baseUrl,
+      api: "openai-completions",
+      models: [],
+    };
+    const { handlers } = await setup(config);
+
+    const partial = await handlers["provider.pricing.fetch"]!({
+      id: "req-pid",
+      method: "provider.pricing.fetch",
+      params: { providerIds: ["hetune"] },
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+    if (!("result" in partial)) throw new Error(JSON.stringify(partial));
+    const stations = (partial.result as RelayPricingResult).table.stations;
+    // 只刷新 hetune：other 不会被建快照，全量刷新的 prune 也不会误删。
+    expect(stations.map((station) => station.stationId)).toEqual(["hetune"]);
+
+    // 两个站都刷新：各落一份快照。
+    const both = await handlers["provider.pricing.fetch"]!({
+      id: "req-pid2",
+      method: "provider.pricing.fetch",
+      params: { providerIds: ["hetune", "other"] },
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+    if (!("result" in both)) throw new Error(JSON.stringify(both));
+    expect(
+      (both.result as RelayPricingResult).table.stations.map((station) => station.stationId).sort(),
+    ).toEqual(["hetune", "other"]);
+  });
+
+  it("fetches per-model group details via a second request (groupsDetail)", async () => {
+    // CodeFlow 风格：/api/pricing 给模型+价格（数字 id），/api/pricing/{id}
+    // 给该模型的分组（[{name, multiplier, description}]）。
+    const baseUrl = await startRelayServer({
+      pricing: {
+        models: [
+          {
+            id: 1,
+            model: "model-a",
+            inputPricePerMillionTokens: 5,
+            outputPricePerMillionTokens: 25,
+          },
+          {
+            id: 2,
+            model: "model-b",
+            inputPricePerMillionTokens: 1,
+            outputPricePerMillionTokens: 6,
+          },
+        ],
+      },
+      groupDetail: {
+        "1": {
+          groups: [
+            { id: 2, name: "低价分组", description: "便宜", multiplier: 1 },
+            { id: 4, name: "官方分组", description: "Max", multiplier: 9 },
+          ],
+        },
+        "2": { groups: [{ id: 5, name: "Codex 官方分组", description: "", multiplier: 2 }] },
+      },
+    });
+    const config = structuredClone(RELAY_PROVIDER);
+    config.providers.hetune.baseUrl = baseUrl;
+    const { handlers } = await setup(config);
+    await handlers["provider.mapping.set"]!({
+      id: "m0",
+      method: "provider.mapping.set",
+      params: {
+        stationId: "hetune",
+        mapping: {
+          schemaVersion: 1,
+          stationId: "hetune",
+          endpoints: {
+            pricing: {
+              path: "api/pricing",
+              auth: false,
+              fieldsApplyTo: "items",
+              itemsPath: "models",
+              fields: {
+                modelId: { path: "model" },
+                modelDetailKey: { path: "id" },
+                modelInputRatio: { path: "inputPricePerMillionTokens", scale: 0.002 },
+                modelCompletionRatio: { path: "outputPricePerMillionTokens", scale: 0.002 },
+              },
+            },
+            groupsDetail: {
+              path: "api/pricing/{modelDetailKey}",
+              auth: false,
+              fields: {
+                groups: {
+                  path: "groups",
+                  reader: "entries",
+                  itemField: "name",
+                  itemValueField: "multiplier",
+                },
+                groupDescriptions: {
+                  path: "groups",
+                  reader: "entries",
+                  itemField: "name",
+                  itemValueField: "description",
+                },
+              },
+            },
+          },
+        },
+      },
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+
+    const result = await handlers["provider.pricing.fetch"]!({
+      id: "m1",
+      method: "provider.pricing.fetch",
+      params: { providerIds: ["hetune"] },
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+    if (!("result" in result)) throw new Error(JSON.stringify(result));
+    const station = (result.result as RelayPricingResult).table.stations[0]!;
+    expect(station.error).toBeUndefined();
+
+    // 分组合并自两次详情请求。
+    expect(station.groups.map((g) => g.name).sort()).toEqual([
+      "Codex 官方分组",
+      "低价分组",
+      "官方分组",
+    ]);
+    expect(station.groups.find((g) => g.name === "官方分组")?.ratio).toBe(9);
+    expect(station.groups.find((g) => g.name === "官方分组")?.description).toBe("Max");
+
+    // 每行按详情端点返回的分组展开（一个模型 N 组 = N 行，各带各的倍率）。
+    expect(station.rows).toHaveLength(3);
+    const rowALow = station.rows.find((r) => r.modelId === "model-a" && r.group === "低价分组")!;
+    expect(rowALow.groupRatio).toBe(1);
+    const rowAOff = station.rows.find((r) => r.modelId === "model-a" && r.group === "官方分组")!;
+    expect(rowAOff.groupRatio).toBe(9);
+    const rowB = station.rows.find((r) => r.modelId === "model-b")!;
+    expect(rowB.group).toBe("Codex 官方分组");
+    expect(rowB.groupRatio).toBe(2);
   });
 
   it("redacts the api key from fetch errors", async () => {

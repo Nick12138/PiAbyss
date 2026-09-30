@@ -127,6 +127,209 @@ describe("relay field mapping parser", () => {
     expect(callRow?.inputPer1M).toBeNull();
   });
 
+  it("supports divideBy to express absolute prices as relative ratios", () => {
+    // laneai 风格：站点给出每百万 token 的绝对价（微元），而本地语义要求
+    // 输出/缓存存「相对输入价的倍数」→ 用 divideBy 逐行相除。
+    const payload = {
+      data: [
+        {
+          model_name: "test-model",
+          input_price_micro_per_1m: 133000,
+          output_price_micro_per_1m: 532000,
+          cache_price_micro_per_1m: 1000,
+          channel_name: "备用渠道",
+        },
+      ],
+    };
+    const mapping: RelayFieldMap = {
+      schemaVersion: 1,
+      stationId: "laneai",
+      endpoints: {
+        pricing: {
+          path: "/api/models",
+          auth: false,
+          fieldsApplyTo: "items",
+          itemsPath: "data",
+          fields: {
+            modelId: { path: "model_name" },
+            modelInputRatio: { path: "input_price_micro_per_1m", scale: 5e-7 },
+            modelCompletionRatio: {
+              path: "output_price_micro_per_1m",
+              scale: 5e-7,
+              divideBy: "modelInputRatio",
+            },
+            modelCacheRatio: {
+              path: "cache_price_micro_per_1m",
+              scale: 5e-7,
+              divideBy: "modelInputRatio",
+            },
+            modelGroups: { path: "channel_name" },
+          },
+        },
+      },
+    };
+    const resolved = resolveEndpoint(payload, mapping.endpoints.pricing!);
+    const { rows } = applyPricingMapping(resolved, "laneai", new Set());
+
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    // input = $2 × (133000 × 5e-7) × 1 = 0.133；output = ×4；cache = ×0.007519…
+    expect(row.inputPer1M).toBeCloseTo(0.133, 9);
+    expect(row.outputPer1M).toBeCloseTo(0.532, 9);
+    expect(row.cachePer1M).toBeCloseTo(0.001, 9);
+  });
+
+  it("treats a string flag match (equals) as per-call billing", () => {
+    // laneai 风格：billing_mode: "flat" 表示按次计费，无数字型标记字段。
+    const payload = {
+      data: [
+        {
+          model_name: "flat-model",
+          billing_mode: "flat",
+          price_micro: 9000,
+          input_price_micro_per_1m: 20000,
+          output_price_micro_per_1m: 800000,
+          channel_name: "按次分组",
+        },
+        {
+          model_name: "token-model",
+          billing_mode: "token",
+          price_micro: 0,
+          input_price_micro_per_1m: 133000,
+          output_price_micro_per_1m: 532000,
+          channel_name: "按量分组",
+        },
+      ],
+    };
+    const mapping: RelayFieldMap = {
+      schemaVersion: 1,
+      stationId: "laneai",
+      endpoints: {
+        pricing: {
+          path: "/api/models",
+          auth: false,
+          fieldsApplyTo: "items",
+          itemsPath: "data",
+          fields: {
+            modelId: { path: "model_name" },
+            modelPerCallFlag: { path: "billing_mode", equals: "flat" },
+            modelCallPrice: { path: "price_micro", scale: 1e-6 },
+            modelInputRatio: { path: "input_price_micro_per_1m", scale: 5e-7 },
+            modelGroups: { path: "channel_name" },
+          },
+        },
+      },
+    };
+    const resolved = resolveEndpoint(payload, mapping.endpoints.pricing!);
+    const { rows } = applyPricingMapping(resolved, "laneai", new Set());
+
+    const flatRow = rows.find((row) => row.modelId === "flat-model");
+    expect(flatRow?.callPrice).toBeCloseTo(0.009, 9);
+    expect(flatRow?.inputPer1M).toBeNull();
+
+    const tokenRow = rows.find((row) => row.modelId === "token-model");
+    expect(tokenRow?.callPrice).toBeNull();
+    expect(tokenRow?.inputPer1M).toBeCloseTo(0.133, 9);
+  });
+
+  it("falls back to a default group when the station has no group concept", () => {
+    // laneai 风格站点：/api/models 返回每模型价格（分/1M），响应里既没有
+    // group_ratio 也没有 enable_groups —— 此前这种站点 rows 恒为 0 且不报错。
+    const payload = {
+      code: 200,
+      msg: "success",
+      data: [
+        {
+          model_name: "grok-4.5",
+          input_price_fen_per_1m: 28,
+          output_price_fen_per_1m: 84,
+          cache_price_fen_per_1m: 7,
+        },
+      ],
+    };
+    const mapping: RelayFieldMap = {
+      schemaVersion: 1,
+      stationId: "laneai",
+      endpoints: {
+        pricing: {
+          path: "/api/models",
+          auth: false,
+          fieldsApplyTo: "items",
+          itemsPath: "data",
+          fields: {
+            modelId: { path: "model_name" },
+            modelInputRatio: {
+              path: "input_price_fen_per_1m",
+              // 分 → 美元：1 美元 = 7 分率基准（与真实映射表一致）。
+              scale: 0.00014285714285714284,
+            },
+            modelCompletionRatio: {
+              path: "output_price_fen_per_1m",
+              scale: 0.00014285714285714284,
+            },
+            modelCacheRatio: {
+              path: "cache_price_fen_per_1m",
+              scale: 0.00014285714285714284,
+            },
+          },
+        },
+      },
+    };
+    const resolved = resolveEndpoint(payload, mapping.endpoints.pricing!);
+    const { rows, groups } = applyPricingMapping(resolved, "laneai", new Set());
+
+    // 回退到 default 虚拟分组，行不再被丢弃。
+    expect(groups.map((group) => group.name)).toEqual(["default"]);
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    expect(row.group).toBe("default");
+    expect(row.groupRatio).toBe(1);
+    // 行价 = RELAY_BASE_PRICE_PER_1M(2) × ratio × groupRatio，ratio 是 scale
+    // 后的值（28 分 → 0.004），所以 input 行价为 0.008。
+    expect(row.inputPer1M).toBeCloseTo(0.008, 6);
+  });
+
+  it("accepts a single-string group name and synonizes missing ratio entries", () => {
+    // laneai 风格：modelGroups 映射到 channel_code（单个字符串而非数组），
+    // 且响应里没有 group_ratio 倍率表 —— 分组名来自行自身，倍率缺省 1。
+    const payload = {
+      code: 200,
+      data: [
+        {
+          model_name: "grok-4.5",
+          channel_code: "限时国模福利按量分组",
+          input_price_fen_per_1m: 28,
+        },
+        { model_name: "glm-5", channel_code: "deepseek", input_price_fen_per_1m: 10 },
+      ],
+    };
+    const mapping: RelayFieldMap = {
+      schemaVersion: 1,
+      stationId: "laneai",
+      endpoints: {
+        pricing: {
+          path: "/api/models",
+          auth: false,
+          fieldsApplyTo: "items",
+          itemsPath: "data",
+          fields: {
+            modelId: { path: "model_name" },
+            modelInputRatio: { path: "input_price_fen_per_1m", scale: 0.00014285714285714284 },
+            modelGroups: { path: "channel_code" },
+          },
+        },
+      },
+    };
+    const resolved = resolveEndpoint(payload, mapping.endpoints.pricing!);
+    const { rows, groups } = applyPricingMapping(resolved, "laneai", new Set());
+
+    // 行自带的分组名成为分组表条目（倍率 1），行保留真实分组名。
+    expect(groups.map((group) => group.name).sort()).toEqual(["deepseek", "限时国模福利按量分组"]);
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row) => row.modelId === "grok-4.5")?.group).toBe("限时国模福利按量分组");
+    expect(rows.every((row) => row.groupRatio === 1)).toBe(true);
+  });
+
   it("maps key models and balance with scale", () => {
     const mapping = veloeraStyleMapping();
     const modelsResolved = resolveEndpoint(

@@ -12,12 +12,14 @@
  * 没有映射表（mapping 为 null 或 enabled=false）时走内置 new-api 默认路径，
  * 行为与改造前完全一致。
  */
-import type {
-  RelayBalance,
-  RelayEndpointMapping,
-  RelayFieldMapping,
-  RelayPricingGroup,
-  RelayPricingRow,
+import {
+  RELAY_ITEM_FIELD_KEYS,
+  type RelayBalance,
+  type RelayEndpointMapping,
+  type RelayFieldKey,
+  type RelayFieldMapping,
+  type RelayPricingGroup,
+  type RelayPricingRow,
 } from "@piabyss/protocol";
 import { isObject, type JsonObject } from "./provider-models-config.js";
 
@@ -78,18 +80,44 @@ export function readMappedField(
 
   const reader = mapping.reader ?? "value";
   if (reader === "entries") {
-    if (!isObject(current)) return undefined;
-    const entries: Array<[string, unknown]> = [];
-    for (const [name, value] of Object.entries(current as JsonObject)) {
-      if (mapping.itemField) {
-        const inner = isObject(value) ? (value as JsonObject)[mapping.itemField] : undefined;
-        if (inner === undefined) continue;
-        entries.push([name, inner]);
-      } else {
-        entries.push([name, value]);
+    // 对象形态：键 → 值（itemField 指定值对象里的字段）。
+    if (isObject(current)) {
+      const entries: Array<[string, unknown]> = [];
+      for (const [name, value] of Object.entries(current as JsonObject)) {
+        if (mapping.itemField) {
+          const inner = isObject(value) ? (value as JsonObject)[mapping.itemField] : undefined;
+          if (inner === undefined) continue;
+          entries.push([name, inner]);
+        } else {
+          entries.push([name, value]);
+        }
       }
+      return entries;
     }
-    return entries;
+    // 数组形态：对象数组，itemField 指定「哪个字段是条目名」（如 name），
+    // 其余字段作为值（或 itemFieldOf 指定值字段，如 multiplier）。用于
+    // [{name, multiplier, description}] 这类分组详情列表。
+    if (Array.isArray(current) && mapping.itemField) {
+      const entries: Array<[string, unknown]> = [];
+      for (const item of current) {
+        if (!isObject(item)) continue;
+        const record = item as JsonObject;
+        const name = record[mapping.itemField];
+        if (typeof name !== "string" || !name) continue;
+        if (mapping.itemValueField) {
+          const value = record[mapping.itemValueField];
+          if (value === undefined) continue;
+          entries.push([name, value]);
+        } else {
+          entries.push([
+            name,
+            Object.fromEntries(Object.entries(record).filter(([key]) => key !== mapping.itemField)),
+          ]);
+        }
+      }
+      return entries;
+    }
+    return undefined;
   }
   if (reader === "array") {
     if (Array.isArray(current)) {
@@ -109,10 +137,7 @@ export function readMappedField(
 }
 
 /** 把数值型映射规则（scale/offset/unlimitedAbove/fallback）应用到原始值。 */
-function applyNumericMapping(
-  raw: unknown,
-  mapping: RelayFieldMapping,
-): number | undefined {
+function applyNumericMapping(raw: unknown, mapping: RelayFieldMapping): number | undefined {
   let value: number;
   if (typeof raw === "number" && Number.isFinite(raw)) {
     value = raw;
@@ -156,26 +181,13 @@ export type ResolvedEndpoint = {
 };
 
 /** 对已解析的标量值套用其映射规则（offset/scale/fallback）。 */
-function applyScalarMapping(
-  resolved: ResolvedEndpoint,
-  field: string,
-): number | undefined {
+function applyScalarMapping(resolved: ResolvedEndpoint, field: string): number | undefined {
   const mapping = resolved.scalarMappings.get(field);
   return applyNumericMapping(resolved.scalars.get(field), mapping ?? { path: "$" });
 }
 
 /** Canonical fields that describe one item of a list (per-model / per-vendor). */
-const ITEM_LEVEL_FIELDS = new Set([
-  "modelId",
-  "modelVendor",
-  "modelInputRatio",
-  "modelCompletionRatio",
-  "modelCacheRatio",
-  "modelCallPrice",
-  "modelPerCallFlag",
-  "modelGroups",
-  "modelEndpoints",
-]);
+const ITEM_LEVEL_FIELDS = new Set(RELAY_ITEM_FIELD_KEYS);
 
 export function resolveEndpoint(
   payload: unknown,
@@ -212,7 +224,12 @@ export function resolveEndpoint(
       }
       const record = item as JsonObject;
       for (const [field, mapping] of Object.entries(endpoint.fields)) {
-        if (!ITEM_LEVEL_FIELDS.has(field)) continue;
+        if (
+          !ITEM_LEVEL_FIELDS.has(
+            field as Extract<RelayFieldKey, (typeof RELAY_ITEM_FIELD_KEYS)[number]>,
+          )
+        )
+          continue;
         rowMappings.set(field, mapping);
         row.set(field, resolveItemPath(record, mapping.path));
       }
@@ -221,7 +238,12 @@ export function resolveEndpoint(
     });
     if (rows.length > 0) itemLists.set(itemsField, rows);
     for (const [field, mapping] of Object.entries(endpoint.fields)) {
-      if (ITEM_LEVEL_FIELDS.has(field)) continue;
+      if (
+        ITEM_LEVEL_FIELDS.has(
+          field as Extract<RelayFieldKey, (typeof RELAY_ITEM_FIELD_KEYS)[number]>,
+        )
+      )
+        continue;
       scalarMappings.set(field, mapping);
       scalars.set(field, readMappedField(payload, mapping));
     }
@@ -251,13 +273,21 @@ function rowMappings(row: Map<string, unknown>): Map<string, RelayFieldMapping> 
   return mappings instanceof Map ? (mappings as Map<string, RelayFieldMapping>) : new Map();
 }
 
-/** 逐行数值：取原始值并套用该行的映射规则。 */
+/** 逐行数值：取原始值并套用该行的映射规则（支持 divideBy 跨字段相除）。 */
 function mappedNumber(row: Map<string, unknown>, field: string): number | undefined {
-  const mapping = rowMappings(row).get(field);
-  return applyNumericMapping(row.get(field), mapping ?? { path: "$" });
+  const mappings = rowMappings(row);
+  const mapping = mappings.get(field) ?? { path: "$" };
+  const value = applyNumericMapping(row.get(field), mapping);
+  if (value === undefined || !mapping.divideBy) return value;
+  // divideBy：除以同行另一字段的换算后值（其自身 scale 会先套用），
+  // 用于把「输出价/输入价」这类站点绝对价字段表达成相对倍率。
+  const divisorMapping = mappings.get(mapping.divideBy) ?? { path: "$" };
+  const divisor = applyNumericMapping(row.get(mapping.divideBy), divisorMapping);
+  if (divisor === undefined || divisor === 0) return undefined;
+  return value / divisor;
 }
 
-function groupRatioEntries(resolved: ResolvedEndpoint): Array<[string, number]> {
+export function groupRatioEntries(resolved: ResolvedEndpoint): Array<[string, number]> {
   const raw = resolved.scalars.get("groups");
   if (!Array.isArray(raw)) return [];
   const entries: Array<[string, number]> = [];
@@ -271,13 +301,19 @@ function groupRatioEntries(resolved: ResolvedEndpoint): Array<[string, number]> 
   return entries;
 }
 
-function stringSetEntries(resolved: ResolvedEndpoint, field: string): Set<string> {
+export function stringSetEntries(resolved: ResolvedEndpoint, field: string): Set<string> {
   const raw = resolved.scalars.get(field);
   if (!Array.isArray(raw)) return new Set();
   return new Set(raw.filter((item): item is string => typeof item === "string"));
 }
 
-function descriptionEntries(resolved: ResolvedEndpoint): Map<string, string> {
+/** 行自带分组名：数组或单个字符串（如 laneai 的 channel_code）都接受。 */
+function readGroupNames(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.filter((name): name is string => typeof name === "string");
+  return typeof raw === "string" && raw.trim() ? [raw] : [];
+}
+
+export function descriptionEntries(resolved: ResolvedEndpoint): Map<string, string> {
   const raw = resolved.scalars.get("groupDescriptions");
   const descriptions = new Map<string, string>();
   if (!Array.isArray(raw)) return descriptions;
@@ -318,41 +354,71 @@ export function applyPricingMapping(
   const autos = stringSetEntries(resolved, "autoGroups");
   const vendors = vendorMap(resolved);
 
-  const groups: RelayPricingGroup[] = [...ratios.entries()]
-    .sort((left, right) => left[0].localeCompare(right[0]))
-    .map(([name, ratio]) => ({
-      name,
-      ratio,
-      ...(descriptions.has(name) ? { description: descriptions.get(name) } : {}),
-      ...(autos.has(name) ? { isAuto: true } : {}),
-    }));
-
+  // 模型行携带的分组名（数组或单个字符串）。有分组名但响应里没有倍率表的
+  // 站点（如 laneai：channel_code 即分组、无 group_ratio），补一个倍率 1 的
+  // 条目，否则逐行展开时所有分组都因查不到倍率被丢弃 → rows=0。
   const modelRows = resolved.itemLists.get("models") ?? [];
+  const groupNamesInRows = new Set<string>();
+  for (const model of modelRows) {
+    for (const name of readGroupNames(model.get("modelGroups"))) groupNamesInRows.add(name);
+  }
+  for (const name of groupNamesInRows) {
+    if (!ratios.has(name)) ratios.set(name, 1);
+  }
+
+  const groups: RelayPricingGroup[] =
+    ratios.size > 0
+      ? [...ratios.entries()]
+          .sort((left, right) => left[0].localeCompare(right[0]))
+          .map(([name, ratio]) => ({
+            name,
+            ratio,
+            ...(descriptions.has(name) ? { description: descriptions.get(name) } : {}),
+            ...(autos.has(name) ? { isAuto: true } : {}),
+          }))
+      : // 站点无分组概念时给一个 default 分组，与行回退保持一致。
+        [{ name: "default", ratio: 1 }];
+
   const rows: RelayPricingRow[] = [];
   for (const model of modelRows) {
     const modelId = model.get("modelId");
     if (typeof modelId !== "string" || !modelId.trim()) continue;
     const vendorId = model.get("modelVendor");
     const vendor = typeof vendorId === "number" ? vendors.get(vendorId) : undefined;
-    const groupNames = model.get("modelGroups");
-    const enableGroups: string[] = Array.isArray(groupNames)
-      ? groupNames.filter((name): name is string => typeof name === "string")
-      : [];
+    const enableGroups = readGroupNames(model.get("modelGroups"));
     const endpointsRaw = model.get("modelEndpoints");
     const endpoints = Array.isArray(endpointsRaw)
       ? endpointsRaw.filter((item): item is string => typeof item === "string")
       : [];
     const perCallFlag = model.get("modelPerCallFlag");
+    const flagMapping = rowMappings(model).get("modelPerCallFlag");
     const perCall =
-      (typeof perCallFlag === "number" && perCallFlag !== 0) || perCallFlag === true;
+      flagMapping?.equals !== undefined
+        ? // 字符串型标记（如 billing_mode === "flat"）：按 equals 精确匹配。
+          perCallFlag === flagMapping.equals ||
+          (typeof perCallFlag === "string" && String(flagMapping.equals) === perCallFlag) ||
+          (typeof flagMapping.equals === "number" && perCallFlag === flagMapping.equals)
+        : (typeof perCallFlag === "number" && perCallFlag !== 0) || perCallFlag === true;
+    // 详情主键（groupsDetail 二次请求占位符用；string/number 都允许）。
+    const detailKeyRaw = model.get("modelDetailKey");
+    const detailKey =
+      typeof detailKeyRaw === "string" && detailKeyRaw.trim()
+        ? detailKeyRaw
+        : typeof detailKeyRaw === "number" && Number.isFinite(detailKeyRaw)
+          ? detailKeyRaw
+          : undefined;
     const callPrice = mappedNumber(model, "modelCallPrice");
     const inputRatio = mappedNumber(model, "modelInputRatio");
     const completionRatio = mappedNumber(model, "modelCompletionRatio");
     const cacheRatio = mappedNumber(model, "modelCacheRatio");
     const usePerCall = perCall || (callPrice !== undefined && inputRatio === undefined);
-    for (const group of enableGroups) {
-      const groupRatio = ratios.get(group);
+    // 行分组：优先用行自带的分组名；完全没有分组概念时回退「default」
+    // 虚拟分组，避免模型行被静默丢弃（快照 rows=0 却不报错）。
+    const effectiveGroups = enableGroups.length > 0 ? enableGroups : ["default"];
+    for (const group of effectiveGroups) {
+      const groupRatio = ratios.get(group) ?? (group === "default" ? 1 : undefined);
       if (groupRatio === undefined) continue;
+      const detailProps = detailKey !== undefined ? { detailKey } : {};
       if (usePerCall) {
         rows.push({
           stationId,
@@ -366,11 +432,11 @@ export function applyPricingMapping(
           cachePer1M: null,
           callPrice: (callPrice ?? 0) * groupRatio,
           endpoints,
+          ...detailProps,
           keyAvailable: keyModels.has(modelId),
         });
       } else {
-        const input =
-          RELAY_BASE_PRICE_PER_1M * (inputRatio ?? 1) * groupRatio;
+        const input = RELAY_BASE_PRICE_PER_1M * (inputRatio ?? 1) * groupRatio;
         rows.push({
           stationId,
           modelId,
@@ -383,6 +449,7 @@ export function applyPricingMapping(
           cachePer1M: input * (cacheRatio ?? 0),
           callPrice: null,
           endpoints,
+          ...detailProps,
           keyAvailable: keyModels.has(modelId),
         });
       }
@@ -421,7 +488,6 @@ export function applyBalanceMapping(
   if (result.unlimited === undefined) result.unlimited = false;
   return result;
 }
-
 
 /** 构造 RelayBalance 快照（余额映射结果 → 本地结构）。 */
 export function balanceFromMapping(

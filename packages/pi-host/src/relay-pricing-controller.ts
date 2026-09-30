@@ -19,6 +19,7 @@
 import { join } from "node:path";
 import type {
   RelayBalance,
+  RelayEndpointMapping,
   RelayFieldMap,
   RelayFieldMapping,
   RelayMappingHandoffResult,
@@ -53,7 +54,10 @@ import {
   applyModelsMapping,
   applyPricingMapping,
   balanceFromMapping,
+  descriptionEntries,
+  groupRatioEntries,
   resolveEndpoint,
+  stringSetEntries,
 } from "./relay-field-mapping.js";
 
 /** 基准价：new-api 体系下 model_ratio=1、group_ratio=1 时的输入价（$/1M）。 */
@@ -635,6 +639,160 @@ async function fetchStation(
 }
 
 /** 映射化抓取路径：pricing/models/balance/usage 端点全部来自映射表。 */
+/**
+ * 逐模型分组详情（二次请求）：对每个占位符组合请求一次详情端点，把响应里的
+ * groups（name→multiplier）与 groupDescriptions 合入分组表，并把行绑定到
+ * 该组合解析出的分组名上。占位符字段在行上以映射后的值存在（modelId 等
+ * ITEM_LEVEL_FIELDS），响应解析复用 pricing 端点同一套 fields 规则。
+ */
+async function enrichRowsWithGroupDetails(
+  rows: RelayPricingRow[],
+  groups: RelayPricingGroup[],
+  base: string,
+  detailEndpoint: RelayEndpointMapping,
+  headers: Record<string, string>,
+  signal: AbortSignal,
+): Promise<{ rows: RelayPricingRow[]; groups: RelayPricingGroup[] }> {
+  // path 中允许的占位符：{modelDetailKey} / {modelId} 等行字段名。
+  const placeholderNames = [...detailEndpoint.path.matchAll(/\{([A-Za-z]\w*)\}/g)].map(
+    (match) => match[1]!,
+  );
+  if (placeholderNames.length === 0) return { rows, groups };
+
+  /** 行占位符取值：modelDetailKey 优先（不在行上则该行不参与详情请求）。 */
+  const placeholderValueOf = (row: RelayPricingRow, name: string): string | number | undefined => {
+    if (name === "modelDetailKey") return row.detailKey;
+    const value = row[name as keyof RelayPricingRow];
+    if (name === "endpoints" || name === "vendor") return undefined;
+    return typeof value === "string" || typeof value === "number" ? value : undefined;
+  };
+
+  // 占位符组合 → 请求 URL（同组合只请求一次）与解析出的分组。
+  const combinations = new Map<string, { url: string; groupNames: Set<string> | null }>();
+  for (const row of rows) {
+    let url = detailEndpoint.path;
+    let resolvable = true;
+    for (const name of placeholderNames) {
+      const value = placeholderValueOf(row, name);
+      if (value === undefined || value === "") {
+        resolvable = false;
+        break;
+      }
+      url = url.replaceAll(`{${name}}`, encodeURIComponent(String(value)));
+    }
+    if (!resolvable) continue;
+    const full = joinUrl(base, url);
+    if (!combinations.has(full)) combinations.set(full, { url: full, groupNames: null });
+  }
+  if (combinations.size === 0) return { rows, groups };
+
+  // 逐组合请求并解析分组（groups / groupDescriptions / autoGroups 规则与
+  // pricing 端点一致，直接复用 resolveEndpoint）。
+  const ratioByName = new Map<string, RelayPricingGroup>(groups.map((g) => [g.name, g]));
+  const descriptionByName = new Map<string, string>();
+  const autoNames = new Set<string>();
+  for (const combination of combinations.values()) {
+    signal.throwIfAborted();
+    const payload = await fetchJson(combination.url, detailEndpoint.auth ? headers : {}, signal);
+    const resolved = resolveEndpoint(payload, {
+      ...detailEndpoint,
+      // 详情端点只解析分组相关字段，忽略 modelId 等行级字段规则。
+      fields: Object.fromEntries(
+        Object.entries(detailEndpoint.fields).filter(([field]) =>
+          ["groups", "groupDescriptions", "autoGroups"].includes(field),
+        ),
+      ),
+    });
+    const detailRatios = groupRatioEntries(resolved);
+    const names = new Set<string>();
+    for (const [name, ratio] of detailRatios) {
+      names.add(name);
+      const existing = ratioByName.get(name);
+      if (!existing) {
+        ratioByName.set(name, { name, ratio });
+      } else if (existing.ratio !== ratio) {
+        // 同名分组在不同模型下倍率不一致时保留首个（详情端点按模型隔离，
+        // 理论上不会发生；万一发生以先到为准并记录）。
+        logger.warn("relay pricing: inconsistent group ratio across models", {
+          url: combination.url,
+          group: name,
+          kept: existing.ratio,
+          ignored: ratio,
+        });
+      }
+    }
+    for (const [name, description] of descriptionEntries(resolved)) {
+      descriptionByName.set(name, description);
+    }
+    for (const name of stringSetEntries(resolved, "autoGroups")) autoNames.add(name);
+    combination.groupNames = names;
+  }
+
+  // 行绑定：按占位符值找到该行的详情组合，按组展开（一个模型属 N 个组 =
+  // N 行，各带各的倍率）——与主端点多分组的展开语义一致。详情无分组的行
+  // 原样保留。
+  const detailPathTemplate = detailEndpoint.path;
+  const enriched: RelayPricingRow[] = [];
+  for (const row of rows) {
+    let url = detailPathTemplate;
+    let resolvable = true;
+    for (const name of placeholderNames) {
+      const value = placeholderValueOf(row, name);
+      if (value === undefined || value === "") {
+        resolvable = false;
+        break;
+      }
+      url = url.replaceAll(`{${name}}`, encodeURIComponent(String(value)));
+    }
+    const combination = resolvable ? combinations.get(joinUrl(base, url)) : undefined;
+    const names = combination?.groupNames;
+    if (!names || names.size === 0) {
+      enriched.push(row);
+      continue;
+    }
+    for (const name of [...names].sort()) {
+      const ratio = ratioByName.get(name)?.ratio;
+      // 主端点解析时没有分组倍率表，行价是按 default（×1）算的；这里按该行
+      // 实际分组的倍率重算价格（价格对分组倍率线性）。
+      const factor = ratio !== undefined && ratio !== row.groupRatio ? ratio / row.groupRatio : 1;
+      enriched.push({
+        ...row,
+        group: name,
+        groupRatio: ratio ?? row.groupRatio,
+        ...(factor === 1
+          ? {}
+          : {
+              inputPer1M: row.inputPer1M === null ? null : row.inputPer1M * factor,
+              outputPer1M: row.outputPer1M === null ? null : row.outputPer1M * factor,
+              cachePer1M: row.cachePer1M === null ? null : row.cachePer1M * factor,
+              callPrice: row.callPrice === null ? null : row.callPrice * factor,
+            }),
+      });
+    }
+  }
+
+  const mergedGroups = [...ratioByName.values()].map((group) => ({
+    ...group,
+    ...(descriptionByName.has(group.name)
+      ? { description: descriptionByName.get(group.name) }
+      : {}),
+    ...(autoNames.has(group.name) ? { isAuto: true } : {}),
+  }));
+  // 主端点回退产生的 default 虚拟分组（倍率 1、无描述）在详情给出真实分组、
+  // 且没有行落在 default 时已无意义，从分组表移除。
+  const hasDefaultRows = enriched.some((row) => row.group === "default");
+  const filteredGroups = hasDefaultRows
+    ? mergedGroups
+    : mergedGroups.filter(
+        (group) =>
+          group.name !== "default" ||
+          group.ratio !== 1 ||
+          group.description !== undefined ||
+          group.isAuto === true,
+      );
+  return { rows: enriched, groups: filteredGroups };
+}
+
 async function fetchStationWithMapping(
   stationId: string,
   providerId: string | null,
@@ -651,6 +809,7 @@ async function fetchStationWithMapping(
 
   let groups: RelayPricingGroup[] = [];
   let rows: RelayPricingRow[] = [];
+  let resolvedRows: Array<Map<string, unknown>> | null = null;
   if (pricingEndpoint) {
     const payload = await fetchJson(
       joinUrl(base, pricingEndpoint.path),
@@ -659,6 +818,33 @@ async function fetchStationWithMapping(
     );
     const resolved = resolveEndpoint(payload, pricingEndpoint);
     ({ rows, groups } = applyPricingMapping(resolved, stationId, new Set<string>()));
+    // 保留解析后的模型行记录，供 keyModels 已知后重算 keyAvailable（避免
+    // 重新 applyPricingMapping 覆盖二次请求写入的分组绑定）。
+    resolvedRows = resolved.itemLists.get("models") ?? null;
+  }
+
+  // 逐模型分组详情（二次请求）：path 里的 {fieldName} 占位符用该行的已映射
+  // 字段值替换（如 api/pricing/{modelId}），按占位符组合去重后逐条请求，
+  // 响应解析出 groups/groupDescriptions 并绑定到对应的模型行。
+  const detailEndpoint = mapping.endpoints.groupsDetail;
+  if (detailEndpoint && pricingEndpoint && rows.length > 0) {
+    try {
+      ({ rows, groups } = await enrichRowsWithGroupDetails(
+        rows,
+        groups,
+        base,
+        detailEndpoint,
+        headers,
+        signal,
+      ));
+    } catch (error) {
+      signal.throwIfAborted();
+      // 详情端点失败不否定整个抓取：保留主端点的行（分组回退为无倍率表）。
+      logger.warn("relay pricing: groups detail endpoint failed", {
+        stationId,
+        error: relayErrorMessage(error, sensitiveValues),
+      });
+    }
   }
 
   let keyModels: string[] = [];
@@ -679,18 +865,20 @@ async function fetchStationWithMapping(
     }
   }
 
-  // keyAvailable 需要在 keyModels 已知后重算一次。
-  if (pricingEndpoint) {
-    const payload = await fetchJson(
-      joinUrl(base, pricingEndpoint.path),
-      pricingEndpoint.auth ? headers : {},
-      signal,
-    );
-    ({ rows, groups } = applyPricingMapping(
-      resolveEndpoint(payload, pricingEndpoint),
-      stationId,
-      new Set(keyModels),
-    ));
+  // keyAvailable 重算：直接改写现有行的标记，不重新解析主端点 —— 否则会
+  // 把 groupsDetail 二次请求写入的分组绑定覆盖掉。
+  if (resolvedRows) {
+    const keySet = new Set(keyModels);
+    let index = 0;
+    for (const model of resolvedRows) {
+      const modelId = model.get("modelId");
+      if (typeof modelId !== "string") continue;
+      const available = keySet.has(modelId);
+      while (index < rows.length && rows[index]!.modelId !== modelId) index += 1;
+      if (index >= rows.length) break;
+      rows[index] = { ...rows[index]!, keyAvailable: available };
+      index += 1;
+    }
   }
 
   const balance = apiKey
@@ -806,8 +994,15 @@ export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
       const server = factory.getServer();
       if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
       const params = (ctx.params ?? {}) as RelayPricingFetchParams;
+      // 兼容三种入参：providerIds 批量（弹窗按站刷新）、旧的单站 providerId、
+      // 以及空参（全量刷新全部已配置的 relay provider）。
+      const requested = params.providerIds
+        ? params.providerIds
+        : params.providerId
+          ? [params.providerId]
+          : null;
       try {
-        const result = await fetchAndStore(server, params.providerId ? [params.providerId] : null);
+        const result = await fetchAndStore(server, requested);
         return { result };
       } catch (error) {
         if (server.getShutdownSignal().aborted) {
