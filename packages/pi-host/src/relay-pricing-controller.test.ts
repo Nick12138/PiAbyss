@@ -652,6 +652,140 @@ describe("relay pricing handlers", () => {
     expect(rowB.groupRatio).toBe(2);
   });
 
+  it("maps CodeFlow-style absolute per-1M prices and per-model group details", async () => {
+    // CodeFlow 风格：/api/pricing 的 models[] 给美元/每百万 token 的绝对单价
+    //（不是 new-api 倍率），分组不在主响应里，需按数字 id 二次请求
+    // /api/pricing/{id}。映射表用 divideBy 把绝对价换算成相对倍率：
+    //   输入倍率 = 绝对输入价 / 2（modelEndpoints 字段借用为常量 2 持有者）；
+    //   输出/缓存倍率 = 对应绝对价 / 绝对输入价（divideBy modelInputRatio）。
+    const baseUrl = await startRelayServer({
+      pricing: {
+        models: [
+          {
+            id: 3,
+            model: "claude-opus-x",
+            inputPricePerMillionTokens: 5,
+            outputPricePerMillionTokens: 25,
+            cachedInputPricePerMillionTokens: 0.5,
+          },
+          {
+            id: 9,
+            model: "gpt-y",
+            inputPricePerMillionTokens: 10,
+            outputPricePerMillionTokens: 50,
+            cachedInputPricePerMillionTokens: 1,
+          },
+        ],
+      },
+      groupDetail: {
+        "3": {
+          groups: [
+            { id: 1, name: "低价分组", description: "Kiro", multiplier: 1 },
+            { id: 4, name: "官方分组", description: "Max 20x", multiplier: 9 },
+          ],
+        },
+        "9": { groups: [{ id: 2, name: "Codex 官方分组", description: "", multiplier: 2 }] },
+      },
+    });
+    const config = structuredClone(RELAY_PROVIDER);
+    config.providers.hetune.baseUrl = baseUrl;
+    const { handlers } = await setup(config);
+    await handlers["provider.mapping.set"]!({
+      id: "cfm0",
+      method: "provider.mapping.set",
+      params: {
+        stationId: "hetune",
+        mapping: {
+          schemaVersion: 1,
+          stationId: "hetune",
+          endpoints: {
+            pricing: {
+              path: "api/pricing",
+              auth: false,
+              fieldsApplyTo: "items",
+              itemsPath: "models",
+              fields: {
+                modelId: { path: "model" },
+                modelDetailKey: { path: "id" },
+                modelEndpoints: { path: "__base", fallback: 2 },
+                modelInputRatio: {
+                  path: "inputPricePerMillionTokens",
+                  divideBy: "modelEndpoints",
+                },
+                modelCompletionRatio: {
+                  path: "outputPricePerMillionTokens",
+                  divideBy: "modelInputRatio",
+                },
+                modelCacheRatio: {
+                  path: "cachedInputPricePerMillionTokens",
+                  divideBy: "modelInputRatio",
+                },
+              },
+            },
+            groupsDetail: {
+              path: "api/pricing/{modelDetailKey}",
+              auth: false,
+              fields: {
+                groups: {
+                  path: "groups",
+                  reader: "entries",
+                  itemField: "name",
+                  itemValueField: "multiplier",
+                },
+                groupDescriptions: {
+                  path: "groups",
+                  reader: "entries",
+                  itemField: "name",
+                  itemValueField: "description",
+                },
+              },
+            },
+          },
+        },
+      },
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+
+    const result = await handlers["provider.pricing.fetch"]!({
+      id: "cfm1",
+      method: "provider.pricing.fetch",
+      params: { providerIds: ["hetune"] },
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+    if (!("result" in result)) throw new Error(JSON.stringify(result));
+    const station = (result.result as RelayPricingResult).table.stations[0]!;
+    expect(station.error).toBeUndefined();
+
+    // 分组合并自两次详情请求；同名分组跨模型共享倍率表。
+    expect(station.groups.map((g) => g.name).sort()).toEqual([
+      "Codex 官方分组",
+      "低价分组",
+      "官方分组",
+    ]);
+    expect(station.groups.find((g) => g.name === "官方分组")?.ratio).toBe(9);
+
+    // 价格核对（绝对价语义，非倍率语义）：
+    // opus 绝对输入价 $5：低价分组 ×1 → $5/$25/$0.5；官方分组 ×9 → $45。
+    const opusLow = station.rows.find(
+      (r) => r.modelId === "claude-opus-x" && r.group === "低价分组",
+    )!;
+    expect(opusLow.inputPer1M).toBeCloseTo(5, 6);
+    expect(opusLow.outputPer1M).toBeCloseTo(25, 6);
+    expect(opusLow.cachePer1M).toBeCloseTo(0.5, 6);
+    expect(opusLow.groupRatio).toBe(1);
+    const opusOfficial = station.rows.find(
+      (r) => r.modelId === "claude-opus-x" && r.group === "官方分组",
+    )!;
+    expect(opusOfficial.inputPer1M).toBeCloseTo(45, 6);
+    expect(opusOfficial.outputPer1M).toBeCloseTo(225, 6);
+    expect(opusOfficial.groupRatio).toBe(9);
+    // gpt 绝对输入价 $10、Codex 分组 ×2 → $20/$100。
+    const gpt = station.rows.find((r) => r.modelId === "gpt-y" && r.group === "Codex 官方分组")!;
+    expect(gpt.inputPer1M).toBeCloseTo(20, 6);
+    expect(gpt.outputPer1M).toBeCloseTo(100, 6);
+    expect(gpt.groupRatio).toBe(2);
+  });
+
   it("redacts the api key from fetch errors", async () => {
     const baseUrl = await startRelayServer({ authExpected: "sk-secret" });
     const config = structuredClone(RELAY_PROVIDER);
