@@ -11,21 +11,17 @@
  *
  * 写入与 RelayPricingStore 同策略：临时文件 + rename 原子替换。
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import type { RelayFieldMap } from "@piabyss/protocol";
 import { isObject } from "./provider-models-config.js";
-
-/**
- * 归一化站点地址：scheme+host(+port)+path，host 小写、默认端口省略、
- * 路径去尾斜杠。同一站点在 models.json 里被配置成多个 provider 时
- * （例如一个 key 跑不同模型），归一化结果一致即可共享映射表。
- */
-type RelayMappingShareScope =
-  /** 归一化地址完全一致才算同一站（默认）。 */
-  | "url"
-  /** 主域一致（hetune.top ≈ cf.hetune.top）即同一站；子域仅作入口镜像。 */
-  | "domain";
 
 /**
  * 归一化站点地址：scheme+host(+port)+path，host 小写、默认端口省略、
