@@ -21,7 +21,7 @@ import { isObject } from "./provider-models-config.js";
  * 路径去尾斜杠。同一站点在 models.json 里被配置成多个 provider 时
  * （例如一个 key 跑不同模型），归一化结果一致即可共享映射表。
  */
-export type RelayMappingShareScope =
+type RelayMappingShareScope =
   /** 归一化地址完全一致才算同一站（默认）。 */
   | "url"
   /** 主域一致（hetune.top ≈ cf.hetune.top）即同一站；子域仅作入口镜像。 */

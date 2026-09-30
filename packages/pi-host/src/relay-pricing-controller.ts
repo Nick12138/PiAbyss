@@ -612,7 +612,7 @@ async function fetchStationWithMapping(
 }
 
 /** 供 balance.get 等复用的单站抓取入口。 */
-export async function fetchRelayBalanceForProvider(
+async function fetchRelayBalanceForProvider(
   providerId: string,
   baseUrl: string,
   apiKey: string | undefined,

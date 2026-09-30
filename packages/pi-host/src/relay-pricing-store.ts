@@ -29,7 +29,7 @@ type PricingConfigFile = {
   ratios: Record<string, RelayRechargeRatio>;
 };
 
-export const DEFAULT_RECHARGE_RATIO: RelayRechargeRatio = { cny: 1, balance: 1 };
+const DEFAULT_RECHARGE_RATIO: RelayRechargeRatio = { cny: 1, balance: 1 };
 
 /** Ratio considered "unlimited" — station hard limits at/above this USD value. */
 export const UNLIMITED_LIMIT_USD = 1_000_000;
