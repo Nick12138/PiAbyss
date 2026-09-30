@@ -415,7 +415,6 @@ export const en = {
   providersRetry: "Try again",
   providersNone: "No configured Providers",
   providersModelsCount: "{count} models",
-  providersModelsCountEnabled: "{count} models · Enabled",
   providersEmptyTitle: "No Providers configured yet.",
   providersSelectHint: "Select or add a Provider",
   providersLoginSection: "Built-in accounts",
@@ -581,8 +580,9 @@ export const en = {
   relayPricingBalanceUnlimited: "Unlimited",
   relayPricingBalanceError: "Balance query failed",
   relayPricingBalanceRefresh: "Refresh balance",
+  relayPricingBalanceCurrent: "Current balance",
   relayPricingBalanceUsed: "used",
-  relayPricingRechargeRatio: "Recharge ratio (CNY per balance unit)",
+  relayPricingRechargeRatio: "Recharge ratio (￥{cny} : {balance} balance)",
   relayPricingRechargeRatioHint:
     "Display-only conversion. Example 1:5 means 1 CNY paid gives 5 units of station balance.",
   relayPricingRechargeRatioSaved: "Recharge ratio saved",

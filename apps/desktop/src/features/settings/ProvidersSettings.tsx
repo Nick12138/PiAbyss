@@ -1078,9 +1078,7 @@ export function ProvidersSettings() {
                       <span className="block truncate text-sm font-medium">{provider.name}</span>
                       <span className="flex items-center gap-1.5">
                         <span className="block truncate text-[11px]">
-                          {provider.enabled
-                            ? t("providersModelsCountEnabled", { count: provider.models.length })
-                            : t("providersModelsCount", { count: provider.models.length })}
+                          {t("providersModelsCount", { count: provider.models.length })}
                         </span>
                         {provider.auth.configured && (
                           <button
@@ -1564,7 +1562,7 @@ export function ProvidersSettings() {
                 <section className="rounded-lg border border-border bg-surface p-3">
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                     <div className="min-w-0">
-                      <h2 className="text-sm font-medium">{t("relayPricingBalanceRefresh")}</h2>
+                      <h2 className="text-sm font-medium">{t("relayPricingBalanceCurrent")}</h2>
                       <p className="mt-0.5 text-xs tabular-nums">
                         {balanceLoadingIds.has(draft.originalId ?? "") ? (
                           <RefreshCw className="inline animate-spin" size={12} />
@@ -1599,7 +1597,9 @@ export function ProvidersSettings() {
                     </div>
                     <button
                       type="button"
-                      className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs hover:bg-surface-overlay"
+                      className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border text-muted hover:bg-surface-overlay hover:text-foreground"
+                      title={t("relayPricingBalanceRefresh")}
+                      aria-label={t("relayPricingBalanceRefresh")}
                       disabled={balanceLoadingIds.size > 0}
                       onClick={() => void fetchBalance(draft.originalId!, true)}
                     >
@@ -1607,11 +1607,18 @@ export function ProvidersSettings() {
                         className={balanceLoadingIds.has(draft.originalId ?? "") ? "animate-spin" : ""}
                         size={12}
                       />
-                      {t("relayPricingBalanceRefresh")}
                     </button>
                     <div className="ml-auto flex items-center gap-1.5">
                       <span className="text-[11px] text-muted">
-                        {t("relayPricingRechargeRatio")}
+                        {(() => {
+                          const ratio = ratios[draft.originalId!] ?? { cny: 1, balance: 1 };
+                          const fmt = (value: number) =>
+                            Number.isInteger(value) ? String(value) : value.toFixed(2);
+                          return t("relayPricingRechargeRatio", {
+                            cny: fmt(ratio.cny),
+                            balance: fmt(ratio.balance),
+                          });
+                        })()}
                       </span>
                       {ratioDraft ? (
                         <>
