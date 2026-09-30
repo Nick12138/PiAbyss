@@ -407,7 +407,7 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                   ) : !balance.ok ? (
                     <span
                       className="inline-flex items-center text-danger"
-                      title={balance.error}
+                      title={t("relayPricingBalanceError")}
                       aria-label={t("relayPricingBalanceError")}
                     >
                       <CircleAlert size={13} />

@@ -1617,7 +1617,7 @@ export function ProvidersSettings() {
                         ) : balances[draft.originalId] && !balances[draft.originalId]!.ok ? (
                           <span
                             className="inline-flex items-center text-danger"
-                            title={balances[draft.originalId]!.error}
+                            title={t("relayPricingBalanceError")}
                             aria-label={t("relayPricingBalanceError")}
                           >
                             <CircleAlert size={14} />
