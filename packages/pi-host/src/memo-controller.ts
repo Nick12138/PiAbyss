@@ -39,6 +39,66 @@ function asImageInputs(value: unknown): MemoCreateInput["images"] {
   return images;
 }
 
+const VALID_MEMO_TYPES = new Set(["memo", "idea", "task"]);
+
+/** 截断文本用于日志，避免刷屏。 */
+function truncateForLog(text: string, max = 200): string {
+  return text.length > max ? `${text.slice(0, max)}…(共 ${text.length} 字符)` : text;
+}
+
+function parseJsonLoose(text: string): Record<string, unknown> | null {
+  // 1) 剥离可能包裹首尾的 Markdown 代码围栏后直接解析。
+  const stripped = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try {
+    return JSON.parse(stripped) as Record<string, unknown>;
+  } catch {
+    // 忽略，进入下一级提取。
+  }
+  // 2) JSON 前后可能带有说明文字：提取首个 { 到最后一个 } 的子串。
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    try {
+      return JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
+    } catch {
+      // 忽略，交由调用方降级处理。
+    }
+  }
+  return null;
+}
+
+/**
+ * 解析模型输出。多级降级：围栏剥离 → 大括号提取 → 把纯散文输出当作
+ * 整理后的正文直接返回（避免模型偶发无视 JSON 约束时整体报错）。
+ * 返回 null 表示完全无法使用（如空输出）。
+ */
+function parseOptimizeResult(
+  text: string,
+  fallbackType: string,
+): { contentMd: string; type: string; workspaceId: string | null } | null {
+  const body = text.trim();
+  if (!body) return null;
+  const parsed = parseJsonLoose(body);
+  if (
+    parsed &&
+    typeof parsed.contentMd === "string" &&
+    parsed.contentMd.trim() &&
+    VALID_MEMO_TYPES.has(String(parsed.type))
+  ) {
+    return {
+      contentMd: parsed.contentMd,
+      type: String(parsed.type),
+      workspaceId:
+        typeof parsed.workspaceId === "string" && parsed.workspaceId ? parsed.workspaceId : null,
+    };
+  }
+  // 降级：模型输出不是合法 JSON（如纯散文/Markdown），将其视为整理后的正文，
+  // 类别沿用请求中的原值，工作区保持不变。正文长度上限与正常路径一致。
+  if (body.length > 200_000) return null;
+  const type = VALID_MEMO_TYPES.has(fallbackType) ? fallbackType : "memo";
+  return { contentMd: body, type, workspaceId: null };
+}
+
 export function createMemoHandlers(
   agentDir: string,
   modelRuntime?: ModelRuntime,
@@ -91,7 +151,16 @@ export function createMemoHandlers(
             "不要解释你做了哪些修改，不要输出 Markdown 代码围栏，不要输出 JSON 之外的任何文字。",
             '最终只返回一个合法 JSON 对象，字段必须且只能是 {"contentMd":"优化后的 Markdown 正文","type":"memo"|"idea"|"task","workspaceId":"候选工作区 id"|null}。',
           ].join(" "),
-          messages: [{ role: "user", timestamp: Date.now(), content: JSON.stringify(input) }],
+          messages: [
+            {
+              role: "user",
+              timestamp: Date.now(),
+              content: [
+                "以下 JSON 是待整理的备忘录数据，请阅读后严格按系统要求返回整理结果 JSON，不要复述或续写正文内容：",
+                JSON.stringify(input),
+              ].join("\n"),
+            },
+          ],
         };
         const response = await completeSimple(model as Model<any>, context, {
           apiKey: auth.apiKey,
@@ -114,25 +183,24 @@ export function createMemoHandlers(
           .map((part) => part.text)
           .join("\n")
           .trim();
-        const json = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-        const parsed = JSON.parse(json) as Record<string, unknown>;
-        if (
-          typeof parsed.contentMd !== "string" ||
-          !parsed.contentMd.trim() ||
-          parsed.contentMd.length > 200_000 ||
-          !["memo", "idea", "task"].includes(String(parsed.type))
-        ) {
+        const parsedResult = parseOptimizeResult(text, input.type);
+        if (!parsedResult) {
+          console.error(`[memo.optimize] AI returned unusable output: ${truncateForLog(text)}`);
+          return { error: createHostError("INVALID_REQUEST", "AI returned unusable output") };
+        }
+        if (!parsedResult.contentMd.trim() || parsedResult.contentMd.length > 200_000) {
+          console.error(`[memo.optimize] AI returned invalid memo fields: ${truncateForLog(text)}`);
           return { error: createHostError("INVALID_REQUEST", "AI returned invalid memo fields") };
         }
         const workspaceId =
-          typeof parsed.workspaceId === "string" &&
-          input.workspaces.some((entry) => entry.id === parsed.workspaceId)
-            ? parsed.workspaceId
+          typeof parsedResult.workspaceId === "string" &&
+          input.workspaces.some((entry) => entry.id === parsedResult.workspaceId)
+            ? parsedResult.workspaceId
             : null;
         return {
           result: {
-            contentMd: parsed.contentMd,
-            type: parsed.type,
+            contentMd: parsedResult.contentMd,
+            type: parsedResult.type,
             workspaceId,
           },
         };
