@@ -69,6 +69,22 @@ Generic inputs receive Cut, Copy, Paste, and Select all actions. Feature surface
 domain actions without reimplementing menu lifecycle: Session rows, transcript rows,
 the Composer, and xterm terminals are the first consumers.
 
+Image previews expose a **Copy image** context-menu entry. The shared
+`useImageContextMenu` hook (in `ImageLightbox.tsx`) is wired onto the fullscreen
+lightbox image, `LightboxImage` thumbnails, the dock image file preview, the skill
+preview modal, and the global `ContextMenuPolicy` fallback (memo images, Markdown
+generated images, and future image surfaces). The menu opens **only when the
+right-click lands on the `<img>` element itself** — an ancestor container or the
+surrounding padding resolves to no image and stays on the generic menu. `MenuHost`
+renders at `z-[120]`, above the lightbox overlay (`z-[60]`) and every other floating
+surface, so the menu is always visible over the picture it belongs to. Copying
+re-encodes the picture through a canvas and goes through the Tauri clipboard plugin
+(`write_image`, PNG bytes via `Image.fromBytes`, requires the `image-png` Cargo
+feature and the `clipboard-manager:allow-write-image` capability) so other apps
+receive a real bitmap; browser builds fall back to the Web Clipboard API. The copy
+action reports success/failure through app notifications; a failure never throws
+into the menu.
+
 Safe HTTP(S) links in conversation content use an explicit desktop routing policy.
 Ordinary activation opens the URL in a Dock browser tab, while system-browser
 activation goes through the Tauri shell plugin. A link-specific transcript context

@@ -5,18 +5,23 @@
  * 按住拖拽平移、ESC / 点击背景关闭。通过 createPortal 挂到 body，
  * 盖过普通 Dialog（z-index 更高）。
  */
-import { X, ZoomIn, ZoomOut, Maximize, Scan } from "lucide-react";
+import { X, ZoomIn, ZoomOut, Maximize, Scan, Copy } from "lucide-react";
 import {
   useCallback,
   useEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "../lib/i18n/use-t";
+import { buildImageCopyMenuItem, copyImageToClipboard } from "../lib/clipboard-image";
+import { contextMenuTrigger, openContextMenu } from "../lib/context-menu";
+import { shouldKeepNativeContextMenu } from "../lib/context-menu-policy";
+import { useAppStore } from "../lib/stores/app-store";
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 8;
@@ -24,6 +29,50 @@ const SCALE_STEP = 0.25;
 
 function clampScale(scale: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
+}
+
+/**
+ * 图片右键菜单：统一提供「复制图片」入口。Shift+右键（开发模式）保留原生
+ * 检查菜单的逻辑由各调用方与 ContextMenuPolicy 负责，这里只负责应用菜单。
+ */
+export function useImageContextMenu() {
+  const t = useT();
+  const pushNotification = useAppStore((s) => s.pushNotification);
+  const notifySuccess = useCallback(
+    (message: string) => pushNotification(message, "info"),
+    [pushNotification],
+  );
+  const notifyFailure = useCallback(
+    (message: string) => pushNotification(message, "warning"),
+    [pushNotification],
+  );
+  return useCallback(
+    (event: ReactMouseEvent) => {
+      if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
+      // 仅在图片本体上右键才弹菜单；容器/留白区域不触发。
+      const target = event.target;
+      if (!(target instanceof HTMLImageElement)) return;
+      const url = target.currentSrc || target.src;
+      if (!url) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        trigger: contextMenuTrigger(target),
+        items: [
+          buildImageCopyMenuItem({
+            url,
+            label: t("menuCopyImage"),
+            labelFailed: t("imageCopyFailed"),
+            notifySuccess,
+            notifyFailure,
+          }),
+        ],
+      });
+    },
+    [notifyFailure, notifySuccess, t],
+  );
 }
 
 export function ImageLightbox({
@@ -36,6 +85,7 @@ export function ImageLightbox({
   onClose: () => void;
 }) {
   const t = useT();
+  const pushNotification = useAppStore((s) => s.pushNotification);
   // null = 适应窗口；数字 = 相对原始尺寸的缩放比例。
   const [scale, setScale] = useState<number | null>(null);
   const [error, setError] = useState(false);
@@ -109,6 +159,16 @@ export function ImageLightbox({
     if (event.key === "Escape") event.stopPropagation();
   }
 
+  const onImageContextMenu = useImageContextMenu();
+
+  const copyImage = useCallback(async () => {
+    const copied = await copyImageToClipboard(url);
+    pushNotification(
+      copied ? t("imageCopySuccess") : t("imageCopyFailed"),
+      copied ? "info" : "warning",
+    );
+  }, [pushNotification, t, url]);
+
   return createPortal(
     <div
       role="dialog"
@@ -173,6 +233,16 @@ export function ImageLightbox({
         <span className="min-w-0 flex-1 truncate px-2 text-xs text-white/60">{alt}</span>
         <button
           type="button"
+          title={t("menuCopyImage")}
+          aria-label={t("menuCopyImage")}
+          data-testid="image-lightbox-copy"
+          className="flex size-8 items-center justify-center rounded-md text-white/80 hover:bg-white/10 hover:text-white"
+          onClick={() => void copyImage()}
+        >
+          <Copy size={16} />
+        </button>
+        <button
+          type="button"
           title={t("imagePreviewClose")}
           aria-label={t("imagePreviewClose")}
           data-testid="image-lightbox-close"
@@ -210,6 +280,7 @@ export function ImageLightbox({
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
+            onContextMenu={onImageContextMenu}
           />
         )}
       </div>
@@ -237,7 +308,7 @@ export function useImageLightbox(): {
   return { lightbox, open, close, element };
 }
 
-/** 可点击的图片缩略图：点击后全屏放大预览（lightbox 状态由组件内部持有）。 */
+/** 可点击的图片缩略图：点击后全屏放大预览；右键提供「复制图片」菜单。 */
 export function LightboxImage({
   url,
   alt,
@@ -248,6 +319,7 @@ export function LightboxImage({
   className: string;
 }) {
   const { open, element } = useImageLightbox();
+  const onContextMenu = useImageContextMenu();
   return (
     <>
       <img
@@ -256,6 +328,7 @@ export function LightboxImage({
         className={`${className} cursor-zoom-in`}
         data-testid="lightbox-image-trigger"
         onClick={() => open(url, alt)}
+        onContextMenu={onContextMenu}
       />
       {element}
     </>

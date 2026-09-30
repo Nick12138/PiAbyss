@@ -88,7 +88,7 @@ function Menu({ request }: { request: ContextMenuRequest }) {
       ref={menuRef}
       role="menu"
       data-context-menu
-      className="theme-floating-surface fixed z-50 max-h-[calc(100vh-16px)] min-w-48 max-w-72 overflow-y-auto rounded-md border border-border bg-surface-raised p-1 shadow-xl"
+      className="theme-floating-surface fixed z-[120] max-h-[calc(100vh-16px)] min-w-48 max-w-72 overflow-y-auto rounded-md border border-border bg-surface-raised p-1 shadow-xl"
       style={position}
       onContextMenu={(event) => {
         event.preventDefault();

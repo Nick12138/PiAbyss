@@ -28,6 +28,7 @@
     "core:window:allow-current-monitor",
     "core:window:allow-set-theme",
     "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-image",
     "dialog:default",
     "shell:allow-open",
     "updater:default",

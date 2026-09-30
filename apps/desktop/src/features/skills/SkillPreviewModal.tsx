@@ -3,6 +3,7 @@ import { AlertTriangle, LoaderCircle, X } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { readDesktopSmallFile } from "../../lib/desktop-file-access";
 import { useT } from "../../lib/i18n/use-t";
+import { useImageContextMenu } from "../../components/ImageLightbox";
 
 const MARKDOWN_PATTERN = /\.(?:md|markdown|mdx)$/i;
 
@@ -132,15 +133,32 @@ export function SkillPreviewModal({
           </pre>
         )}
         {status === "ready" && content?.kind === "image" && (
-          <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-5">
-            <img
-              alt={name}
-              src={`data:${content.mediaType};base64,${content.data}`}
-              className="max-h-full max-w-full object-contain"
-            />
-          </div>
+          <SkillImagePreview data={content.data} mediaType={content.mediaType} name={name} />
         )}
       </div>
+    </div>
+  );
+}
+
+/** 技能封面等单张图片的预览：支持右键复制到剪贴板。 */
+function SkillImagePreview({
+  data,
+  mediaType,
+  name,
+}: {
+  data: string;
+  mediaType: string;
+  name: string;
+}) {
+  const onContextMenu = useImageContextMenu();
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-5">
+      <img
+        alt={name}
+        src={`data:${mediaType};base64,${data}`}
+        className="max-h-full max-w-full object-contain"
+        onContextMenu={onContextMenu}
+      />
     </div>
   );
 }

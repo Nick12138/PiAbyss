@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import { ClipboardCopy } from "lucide-react";
 import { contextMenuTrigger, openContextMenu } from "./context-menu";
 import { resolveTextMenuTarget, buildTextContextMenuItems } from "./text-context-menu";
+import { buildImageCopyMenuItem } from "./clipboard-image";
+import { useAppStore } from "./stores/app-store";
 import { useT } from "./i18n/use-t";
 
 export function shouldKeepNativeContextMenu(
@@ -12,6 +14,12 @@ export function shouldKeepNativeContextMenu(
     (dev && event.shiftKey) ||
     (event.target instanceof Element && event.target.closest("[data-tauri-drag-region]")),
   );
+}
+
+/** 仅当右键直接命中 <img> 本体时返回其 URL；容器/留白不触发图片菜单。 */
+export function resolveImageMenuTarget(target: EventTarget | null): string | null {
+  if (!(target instanceof HTMLImageElement)) return null;
+  return target.currentSrc || target.src || null;
 }
 
 export function ContextMenuPolicy() {
@@ -29,6 +37,25 @@ export function ContextMenuPolicy() {
           y: event.clientY,
           trigger: contextMenuTrigger(event.target),
           items: buildTextContextMenuItems(textTarget, t),
+        });
+        return;
+      }
+      const imageUrl = resolveImageMenuTarget(event.target);
+      if (imageUrl) {
+        openContextMenu({
+          x: event.clientX,
+          y: event.clientY,
+          trigger: contextMenuTrigger(event.target),
+          items: [
+            buildImageCopyMenuItem({
+              url: imageUrl,
+              label: t("menuCopyImage"),
+              labelFailed: t("imageCopyFailed"),
+              notifySuccess: (message) => useAppStore.getState().pushNotification(message, "info"),
+              notifyFailure: (message) =>
+                useAppStore.getState().pushNotification(message, "warning"),
+            }),
+          ],
         });
         return;
       }

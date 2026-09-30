@@ -11,7 +11,7 @@ import {
 import type { PDFDocumentProxy, RenderTask, TextLayer } from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { useT } from "../../lib/i18n/use-t";
-import { useImageLightbox } from "../../components/ImageLightbox";
+import { useImageContextMenu, useImageLightbox } from "../../components/ImageLightbox";
 import { FileToolButton } from "./FileToolButton";
 import "./file-preview.css";
 
@@ -34,6 +34,7 @@ export function ImageFilePreview({
   const [scale, setScale] = useState<number | null>(null);
   const [error, setError] = useState(false);
   const { open, element: lightbox } = useImageLightbox();
+  const onContextMenu = useImageContextMenu();
   useEffect(() => {
     const next = URL.createObjectURL(new Blob([previewBytes(data)], { type: mediaType }));
     setUrl(next);
@@ -88,6 +89,7 @@ export function ImageFilePreview({
               }
               style={scale === null ? undefined : { zoom: scale }}
               onClick={() => open(url, name)}
+              onContextMenu={onContextMenu}
             />
           )
         )}
