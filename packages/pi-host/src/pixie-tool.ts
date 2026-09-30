@@ -23,7 +23,7 @@ import type {
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "@sinclair/typebox";
 import { logger } from "./logger.js";
-import { failDispatch, hasActiveDispatchFor, registerDispatch } from "./pixie-agent-runner.js";
+import { failDispatch, registerDispatch } from "./pixie-agent-runner.js";
 
 export { failDispatch };
 
