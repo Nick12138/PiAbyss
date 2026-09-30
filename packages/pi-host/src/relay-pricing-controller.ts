@@ -320,6 +320,17 @@ async function fetchKeyModels(
     .map((item) => (isObject(item) && typeof item.id === "string" ? item.id : ""))
     .filter((id) => id.length > 0);
 }
+/**
+ * 内置 new-api 默认端点的基址：用户配置 baseUrl 时常带/不带 /v1 后缀，
+ * 两种写法都指向同一站（川流Luna="https://api.rivoapi.com/v1" vs
+ * 川流Claude="https://api.rivoapi.com"）。内置端点本身已含 /v1 前缀，
+ * 裸拼接会出现 /v1/v1/... 404（f301eb6 已修映射路径，这里补齐内置路径）。
+ */
+function newApiBase(baseUrl: string): string {
+  const base = baseUrl.replace(/\/+$/, "");
+  return base.endsWith("/v1") ? base.slice(0, -"/v1".length) : base;
+}
+
 async function fetchBalance(
   stationId: string,
   baseUrl: string,
@@ -330,13 +341,16 @@ async function fetchBalance(
 ): Promise<RelayBalance> {
   const fetchedAt = new Date().toISOString();
   const headers = { Authorization: `Bearer ${apiKey}` };
-  const base = baseUrl.replace(/\/+$/, "");
+  // 映射路径相对原 baseUrl（f301eb6 的 URL 相对语义）；内置 new-api 默认端点
+  // 自带 /v1 前缀，需归一化基址，避免 baseUrl 已带 /v1 时拼出 /v1/v1/...。
+  const mappingBase = baseUrl.replace(/\/+$/, "");
+  const base = newApiBase(baseUrl);
   try {
     if (mapping?.endpoints.balance) {
       // 映射路径：余额端点可自定义（可能合并 remaining/used 于同一响应）。
       const balanceEndpoint = mapping.endpoints.balance;
       const payload = await fetchJson(
-        joinUrl(base, balanceEndpoint.path),
+        joinUrl(mappingBase, balanceEndpoint.path),
         balanceEndpoint.auth ? headers : {},
         signal,
       );
@@ -360,7 +374,7 @@ async function fetchBalance(
     const usageEndpoint = mapping?.endpoints.usage;
     const usage = usageEndpoint
       ? await fetchJson(
-          joinUrl(base, usageEndpoint.path),
+          joinUrl(mappingBase, usageEndpoint.path),
           usageEndpoint.auth ? headers : {},
           signal,
         )
@@ -474,7 +488,10 @@ async function fetchStation(
   mapping: RelayFieldMap | null,
 ): Promise<RelayPricingStation> {
   const sensitiveValues = relaySensitiveValues(apiKey);
-  const base = baseUrl.replace(/\/+$/, "");
+  // mappingBase 供映射分支与快照 baseUrl 用（保留原样）；apiBase 供内置
+  // new-api 默认端点用（剥 /v1 后缀防 /v1/v1/... 404）。
+  const mappingBase = baseUrl.replace(/\/+$/, "");
+  const apiBase = newApiBase(baseUrl);
   const fetchedAt = new Date().toISOString();
   try {
     // 有映射表：全部端点按映射解析；没有：走内置 new-api 默认（与旧版一致）。
@@ -482,7 +499,7 @@ async function fetchStation(
       return await fetchStationWithMapping(
         stationId,
         providerId,
-        base,
+        mappingBase,
         apiKey,
         signal,
         mapping,
@@ -490,9 +507,9 @@ async function fetchStation(
         sensitiveValues,
       );
     }
-    const pricing = (await fetchJson(`${base}/api/pricing`, {}, signal)) as RawPricing;
+    const pricing = (await fetchJson(`${apiBase}/api/pricing`, {}, signal)) as RawPricing;
     const keyModels = apiKey
-      ? await fetchKeyModels(base, apiKey, signal).catch((error) => {
+      ? await fetchKeyModels(apiBase, apiKey, signal).catch((error) => {
           signal.throwIfAborted();
           logger.warn("relay pricing: /v1/models failed", {
             stationId,
@@ -507,12 +524,12 @@ async function fetchStation(
       new Set(keyModels),
     );
     const balance = apiKey
-      ? await fetchBalance(stationId, base, apiKey, sensitiveValues, signal, null)
+      ? await fetchBalance(stationId, baseUrl, apiKey, sensitiveValues, signal, null)
       : null;
     return {
       stationId,
       providerId,
-      baseUrl: base,
+      baseUrl: mappingBase,
       groups,
       rows,
       keyModels,
@@ -524,7 +541,7 @@ async function fetchStation(
     return {
       stationId,
       providerId,
-      baseUrl: base,
+      baseUrl: mappingBase,
       groups: [],
       rows: [],
       keyModels: [],

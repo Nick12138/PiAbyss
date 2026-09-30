@@ -356,6 +356,49 @@ describe("relay pricing handlers", () => {
     void layout;
   });
 
+  it("strips the /v1 suffix from baseUrl for built-in default endpoints", async () => {
+    // 川流Luna 现象：baseUrl 带 /v1 时，内置 new-api 默认端点不得拼出 /v1/v1/...。
+    const baseUrl = await startRelayServer({
+      subscription: { hard_limit_usd: 7 },
+      usage: { total_usage: 0.5 },
+    });
+    const server = httpServers[0]!;
+    const requested: string[] = [];
+    server.removeAllListeners("request");
+    server.on("request", (request, response) => {
+      requested.push(request.url ?? "");
+      if (request.url === "/v1/dashboard/billing/subscription") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ hard_limit_usd: 7 }));
+        return;
+      }
+      if (request.url === "/v1/dashboard/billing/usage") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ total_usage: 0.5 }));
+        return;
+      }
+      response.writeHead(404);
+      response.end();
+    });
+    const config = structuredClone(RELAY_PROVIDER);
+    config.providers.hetune.baseUrl = `${baseUrl}/v1`;
+    const { credentialStore, handlers } = await setup(config);
+    await putApiKey(credentialStore, "hetune", "sk-test");
+
+    const result = await handlers["provider.balance.get"]!({
+      id: "req-v1",
+      method: "provider.balance.get",
+      params: { providerId: "hetune", refresh: true },
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+    if (!("result" in result)) throw new Error(JSON.stringify(result));
+    const balance = result.result as RelayBalance;
+    expect(balance.ok).toBe(true);
+    expect(balance.remainingUsd).toBeCloseTo(7, 5);
+    // 请求路径没有 /v1/v1/。
+    expect(requested.every((url) => !url.includes("/v1/v1/"))).toBe(true);
+  });
+
   it("redacts the api key from fetch errors", async () => {
     const baseUrl = await startRelayServer({ authExpected: "sk-secret" });
     const config = structuredClone(RELAY_PROVIDER);
