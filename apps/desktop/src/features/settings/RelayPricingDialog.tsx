@@ -17,7 +17,7 @@ import type {
   RelayPricingRow,
   RelayRechargeRatio,
 } from "@piabyss/protocol";
-import { CircleCheck, Coins, RefreshCw, Search } from "lucide-react";
+import { CircleCheck, ChevronDown, ChevronUp, Coins, RefreshCw, Search } from "lucide-react";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
@@ -31,12 +31,28 @@ type PriceTableDialogProps = {
   onClose: () => void;
 };
 
+/** 价格列（可排序字段的键）。 */
+type PriceSortField = "input" | "output" | "cache" | "call";
+
 function formatPrice(value: number | null): string {
   if (value === null) return "—";
   return `$${value
     .toFixed(value < 0.1 ? 4 : 3)
     .replace(/0+$/, "")
     .replace(/\.$/, "")}`;
+}
+
+/** 1:1 比例判断：cny/balance 相等（含默认未配置）时不需要 ≈ 换算显示。 */
+function isOneToOneRatio(ratio: RelayRechargeRatio): boolean {
+  return Math.abs(ratio.cny - ratio.balance) < 1e-9;
+}
+
+/**
+ * 美元价格折算成人民币的 ≈ 显示值（非 1:1 时）：balance 单位余额对应 cny 元，
+ * 即 1 美元余额 ≈ cny/balance 元人民币。
+ */
+function cnyApprox(usd: number, ratio: RelayRechargeRatio): string {
+  return `≈¥${((usd / ratio.balance) * ratio.cny).toFixed(2)}`;
 }
 
 type RelayTestState = {
@@ -101,6 +117,8 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
   const [groupFilter, setGroupFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [keyOnly, setKeyOnly] = useState(false);
+  /** 唯一排序：null = 不排序；非空 = 该列按折算后价格排序。 */
+  const [sort, setSort] = useState<{ field: PriceSortField; desc: boolean } | null>(null);
   const { testingKey, result: testResult, test } = useRelayTest(t);
 
   useEffect(() => {
@@ -221,6 +239,73 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
   const rechargeRatioFor = (providerId: string | null): RelayRechargeRatio =>
     (providerId && pricing?.rechargeRatios[providerId]) || { cny: 1, balance: 1 };
 
+  /** 每行所属站的充值比例（折算排序与 ≈ 显示都用它）。 */
+  const stationIdByRowKey = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const station of visibleStations) {
+      for (const row of station.rows) {
+        map.set(`${row.stationId}:${row.modelId}:${row.group}`, row.stationId);
+      }
+    }
+    return map;
+  }, [visibleStations]);
+
+  /** 排序键：美元价格按充值比例折算成人民币后的金额（null 排最后）。 */
+  const sortValueFor = (row: RelayPricingRow): number | null => {
+    const value =
+      sort?.field === "input"
+        ? row.inputPer1M
+        : sort?.field === "output"
+          ? row.outputPer1M
+          : sort?.field === "cache"
+            ? row.cachePer1M
+            : row.callPrice;
+    if (value === null) return null;
+    const stationId = stationIdByRowKey.get(`${row.stationId}:${row.modelId}:${row.group}`);
+    const ratio = rechargeRatioFor(stationId ?? null);
+    // 折算排序金额：按人民币口径（1:1 时等于原价）。
+    return (value / ratio.balance) * ratio.cny;
+  };
+
+  const sortedRows = useMemo(() => {
+    if (!sort) return rows;
+    const dir = sort.desc ? -1 : 1;
+    return [...rows].sort((left, right) => {
+      const a = sortValueFor(left.row);
+      const b = sortValueFor(right.row);
+      // null（无价格）固定排最后，与方向无关。
+      if (a === null && b === null) return 0;
+      if (a === null) return 1;
+      if (b === null) return -1;
+      return (a - b) * dir || left.row.modelId.localeCompare(right.row.modelId);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, sort, stationIdByRowKey, pricing]);
+
+  /** 排序按钮：悬浮显示；当前排序列固定显示。点击切换 asc/desc/无。 */
+  function SortButton({ field }: { field: PriceSortField }) {
+    const active = sort?.field === field;
+    return (
+      <button
+        type="button"
+        className={`group/sort inline-flex h-4 w-4 items-center justify-center rounded align-middle text-muted hover:bg-surface-overlay hover:text-foreground ${
+          active ? "text-focus" : "opacity-0 group-hover/th:opacity-100 focus-visible:opacity-100"
+        }`}
+        aria-label={sort?.field === field && sort.desc ? t("relayPricingSortDesc") : t("relayPricingSortAsc")}
+        title={sort?.field === field && sort.desc ? t("relayPricingSortDesc") : t("relayPricingSortAsc")}
+        onClick={() =>
+          setSort((current) => {
+            if (current?.field !== field) return { field, desc: false };
+            if (!current.desc) return { field, desc: true };
+            return null; // 第三次点击取消排序。
+          })
+        }
+      >
+        {active && sort?.desc ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+      </button>
+    );
+  }
+
   return (
     <Dialog
       title={t("relayPricingDialogTitle")}
@@ -331,9 +416,9 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                     <span className="tabular-nums text-foreground">
                       {balance.currency === "CNY" ? "¥" : "$"}
                       {balance.remainingUsd?.toFixed(2) ?? "0.00"}
-                      {balance.currency !== "CNY" && (
+                      {balance.currency !== "CNY" && !isOneToOneRatio(ratio) && (
                         <span className="ml-1 text-[11px] text-muted">
-                          ≈¥{(((balance.remainingUsd ?? 0) / ratio.balance) * ratio.cny).toFixed(2)}
+                          {cnyApprox(balance.remainingUsd ?? 0, ratio)}
                         </span>
                       )}
                     </span>
@@ -352,16 +437,22 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                 <th className="px-2.5 py-1.5 font-medium">{t("relayPricingColModel")}</th>
                 <th className="px-2.5 py-1.5 font-medium">{t("relayPricingColStation")}</th>
                 <th className="px-2.5 py-1.5 font-medium">{t("relayPricingColGroup")}</th>
-                <th className="px-2.5 py-1.5 text-right font-medium">
-                  {t("relayPricingColInput")}
-                </th>
-                <th className="px-2.5 py-1.5 text-right font-medium">
-                  {t("relayPricingColOutput")}
-                </th>
-                <th className="px-2.5 py-1.5 text-right font-medium">
-                  {t("relayPricingColCache")}
-                </th>
-                <th className="px-2.5 py-1.5 text-right font-medium">{t("relayPricingColCall")}</th>
+                {(
+                  [
+                    ["input", t("relayPricingColInput")],
+                    ["output", t("relayPricingColOutput")],
+                    ["cache", t("relayPricingColCache")],
+                    ["call", t("relayPricingColCall")],
+                  ] as Array<[PriceSortField, string]>
+                ).map(([field, label]) => (
+                  <th
+                    key={field}
+                    className="group/th px-2.5 py-1.5 text-right font-medium"
+                  >
+                    {label}
+                    <SortButton field={field} />
+                  </th>
+                ))}
                 <th className="px-2.5 py-1.5" />
               </tr>
             </thead>
@@ -373,11 +464,19 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                   </td>
                 </tr>
               ) : (
-                rows.map(({ row, stationName }) => {
+                sortedRows.map(({ row, stationName }) => {
                   const rowKey = `${row.stationId}:${row.modelId}:${row.group}`;
                   const configured = providerByBaseUrl.get(
                     stations.find((station) => station.stationId === row.stationId)?.baseUrl ?? "",
                   );
+                  // 非 1:1 充值比例的站：价格旁显示人民币 ≈ 换算。
+                  const rowRatio = rechargeRatioFor(row.stationId);
+                  const approx = !isOneToOneRatio(rowRatio)
+                    ? (value: number | null) =>
+                        value !== null ? (
+                          <span className="ml-1 text-[10px] text-muted">{cnyApprox(value, rowRatio)}</span>
+                        ) : null
+                    : () => null;
                   const testable =
                     configured !== undefined &&
                     row.keyAvailable &&
@@ -409,15 +508,19 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                       </td>
                       <td className="px-2.5 py-1.5 text-right tabular-nums">
                         {formatPrice(row.inputPer1M)}
+                        {approx(row.inputPer1M)}
                       </td>
                       <td className="px-2.5 py-1.5 text-right tabular-nums">
                         {formatPrice(row.outputPer1M)}
+                        {approx(row.outputPer1M)}
                       </td>
                       <td className="px-2.5 py-1.5 text-right tabular-nums">
                         {formatPrice(row.cachePer1M)}
+                        {approx(row.cachePer1M)}
                       </td>
                       <td className="px-2.5 py-1.5 text-right tabular-nums">
                         {formatPrice(row.callPrice)}
+                        {approx(row.callPrice)}
                       </td>
                       <td className="whitespace-nowrap px-2.5 py-1.5">
                         {row.keyAvailable && configured ? (
