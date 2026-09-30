@@ -57,7 +57,8 @@ function cnyApprox(usd: number, ratio: RelayRechargeRatio): string {
 
 type RelayTestState = {
   testingKey: string | null;
-  result: { key: string; ok: boolean; message: string } | null;
+  /** rowKey → 最近一次测试结果（每行独立保留，弹窗关闭时随组件卸载清空）。 */
+  results: Record<string, { ok: boolean; message: string }>;
   test: (providerId: string, modelId: string, rowKey: string) => Promise<void>;
 };
 
@@ -65,13 +66,12 @@ function useRelayTest(t: Translate): RelayTestState {
   const pushNotification = useAppStore((state) => state.pushNotification);
   const refreshProviderConfig = useAppStore((state) => state.refreshProviderConfig);
   const [testingKey, setTestingKey] = useState<string | null>(null);
-  const [result, setResult] = useState<{ key: string; ok: boolean; message: string } | null>(null);
+  const [results, setResults] = useState<Record<string, { ok: boolean; message: string }>>({});
 
   async function runTest(providerId: string, modelId: string, rowKey: string): Promise<void> {
     const host = useAppStore.getState().host;
     if (!host || testingKey) return;
     setTestingKey(rowKey);
-    setResult(null);
     try {
       const response = await hostClient.request(
         "provider.checkConnection",
@@ -85,11 +85,10 @@ function useRelayTest(t: Translate): RelayTestState {
         return;
       }
       const typed = response.result as ProviderConnectionResult;
-      setResult({
-        key: rowKey,
-        ok: typed.ok,
-        message: `${typed.latencyMs} ms · ${typed.message}`,
-      });
+      setResults((current) => ({
+        ...current,
+        [rowKey]: { ok: typed.ok, message: `${typed.latencyMs} ms · ${typed.message}` },
+      }));
       if (typed.ok) pushNotification(t("providersConnectionOk"), "success");
     } catch (error) {
       pushNotification(
@@ -102,7 +101,7 @@ function useRelayTest(t: Translate): RelayTestState {
     }
   }
 
-  return { testingKey, result, test: runTest };
+  return { testingKey, results, test: runTest };
 }
 
 export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps) {
@@ -119,7 +118,7 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
   const [keyOnly, setKeyOnly] = useState(false);
   /** 唯一排序：null = 不排序；非空 = 该列按折算后价格排序。 */
   const [sort, setSort] = useState<{ field: PriceSortField; desc: boolean } | null>(null);
-  const { testingKey, result: testResult, test } = useRelayTest(t);
+  const { testingKey, results: testResults, test } = useRelayTest(t);
 
   useEffect(() => {
     if (!hostInstanceId) return;
@@ -533,21 +532,42 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                       <td className="whitespace-nowrap px-2.5 py-1.5">
                         {row.keyAvailable && configured ? (
                           testable ? (
-                            <button
-                              type="button"
-                              className="flex h-6 items-center gap-1 rounded border border-border px-1.5 text-[11px] hover:bg-surface-overlay disabled:opacity-50"
-                              disabled={testingKey !== null}
-                              onClick={() => void test(configured.providerId, row.modelId, rowKey)}
-                            >
-                              {testingKey === rowKey ? (
-                                <RefreshCw className="animate-spin" size={11} />
-                              ) : (
-                                <CircleCheck size={11} />
-                              )}
-                              {testingKey === rowKey
-                                ? t("relayPricingTesting")
-                                : t("relayPricingTest")}
-                            </button>
+                            (() => {
+                              // 结果融进按钮本身（图标颜色/边框/悬浮详情），不追加
+                              // 额外元素，避免行高跳动。
+                              const rowResult = testResults[rowKey];
+                              const stateClass = testingKey === rowKey
+                                ? "border-border text-muted"
+                                : !rowResult
+                                  ? "border-border text-muted"
+                                  : rowResult.ok
+                                    ? "border-success/40 text-success"
+                                    : "border-danger/40 text-danger";
+                              return (
+                                <button
+                                  type="button"
+                                  className={`flex h-6 items-center gap-1 rounded border px-1.5 text-[11px] hover:bg-surface-overlay disabled:opacity-50 ${stateClass}`}
+                                  disabled={testingKey !== null}
+                                  title={rowResult?.message}
+                                  onClick={() => void test(configured.providerId, row.modelId, rowKey)}
+                                >
+                                  {testingKey === rowKey ? (
+                                    <RefreshCw className="animate-spin" size={11} />
+                                  ) : rowResult ? (
+                                    rowResult.ok ? (
+                                      <CircleCheck size={11} />
+                                    ) : (
+                                      <CircleAlert size={11} />
+                                    )
+                                  ) : (
+                                    <CircleCheck size={11} />
+                                  )}
+                                  {testingKey === rowKey
+                                    ? t("relayPricingTesting")
+                                    : t("relayPricingTest")}
+                                </button>
+                              );
+                            })()
                           ) : (
                             <span
                               className="text-[10px] text-muted"
@@ -557,16 +577,6 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                             </span>
                           )
                         ) : null}
-                        {testResult?.key === rowKey && (
-                          <span
-                            className={`ml-1.5 text-[10px] ${
-                              testResult.ok ? "text-success" : "text-danger"
-                            }`}
-                            title={testResult.message}
-                          >
-                            {testResult.ok ? "✓" : "✗"}
-                          </span>
-                        )}
                       </td>
                     </tr>
                   );
