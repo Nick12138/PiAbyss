@@ -246,9 +246,10 @@ export function ProvidersSettings() {
   const [manualOpen, setManualOpen] = useState(false);
   // 中转站价格表弹窗。
   const [pricingOpen, setPricingOpen] = useState(false);
-  // 列表徽标余额：providerId → 余额（懒加载，每次 providers 变化后静默拉一次）。
+  // 列表徽标余额：providerId → 余额（懒加载，打开设置页后静默补齐）。
   const [balances, setBalances] = useState<Record<string, RelayBalance>>({});
-  const [balanceLoadingId, setBalanceLoadingId] = useState<string | null>(null);
+  // 在途余额请求集合（支持多个 provider 并发拉取）。
+  const [balanceLoadingIds, setBalanceLoadingIds] = useState<ReadonlySet<string>>(new Set());
 
   const [ratios, setRatios] = useState<Record<string, RelayRechargeRatio>>({});
   // 充值比例编辑：仅详情页展开。
@@ -338,8 +339,9 @@ export function ProvidersSettings() {
     };
   }, [hostInstanceId, selectedId, selectedConfigured, keyPreviewNonce]);
 
-  // 选中 provider 时懒加载一次余额（有缓存则跳过）；打开设置页时不批量拉取。
-  // 同时拉一次该 provider 的充值比例（provider.pricing.get 走宿主端磁盘缓存，无网络开销）。
+  // 选中 provider 时懒加载一次余额（有缓存则跳过）。
+  // 同时拉一次充值比例与定价缓存（provider.pricing.get 走宿主端磁盘缓存，无网络开销），
+  // 并用缓存里的站点余额快照水合列表徽标，避免逐个点击才能看到余额。
   useEffect(() => {
     if (!selectedId || !selectedConfigured) return;
     void fetchBalance(selectedId);
@@ -350,7 +352,19 @@ export function ProvidersSettings() {
       .request("provider.pricing.get", hostContext(requestHost), null)
       .then((response) => {
         if (cancelled || !response?.ok) return;
-        setRatios((response.result as RelayPricingResult).rechargeRatios);
+        const result = response.result as RelayPricingResult;
+        setRatios(result.rechargeRatios);
+        // 缓存快照里已有余额的站点直接上屏（宿主端无网络开销）。
+        setBalances((current) => {
+          let changed = false;
+          const next = { ...current };
+          for (const station of result.table.stations) {
+            if (!station.balance || station.providerId === null || next[station.providerId]) continue;
+            next[station.providerId] = station.balance;
+            changed = true;
+          }
+          return changed ? next : current;
+        });
       })
       .catch(() => {
         /* 显示用；失败时回落到默认 1:1。 */
@@ -435,6 +449,29 @@ export function ProvidersSettings() {
     };
   }, [hostInstanceId, loadAttempt, pushNotification, t]);
 
+  // providers 列表加载后，对已配置但还没有余额数据的 provider 静默补拉。
+  // 宿主端 provider.balance.get 未带 refresh 时优先走磁盘缓存（无网络开销），
+  // 只有从未拉取过的站才会出网，逐个串行避免同时打多个中转站。
+  // attemptedRef 记录已发起过的 provider，避免闭包里的 balances 过期导致重复拉取。
+  const backfillAttemptedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (loading || !hostInstanceId || providers.length === 0) return;
+    const pending = providers.filter(
+      (provider) =>
+        provider.auth.configured &&
+        !balances[provider.id] &&
+        !backfillAttemptedRef.current.has(provider.id),
+    );
+    if (pending.length === 0) return;
+    for (const provider of pending) backfillAttemptedRef.current.add(provider.id);
+    void (async () => {
+      for (const provider of pending) {
+        await fetchBalance(provider.id);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hostInstanceId, loading, providers]);
+
   const filteredProviders = useMemo(() => {
     const query = providerSearch.trim().toLowerCase();
     if (!query) return providers;
@@ -449,12 +486,12 @@ export function ProvidersSettings() {
     return catalog.filter((model) => `${model.name} ${model.id}`.toLowerCase().includes(query));
   }, [catalog, modelSearch]);
 
-  /** 拉取单个 provider 的余额（缓存优先；refresh=true 强制出网）。 */
+  /** 拉取单个 provider 的余额（缓存优先；refresh=true 强制出网）。多个 provider 可并发。 */
   async function fetchBalance(providerId: string, refresh = false) {
     if (!host) return;
     if (!refresh && balances[providerId]) return;
-    if (balanceLoadingId) return;
-    setBalanceLoadingId(providerId);
+    if (balanceLoadingIds.has(providerId)) return;
+    setBalanceLoadingIds((current) => new Set(current).add(providerId));
     try {
       const response = await hostClient.request(
         "provider.balance.get",
@@ -471,7 +508,12 @@ export function ProvidersSettings() {
     } catch {
       /* 徽标是装饰性的；失败静默，手动刷新时再报。 */
     } finally {
-      setBalanceLoadingId(null);
+      setBalanceLoadingIds((current) => {
+        if (!current.has(providerId)) return current;
+        const next = new Set(current);
+        next.delete(providerId);
+        return next;
+      });
     }
   }
 
@@ -1050,7 +1092,7 @@ export function ProvidersSettings() {
                               void fetchBalance(provider.id, true);
                             }}
                           >
-                            {balanceLoadingId === provider.id ? (
+                            {balanceLoadingIds.has(provider.id) ? (
                               <RefreshCw className="animate-spin" size={10} />
                             ) : (
                               <RelayBalanceBadge balance={balances[provider.id]} />
@@ -1524,7 +1566,7 @@ export function ProvidersSettings() {
                     <div className="min-w-0">
                       <h2 className="text-sm font-medium">{t("relayPricingBalanceRefresh")}</h2>
                       <p className="mt-0.5 text-xs tabular-nums">
-                        {balanceLoadingId === draft.originalId ? (
+                        {balanceLoadingIds.has(draft.originalId ?? "") ? (
                           <RefreshCw className="inline animate-spin" size={12} />
                         ) : balances[draft.originalId]?.ok ? (
                           (() => {
@@ -1558,11 +1600,11 @@ export function ProvidersSettings() {
                     <button
                       type="button"
                       className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs hover:bg-surface-overlay"
-                      disabled={balanceLoadingId !== null}
+                      disabled={balanceLoadingIds.size > 0}
                       onClick={() => void fetchBalance(draft.originalId!, true)}
                     >
                       <RefreshCw
-                        className={balanceLoadingId === draft.originalId ? "animate-spin" : ""}
+                        className={balanceLoadingIds.has(draft.originalId ?? "") ? "animate-spin" : ""}
                         size={12}
                       />
                       {t("relayPricingBalanceRefresh")}
