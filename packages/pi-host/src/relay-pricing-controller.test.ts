@@ -399,6 +399,46 @@ describe("relay pricing handlers", () => {
     expect(requested.every((url) => !url.includes("/v1/v1/"))).toBe(true);
   });
 
+  it("uses a built-in balance preset for matching domains (NingYi /v1/usage)", async () => {
+    // NingYi 非 new-api 风格：/v1/dashboard/* 全 404，余额在 /v1/usage。
+    const baseUrl = await startRelayServer({});
+    const server = httpServers[0]!;
+    server.removeAllListeners("request");
+    server.on("request", (request, response) => {
+      if (request.url === "/v1/usage") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            balance: 7.17589596,
+            remaining: 7.17589596,
+            unit: "USD",
+            usage: { total_cost: 0.018 },
+          }),
+        );
+        return;
+      }
+      // new-api 默认端点故意 404：预设命中时不应被请求到。
+      response.writeHead(404);
+      response.end();
+    });
+    const config = structuredClone(RELAY_PROVIDER);
+    config.providers.hetune.baseUrl = baseUrl.replace("127.0.0.1", "127.0.0.1.nip.io");
+    const { credentialStore, handlers } = await setup(config);
+    await putApiKey(credentialStore, "hetune", "sk-test");
+
+    const result = await handlers["provider.balance.get"]!({
+      id: "req-preset",
+      method: "provider.balance.get",
+      params: { providerId: "hetune", refresh: true },
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+    if (!("result" in result)) throw new Error(JSON.stringify(result));
+    const balance = result.result as RelayBalance;
+    expect(balance.ok).toBe(true);
+    expect(balance.remainingUsd).toBeCloseTo(7.17589596, 6);
+    expect(balance.totalUsageUsd).toBeCloseTo(0.018, 6);
+  });
+
   it("redacts the api key from fetch errors", async () => {
     const baseUrl = await startRelayServer({ authExpected: "sk-secret" });
     const config = structuredClone(RELAY_PROVIDER);

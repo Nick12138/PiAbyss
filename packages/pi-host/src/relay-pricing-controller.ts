@@ -79,6 +79,145 @@ function relaySensitiveValues(apiKey: string | undefined): string[] {
   return apiKey ? [apiKey] : [];
 }
 
+/**
+ * 内置余额预设：new-api 默认端点覆盖不到的官方厂商，按 baseUrl 主域匹配。
+ * 预设仅在内置路径的余额探测中参与；有映射表时映射优先。
+ */
+type RelayBalancePreset = {
+  /** 端点路径（相对归一化站点根，baseUrl 的 /v1 后缀会被剥掉后拼接）。 */
+  path: string;
+  /** 从响应提取剩余/已用（美元）。返回 null 表示该响应不是此预设的形态。 */
+  extract: (payload: unknown) => { remainingUsd: number; totalUsageUsd?: number } | null;
+};
+
+const RELAY_BALANCE_PRESETS: Array<{
+  /** 主域匹配（relayMainDomain 语义）；全小写。 */
+  domain: string;
+  balances: RelayBalancePreset[];
+}> = [
+  {
+    // DeepSeek 官方：/user/balance 返回 balance_infos[]（人民币主账户时
+    // 按固定汇率换算成美元展示）。
+    domain: "deepseek.com",
+    balances: [
+      {
+        path: "/user/balance",
+        extract: (payload) => {
+          if (!isObject(payload) || !Array.isArray(payload.balance_infos)) return null;
+          const usd = payload.balance_infos.find(
+            (entry: unknown) => isObject(entry) && entry.currency === "USD",
+          );
+          if (isObject(usd) && typeof usd.total_balance === "number") {
+            return { remainingUsd: usd.total_balance };
+          }
+          const cny = payload.balance_infos.find(
+            (entry: unknown) => isObject(entry) && entry.currency === "CNY",
+          );
+          return isObject(cny) && typeof cny.total_balance === "number"
+            ? { remainingUsd: cny.total_balance / 7.2 }
+            : null;
+        },
+      },
+    ],
+  },
+  {
+    // OpenRouter：credits − usage = 剩余（美元）。
+    domain: "openrouter.ai",
+    balances: [
+      {
+        path: "/api/v1/credits",
+        extract: (payload) => {
+          if (!isObject(payload) || !isObject(payload.data)) return null;
+          const { total_credits: credits, total_usage: usage } = payload.data;
+          if (typeof credits !== "number") return null;
+          return {
+            remainingUsd: credits - (typeof usage === "number" ? usage : 0),
+            totalUsageUsd: typeof usage === "number" ? usage : 0,
+          };
+        },
+      },
+    ],
+  },
+];
+
+/**
+ * 按 baseUrl 主域找内置预设并依次尝试其余额端点；
+ * 不命中（域名不匹配 / 响应形态不符）返回 null，调用方回退 new-api 默认。
+ */
+async function tryBalancePreset(
+  baseUrl: string,
+  apiKey: string,
+  signal: AbortSignal,
+): Promise<{ remainingUsd: number; totalUsageUsd?: number } | null> {
+  const domain = relayMainDomain(baseUrl);
+  if (!domain) return null;
+  const preset = RELAY_BALANCE_PRESETS.find((entry) => entry.domain === domain);
+  if (!preset) return null;
+  const base = newApiBase(baseUrl);
+  for (const balance of preset.balances) {
+    try {
+      const payload = await fetchJson(
+        `${base}${balance.path}`,
+        { Authorization: `Bearer ${apiKey}` },
+        signal,
+      );
+      const extracted = balance.extract(payload);
+      if (extracted) return extracted;
+    } catch {
+      // 端点不可达/形态不符：试下一条，全失败再回退默认。
+    }
+  }
+  return null;
+}
+
+/** 预设/兜底探测提取结果 → 标准 RelayBalance 成功快照。 */
+function balanceFromExtracted(
+  stationId: string,
+  extracted: { remainingUsd: number; totalUsageUsd?: number },
+  fetchedAt: string,
+): RelayBalance {
+  const totalUsageUsd = extracted.totalUsageUsd ?? 0;
+  const unlimited = extracted.remainingUsd >= UNLIMITED_LIMIT_USD;
+  return {
+    stationId,
+    hardLimitUsd: extracted.remainingUsd + totalUsageUsd,
+    totalUsageUsd,
+    remainingUsd: unlimited ? null : extracted.remainingUsd,
+    unlimited,
+    fetchedAt,
+    ok: true,
+  };
+}
+
+/**
+ * NingYi 式网关的兜底探测：GET {base}/v1/usage 直接返回 balance/remaining
+ * （已是美元，unit: USD），而 new-api 的 /v1/dashboard/* 端点全部 404。
+ * 仅在 new-api 默认路径失败后尝试，按响应形态校验（balance 必须是数字）。
+ */
+async function probeUsageShapeBalance(
+  baseUrl: string,
+  apiKey: string,
+  signal: AbortSignal,
+): Promise<{ remainingUsd: number; totalUsageUsd?: number } | null> {
+  try {
+    const payload = await fetchJson(
+      `${newApiBase(baseUrl)}/v1/usage`,
+      { Authorization: `Bearer ${apiKey}` },
+      signal,
+    );
+    if (isObject(payload) && typeof payload.balance === "number") {
+      const used =
+        isObject(payload.usage) && typeof payload.usage.total_cost === "number"
+          ? payload.usage.total_cost
+          : undefined;
+      return { remainingUsd: payload.balance, totalUsageUsd: used };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchJson(
   url: string,
   headers: Record<string, string>,
@@ -358,6 +497,12 @@ async function fetchBalance(
       const mapped = applyBalanceMapping(resolved);
       return balanceFromMapping(stationId, mapped, fetchedAt);
     }
+    // 内置预设（DeepSeek /user/balance、OpenRouter /api/v1/credits）：
+    // 主域命中且响应形态匹配时直接采用。
+    const preset = await tryBalancePreset(baseUrl, apiKey, signal);
+    if (preset) {
+      return balanceFromExtracted(stationId, preset, fetchedAt);
+    }
     const subscription = await fetchJson(
       `${base}/v1/dashboard/billing/subscription`,
       headers,
@@ -413,6 +558,14 @@ async function fetchBalance(
     };
   } catch (error) {
     signal.throwIfAborted();
+    // new-api 默认路径失败后的兜底：NingYi 式网关（GET /v1/usage 直接返回
+    // balance/remaining，非 new-api 形态）。命中则成功返回，否则返回原错误。
+    if (apiKey) {
+      const probed = await probeUsageShapeBalance(baseUrl, apiKey, signal);
+      if (probed) {
+        return balanceFromExtracted(stationId, probed, fetchedAt);
+      }
+    }
     return {
       stationId,
       hardLimitUsd: 0,
