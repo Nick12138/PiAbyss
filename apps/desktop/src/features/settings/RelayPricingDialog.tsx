@@ -548,7 +548,9 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                                   type="button"
                                   className={`flex h-6 items-center gap-1 rounded border px-1.5 text-[11px] hover:bg-surface-overlay disabled:opacity-50 ${stateClass}`}
                                   disabled={testingKey !== null}
-                                  title={rowResult?.message}
+                                  title={testingKey === rowKey
+                                    ? t("relayPricingTesting")
+                                    : rowResult?.message}
                                   onClick={() => void test(configured.providerId, row.modelId, rowKey)}
                                 >
                                   {testingKey === rowKey ? (
@@ -562,9 +564,9 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                                   ) : (
                                     <CircleCheck size={11} />
                                   )}
-                                  {testingKey === rowKey
-                                    ? t("relayPricingTesting")
-                                    : t("relayPricingTest")}
+                                  {/* 文字固定为「测试」：测试中状态只用图标与 title 表达，
+                                      避免文字变宽撑开列。 */}
+                                  {t("relayPricingTest")}
                                 </button>
                               );
                             })()
