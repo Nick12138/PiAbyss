@@ -48,7 +48,8 @@ function composeRelayMappingPrompt(handoff: RelayMappingHandoff): string {
       info.sharedWith.length
         ? `
 - 同站镜像入口：provider ${info.sharedWith.join("、")} 指向同一站点（主域或地址相同）——写入映射表时加上 \`shareByBaseUrl\`（站点地址）与 \`shareScope: "domain"\`，它们会自动复用这张表，无需逐个映射`
-        : ""
+        : `
+- 写入映射表时必须加上 \`shareByBaseUrl\`（站点地址，即 baseUrl）与 \`shareScope: "domain"\`——之后同站点新增/复制的其它分组 provider 会自动复用这张表，无需逐个映射`
     }`,
     "",
     mappingBlock,
@@ -76,7 +77,7 @@ function composeRelayMappingPrompt(handoff: RelayMappingHandoff): string {
       {
         schemaVersion: 1,
         stationId,
-        shareByBaseUrl: "https://站点地址（同站镜像自动复用时填写）",
+        shareByBaseUrl: "https://站点地址（必须填写，与 baseUrl 一致）",
         shareScope: "domain",
         endpoints: {
           pricing: {

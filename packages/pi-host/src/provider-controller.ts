@@ -50,6 +50,11 @@ import { withStableGraphRead } from "./stable-graph-read.js";
 import { ProviderMutationJournal } from "./provider-journal.js";
 import { modelBackupDir, PIABYSS_MODEL_BACKUP_PATTERN } from "./piabyss-data.js";
 import {
+  isRelayBaseUrl,
+  RelayMappingStore,
+  sameRelayStation,
+} from "./relay-mapping-store.js";
+import {
   ENABLED_PROVIDERS_KEY,
   isObject,
   LEGACY_ACTIVE_PROVIDER_KEY,
@@ -1200,6 +1205,98 @@ export function createProviderHandlers(
   >
 > {
   const modelsPath = join(factory.deps.agentDir, "models.json");
+  // 中转站字段映射表存储：新增/改名/删除 provider 时自动维护
+  // （改名迁移、同站接入共享声明、无主表软停用）。
+  const mappingStore = new RelayMappingStore(factory.deps.agentDir);
+
+  /** models.json 里全部 provider 的 id + baseUrl（映射同站判定用）。 */
+  const listProviderBaseUrls = async (): Promise<Array<{ id: string; baseUrl: string }>> => {
+    try {
+      const config = await readModelsConfig(modelsPath);
+      return Object.entries(config.providers)
+        .filter((entry): entry is [string, JsonObject] => isObject(entry[1]))
+        .map(([id, raw]) => ({
+          id,
+          baseUrl: typeof raw.baseUrl === "string" ? raw.baseUrl : "",
+        }));
+    } catch {
+      return [];
+    }
+  };
+
+  /**
+   * provider 保存后的映射表自动维护（尽力而为，不阻断保存本身）：
+   *   1. 改名（originalId → 新 id）：映射文件跟着迁移，旧表不变孤儿；
+   *   2. 同站激活表复活：新/改 provider 命中了之前软停用的同站表时无损启用；
+   *   3. 站点变更：baseUrl 改指向另一站点时，旧站表迁给同站幸存者或软停用；
+   *   4. 自动接入：本站已有激活映射表但未声明共享时，补写 shareByBaseUrl
+   *      + shareScope="domain" —— 之后复制/新增同站 provider 都自动复用，
+   *      无需重新派发映射机器人。
+   */
+  const syncMappingAfterSave = async (
+    originalId: string,
+    savedId: string,
+    baseUrl: string,
+    previousBaseUrl = "",
+  ): Promise<void> => {
+    if (!isRelayBaseUrl(baseUrl)) return;
+    try {
+      // ① 改名迁移：旧 id 的表跟着搬到新 id（新 id 已有表/孤儿文件时不覆盖，
+      //    旧表软停用防孤儿；其它情况旧文件在 reassign 内移除）。
+      //    tableIsOurs：savedId 名下的激活表是否由本次保存接管
+      //    （同 id 编辑，或迁移成功）——决定后续站点变更处理是否适用。
+      let tableIsOurs = originalId === savedId;
+      if (originalId !== savedId) {
+        if (mappingStore.reassign(originalId, savedId)) {
+          tableIsOurs = true;
+        } else {
+          mappingStore.retire(originalId, { lastBaseUrl: previousBaseUrl });
+        }
+      }
+      // ② 复活：这个 id 之前删除时留下的停用表，同站则重新启用。
+      mappingStore.reactivate(savedId, baseUrl);
+      // ③ 失配旧站表清理：本 id 名下的激活表声明了别的站点（换域名/换站
+      //    后遗留），在新站永远解析不到 —— 迁给旧站幸存者或软停用，
+      //    不然它不仅自己没用，还会挡住同站共享表生效。
+      //    tableIsOurs 才处理：本次保存没接管的表（如改各到已有表的 id）
+      //    不属于本次保存的管理范围。
+      const own = mappingStore.getActive(savedId);
+      if (
+        tableIsOurs &&
+        own?.shareByBaseUrl &&
+        isRelayBaseUrl(own.shareByBaseUrl) &&
+        !sameRelayStation(own.shareByBaseUrl, baseUrl)
+      ) {
+        const oldSite = own.shareByBaseUrl;
+        const survivors = (await listProviderBaseUrls()).filter((entry) => entry.id !== savedId);
+        const dependents = mappingStore.dependentProviderIds(savedId, oldSite, survivors);
+        if (dependents.length === 0 || !mappingStore.reassign(savedId, dependents[0]!)) {
+          mappingStore.retire(savedId, { lastBaseUrl: oldSite });
+        }
+      }
+      // ④ 自动接入：找到本站生效的映射表（优先本站表），补齐共享声明，
+      //    让后续同站 provider（含其它分组/镜像入口）自动复用。
+      //    resolve 只认已声明共享的表，存量表往往没有声明 ——
+      //    此时兜底扫描 models.json：同站且持有激活表的 provider 即表主。
+      let baseId =
+        tableIsOurs && mappingStore.getActive(savedId)
+          ? savedId
+          : (mappingStore.resolve(savedId, baseUrl)?.stationId ?? null);
+      if (!baseId) {
+        const providers = await listProviderBaseUrls();
+        baseId =
+          providers.find(
+            (entry) =>
+              entry.id !== savedId &&
+              mappingStore.getActive(entry.id) !== null &&
+              sameRelayStation(entry.baseUrl, baseUrl),
+          )?.id ?? null;
+      }
+      if (baseId) mappingStore.ensureSharedByBaseUrl(baseId, baseUrl);
+    } catch (error) {
+      logger.warn("relay mapping auto-sync after provider save failed", { error });
+    }
+  };
 
   let activeLogin: ActiveLoginFlow | null = null;
 
@@ -1556,6 +1653,15 @@ export function createProviderHandlers(
               throw error;
             }
             await journal.finish();
+            // 映射表自动维护（尽力而为，失败不影响保存结果）：改名迁移、
+            // 同站停用表复活、站点变更处理、激活表补写共享声明。
+            // existing 是保存前的 provider 配置：改名时即旧 id 的配置，
+            // 同 id 编辑时即本 provider 的旧配置。
+            const previousBaseUrl =
+              existing.baseUrl && typeof existing.baseUrl === "string"
+                ? existing.baseUrl
+                : "";
+            await syncMappingAfterSave(originalId, draft.id, draft.baseUrl, previousBaseUrl);
             const enabledProviders = new Set(
               resolveEnabledProviders(config, undefined, runtimeProviderIds(factory)),
             );
@@ -1613,6 +1719,7 @@ export function createProviderHandlers(
             }
             await invalidateRetainedRuntimes(factory);
             signal.throwIfAborted();
+            const removedEntry = config.providers[providerId];
             const enabledBefore = resolveEnabledProviders(
               config,
               factory.getGraph()?.agentSession?.model?.provider,
@@ -1642,6 +1749,33 @@ export function createProviderHandlers(
               throw error;
             }
             await journal.finish();
+            // 映射表自动维护（尽力而为，失败不影响删除结果）：
+            //  1. 有同站幸存者依赖这张表 → 迁给第一个幸存者（表继续生效）；
+            //  2. 没有同站幸存者 → 软停用（enabled=false + [site] 标记），
+            //     文件永不删除，同站同 id 的未来 provider 可自动复活。
+            try {
+              const removedBaseUrl =
+                isObject(removedEntry) && typeof removedEntry.baseUrl === "string"
+                  ? removedEntry.baseUrl
+                  : "";
+              if (isRelayBaseUrl(removedBaseUrl)) {
+                const survivors = (await listProviderBaseUrls()).filter(
+                  (entry) => entry.id !== providerId,
+                );
+                const dependents = mappingStore.dependentProviderIds(
+                  providerId,
+                  removedBaseUrl,
+                  survivors,
+                );
+                if (dependents.length > 0) {
+                  mappingStore.reassign(providerId, dependents[0]!);
+                } else {
+                  mappingStore.retire(providerId, { lastBaseUrl: removedBaseUrl });
+                }
+              }
+            } catch (error) {
+              logger.warn("relay mapping auto-sync after provider remove failed", { error });
+            }
             return { result: { providerId, removed: true as const } };
           } catch (error) {
             return {

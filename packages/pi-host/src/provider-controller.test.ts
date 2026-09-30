@@ -1,11 +1,12 @@
 import { createServer, type Server } from "node:http";
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ModelConfigHealth, ProviderDraft } from "@piabyss/protocol";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import { createProviderHandlers, maskApiKey } from "./provider-controller.js";
+import { RelayMappingStore } from "./relay-mapping-store.js";
 import { getEnabledProviderIds, getProviderModelAllowLists } from "./provider-models-config.js";
 import { PiHostServer } from "./server.js";
 import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp-agent.js";
@@ -448,6 +449,362 @@ describe("Provider controller", () => {
     } as never);
 
     expect("error" in outcome && outcome.error.code).toBe("AGENT_BUSY");
+  });
+
+  it("keeps the relay field mapping file when its Provider is removed, retiring it instead", async () => {
+    const { handlers, layout } = await setup({
+      piabyssEnabledProviders: ["custom"],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://relay.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+      },
+    });
+    const mappingsDir = join(
+      layout.agentDir,
+      "piabyss",
+      "relay-pricing",
+      "mappings",
+    );
+    const mappingPath = join(mappingsDir, "custom.json");
+    mkdirSync(mappingsDir, { recursive: true });
+    writeFileSync(
+      mappingPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        stationId: "custom",
+        shareByBaseUrl: "https://relay.example/v1",
+        shareScope: "domain",
+        endpoints: {},
+      }, null, 2),
+    );
+
+    const outcome = await handlers["provider.remove"]!( {
+      id: "remove-provider-with-mapping",
+      params: { providerId: "custom" },
+    } as never);
+    expect("error" in outcome ? outcome.error.message : null).toBeNull();
+
+    // 映射文件永不物理删除：软停用 + [site] 归属标记，字段全部保留。
+    const persisted = JSON.parse(readFileSync(mappingPath, "utf8")) as {
+      enabled?: boolean;
+      stationId: string;
+      notes?: string;
+      shareByBaseUrl?: string;
+    };
+    expect(persisted.stationId).toBe("custom");
+    expect(persisted.enabled).toBe(false);
+    expect(persisted.shareByBaseUrl).toBe("https://relay.example/v1");
+    expect(persisted.notes).toContain("[site] https://relay.example/v1");
+  });
+
+  it("reassigns the mapping table to a same-station survivor and keeps it active", async () => {
+    const { handlers, layout } = await setup({
+      piabyssEnabledProviders: ["custom", "mirror"],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://relay.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+        mirror: {
+          name: "Mirror",
+          baseUrl: "https://cf.relay.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+      },
+    });
+    const mappingsDir = join(layout.agentDir, "piabyss", "relay-pricing", "mappings");
+    mkdirSync(mappingsDir, { recursive: true });
+    writeFileSync(
+      join(mappingsDir, "custom.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        stationId: "custom",
+        shareByBaseUrl: "https://relay.example/v1",
+        shareScope: "domain",
+        endpoints: {},
+      }, null, 2),
+    );
+
+    // 删除主表持有者 custom：同站幸存者 mirror 没有自己的表，表迁给它。
+    const outcome = await handlers["provider.remove"]!( {
+      id: "remove-mapping-holder",
+      params: { providerId: "custom" },
+    } as never);
+    expect("error" in outcome ? outcome.error.message : null).toBeNull();
+
+    expect(existsSync(join(mappingsDir, "custom.json"))).toBe(false);
+    const migrated = JSON.parse(readFileSync(join(mappingsDir, "mirror.json"), "utf8")) as {
+      stationId: string;
+      enabled?: boolean;
+    };
+    expect(migrated.stationId).toBe("mirror");
+    expect(migrated.enabled).not.toBe(false);
+  });
+
+  it("reactivates a retired mapping when a provider with the same id returns to the same station", async () => {
+    const { handlers, layout } = await setup({
+      piabyssEnabledProviders: ["custom"],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://relay.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+      },
+    });
+    const mappingsDir = join(layout.agentDir, "piabyss", "relay-pricing", "mappings");
+    mkdirSync(mappingsDir, { recursive: true });
+    // 模拟之前删除同站 custom 后留下的软停用表。
+    writeFileSync(
+      join(mappingsDir, "custom.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        stationId: "custom",
+        enabled: false,
+        notes: "[site] https://relay.example/v1",
+        endpoints: {},
+      }, null, 2),
+    );
+
+    // 同站同 id 重新添加：表自动复活。
+    const saved = await handlers["provider.save"]!( {
+      id: "re-add-same-station",
+      params: {
+        provider: { ...draft([configuredModel("primary")]), baseUrl: "https://relay.example/v1" },
+      },
+    } as never);
+    expect("error" in saved ? saved.error.message : null).toBeNull();
+
+    const reactivated = JSON.parse(readFileSync(join(mappingsDir, "custom.json"), "utf8")) as {
+      enabled?: boolean;
+      shareByBaseUrl?: string;
+      shareScope?: string;
+    };
+    expect(reactivated.enabled).not.toBe(false);
+    expect(reactivated.shareByBaseUrl).toBe("https://relay.example/v1");
+    expect(reactivated.shareScope).toBe("domain");
+  });
+
+  it("auto-shares an existing same-station mapping with a newly added provider group", async () => {
+    const { handlers, layout } = await setup({
+      piabyssEnabledProviders: ["1"],
+      providers: {
+        "1": {
+          name: "Station One",
+          baseUrl: "https://relay.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+      },
+    });
+    const mappingsDir = join(layout.agentDir, "piabyss", "relay-pricing", "mappings");
+    mkdirSync(mappingsDir, { recursive: true });
+    // 供应商 1 已有映射表，但（像存量表一样）没写共享声明。
+    writeFileSync(
+      join(mappingsDir, "1.json"),
+      JSON.stringify({ schemaVersion: 1, stationId: "1", endpoints: {} }, null, 2),
+    );
+
+    // 复制同站其它分组的 key → 新 provider 2，同 baseUrl。
+    const copyDraft = {
+      ...draft([configuredModel("primary")]),
+      id: "2",
+      baseUrl: "https://relay.example/v1",
+    };
+    const saved = await handlers["provider.save"]!( {
+      id: "save-copied-group",
+      params: { provider: copyDraft },
+    } as never);
+    expect("error" in saved ? saved.error.message : null).toBeNull();
+
+    // 已有表自动补写共享声明；新 provider 2 无自己的表 → 复用 1 的表。
+    const base = JSON.parse(readFileSync(join(mappingsDir, "1.json"), "utf8")) as {
+      shareByBaseUrl?: string;
+      shareScope?: string;
+    };
+    expect(base.shareByBaseUrl).toBe("https://relay.example/v1");
+    expect(base.shareScope).toBe("domain");
+    expect(existsSync(join(mappingsDir, "2.json"))).toBe(false);
+  });
+
+  it("migrates the mapping file when a provider is renamed", async () => {
+    const { handlers, layout } = await setup({
+      piabyssEnabledProviders: ["custom"],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://relay.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+      },
+    });
+    const mappingsDir = join(layout.agentDir, "piabyss", "relay-pricing", "mappings");
+    mkdirSync(mappingsDir, { recursive: true });
+    writeFileSync(
+      join(mappingsDir, "custom.json"),
+      JSON.stringify({ schemaVersion: 1, stationId: "custom", endpoints: {} }, null, 2),
+    );
+
+    // 改名 custom → renamed：映射文件跟过去，而不是变孤儿。
+    const saved = await handlers["provider.save"]!( {
+      id: "rename-provider",
+      params: {
+        originalId: "custom",
+        provider: { ...draft([configuredModel("primary")]), id: "renamed" },
+      },
+    } as never);
+    expect("error" in saved ? saved.error.message : null).toBeNull();
+
+    expect(existsSync(join(mappingsDir, "custom.json"))).toBe(false);
+    expect(existsSync(join(mappingsDir, "renamed.json"))).toBe(true);
+  });
+
+  it("does not retire the mapping when removing a provider without one", async () => {
+    const { handlers, layout } = await setup({
+      piabyssEnabledProviders: ["custom"],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://relay.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+      },
+    });
+    const mappingsDir = join(layout.agentDir, "piabyss", "relay-pricing", "mappings");
+    const outcome = await handlers["provider.remove"]!( {
+      id: "remove-provider-without-mapping",
+      params: { providerId: "custom" },
+    } as never);
+    expect("error" in outcome ? outcome.error.message : null).toBeNull();
+    // 从未有映射表 → 删除后也不应凭空创建任何映射文件。
+    expect(existsSync(mappingsDir)).toBe(false);
+  });
+
+  it("retires the old mapping when renaming onto a provider that already has one", async () => {
+    const { handlers, layout } = await setup({
+      piabyssEnabledProviders: ["custom"],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://relay.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+      },
+    });
+    const mappingsDir = join(layout.agentDir, "piabyss", "relay-pricing", "mappings");
+    mkdirSync(mappingsDir, { recursive: true });
+    writeFileSync(
+      join(mappingsDir, "custom.json"),
+      JSON.stringify({ schemaVersion: 1, stationId: "custom", endpoints: {} }, null, 2),
+    );
+    writeFileSync(
+      join(mappingsDir, "taken.json"),
+      JSON.stringify({ schemaVersion: 1, stationId: "taken", endpoints: {} }, null, 2),
+    );
+
+    // 改名 custom → taken（taken 已有自己的表）：custom 的表迁不过去，
+    // 软停用而不是留下无主的激活孤儿。
+    const saved = await handlers["provider.save"]!( {
+      id: "rename-onto-existing-mapping",
+      params: {
+        originalId: "custom",
+        provider: { ...draft([configuredModel("primary")]), id: "taken", baseUrl: "https://other.example/v1" },
+      },
+    } as never);
+    expect("error" in saved ? saved.error.message : null).toBeNull();
+
+    expect(existsSync(join(mappingsDir, "custom.json"))).toBe(true);
+    const retired = JSON.parse(readFileSync(join(mappingsDir, "custom.json"), "utf8")) as {
+      enabled?: boolean;
+    };
+    expect(retired.enabled).toBe(false);
+    const kept = JSON.parse(readFileSync(join(mappingsDir, "taken.json"), "utf8")) as {
+      enabled?: boolean;
+      stationId: string;
+    };
+    expect(kept.stationId).toBe("taken");
+    expect(kept.enabled).not.toBe(false);
+  });
+
+  it("retires or hands off a stale own-table when saving a provider that moved to another station", async () => {
+    const { handlers, layout } = await setup({
+      piabyssEnabledProviders: ["1", "5"],
+      providers: {
+        "1": {
+          name: "Station One",
+          baseUrl: "https://x.top/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+        "5": {
+          name: "Station Five",
+          baseUrl: "https://x.top/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+      },
+    });
+    const mappingsDir = join(layout.agentDir, "piabyss", "relay-pricing", "mappings");
+    mkdirSync(mappingsDir, { recursive: true });
+    // 主站 1 完整表（含 pricing）+ 共享声明。
+    writeFileSync(
+      join(mappingsDir, "1.json"),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          stationId: "1",
+          shareByBaseUrl: "https://x.top/v1",
+          shareScope: "domain",
+          endpoints: {},
+        },
+        null,
+        2,
+      ),
+    );
+    // provider 5 早期旧站的残表（无 pricing，声明指向旧站）。
+    writeFileSync(
+      join(mappingsDir, "5.json"),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          stationId: "5",
+          shareByBaseUrl: "https://old.example/v1",
+          shareScope: "domain",
+          endpoints: {},
+        },
+        null,
+        2,
+      ),
+    );
+
+    // 用户把 5 的 baseUrl 改到 x.top（已是）再保存一次 → 失配表被清理。
+    const saved = await handlers["provider.save"]!( {
+      id: "save-moved-provider",
+      params: {
+        originalId: "5",
+        provider: { ...draft([configuredModel("primary")]), id: "5", baseUrl: "https://x.top/v1" },
+      },
+    } as never);
+    expect("error" in saved ? saved.error.message : null).toBeNull();
+
+    // 旧站无幸存者 → 5.json 软停用（文件保留），resolve 落到 1 的共享表。
+    const retired = JSON.parse(readFileSync(join(mappingsDir, "5.json"), "utf8")) as {
+      enabled?: boolean;
+    };
+    expect(retired.enabled).toBe(false);
+    const store = new RelayMappingStore(layout.agentDir);
+    expect(store.resolve("5", "https://x.top/v1")?.stationId).toBe("1");
   });
 
   it("moves an idle session to another enabled Provider before removing its Provider", async () => {

@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   applyBalanceMapping,
@@ -408,6 +408,160 @@ describe("relay mapping store", () => {
     store.set("x", { ...veloeraStyleMapping(), stationId: "x" });
     writeFileSync(path, "{broken");
     expect(store.get("x")).toBeNull();
+  });
+
+  it("retires a table instead of deleting it, and reactivates only same-station providers", () => {
+    const layout = createTempAgentLayout("pi-relay-mapping-test-");
+    layouts.push(layout);
+    const store = new RelayMappingStore(layout.agentDir);
+    store.set("7", { ...veloeraStyleMapping(), stationId: "7" });
+
+    // 软停用：文件仍在，get/resolve 视为无映射。
+    expect(store.retire("7", { lastBaseUrl: "https://hetune.top/v1" })).toBe(true);
+    expect(store.get("7")).not.toBeNull();
+    expect(store.getActive("7")).toBeNull();
+    expect(store.resolve("7", "https://hetune.top/v1")).toBeNull();
+    expect(readFileSync(store.mappingPath("7"), "utf8")).toContain("[site] https://hetune.top/v1");
+    // 幂等。
+    expect(store.retire("7", { lastBaseUrl: "https://hetune.top/v1" })).toBe(false);
+
+    // 同站同 id 复活：enabled 回 true 并补共享声明。
+    expect(store.reactivate("7", "https://cf.hetune.top/v1")).toBe(true);
+    expect(store.getActive("7")?.enabled).not.toBe(false);
+    expect(store.getActive("7")?.shareByBaseUrl).toContain("hetune.top");
+
+    // 再次停用后，不同站的同 id 不能复活（防串站）。
+    store.retire("7", { lastBaseUrl: "https://hetune.top/v1" });
+    expect(store.reactivate("7", "https://api.deepseek.com/v1")).toBe(false);
+    expect(store.getActive("7")).toBeNull();
+    // 激活表不能 repeat reactivate。
+    store.reactivate("7", "https://hetune.top/v1");
+    expect(store.reactivate("7", "https://hetune.top/v1")).toBe(false);
+  });
+
+  it("reassigns a table to a surviving same-station provider on rename/remove", () => {
+    const layout = createTempAgentLayout("pi-relay-mapping-test-");
+    layouts.push(layout);
+    const store = new RelayMappingStore(layout.agentDir);
+    store.set("7", { ...veloeraStyleMapping(), stationId: "7" });
+
+    // 迁移后新 id 生效、旧文件移除、stationId 改写。
+    expect(store.reassign("7", "9")).toBe(true);
+    expect(store.get("7")).toBeNull();
+    expect(store.get("9")?.stationId).toBe("9");
+    expect(store.listStationIds()).toContain("9");
+    expect(readdirSync(store.rootDir()).some((name) => name.startsWith("7.json.removed-"))).toBe(
+      true,
+    );
+
+    // 目标已有表时不覆盖；源无表时不动作。
+    store.set("2", { ...veloeraStyleMapping(), stationId: "2" });
+    expect(store.reassign("2", "9")).toBe(false);
+    expect(store.get("2")).not.toBeNull();
+    expect(store.reassign("404", "9")).toBe(false);
+  });
+
+  it("ensureSharedByBaseUrl backfills sharing for future same-station providers", () => {
+    const layout = createTempAgentLayout("pi-relay-mapping-test-");
+    layouts.push(layout);
+    const store = new RelayMappingStore(layout.agentDir);
+    store.set("7", { ...veloeraStyleMapping(), stationId: "7" });
+
+    // 补写声明后，同站新 provider（无自己的表）解析到这张表。
+    expect(store.ensureSharedByBaseUrl("7", "https://hetune.top/v1")).toBe(true);
+    const shared = store.getActive("7");
+    expect(shared?.shareByBaseUrl).toBe("https://hetune.top/v1");
+    expect(shared?.shareScope).toBe("domain");
+    expect(store.resolve("13", "https://api.hetune.top/v1")?.stationId).toBe("7");
+    // 幂等：已是等价声明时不重复写入。
+    expect(store.ensureSharedByBaseUrl("7", "https://hetune.top/v1/")).toBe(false);
+    // 非法地址/无表时不动作。
+    expect(store.ensureSharedByBaseUrl("7", "not-a-url")).toBe(false);
+    expect(store.ensureSharedByBaseUrl("404", "https://hetune.top/v1")).toBe(false);
+  });
+
+  it("lists same-station providers that actually resolve to the base table", () => {
+    const layout = createTempAgentLayout("pi-relay-mapping-test-");
+    layouts.push(layout);
+    const store = new RelayMappingStore(layout.agentDir);
+    // base 表带共享声明（保存时 ensureSharedByBaseUrl 会自动补齐）。
+    store.set("7", {
+      ...veloeraStyleMapping(),
+      stationId: "7",
+      shareByBaseUrl: "https://hetune.top/v1",
+      shareScope: "domain",
+    });
+
+    const others = [
+      { id: "8", baseUrl: "https://cf.hetune.top/v1" }, // 同主域镜像：解析到 7 的表
+      { id: "9", baseUrl: "https://hetune.top/v1" }, // 同 URL：解析到 7 的表
+      { id: "13", baseUrl: "https://api.deepseek.com/v1" }, // 不同站：不算
+      { id: "bad", baseUrl: "not-a-url" }, // 非法地址：不算
+    ];
+    expect(store.dependentProviderIds("7", "https://hetune.top/v1", others)).toEqual([
+      "8",
+      "9",
+    ]);
+    // 自己有过期旧站表的 provider 也算依赖者：本站表让位后实际解析到 base。
+    store.set("10", {
+      ...veloeraStyleMapping(),
+      stationId: "10",
+      shareByBaseUrl: "https://old-site.example/v1",
+      shareScope: "domain",
+    });
+    expect(
+      store
+        .dependentProviderIds("7", "https://hetune.top/v1", [...others, { id: "10", baseUrl: "https://cf.hetune.top/v1" }])
+        .sort(),
+    ).toEqual(["10", "8", "9"].sort());
+    // base 表停用后无依赖者。
+    store.retire("7", { lastBaseUrl: "https://hetune.top/v1" });
+    expect(store.dependentProviderIds("7", "https://hetune.top/v1", others)).toEqual([]);
+  });
+
+  it("lets a stale own-table defer to a shared table after the provider moved to another station", () => {
+    const layout = createTempAgentLayout("pi-relay-mapping-test-");
+    layouts.push(layout);
+    const store = new RelayMappingStore(layout.agentDir);
+
+    // 主站 1 的完整表（含 pricing），声明按主域共享。
+    store.set("1", {
+      ...veloeraStyleMapping(),
+      stationId: "1",
+      shareByBaseUrl: "https://x.top/v1",
+      shareScope: "domain",
+    });
+    // provider 5 早期指向 old.example，表只有 key/余额端点（没有 pricing），
+    // 后来 baseUrl 换到 x.top：旧表失配，应让位给同站的共享表。
+    const keyOnlyTable = veloeraStyleMapping();
+    store.set("5", {
+      ...keyOnlyTable,
+      stationId: "5",
+      endpoints: {
+        models: {
+          path: "v1/models",
+          auth: true,
+          fields: { keyModels: { path: "data", reader: "array", itemField: "id" } },
+        },
+      },
+    });
+
+    // 无声明时：本站表无条件生效（旧行为）。
+    expect(store.resolve("5", "https://x.top/v1")?.stationId).toBe("5");
+
+    // 加上过期声明（旧站遗留）后：让位给同站共享表。
+    store.set("5", {
+      ...store.get("5")!,
+      shareByBaseUrl: "https://old.example/v1",
+      shareScope: "domain",
+    });
+    expect(store.resolve("5", "https://x.top/v1")?.stationId).toBe("1");
+    expect(store.resolve("5", "https://cf.x.top/v1")?.stationId).toBe("1");
+    // 声明站点与当前同站的表不受影响。
+    expect(store.resolve("1", "https://cf.x.top/v1")?.stationId).toBe("1");
+    // 无共享表可用时失配表仍然生效（聊胜于无）。
+    store.set("1", null);
+    expect(store.resolve("5", "https://x.top/v1")?.stationId).toBe("5");
   });
 
   it("shares one mapping across providers with the same baseUrl", () => {

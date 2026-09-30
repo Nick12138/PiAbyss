@@ -1,5 +1,16 @@
-import { Brain, Check, ChevronDown, ChevronRight } from "lucide-react";
+import {
+  Brain,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  CircleAlert,
+  CircleCheck,
+  Coins,
+  FlaskConical,
+  RefreshCw,
+} from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import type { ModelSummary, SessionContextBreakdown } from "@piabyss/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
@@ -12,6 +23,7 @@ import {
 import { formatTokenCount } from "../../lib/format-token-count";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
 import { requestCompact, setAutoCompaction } from "./compaction-actions";
+import { relayPriceCandidates, useRelayMenuData, useRelayModelTest } from "./model-menu-relay";
 import { Switch } from "../../components/Switch";
 import { useT } from "../../lib/i18n/use-t";
 
@@ -502,6 +514,23 @@ export function ModelControls() {
   const selectedModelKey = session?.model
     ? `${session.model.provider}/${session.model.modelId}`
     : "";
+
+  // 中转站价格预览 + 模型测试（与设置里「中转站价格总表」同一数据源/同一
+  // 测试通道）。菜单首次打开才拉取，之后在组件生命周期内保留。
+  const { pricing, providerNames, configuredProviderIds } = useRelayMenuData(menuOpen);
+  const relayTest = useRelayModelTest(configuredProviderIds);
+  // 悬停模型行时在菜单侧边弹出的价格浮窗。portal 到 body（避免被菜单的
+  // 滚动容器裁剪），定位用视口坐标，跟随悬停行上下移动。
+  const [hoverPreview, setHoverPreview] = useState<{
+    model: ModelSummary;
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!menuOpen) setHoverPreview(null);
+  }, [menuOpen]);
   const modelMenuLabels =
     modelOptions.length > 0
       ? [
@@ -756,33 +785,101 @@ export function ModelControls() {
                         const selected =
                           session?.model?.provider === model.provider &&
                           session.model.modelId === model.modelId;
+                        // 测试资格与设置价格总表同一判定：provider 已配置 key。
+                        const testable = relayTest.testable(model.provider);
+                        const testKey = key;
+                        const testResult = relayTest.results[testKey];
+                        const testing = relayTest.testingKeys.has(testKey);
                         return (
-                          <button
+                          <div
                             key={key}
-                            type="button"
-                            className={`flex h-8 w-full items-center gap-1.5 px-2.5 text-left text-xs text-muted ${
-                              selected ? "font-medium" : ""
-                            }`}
-                            role="menuitemradio"
-                            aria-checked={selected}
-                            title={modelOptionLabel(model)}
-                            onClick={() => {
-                              if (selected) {
-                                setMenuOpen(false);
-                                return;
-                              }
-                              void setModel(model.provider, model.modelId).then((changed) => {
-                                if (changed) setMenuOpen(false);
+                            className="group/row relative"
+                            onMouseEnter={(event) => {
+                              const rect = event.currentTarget.getBoundingClientRect();
+                              setHoverPreview({
+                                model,
+                                top: rect.top,
+                                bottom: rect.bottom,
+                                left: rect.left,
+                                right: rect.right,
                               });
                             }}
+                            onMouseLeave={() => setHoverPreview(null)}
                           >
-                            <span className="whitespace-nowrap">{model.name || model.modelId}</span>
-                            {selected && (
-                              <span className="ml-auto flex shrink-0 items-center justify-center">
-                                <Check size={16} strokeWidth={2.5} />
+                            <button
+                              type="button"
+                              className={`flex h-8 w-full items-center gap-1.5 pr-[76px] pl-2.5 text-left text-xs text-muted ${
+                                selected ? "font-medium" : ""
+                              }`}
+                              role="menuitemradio"
+                              aria-checked={selected}
+                              title={modelOptionLabel(model)}
+                              onClick={() => {
+                                if (selected) {
+                                  setMenuOpen(false);
+                                  return;
+                                }
+                                void setModel(model.provider, model.modelId).then((changed) => {
+                                  if (changed) setMenuOpen(false);
+                                });
+                              }}
+                            >
+                              <span className="min-w-0 truncate">
+                                {model.name || model.modelId}
                               </span>
-                            )}
-                          </button>
+                            </button>
+                            {/* 右侧控件层：绝对定位锚定右缘、宽度随内容向左
+                                伸展。勾号排在最后（永远贴右缘，位置稳定，
+                                不随 provider.list 异步加载跳动）；测试按钮在
+                                勾号左侧淡入/淡出，出现时只向左扩展。 */}
+                            <div className="pointer-events-none absolute inset-y-0 right-1.5 z-10 flex items-center gap-1">
+                              {testable && (
+                                <button
+                                  type="button"
+                                  className={`pointer-events-auto flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors hover:bg-surface-overlay disabled:cursor-default disabled:opacity-50 ${
+                                    testing
+                                      ? "border-border text-muted"
+                                      : !testResult
+                                        ? "border-border bg-surface-raised text-muted opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100"
+                                        : testResult.ok
+                                          ? "border-success/40 text-success"
+                                          : "border-danger/40 text-danger"
+                                  }`}
+                                  disabled={testing}
+                                  aria-label={`${t("relayPricingTest")} ${
+                                    model.name || model.modelId
+                                  }`}
+                                  title={
+                                    testing
+                                      ? t("relayPricingTesting")
+                                      : (testResult?.message ?? t("modelMenuTestHint"))
+                                  }
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    relayTest.test(model.provider, model.modelId);
+                                  }}
+                                >
+                                  {testing ? (
+                                    <RefreshCw className="animate-spin" size={11} />
+                                  ) : testResult ? (
+                                    testResult.ok ? (
+                                      <CircleCheck size={11} />
+                                    ) : (
+                                      <CircleAlert size={11} />
+                                    )
+                                  ) : (
+                                    <FlaskConical size={11} />
+                                  )}
+                                  {t("relayPricingTest")}
+                                </button>
+                              )}
+                              {selected && (
+                                <span className="flex shrink-0 items-center justify-center text-foreground">
+                                  <Check size={16} strokeWidth={2.5} />
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         );
                       })}
                     </div>
@@ -853,6 +950,94 @@ export function ModelControls() {
             </div>
           </div>
         )}
+        {/* Hover price card: floats to the side of the model menu, positioned
+            in viewport coordinates via portal (never clipped by the menu's
+            scroll container). Prefer the right side, flip to the left when
+            there is no room; vertically aligned with the hovered row. */}
+        {hoverPreview &&
+          (() => {
+            const cardWidth = 280;
+            const margin = 12;
+            const candidates = relayPriceCandidates(
+              pricing,
+              hoverPreview.model.provider,
+              hoverPreview.model.modelId,
+              providerNames,
+            );
+            const cardHeight =
+              60 + Math.min(candidates.length, 6) * 52 + (candidates.length > 0 ? 0 : 20);
+            // 默认弹在菜单右侧；右侧放不下时翻到左侧。
+            const placeRight = hoverPreview.right + margin + cardWidth <= window.innerWidth;
+            const left = placeRight
+              ? hoverPreview.right + margin
+              : Math.max(margin, hoverPreview.left - margin - cardWidth);
+            const top = Math.max(
+              margin,
+              Math.min(
+                hoverPreview.top,
+                Math.max(margin, window.innerHeight - margin - cardHeight),
+              ),
+            );
+            return createPortal(
+              <div
+                className="theme-floating-surface pointer-events-none fixed z-[60] w-[280px] rounded-md border border-border bg-surface-raised p-2.5 shadow-lg"
+                style={{ top, left }}
+                role="tooltip"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-foreground">
+                    <Coins size={13} className="shrink-0" />
+                    <span className="truncate" title={modelOptionLabel(hoverPreview.model)}>
+                      {hoverPreview.model.name || hoverPreview.model.modelId}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-[10px] text-muted">
+                    {candidates.length > 0
+                      ? t("modelMenuPricingCount", { count: candidates.length })
+                      : null}
+                  </span>
+                </div>
+                {candidates.length === 0 ? (
+                  <p className="mt-1.5 text-[11px] leading-4 text-muted">
+                    {t("modelMenuPricingEmpty")}
+                  </p>
+                ) : (
+                  <div className="mt-1.5 flex flex-col">
+                    {candidates.map((price) => (
+                      <div
+                        key={`${price.stationId}:${price.modelId}:${price.group}`}
+                        className="border-t border-border/60 py-1.5 text-[11px] first:border-t-0"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="min-w-0 truncate text-muted" title={price.group}>
+                            {price.group}
+                          </span>
+                          <span className="shrink-0 tabular-nums text-muted">
+                            ×{price.groupRatio}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 flex items-center justify-between gap-2 tabular-nums">
+                          <span>
+                            <span className="text-muted">{t("relayPricingColInput")}</span>{" "}
+                            <span className="text-foreground">{price.input}</span>
+                          </span>
+                          <span>
+                            <span className="text-muted">{t("relayPricingColOutput")}</span>{" "}
+                            <span className="text-foreground">{price.output}</span>
+                          </span>
+                          <span>
+                            <span className="text-muted">{t("relayPricingColCache")}</span>{" "}
+                            <span className="text-foreground">{price.cache}</span>
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>,
+              document.body,
+            );
+          })()}
       </div>
     </div>
   );
