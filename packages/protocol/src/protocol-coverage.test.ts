@@ -213,6 +213,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "provider.mapping.get": { stationId: "hetune" },
   "provider.mapping.set": { stationId: "hetune", mapping: null },
   "provider.mapping.handoff": { stationId: "hetune" },
+  "provider.mapping.picker": null,
   "model.list": null,
   "model.setCurrent": { provider: "openai", modelId: "gpt" },
   "model.setThinkingLevel": { level: "off" },
@@ -581,6 +582,8 @@ function invalidParams(method: HostMethod): unknown {
       return { providerId: "hetune", ratio: { cny: -1, balance: 0 } };
     case "provider.mapping.get":
     case "provider.mapping.handoff":
+      return { stationId: "" };
+    case "provider.mapping.picker":
       return { stationId: "" };
     case "provider.mapping.set":
       return { stationId: "hetune", mapping: { schemaVersion: 2 } };

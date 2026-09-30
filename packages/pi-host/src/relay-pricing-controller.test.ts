@@ -10,11 +10,7 @@ import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp
 import { createTestModelServices, putApiKey } from "./test-helpers/model-runtime.js";
 import { refreshModelsLocal } from "./model-runtime-refresh.js";
 import { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
-import type {
-  ModelConfigHealth,
-  RelayBalance,
-  RelayPricingResult,
-} from "@piabyss/protocol";
+import type { ModelConfigHealth, RelayBalance, RelayPricingResult } from "@piabyss/protocol";
 
 const layouts: TempAgentLayout[] = [];
 const httpServers: Server[] = [];
@@ -117,7 +113,16 @@ const RELAY_PROVIDER = {
       name: "河图 API",
       baseUrl: "PLACEHOLDER",
       api: "openai-completions",
-      models: [{ id: "glm-5.3-flash", name: "glm-5.3-flash", reasoning: false, input: ["text"], contextWindow: 128000, maxTokens: 16384 }],
+      models: [
+        {
+          id: "glm-5.3-flash",
+          name: "glm-5.3-flash",
+          reasoning: false,
+          input: ["text"],
+          contextWindow: 128000,
+          maxTokens: 16384,
+        },
+      ],
     },
   },
 };
@@ -546,9 +551,7 @@ describe("relay pricing handlers", () => {
       if (request.url === "/custom/pricing" && auth === "Bearer sk-test") {
         body({
           group_ratio: { default: 1 },
-          records: [
-            { name: "glm-x", ratio: 0.1, completion_ratio: 2, groups: ["default"] },
-          ],
+          records: [{ name: "glm-x", ratio: 0.1, completion_ratio: 2, groups: ["default"] }],
         });
         return;
       }
@@ -671,9 +674,9 @@ describe("relay pricing handlers", () => {
       context: { expectedHostInstanceId: "x" },
     } as never);
     if (!("result" in handoffAfter)) throw new Error(JSON.stringify(handoffAfter));
-    expect((handoffAfter.result as { mapping: { stationId: string } | null }).mapping?.stationId).toBe(
-      "hetune",
-    );
+    expect(
+      (handoffAfter.result as { mapping: { stationId: string } | null }).mapping?.stationId,
+    ).toBe("hetune");
 
     // Clearing the table restores built-in defaults (404 on custom paths → error field).
     await handlers["provider.mapping.set"]!({
@@ -691,6 +694,80 @@ describe("relay pricing handlers", () => {
     if (!("result" in fallback)) throw new Error(JSON.stringify(fallback));
     const fallbackStation = (fallback.result as RelayPricingResult).table.stations[0]!;
     expect(fallbackStation.error).toBeTruthy();
+    void layout;
+  });
+
+  it("picker merges mirror providers by main domain and flags existing mappings", async () => {
+    const config = {
+      providers: {
+        hetune: {
+          name: "河图主站",
+          baseUrl: "https://api.hetune.top/v1",
+          api: "openai-completions",
+          models: [],
+        },
+        "hetune-cf": {
+          name: "河图CF",
+          baseUrl: "https://cf.hetune.top/v1",
+          api: "openai-completions",
+          models: [],
+        },
+        other: {
+          name: "别家",
+          baseUrl: "https://other.example.com",
+          api: "openai-completions",
+          models: [],
+        },
+      },
+    };
+    const { layout, handlers } = await setup(config);
+
+    const empty = await handlers["provider.mapping.picker"]!({
+      id: "req-p0",
+      method: "provider.mapping.picker",
+      params: null,
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+    if (!("result" in empty)) throw new Error(JSON.stringify(empty));
+    const entries = (
+      empty.result as {
+        entries: Array<{
+          stationId: string;
+          names: string[];
+          hasMapping: boolean;
+          providerIds: string[];
+        }>;
+      }
+    ).entries;
+    // cf.hetune.top 与 api.hetune.top 同主域合并成一条，站点 id 取组内第一个。
+    expect(entries.map((entry) => entry.stationId).sort()).toEqual(["hetune", "other"]);
+    const merged = entries.find((entry) => entry.stationId === "hetune")!;
+    expect(merged.names.sort()).toEqual(["河图CF", "河图主站"]);
+    expect(merged.providerIds.sort()).toEqual(["hetune", "hetune-cf"]);
+    expect(merged.hasMapping).toBe(false);
+
+    // 写入映射表后 hasMapping 翻转。
+    await handlers["provider.mapping.set"]!({
+      id: "req-p1",
+      method: "provider.mapping.set",
+      params: {
+        stationId: "hetune",
+        mapping: { schemaVersion: 1, stationId: "hetune", endpoints: {} } as never,
+      },
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+    const after = await handlers["provider.mapping.picker"]!({
+      id: "req-p2",
+      method: "provider.mapping.picker",
+      params: null,
+      context: { expectedHostInstanceId: "x" },
+    } as never);
+    if (!("result" in after)) throw new Error(JSON.stringify(after));
+    const entriesAfter = (
+      after.result as { entries: Array<{ stationId: string; hasMapping: boolean }> }
+    ).entries;
+    expect(entriesAfter.find((entry) => entry.stationId === "hetune")!.hasMapping).toBe(true);
+    expect(entriesAfter.find((entry) => entry.stationId === "other")!.hasMapping).toBe(false);
     void layout;
   });
 });

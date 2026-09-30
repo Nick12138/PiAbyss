@@ -2,7 +2,6 @@ import {
   Activity,
   AlertTriangle,
   ArrowLeft,
-  Bot,
   Brain,
   Check,
   ChevronDown,
@@ -52,7 +51,6 @@ import {
 } from "../../lib/format-token-count";
 import { ProviderLoginPage } from "./ProviderLoginSection";
 import { RelayPricingDialog } from "./RelayPricingDialog";
-import { openRelayMappingAgent } from "./relay-mapping-agent";
 import {
   automaticThinkingConfig,
   customThinkingMap,
@@ -273,8 +271,6 @@ export function ProvidersSettings() {
     { kind: "select"; id: string } | { kind: "new" } | { kind: "oauth" } | null
   >(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  // 字段映射任务派发中（机器人图标按钮）。
-  const [mappingBusy, setMappingBusy] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   // Serialized shape of the draft as loaded/saved; any divergence means unsaved edits.
   const baselineRef = useRef<string | null>(null);
@@ -366,7 +362,8 @@ export function ProvidersSettings() {
           let changed = false;
           const next = { ...current };
           for (const station of result.table.stations) {
-            if (!station.balance || station.providerId === null || next[station.providerId]) continue;
+            if (!station.balance || station.providerId === null || next[station.providerId])
+              continue;
             next[station.providerId] = station.balance;
             changed = true;
           }
@@ -1243,28 +1240,6 @@ export function ProvidersSettings() {
                       onClick={copyProvider}
                     >
                       <Copy size={14} />
-                    </button>
-                  )}
-                  {draft.originalId && (
-                    <button
-                      type="button"
-                      className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs text-accent hover:bg-surface-overlay disabled:opacity-50"
-                      disabled={saving || fetching || testing || mappingBusy}
-                      title={t("providersMappingBotTitle")}
-                      aria-label={t("providersMappingBot")}
-                      onClick={() => {
-                        setMappingBusy(true);
-                        void openRelayMappingAgent(
-                          draft.originalId!,
-                          draft.name.trim() || draft.originalId!,
-                        ).finally(() => setMappingBusy(false));
-                      }}
-                    >
-                      {mappingBusy ? (
-                        <RefreshCw className="animate-spin" size={14} />
-                      ) : (
-                        <Bot size={14} />
-                      )}
                     </button>
                   )}
                   <div className="relative flex items-stretch">

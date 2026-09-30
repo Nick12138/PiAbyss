@@ -99,6 +99,7 @@ export const HOST_METHODS = [
   "provider.mapping.get",
   "provider.mapping.set",
   "provider.mapping.handoff",
+  "provider.mapping.picker",
   "model.list",
   "model.setCurrent",
   "model.setThinkingLevel",
@@ -244,6 +245,7 @@ export type HostOnlyMethod =
   | "provider.mapping.get"
   | "provider.mapping.set"
   | "provider.mapping.handoff"
+  | "provider.mapping.picker"
   | "session.searchAll"
   | "package.catalog"
   | "pluginLibrary.catalog"
@@ -509,6 +511,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "provider.mapping.get": "host",
   "provider.mapping.set": "host",
   "provider.mapping.handoff": "host",
+  "provider.mapping.picker": "host",
   "model.list": "activeSession",
   "model.setCurrent": "activeSession",
   "model.setThinkingLevel": "activeSession",

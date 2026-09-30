@@ -475,6 +475,20 @@ export const en = {
     "Please handle the field-mapping task above: probe the APIs, verify each field, write the mapping table to the given path, and report per-endpoint findings plus any fields that could not be obtained.",
   providersMappingNoWorkspace:
     "Could not resolve the default workspace; the field-mapping task was not started",
+  providersMappingPartialHandoff: "{count} station(s) could not be loaded and were skipped",
+  providersMappingPickerTitle: "Choose relay stations to map",
+  providersMappingPickerHint:
+    "Mirror hosts (cf.x / api.x and friends) are merged by main domain. Confirm to create one session in the default workspace with a mapping task per selected station. Selecting an already-mapped station means re-testing and overwriting its mapping table.",
+  providersMappingPickerSearch: "Search stations",
+  providersMappingPickerEmpty:
+    "No relay station to map (add and configure a key under Model services first)",
+  providersMappingPickerConfirm: "Start mapping",
+  providersMappingPickerDispatching: "Starting",
+  providersMappingPickerHasMapping: "Mapped",
+  providersMappingPickerHasMappingHint:
+    "This station already has an active field mapping; selecting it re-tests and overwrites",
+  providersMappingPickerMerged: "Merged mirror hosts: {names}",
+  providersMappingPickerSelected: "{count} station(s) selected",
   providersConnectionOk: "Generation check passed",
   providersUseSystemRole: "Use system role",
   providersOmitReasoningEffort: "Omit reasoning_effort",

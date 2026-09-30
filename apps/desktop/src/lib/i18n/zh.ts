@@ -443,6 +443,18 @@ export const zh: Record<MessageKey, string> = {
   providersMappingPrompt:
     "请处理上面的字段映射任务：探测接口、验证字段、把映射表写入指定路径，并在回复里给出每个端点的探测结论与无法获取的字段清单。",
   providersMappingNoWorkspace: "无法定位默认工作区，未能发起字段映射任务",
+  providersMappingPartialHandoff: "有 {count} 个站点未能获取站点信息，已跳过",
+  providersMappingPickerTitle: "选择要映射的中转站",
+  providersMappingPickerHint:
+    "已按主域合并镜像入口（cf.x / api.x 等子域名不再单列）。勾选后点确定，会在默认工作区新建一条会话并注入映射任务。已映射的站点勾选表示重新测试并覆盖映射表。",
+  providersMappingPickerSearch: "搜索站点",
+  providersMappingPickerEmpty: "没有可映射的中转站（先在模型服务里添加并配置 key）",
+  providersMappingPickerConfirm: "确定发起映射",
+  providersMappingPickerDispatching: "发起中",
+  providersMappingPickerHasMapping: "已映射",
+  providersMappingPickerHasMappingHint: "该站点已有生效的字段映射表；勾选表示重新测试并覆盖",
+  providersMappingPickerMerged: "已合并镜像入口：{names}",
+  providersMappingPickerSelected: "已选中 {count} 个站点",
   providersConnectionOk: "生成检查通过",
   providersUseSystemRole: "改用 system 角色",
   providersOmitReasoningEffort: "省略 reasoning_effort",

@@ -793,11 +793,7 @@ function isRelayFieldMappingDto(value: unknown): boolean {
 function isRelayEndpointMappingDto(value: unknown): boolean {
   return (
     isPlainObject(value) &&
-    hasExactKeys(value, ["path", "auth", "fields"], [
-      "fieldsApplyTo",
-      "itemsField",
-      "itemsPath",
-    ]) &&
+    hasExactKeys(value, ["path", "auth", "fields"], ["fieldsApplyTo", "itemsField", "itemsPath"]) &&
     isNonEmptyString(value.path) &&
     isBoolean(value.auth) &&
     (value.itemsPath === undefined || isString(value.itemsPath)) &&
@@ -860,6 +856,35 @@ function isRelayMappingHandoffResult(value: unknown): boolean {
     isNonEmptyString(value.authJsonPath) &&
     (value.mapping === null || isRelayFieldMapDto(value.mapping)) &&
     isStringArray(value.sharedWith)
+  );
+}
+
+function isRelayMappingPickerEntry(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "stationId",
+      "names",
+      "baseUrl",
+      "hasApiKey",
+      "hasMapping",
+      "providerIds",
+    ]) &&
+    isNonEmptyString(value.stationId) &&
+    isStringArray(value.names) &&
+    isString(value.baseUrl) &&
+    isBoolean(value.hasApiKey) &&
+    isBoolean(value.hasMapping) &&
+    isStringArray(value.providerIds)
+  );
+}
+
+function isRelayMappingPickerResult(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["entries"]) &&
+    Array.isArray(value.entries) &&
+    value.entries.every(isRelayMappingPickerEntry)
   );
 }
 
@@ -3267,6 +3292,8 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
       return isRelayMappingResult(result) ? null : `invalid ${method} result`;
     case "provider.mapping.handoff":
       return isRelayMappingHandoffResult(result) ? null : "invalid provider.mapping.handoff result";
+    case "provider.mapping.picker":
+      return isRelayMappingPickerResult(result) ? null : "invalid provider.mapping.picker result";
     case "provider.pricing.setRechargeRatio":
       return isPlainObject(result) &&
         hasExactKeys(result, ["providerId", "ratio"]) &&

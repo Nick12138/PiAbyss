@@ -58,6 +58,7 @@ import type {
   RelayMappingResult,
   RelayMappingSetParams,
   RelayMappingHandoffResult,
+  RelayMappingPickerResult,
   TelegramValidateTokenResult,
   TelegramProfileSummary,
   TelegramSessionListResult,
@@ -221,6 +222,7 @@ export type HostContextMap = {
   "provider.mapping.get": HostContext;
   "provider.mapping.set": HostContext;
   "provider.mapping.handoff": HostContext;
+  "provider.mapping.picker": HostContext;
   "model.list": ActiveSessionContext;
   "model.setCurrent": ActiveSessionContext;
   "model.setThinkingLevel": ActiveSessionContext;
@@ -439,6 +441,7 @@ export type HostRequestParams = {
   "provider.mapping.get": { stationId: string };
   "provider.mapping.set": RelayMappingSetParams;
   "provider.mapping.handoff": { stationId: string };
+  "provider.mapping.picker": null;
   "model.list": null;
   "model.setCurrent": { provider: string; modelId: string };
   "model.setThinkingLevel": { level: string };
@@ -713,6 +716,7 @@ export type HostResultMap = {
   "provider.mapping.get": RelayMappingResult;
   "provider.mapping.set": RelayMappingResult;
   "provider.mapping.handoff": RelayMappingHandoffResult;
+  "provider.mapping.picker": RelayMappingPickerResult;
   "model.list": {
     models: ModelSummary[];
     current?: ModelSummary;

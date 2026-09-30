@@ -22,6 +22,7 @@ import type {
   RelayFieldMap,
   RelayFieldMapping,
   RelayMappingHandoffResult,
+  RelayMappingPickerResult,
   RelayMappingResult,
   RelayMappingSetParams,
   RelayPricingFetchParams,
@@ -73,7 +74,9 @@ function isRelayProvider(raw: JsonObject): boolean {
 }
 
 function relayErrorMessage(error: unknown, sensitiveValues: string[]): string {
-  let message = (error instanceof Error ? error.message : String(error)).replace(/\s+/g, " ").trim();
+  let message = (error instanceof Error ? error.message : String(error))
+    .replace(/\s+/g, " ")
+    .trim();
   for (const value of sensitiveValues) {
     if (value) message = message.replaceAll(value, "[redacted]");
   }
@@ -346,9 +349,10 @@ function expandPricingRows(
       service_tier?: unknown;
     };
     if (typeof media.model_name !== "string" || !media.model_name.trim()) continue;
-    const price = typeof media.unit_price === "number" && Number.isFinite(media.unit_price)
-      ? media.unit_price
-      : null;
+    const price =
+      typeof media.unit_price === "number" && Number.isFinite(media.unit_price)
+        ? media.unit_price
+        : null;
     if (price === null) continue;
     const tier = typeof media.service_tier === "string" ? media.service_tier : "";
     const mediaType = typeof media.media_type === "string" ? media.media_type : "media";
@@ -600,11 +604,7 @@ async function fetchStation(
           return [];
         })
       : [];
-    const { rows, groups } = expandPricingRows(
-      stationId,
-      pricing,
-      new Set(keyModels),
-    );
+    const { rows, groups } = expandPricingRows(stationId, pricing, new Set(keyModels));
     const balance = apiKey
       ? await fetchBalance(stationId, baseUrl, apiKey, sensitiveValues, signal, null)
       : null;
@@ -647,9 +647,7 @@ async function fetchStationWithMapping(
 ): Promise<RelayPricingStation> {
   const pricingEndpoint = mapping.endpoints.pricing;
   const modelsEndpoint = mapping.endpoints.models;
-  const headers: Record<string, string> = apiKey
-    ? { Authorization: `Bearer ${apiKey}` }
-    : {};
+  const headers: Record<string, string> = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
 
   let groups: RelayPricingGroup[] = [];
   let rows: RelayPricingRow[] = [];
@@ -731,14 +729,7 @@ async function fetchRelayBalanceForProvider(
       error: "No API key configured for this provider",
     };
   }
-  return fetchBalance(
-    stationId,
-    baseUrl,
-    apiKey,
-    relaySensitiveValues(apiKey),
-    signal,
-    mapping,
-  );
+  return fetchBalance(stationId, baseUrl, apiKey, relaySensitiveValues(apiKey), signal, mapping);
 }
 
 export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
@@ -749,6 +740,7 @@ export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
   "provider.mapping.get": MethodHandler;
   "provider.mapping.set": MethodHandler;
   "provider.mapping.handoff": MethodHandler;
+  "provider.mapping.picker": MethodHandler;
 } {
   const store = new RelayPricingStore(factory.deps.agentDir);
   const mappingStore = new RelayMappingStore(factory.deps.agentDir);
@@ -761,8 +753,7 @@ export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
     const config = await readModelsConfig(modelsPath);
     return Object.entries(config.providers)
       .filter(
-        (entry): entry is [string, JsonObject] =>
-          isObject(entry[1]) && isRelayProvider(entry[1]),
+        (entry): entry is [string, JsonObject] => isObject(entry[1]) && isRelayProvider(entry[1]),
       )
       .map(([id, raw]) => ({
         id,
@@ -779,9 +770,7 @@ export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
     const shutdownSignal = server.getShutdownSignal();
     shutdownSignal.throwIfAborted();
     const all = await listRelayProviders();
-    const targets = providerIds
-      ? all.filter((provider) => providerIds.includes(provider.id))
-      : all;
+    const targets = providerIds ? all.filter((provider) => providerIds.includes(provider.id)) : all;
     // 全量刷新时顺手清掉已删除 provider 遗留的站点快照。
     if (providerIds === null) {
       store.pruneStations(new Set(all.map((provider) => provider.id)));
@@ -818,10 +807,7 @@ export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
       if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
       const params = (ctx.params ?? {}) as RelayPricingFetchParams;
       try {
-        const result = await fetchAndStore(
-          server,
-          params.providerId ? [params.providerId] : null,
-        );
+        const result = await fetchAndStore(server, params.providerId ? [params.providerId] : null);
         return { result };
       } catch (error) {
         if (server.getShutdownSignal().aborted) {
@@ -991,8 +977,7 @@ export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
           .filter(
             (entry) =>
               entry.id !== stationId &&
-              (normalizeRelayBaseUrl(entry.baseUrl) ===
-                normalizeRelayBaseUrl(provider.baseUrl) ||
+              (normalizeRelayBaseUrl(entry.baseUrl) === normalizeRelayBaseUrl(provider.baseUrl) ||
                 (mainDomain !== null && relayMainDomain(entry.baseUrl) === mainDomain)),
           )
           .map((entry) => entry.id);
@@ -1015,6 +1000,71 @@ export function createRelayPricingHandlers(factory: WorkspaceGraphFactory): {
         };
       }
     },
+
+    /**
+     * 价格总表右上角「映射机器人」弹窗的数据源：把所有自定义中转站
+     * provider 按主域/归一化地址合并成站点候选（排除 cf.x/api.x 等子域名
+     * 镜像入口），并标记该站点是否已有生效映射表。
+     */
+    "provider.mapping.picker": async () => {
+      try {
+        const providers = await listRelayProviders();
+        const keyCache = new Map<string, boolean>();
+        const hasKey = async (id: string): Promise<boolean> => {
+          const cached = keyCache.get(id);
+          if (cached !== undefined) return cached;
+          let value: boolean;
+          try {
+            value = Boolean(await factory.deps.modelRegistry.getApiKeyForProvider(id));
+          } catch {
+            value = false;
+          }
+          keyCache.set(id, value);
+          return value;
+        };
+        // 同站合并：归一化地址一致，或主域一致（cf.x/api.x/cdn.x 镜像入口）。
+        // 站点候选的 stationId 取组内第一个 provider（映射文件以它命名）。
+        const groups: Array<{ providerIds: string[] }> = [];
+        for (const provider of providers) {
+          const normalized = normalizeRelayBaseUrl(provider.baseUrl);
+          const domain = relayMainDomain(provider.baseUrl);
+          const group = groups.find(({ providerIds }) =>
+            providerIds.some((id) => {
+              const peer = providers.find((entry) => entry.id === id);
+              if (!peer) return false;
+              return (
+                normalizeRelayBaseUrl(peer.baseUrl) === normalized ||
+                (domain !== null && relayMainDomain(peer.baseUrl) === domain)
+              );
+            }),
+          );
+          if (group) group.providerIds.push(provider.id);
+          else groups.push({ providerIds: [provider.id] });
+        }
+        const entries = [];
+        for (const { providerIds } of groups) {
+          const stationId = providerIds[0]!;
+          const provider = providers.find((entry) => entry.id === stationId)!;
+          entries.push({
+            stationId,
+            names: providers
+              .filter((entry) => providerIds.includes(entry.id))
+              .map((entry) => entry.name),
+            baseUrl: provider.baseUrl.replace(/\/+$/, ""),
+            hasApiKey: await hasKey(stationId),
+            hasMapping: mappingStore.resolve(stationId, provider.baseUrl) !== null,
+            providerIds,
+          });
+        }
+        return { result: { entries } satisfies RelayMappingPickerResult };
+      } catch (error) {
+        return {
+          error: createHostError(
+            "INTERNAL_ERROR",
+            error instanceof Error ? error.message : "Could not list mapping candidates",
+          ),
+        };
+      }
+    },
   };
 }
-

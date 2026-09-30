@@ -867,6 +867,27 @@ export type RelayMappingHandoffResult = {
   sharedWith: string[];
 };
 
+/** One entry of the provider.mapping.picker result: a merged station candidate. */
+export type RelayMappingPickerEntry = {
+  /** Canonical stationId whose mapping file backs this entry. */
+  stationId: string;
+  /** Display names of the merged providers (subset of provider names). */
+  names: string[];
+  /** The station base URL (without trailing slash). */
+  baseUrl: string;
+  /** Whether an API key is configured for the canonical provider. */
+  hasApiKey: boolean;
+  /** Whether an active field mapping already exists for this station. */
+  hasMapping: boolean;
+  /** Provider ids merged into this entry (same normalized URL or main domain). */
+  providerIds: string[];
+};
+
+/** Result of provider.mapping.picker: merged station candidates for multi-select. */
+export type RelayMappingPickerResult = {
+  entries: RelayMappingPickerEntry[];
+};
+
 /** Params for provider.pricing.fetch. */
 export type RelayPricingFetchParams = {
   /** Omit to refresh every configured station. */

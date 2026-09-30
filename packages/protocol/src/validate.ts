@@ -154,11 +154,7 @@ function isRelayFieldMapping(value: unknown): boolean {
 function isRelayEndpointMapping(value: unknown): boolean {
   if (
     !isPlainObject(value) ||
-    !hasExactKeys(value, ["path", "auth", "fields"], [
-      "fieldsApplyTo",
-      "itemsField",
-      "itemsPath",
-    ])
+    !hasExactKeys(value, ["path", "auth", "fields"], ["fieldsApplyTo", "itemsField", "itemsPath"])
   ) {
     return false;
   }
@@ -1121,6 +1117,10 @@ export function validateRequestParams<M extends HostMethod>(
       return exactObject(params, ["stationId"]) && isNonEmptyString(params.stationId)
         ? ok(params)
         : fail(`invalid ${method} params`, { method });
+    case "provider.mapping.picker":
+      return params === null
+        ? ok(params)
+        : fail("invalid provider.mapping.picker params", { method });
     case "provider.mapping.set":
       return exactObject(params, ["stationId", "mapping"]) &&
         isNonEmptyString(params.stationId) &&
