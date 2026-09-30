@@ -56,7 +56,8 @@ function cnyApprox(usd: number, ratio: RelayRechargeRatio): string {
 }
 
 type RelayTestState = {
-  testingKey: string | null;
+  /** 正在测试中的 rowKey 集合（按行锁，其他行可并行测试）。 */
+  testingKeys: Set<string>;
   /** rowKey → 最近一次测试结果（每行独立保留，弹窗关闭时随组件卸载清空）。 */
   results: Record<string, { ok: boolean; message: string }>;
   test: (providerId: string, modelId: string, rowKey: string) => Promise<void>;
@@ -65,13 +66,13 @@ type RelayTestState = {
 function useRelayTest(t: Translate): RelayTestState {
   const pushNotification = useAppStore((state) => state.pushNotification);
   const refreshProviderConfig = useAppStore((state) => state.refreshProviderConfig);
-  const [testingKey, setTestingKey] = useState<string | null>(null);
+  const [testingKeys, setTestingKeys] = useState<Set<string>>(new Set());
   const [results, setResults] = useState<Record<string, { ok: boolean; message: string }>>({});
 
   async function runTest(providerId: string, modelId: string, rowKey: string): Promise<void> {
     const host = useAppStore.getState().host;
-    if (!host || testingKey) return;
-    setTestingKey(rowKey);
+    if (!host || testingKeys.has(rowKey)) return;
+    setTestingKeys((current) => new Set(current).add(rowKey));
     try {
       const response = await hostClient.request(
         "provider.checkConnection",
@@ -96,12 +97,16 @@ function useRelayTest(t: Translate): RelayTestState {
         "error",
       );
     } finally {
-      setTestingKey(null);
+      setTestingKeys((current) => {
+        const next = new Set(current);
+        next.delete(rowKey);
+        return next;
+      });
       refreshProviderConfig();
     }
   }
 
-  return { testingKey, results, test: runTest };
+  return { testingKeys, results, test: runTest };
 }
 
 export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps) {
@@ -118,7 +123,7 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
   const [keyOnly, setKeyOnly] = useState(false);
   /** 唯一排序：null = 不排序；非空 = 该列按折算后价格排序。 */
   const [sort, setSort] = useState<{ field: PriceSortField; desc: boolean } | null>(null);
-  const { testingKey, results: testResults, test } = useRelayTest(t);
+  const { testingKeys, results: testResults, test } = useRelayTest(t);
 
   useEffect(() => {
     if (!hostInstanceId) return;
@@ -194,15 +199,13 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
     return [...names].sort((left, right) => left.localeCompare(right));
   }, [visibleStations, stationFilter]);
 
-  /** baseUrl →（已配置且有 key 的）provider 及其模型集合。 */
-  const providerByBaseUrl = useMemo(() => {
-    const map = new Map<string, { providerId: string; models: Set<string> }>();
+  /** baseUrl →（已配置且有 key 的）provider 集合；同 baseUrl 多 provider 时按序可查。 */
+  const providerIdsByBaseUrl = useMemo(() => {
+    const map = new Map<string, string[]>();
     for (const provider of providers) {
       if (!provider.baseUrl || !provider.auth.configured) continue;
-      map.set(provider.baseUrl.replace(/\/+$/, ""), {
-        providerId: provider.id,
-        models: new Set(provider.models.map((model) => model.id)),
-      });
+      const key = provider.baseUrl.replace(/\/+$/, "");
+      map.set(key, [...(map.get(key) ?? []), provider.id]);
     }
     return map;
   }, [providers]);
@@ -474,9 +477,13 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
               ) : (
                 sortedRows.map(({ row, stationName }) => {
                   const rowKey = `${row.stationId}:${row.modelId}:${row.group}`;
-                  const configured = providerByBaseUrl.get(
-                    stations.find((station) => station.stationId === row.stationId)?.baseUrl ?? "",
-                  );
+                  // 测试直接用该行的 stationId（抓取它的 provider）——同 baseUrl
+                  // 多 provider（不同 key/分组）时不能用 baseUrl 反查，会错用
+                  // 别家 provider 的 key 导致分组不匹配。
+                  const configured =
+                    providerNames.has(row.stationId) || providerIdsByBaseUrl.size === 0
+                      ? row.stationId
+                      : null;
                   // 非 1:1 充值比例的站：价格旁显示人民币 ≈ 换算。
                   const rowRatio = rechargeRatioFor(row.stationId);
                   const approx = !isOneToOneRatio(rowRatio)
@@ -534,9 +541,11 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                           testable ? (
                             (() => {
                               // 结果融进按钮本身（图标颜色/边框/悬浮详情），不追加
-                              // 额外元素，避免行高跳动。
+                              // 额外元素，避免行高跳动。只锁定当前测试中的按钮，
+                              // 其他行可并行测试。
                               const rowResult = testResults[rowKey];
-                              const stateClass = testingKey === rowKey
+                              const rowTesting = testingKeys.has(rowKey);
+                              const stateClass = rowTesting
                                 ? "border-border text-muted"
                                 : !rowResult
                                   ? "border-border text-muted"
@@ -547,13 +556,13 @@ export function RelayPricingDialog({ providers, onClose }: PriceTableDialogProps
                                 <button
                                   type="button"
                                   className={`flex h-6 items-center gap-1 rounded border px-1.5 text-[11px] hover:bg-surface-overlay disabled:opacity-50 ${stateClass}`}
-                                  disabled={testingKey !== null}
-                                  title={testingKey === rowKey
+                                  disabled={rowTesting}
+                                  title={rowTesting
                                     ? t("relayPricingTesting")
                                     : rowResult?.message}
-                                  onClick={() => void test(configured.providerId, row.modelId, rowKey)}
+                                  onClick={() => void test(configured, row.modelId, rowKey)}
                                 >
-                                  {testingKey === rowKey ? (
+                                  {rowTesting ? (
                                     <RefreshCw className="animate-spin" size={11} />
                                   ) : rowResult ? (
                                     rowResult.ok ? (
