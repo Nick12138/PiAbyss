@@ -965,7 +965,7 @@ export function ModelControls() {
               providerNames,
             );
             const cardHeight =
-              60 + Math.min(candidates.length, 6) * 52 + (candidates.length > 0 ? 0 : 20);
+              60 + Math.min(candidates.length, 6) * 46 + (candidates.length > 0 ? 0 : 20);
             // 默认弹在菜单右侧；右侧放不下时翻到左侧。
             const placeRight = hoverPreview.right + margin + cardWidth <= window.innerWidth;
             const left = placeRight
@@ -1003,10 +1003,15 @@ export function ModelControls() {
                   </p>
                 ) : (
                   <div className="mt-1.5 flex flex-col">
+                    <div className="grid grid-cols-3 gap-1 pb-1 text-[10px] leading-3 text-muted">
+                      <span>{t("relayPricingColInput")}</span>
+                      <span>{t("relayPricingColOutput")}</span>
+                      <span>{t("relayPricingColCache")}</span>
+                    </div>
                     {candidates.map((price) => (
                       <div
                         key={`${price.stationId}:${price.modelId}:${price.group}`}
-                        className="border-t border-border/60 py-1.5 text-[11px] first:border-t-0"
+                        className="border-t border-border/60 py-1 text-[11px] first:border-t-0"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="min-w-0 truncate text-muted" title={price.group}>
@@ -1016,19 +1021,10 @@ export function ModelControls() {
                             ×{price.groupRatio}
                           </span>
                         </div>
-                        <div className="mt-0.5 flex items-center justify-between gap-2 tabular-nums">
-                          <span>
-                            <span className="text-muted">{t("relayPricingColInput")}</span>{" "}
-                            <span className="text-foreground">{price.input}</span>
-                          </span>
-                          <span>
-                            <span className="text-muted">{t("relayPricingColOutput")}</span>{" "}
-                            <span className="text-foreground">{price.output}</span>
-                          </span>
-                          <span>
-                            <span className="text-muted">{t("relayPricingColCache")}</span>{" "}
-                            <span className="text-foreground">{price.cache}</span>
-                          </span>
+                        <div className="grid grid-cols-3 gap-1 tabular-nums text-foreground">
+                          <span className="min-w-0">{price.input}</span>
+                          <span className="min-w-0">{price.output}</span>
+                          <span className="min-w-0">{price.cache}</span>
                         </div>
                       </div>
                     ))}
