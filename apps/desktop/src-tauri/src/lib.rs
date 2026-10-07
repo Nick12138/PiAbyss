@@ -10,6 +10,7 @@ mod shell_terminal;
 mod system_autostart;
 mod system_notification;
 mod system_tray;
+mod taskbar_flash;
 
 use desktop_settings::DesktopSettingsStore;
 use draft_store::DraftStore;
@@ -191,6 +192,7 @@ pub fn run() {
             commands::pi_host_acknowledge_terminal,
             commands::pi_host_bootstrap_telegram,
             system_notification::system_notify,
+            taskbar_flash::taskbar_flash,
             commands::shell_terminal_create,
             commands::shell_terminal_profiles,
             commands::shell_terminal_write,

@@ -47,6 +47,16 @@ vi.mock("@tauri-apps/api/core", () => ({
   isTauri: vi.fn(() => true),
 }));
 
+const windowApi = vi.hoisted(() => ({
+  requestUserAttention: vi.fn(async () => undefined),
+  UserAttentionType: { Critical: 1, Informational: 2 },
+}));
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => windowApi,
+  UserAttentionType: { Critical: 1, Informational: 2 },
+}));
+
 const target: SystemNotificationTarget = {
   workspaceId: "workspace-1",
   workspaceRevision: 2,
@@ -407,5 +417,30 @@ describe("SystemNotificationController", () => {
         options: expect.objectContaining({ extra: { kind: "response-ready", target } }),
       }),
     );
+  });
+
+  it("flashes the taskbar when a background alert is delivered", async () => {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const win = getCurrentWindow() as unknown as {
+      requestUserAttention: ReturnType<typeof vi.fn>;
+      UserAttentionType: { Critical: number };
+    };
+    win.requestUserAttention.mockClear();
+    controller.observe(agentEndEvent("run-flash"));
+    await vi.waitFor(() => expect(win.requestUserAttention).toHaveBeenCalled());
+    expect(win.requestUserAttention).toHaveBeenCalledWith(win.UserAttentionType.Critical);
+  });
+
+  it("does not flash when the send aborts (foreground/disabled)", async () => {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const win = getCurrentWindow() as unknown as {
+      requestUserAttention: ReturnType<typeof vi.fn>;
+    };
+    win.requestUserAttention.mockClear();
+    attentionState = "foreground";
+    controller.observe(agentEndEvent("run-no-flash"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(win.requestUserAttention).not.toHaveBeenCalled();
+    expect(notifyMocks.invoke).not.toHaveBeenCalled();
   });
 });

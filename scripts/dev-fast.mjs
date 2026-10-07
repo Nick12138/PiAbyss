@@ -168,6 +168,9 @@ function prepareDevHostResources() {
 function ensureDesktopBuild() {
   const rustSourceMtime = Math.max(
     latestMtimeMs(join(tauriDir, "src"), (path) => path.endsWith(".rs")),
+    // Capabilities are embedded into the binary by tauri-build (ACL
+    // compilation); a permission-only change must still trigger a rebuild.
+    latestMtimeMs(join(tauriDir, "capabilities"), (path) => path.endsWith(".json")),
     ...["build.rs", "Cargo.toml", "Cargo.lock", "tauri.conf.json"].map((name) => {
       const path = join(tauriDir, name);
       return existsSync(path) ? statSync(path).mtimeMs : 0;

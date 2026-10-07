@@ -1,6 +1,7 @@
 import type { HostEventEnvelope } from "@piabyss/protocol";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { tCurrent } from "./i18n/use-t";
+import { requestTaskbarAttention } from "./taskbar-attention";
 
 export type SystemNotificationKind =
   "response-ready" | "session-failed" | "input-required" | "host-fatal";
@@ -385,6 +386,9 @@ export class SystemNotificationController {
         return;
       if (!granted) return;
       const copy = systemNotificationCopy(candidate.kind, candidate.target?.sessionName);
+      // Taskbar flash runs right after the OS accepts the toast command: the
+      // window is known to be in the background here, and the flash itself
+      // stops when the window gains focus.
       // The desktop plugin's notify command drops the extra payload (and with
       // it any chance of click routing), so delivery goes through the app's
       // own command: on Windows it shows a WinRT toast whose Activated
@@ -405,6 +409,7 @@ export class SystemNotificationController {
           },
         },
       });
+      void requestTaskbarAttention();
       console.debug("[notify] delivered", candidate.kind);
     } catch (error) {
       // A transient native delivery error is not a permission denial. Keep the
