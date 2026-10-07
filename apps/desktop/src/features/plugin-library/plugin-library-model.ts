@@ -5,6 +5,7 @@ import type {
   PluginLibraryCatalog,
   PluginLibraryConfigItem,
   PluginLibraryEntry,
+  ResourcePreferenceUpdate,
   ResourceRecord,
 } from "@piabyss/protocol";
 
@@ -245,6 +246,108 @@ export function pluginCardState(
     packageRecord: pkg,
     extensionResources: extensions,
   };
+}
+
+/** Which preference scope a plugin toggle writes to.
+ ** - "user"：全局开关（active 工作区专用，写 ~/.pi/agent 设置）
+ ** - "project"：工作区开关（覆盖全局，写目标工作区的 .pi/settings.json） */
+export type PluginToggleScope = "user" | "project";
+
+/** Per-card plugin state for the workspace being managed.
+ *  `installed` reflects the plugin's extension resources in the snapshot;
+ *  `enabled` layers the target workspace's project preference over the
+ *  user preference so a workspace can disable a globally-enabled plugin
+ *  (and vice versa) without touching other workspaces. */
+export type PluginWorkspaceCardState = {
+  /** False when the plugin has no extension resources in this workspace. */
+  installed: boolean;
+  /** Effective switch position for the managed workspace. */
+  enabled: boolean;
+  /** Extension resources backing this plugin in this workspace. */
+  extensionResources: ResourceRecord[];
+  /** True when at least one resource can carry a project-scope preference;
+  ** false for resources locked to user scope (e.g. project-local installs
+  ** where the toggle already belongs to the workspace itself). */
+  workspaceConfigurable: boolean;
+  /** True when at least one resource can carry a user-scope preference. */
+  userConfigurable: boolean;
+};
+
+/** Layered preference: project wins, then user, then the snapshot's resolved
+ ** enabled state. Mirrors effectiveEnabled() in SkillsSettings. */
+export function layeredEnabled(resource: ResourceRecord): boolean {
+  const project = resource.preferences.project;
+  if (project === "enabled") return true;
+  if (project === "disabled") return false;
+  const user = resource.preferences.user;
+  if (user === "enabled") return true;
+  if (user === "disabled") return false;
+  return resource.enabled;
+}
+
+/** True when this resource can carry a project-scope preference. */
+function isProjectConfigurable(resource: ResourceRecord): boolean {
+  return resource.control.kind === "preference" && resource.control.scopes.includes("project");
+}
+
+/** Plugin card state for a specific workspace snapshot. Workspace snapshots
+ ** come from a targeted `package.list` (scope "all", includeResources) and
+ ** may be null while loading. */
+export function pluginWorkspaceCardState(
+  entry: PluginLibraryEntry,
+  catalog: PluginLibraryCatalog,
+  packages: PackageSnapshot | null,
+): PluginWorkspaceCardState {
+  const state = pluginCardState(entry, catalog, packages);
+  const installed = state.status !== "not-installed";
+  if (!installed) {
+    return {
+      installed: false,
+      enabled: false,
+      extensionResources: [],
+      workspaceConfigurable: false,
+      userConfigurable: false,
+    };
+  }
+  const resources = state.extensionResources;
+  return {
+    installed: true,
+    // Any enabled resource loads the plugin; disabled-only resource sets are
+    // the "disabled" state from pluginCardState.
+    enabled: resources.some((resource) => layeredEnabled(resource)),
+    extensionResources: resources,
+    workspaceConfigurable:
+      resources.length > 0 && resources.every((resource) => isProjectConfigurable(resource)),
+    userConfigurable: resources.some(
+      (resource) => resource.control.kind === "preference" && resource.control.scopes.includes("user"),
+    ),
+  };
+}
+
+/** Preference updates that apply a plugin's enable/disable at the given scope.
+ ** - user scope: writes the global preference for every user-configurable
+ **   resource not already in the wanted state.
+ ** - project scope: writes the workspace preference; returns null when
+ **   nothing can change (resources already in the wanted state, or none
+ **   configurable at project scope). */
+export function buildScopedToggleUpdates(
+  resources: readonly ResourceRecord[],
+  scope: PluginToggleScope,
+  enable: boolean,
+): ResourcePreferenceUpdate[] | null {
+  const updates: ResourcePreferenceUpdate[] = [];
+  for (const resource of resources) {
+    const configurable =
+      resource.control.kind === "preference" && resource.control.scopes.includes(scope);
+    if (!configurable) continue;
+    const currentEnabled =
+      scope === "project"
+        ? layeredEnabled(resource)
+        : (resource.preferences.user ?? (resource.enabled ? "enabled" : "disabled")) === "enabled";
+    if (currentEnabled === enable) continue;
+    updates.push({ resourceId: resource.id, targetScope: scope, preference: enable ? "enabled" : "disabled" });
+  }
+  return updates.length > 0 ? updates : null;
 }
 
 /** Initial form values for a config schema: stored value wins over default. */

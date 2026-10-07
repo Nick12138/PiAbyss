@@ -233,7 +233,7 @@ function resource(overrides: Partial<ResourceRecord> = {}): ResourceRecord {
     packageId: "pkg-browser",
     enabled: true,
     preferences: {},
-    control: { kind: "preference", scopes: ["user"] },
+    control: { kind: "preference", scopes: ["user", "project"] },
     diagnostics: [],
     ...overrides,
   };
@@ -395,6 +395,7 @@ describe("PluginLibraryPage DOM workflows", () => {
       autoRestartHostOnce: true,
       extensionDecisionPresentation: "legacy-modal",
       terminalProfile: "auto",
+      knownWorkspaces: ["C:/workspace", "C:/other-project"],
     } as never);
     tauriMocks.invoke.mockImplementation(async (command: string, payload: unknown) => {
       if (command === "desktop_settings_patch") {
@@ -984,5 +985,144 @@ describe("PluginLibraryPage DOM workflows", () => {
         expect.any(Number),
       ),
     );
+  });
+
+  it("defaults to the Global filter and toggles the user-level preference there", async () => {
+    // Resource carries an explicit user "disabled" preference while the
+    // resolved snapshot state is enabled — the global switch must write user
+    // scope, not project scope.
+    currentSnapshot = snapshotWithRepo(true);
+    currentSnapshot.resources[0]!.preferences.user = "disabled";
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    // The Global chip is the first chip and selected by default.
+    const globalChip = await screen.findByRole("button", { name: "Global" });
+    expect(globalChip).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "other-project" })).toBeInTheDocument();
+
+    // Configuration is available in the global filter (repo plugin with a
+    // config schema), and the layered state reads disabled (user pref wins).
+    const card = screen.getByText("联网搜索").closest("article")!;
+    expect(within(card).getByRole("button", { name: "Configure" })).toBeInTheDocument();
+    expect(within(card).getByRole("switch")).toHaveAttribute("aria-checked", "false");
+
+    // Flipping the switch writes the user-level preference.
+    await user.click(within(card).getByRole("switch"));
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "resource.setPreferences",
+        expect.objectContaining({ expectedSessionId: "s1" }),
+        {
+          updates: [{ resourceId: "res-web", targetScope: "user", preference: "enabled" }],
+        },
+        expect.any(Number),
+      ),
+    );
+  });
+
+  it("keeps installed plugins visible when the active workspace chip is selected", async () => {
+    currentSnapshot = snapshotWithBrowser(true);
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    const activeWorkspaceChip = await screen.findByRole("button", { name: /workspace.*Current workspace/ });
+    await user.click(activeWorkspaceChip);
+
+    const card = screen.getByText("浏览器").closest("article")!;
+    expect(within(card).getByRole("switch")).toHaveAttribute("aria-checked", "true");
+    expect(within(card).queryByRole("button", { name: "Install…" })).not.toBeInTheDocument();
+  });
+
+  it("reuses a workspace snapshot when switching back to a previously viewed workspace", async () => {
+    currentSnapshot = snapshotWithBrowser(true);
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    const targetChip = await screen.findByRole("button", { name: "other-project" });
+    await user.click(targetChip);
+    const listCall = await waitFor(() =>
+      request.mock.calls.find(([method, , params]) =>
+        method === "package.list" &&
+        (params as { targetWorkspaceCwd?: string }).targetWorkspaceCwd === "C:/other-project",
+      ),
+    );
+    expect(listCall).toBeDefined();
+
+    const globalChip = screen.getByRole("button", { name: "Global" });
+    await user.click(globalChip);
+    await user.click(targetChip);
+
+    const browserCard = screen.getByText("浏览器").closest("article")!;
+    await waitFor(() => expect(within(browserCard).getByRole("switch")).toBeChecked());
+    // A cached snapshot renders immediately on return; this switch is already
+    // present before a new target fetch is needed to complete.
+    expect(within(browserCard).queryByRole("button", { name: "Install…" })).toBeNull();
+  });
+
+  it("manages another workspace's plugins without switching to it", async () => {
+    currentSnapshot = snapshotWithRepo(true);
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    // The scope row lists every known workspace by basename; pick the
+    // non-active one.
+    const targetChip = await screen.findByRole("button", { name: "other-project" });
+    await user.click(targetChip);
+
+    // The scoped snapshot is fetched through the workspace-targeted channel.
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "package.list",
+        expect.objectContaining({ expectedWorkspaceId: "w1" }),
+        {
+          scope: "all",
+          includeResources: true,
+          targetWorkspaceCwd: "C:/other-project",
+        },
+        expect.any(Number),
+      ),
+    );
+
+    // Toggling routes through resource.setPreferences carrying the target,
+    // with session expectations nulled (the request is session-less).
+    const card = screen.getByText("联网搜索").closest("article")!;
+    expect(within(card).queryByRole("button", { name: "Configure" })).toBeNull();
+    expect(card.querySelector("[data-plugin-config-placeholder]")).not.toBeNull();
+    await user.click(within(card).getByRole("switch"));
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "resource.setPreferences",
+        expect.objectContaining({
+          expectedWorkspaceId: "w1",
+          expectedSessionId: null,
+          expectedSessionRevision: 0,
+        }),
+        {
+          updates: [{ resourceId: "res-web", targetScope: "project", preference: "disabled" }],
+          targetWorkspaceCwd: "C:/other-project",
+        },
+        expect.any(Number),
+      ),
+    );
+
+    // The targeted mutation result updates the page's scoped snapshot, not
+    // the shared store.
+    const targeted = snapshotWithRepo(false);
+    targeted.workspaceId = "ws-other";
+    targeted.revision = 9;
+    request.mockImplementation(async (method: string) => {
+      if (method === "resource.setPreferences") {
+        return envelope(method, mutationResult(targeted));
+      }
+      return envelope(method, method === "package.list" ? currentSnapshot : currentCatalog);
+    });
+    await waitFor(() => expect(within(card).getByRole("switch")).toHaveAttribute("aria-checked", "false"));
+    // Store snapshot untouched by the cross-workspace mutation.
+    expect(useAppStore.getState().packages?.revision).toBe(1);
   });
 });

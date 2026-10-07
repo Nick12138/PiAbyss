@@ -691,6 +691,19 @@ export const en = {
   promptsPreviewToggle: "Preview prompt {name}",
   packagesSubtitle: "Install, enable, and browse user-scope packages",
   pluginsSubtitle: "Curated plugins from your own registry — install, toggle, configure",
+  pluginsManageScope: "Managing",
+  pluginsScopeGlobalChip: "Global",
+  pluginsScopeUserHint:
+    "Global scope: switches write the user-level preference (all workspaces inherit it).",
+  pluginsWorkspaceActive: "Current workspace",
+  pluginsWorkspaceLoading: "Loading this workspace's plugin state…",
+  pluginsWorkspaceLoadFailed: "Failed to load this workspace's plugin state.",
+  pluginsWorkspaceTargetHint:
+    "Managing the selected workspace: enable toggles apply to it (written to its .pi/settings.json). Install/configure stay global.",
+  pluginsWorkspaceTargetBusy:
+    "A session is running; stop it before modifying the selected workspace's plugins.",
+  pluginsWorkspaceInstallDisabled:
+    "Switch to this workspace to install plugins — installation always lands in the active workspace.",
   pluginsRefresh: "Refresh",
   pluginsUpdateAction: "Updates available",
   pluginsUpdateTitle: "{count} update(s) available",

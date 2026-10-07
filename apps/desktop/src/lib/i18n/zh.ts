@@ -648,6 +648,17 @@ export const zh: Record<MessageKey, string> = {
   promptsPreviewToggle: "预览提示词 {name}",
   packagesSubtitle: "安装、启用并浏览用户范围的包",
   pluginsSubtitle: "你自己维护的插件注册清单：安装、启停与配置",
+  pluginsManageScope: "管理范围",
+  pluginsScopeGlobalChip: "全局",
+  pluginsScopeUserHint: "全局作用域：开关写入用户级偏好（所有工作区默认继承）。",
+  pluginsWorkspaceActive: "当前工作区",
+  pluginsWorkspaceLoading: "正在加载该工作区的插件状态…",
+  pluginsWorkspaceLoadFailed: "加载该工作区的插件状态失败。",
+  pluginsWorkspaceTargetHint:
+    "正在管理所选工作区：启用开关作用于该工作区（写入其 .pi/settings.json）；安装与配置仍为全局。",
+  pluginsWorkspaceTargetBusy: "有会话正在运行，无法修改所选工作区的插件；请先停止相关会话。",
+  pluginsWorkspaceInstallDisabled:
+    "请切换到该工作区再安装插件——安装始终作用于当前工作区。",
   pluginsRefresh: "刷新",
   pluginsUpdateAction: "有可用更新",
   pluginsUpdateTitle: "{count} 项可更新",

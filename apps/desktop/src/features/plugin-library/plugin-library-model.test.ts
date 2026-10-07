@@ -8,6 +8,7 @@ import type {
 } from "@piabyss/protocol";
 import {
   buildPluginEnvPatch,
+  buildScopedToggleUpdates,
   initialConfigValues,
   isVisionCapable,
   missingRequiredConfig,
@@ -19,6 +20,7 @@ import {
   OPTIONS_SOURCE_VISION_MODELS,
   OPTIONS_SOURCE_VISION_FALLBACK_MODELS,
   pluginCardState,
+  pluginWorkspaceCardState,
   repoExtensionPattern,
   wantsModelListOptions,
   wantsModelOptions,
@@ -457,5 +459,144 @@ describe("config helpers", () => {
       expect(modelOptionsKind(legacyVision)).toBe("vision");
       expect(modelOptionsKind(legacySubagent)).toBe("all");
     });
+  });
+});
+
+describe("workspace card state", () => {
+  function wsResource(
+    overrides: Partial<ResourceRecord> = {},
+  ): ResourceRecord {
+    return resource({
+      id: "res-web",
+      packageId: "pkg-repo",
+      path: "/agent/git/my-pi-plugins/packages/pi-web/extensions/pi-web.ts",
+      control: { kind: "preference", scopes: ["user", "project"] },
+      ...overrides,
+    });
+  }
+
+  function repoSnapshot(resources: ResourceRecord[]): PackageSnapshot {
+    return snapshot(
+      [pkg({ id: "pkg-repo", identity: "git:github.com/Nick12138/my-pi-plugins" })],
+      resources,
+    );
+  }
+
+  const REPO_ENTRY: PluginLibraryEntry = {
+    id: "pi-web",
+    name: "联网搜索",
+    description: "",
+    icon: "🔍",
+    version: "0.1.0",
+    install: { type: "repo", path: "packages/pi-web" },
+  };
+
+  it("is not-installed for a workspace snapshot without the plugin", () => {
+    const state = pluginWorkspaceCardState(REPO_ENTRY, CATALOG, repoSnapshot([]));
+    expect(state).toEqual({
+      installed: false,
+      enabled: false,
+      extensionResources: [],
+      workspaceConfigurable: false,
+      userConfigurable: false,
+    });
+  });
+
+  it("layers the project preference over the user preference", () => {
+    const snapshot = repoSnapshot([
+      wsResource({ enabled: true, preferences: { user: "enabled", project: "disabled" } }),
+    ]);
+    const state = pluginWorkspaceCardState(REPO_ENTRY, CATALOG, snapshot);
+    expect(state.installed).toBe(true);
+    expect(state.enabled).toBe(false);
+
+    const flipped = repoSnapshot([
+      wsResource({ enabled: true, preferences: { user: "disabled", project: "enabled" } }),
+    ]);
+    expect(pluginWorkspaceCardState(REPO_ENTRY, CATALOG, flipped).enabled).toBe(true);
+  });
+
+  it("falls back to the resolved enabled state without preferences", () => {
+    const snapshot = repoSnapshot([wsResource({ enabled: true })]);
+    expect(pluginWorkspaceCardState(REPO_ENTRY, CATALOG, snapshot).enabled).toBe(true);
+  });
+
+  it("reports workspaceConfigurable only when every resource allows project scope", () => {
+    const configurable = repoSnapshot([wsResource()]);
+    expect(pluginWorkspaceCardState(REPO_ENTRY, CATALOG, configurable).workspaceConfigurable).toBe(
+      true,
+    );
+    const locked = repoSnapshot([
+      wsResource({ control: { kind: "preference", scopes: ["user"] } }),
+    ]);
+    expect(pluginWorkspaceCardState(REPO_ENTRY, CATALOG, locked).workspaceConfigurable).toBe(
+      false,
+    );
+  });
+
+  it("reports userConfigurable only when some resource allows user scope", () => {
+    const configured = repoSnapshot([wsResource()]);
+    expect(pluginWorkspaceCardState(REPO_ENTRY, CATALOG, configured).userConfigurable).toBe(true);
+    const locked = repoSnapshot([
+      wsResource({ control: { kind: "read-only", reason: "dynamic" } }),
+    ]);
+    expect(pluginWorkspaceCardState(REPO_ENTRY, CATALOG, locked).userConfigurable).toBe(false);
+  });
+});
+
+describe("buildScopedToggleUpdates", () => {
+  function toggleResource(
+    overrides: Partial<ResourceRecord> = {},
+  ): ResourceRecord {
+    return resource({
+      id: "res-web",
+      control: { kind: "preference", scopes: ["user", "project"] },
+      ...overrides,
+    });
+  }
+
+  it("emits project-scope updates only for resources that change state", () => {
+    const updates = buildScopedToggleUpdates(
+      [
+        toggleResource({ id: "a", enabled: true }),
+        toggleResource({ id: "b", enabled: false }),
+      ],
+      "project",
+      false,
+    );
+    expect(updates).toEqual([
+      { resourceId: "a", targetScope: "project", preference: "disabled" },
+    ]);
+  });
+
+  it("returns null when nothing would change", () => {
+    expect(
+      buildScopedToggleUpdates([toggleResource({ enabled: true })], "project", true),
+    ).toBeNull();
+  });
+
+  it("skips resources locked out of project scope", () => {
+    const updates = buildScopedToggleUpdates(
+      [toggleResource({ enabled: true, control: { kind: "preference", scopes: ["user"] } })],
+      "project",
+      false,
+    );
+    expect(updates).toBeNull();
+  });
+
+  it("emits user-scope updates for the global layer", () => {
+    const updates = buildScopedToggleUpdates(
+      [
+        // Already globally enabled (implicit user preference): no update.
+        toggleResource({ id: "a", enabled: true }),
+        // Explicitly disabled user preference: needs flipping.
+        toggleResource({ id: "b", enabled: false, preferences: { user: "disabled" } }),
+      ],
+      "user",
+      true,
+    );
+    expect(updates).toEqual([
+      { resourceId: "b", targetScope: "user", preference: "enabled" },
+    ]);
   });
 });

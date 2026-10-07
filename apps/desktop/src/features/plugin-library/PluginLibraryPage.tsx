@@ -9,6 +9,7 @@ import {
   Minus,
   Plus,
   RefreshCw,
+  Send,
   Settings2,
   Tag,
 } from "lucide-react";
@@ -20,13 +21,16 @@ import type {
   HostRequestParams,
   ModelSummary,
   PackageMutationResult,
+  PackageSnapshot,
   PackageUpdateSummary,
   PluginLibraryCatalog,
   PluginLibraryConfigItem,
   PluginLibraryEntry,
+  WorkspaceTargetRef,
 } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { localizeHostError } from "../../lib/bridge/localize-host-error";
+import { requestWithRetry } from "../../lib/bridge/request-retry";
 import {
   captureRequestGeneration,
   hostContext,
@@ -36,6 +40,7 @@ import {
   workspaceContext,
 } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
+import { isSameTelegramPath } from "../../lib/telegram-path";
 import { useT } from "../../lib/i18n/use-t";
 import {
   buildPluginEnvPatch,
@@ -44,7 +49,6 @@ import {
   missingRequiredConfig,
   modelOption,
   modelOptionsKind,
-  pluginCardState,
   repoExtensionPattern,
   wantsModelListOptions,
   wantsModelOptions,
@@ -56,7 +60,13 @@ import {
   markPluginLibraryUpdatesApplied,
   type PluginUpdateRow,
 } from "./plugin-updates";
-import { PACKAGE_LIST_PARAMS, buildResourcePreferenceUpdates } from "../packages/packages-model";
+import {
+  buildScopedToggleUpdates,
+  pluginWorkspaceCardState,
+  type PluginToggleScope,
+  type PluginWorkspaceCardState,
+} from "./plugin-library-model";
+import { useTelegramViewStore } from "../telegram/telegram-view-store";
 import {
   notifyDesktopSettingsSaveFailure,
   persistDesktopSettings,
@@ -84,6 +94,18 @@ function PluginIcon({ icon, name }: { icon: string; name: string }) {
     </span>
   );
 }
+
+/** Last path segment for workspace picker labels (POSIX and Windows). */
+function workspaceBasename(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
+}
+
+const NO_WORKSPACES: string[] = [];
+
+/** Sentinel selection for the scope row's "global" filter: the managed
+ ** layer is the user-level preference, shown through the active workspace's
+ ** snapshot. Any other selection is a raw workspace path. */
+const GLOBAL_SCOPE = "__global__";
 
 /** Hook fetching the runtime's available models for dynamic select config
  *  items (`optionsSource: "pi:vision-models" | "pi:models"`). Returns the
@@ -454,40 +476,44 @@ function PluginConfigDialog({
 
 function PluginCard({
   entry,
-  catalog,
+  state,
   pending,
+  manageLocked,
+  showConfig,
+  scope,
   onInstall,
   onToggle,
   onConfigure,
 }: {
   entry: PluginLibraryEntry;
-  catalog: PluginLibraryCatalog;
+  /** Card state derived from the managed workspace's snapshot. */
+  state: PluginWorkspaceCardState;
   /** True while this card's install/toggle mutation is in flight. Other
    *  cards stay interactive — only this card's controls are locked. */
   pending: boolean;
+  /** True when installation cannot target the managed workspace (any
+   ** non-active selection): the install button renders disabled with a hint. */
+  manageLocked: boolean;
+  /** True when the global filter is active: configuration is available
+   ** (config values are user-level) and installation targets the active
+   ** workspace. */
+  showConfig: boolean;
+  /** Which preference scope the switch writes to ("user" = global). */
+  scope: PluginToggleScope;
   onInstall: (entry: PluginLibraryEntry) => void;
   /** Applies the toggle in the background. Resolves true on success. */
   onToggle: (entry: PluginLibraryEntry, enable: boolean) => Promise<boolean>;
   onConfigure: (entry: PluginLibraryEntry) => void;
 }) {
   const t = useT();
-  const packages = useAppStore((s) => s.packages);
-  const packageRevision = packages?.revision;
-  const state = useMemo(
-    () => pluginCardState(entry, catalog, packages),
-    [entry, catalog, packages],
-  );
   // Optimistic toggle: the switch flips immediately, the mutation runs in the
-  // background, and the first authoritative snapshot of a new revision clears
-  // the override. A failed mutation reverts the override instead.
+  // background, and the authoritative workspace snapshot clears the override.
+  // A failed mutation reverts the override instead.
   const [optimistic, setOptimistic] = useState<boolean | null>(null);
-  useEffect(() => {
-    if (optimistic !== null) setOptimistic(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [packageRevision]);
-  const installed = state.status !== "not-installed";
-  const configurable = (entry.config?.length ?? 0) > 0;
-  const enabled = optimistic ?? state.status === "enabled";
+  const installed = state.installed;
+  const configurable = showConfig && (entry.config?.length ?? 0) > 0;
+  const enabled = optimistic ?? state.enabled;
+  const toggleAllowed = scope === "user" ? state.userConfigurable : state.workspaceConfigurable;
 
   async function handleToggle(next: boolean) {
     if (pending) return;
@@ -512,23 +538,30 @@ function PluginCard({
         </div>
         {installed && (
           <div className="flex shrink-0 items-center gap-3">
-            {configurable && (
-              <button
-                type="button"
-                data-plugin-config-button
-                className="flex size-7 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-50"
-                title={t("pluginsConfigOpen")}
-                aria-label={t("pluginsConfigOpen")}
-                disabled={pending}
-                onClick={() => onConfigure(entry)}
-              >
-                <Settings2 size={14} />
-              </button>
-            )}
+            {(entry.config?.length ?? 0) > 0 &&
+              (configurable ? (
+                <button
+                  type="button"
+                  data-plugin-config-button
+                  className="flex size-7 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-50"
+                  title={t("pluginsConfigOpen")}
+                  aria-label={t("pluginsConfigOpen")}
+                  disabled={pending}
+                  onClick={() => onConfigure(entry)}
+                >
+                  <Settings2 size={14} />
+                </button>
+              ) : (
+                <span
+                  data-plugin-config-placeholder
+                  className="size-7 shrink-0"
+                  aria-hidden="true"
+                />
+              ))}
             {/* The switch itself carries the state; a separate badge is redundant. */}
             <Switch
               checked={enabled}
-              disabled={pending}
+              disabled={pending || !toggleAllowed}
               label={t("pluginStatusEnabled")}
               onChange={(next) => void handleToggle(next)}
             />
@@ -556,7 +589,8 @@ function PluginCard({
           <button
             type="button"
             className={primaryButton}
-            disabled={pending}
+            disabled={pending || manageLocked}
+            title={manageLocked ? t("pluginsWorkspaceInstallDisabled") : undefined}
             onClick={() => onInstall(entry)}
           >
             <Download size={13} />
@@ -572,15 +606,23 @@ export function PluginLibraryPage() {
   const t = useT();
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
-  const packages = useAppStore((s) => s.packages);
-  const setPackages = useAppStore((s) => s.applyPackageSnapshot);
-  const applyPackageMutationResult = useAppStore((s) => s.applyPackageMutationResult);
   const pushNotification = useAppStore((s) => s.pushNotification);
+  // All user-known workspace paths; the filter lets any of them be managed
+  // without switching the active workspace (same model as SkillsSettings).
+  const knownWorkspaces = useAppStore(
+    (state) => state.desktopSettings?.knownWorkspaces ?? NO_WORKSPACES,
+  );
 
   const [catalog, setCatalog] = useState<PluginLibraryCatalog | null>(null);
   const [catalogState, setCatalogState] = useState<LoadState>("idle");
   const [catalogError, setCatalogError] = useState("");
+  /** Target workspace snapshots stay cached while switching between chips,
+   ** so revisiting a workspace renders immediately instead of flashing empty. */
+  const [workspacePackageCache, setWorkspacePackageCache] = useState<
+    Map<string, PackageSnapshot>
+  >(() => new Map());
   const [packagesLoading, setPackagesLoading] = useState(false);
+  const [packageLoadError, setPackageLoadError] = useState("");
   // Per-card pending set: flipping one plugin never locks the others.
   const [pendingOps, setPendingOps] = useState<Record<string, true>>({});
   const [review, setReview] = useState<PluginLibraryEntry | null>(null);
@@ -590,6 +632,26 @@ export function PluginLibraryPage() {
   const [pluginUpdates, setPluginUpdates] = useState<PackageUpdateSummary[] | null>(null);
   const [updateMenuOpen, setUpdateMenuOpen] = useState(false);
   const updateMenuRootRef = useRef<HTMLDivElement | null>(null);
+  // "" = active workspace; otherwise the selected workspace's raw path.
+  // Selection for the scope row: GLOBAL_SCOPE (default) manages the user-
+  // level layer; a workspace path manages that workspace's project layer.
+  const [selectedWorkspacePath, setSelectedWorkspacePath] = useState(GLOBAL_SCOPE);
+  const listRequest = useRef(0);
+  // Managed snapshot: the active workspace's store snapshot for the global
+  // filter; a targeted fetch for a workspace selection.
+  const activePackages = useAppStore((s) => s.packages);
+  const globalFilter = selectedWorkspacePath === GLOBAL_SCOPE;
+  const targetSelection = targetParams();
+  const workspaceCacheKey = targetSelection
+    ? `${host?.hostInstanceId ?? ""}:${targetSelection.targetWorkspaceCwd}`
+    : "";
+  const targetedPackages = workspaceCacheKey
+    ? (workspacePackageCache.get(workspaceCacheKey) ?? null)
+    : null;
+  const managedPackages = targetSelection ? targetedPackages : activePackages;
+  // Global filter toggles write user preferences; workspace selections write
+  // that workspace's project preferences.
+  const toggleScope: PluginToggleScope = globalFilter ? "user" : "project";
 
   // 点击弹窗外或按 Escape 时关闭。不能依赖点击遮罩层的 click 事件：本弹窗渲染在
   // AppTopBar 的 data-tauri-drag-region 拖拽区子树内，外部按下鼠标会先被 Tauri
@@ -613,7 +675,52 @@ export function PluginLibraryPage() {
     };
   }, [updateMenuOpen]);
   const catalogRequest = useRef(0);
-  const listRequest = useRef(0);
+
+  /** Cross-workspace targeting for host requests. The global filter (and the
+   ** active workspace) use the cheap active channel; other selections target
+   ** their workspace directly. */
+  function targetParams(): WorkspaceTargetRef | undefined {
+    if (globalFilter) return undefined;
+    const selected = selectedWorkspacePath || workspace?.cwd;
+    if (!selected || selected === workspace?.cwd) return undefined;
+    return { targetWorkspaceCwd: selected };
+  }
+
+  /**
+   * Chip model for the scope row: the global filter first, then every known
+   * workspace by its basename. Workspace chips keep the "" sentinel value for
+   * the active workspace (requests use the cheap active-workspace channel).
+   */
+  function workspaceChips() {
+    const activeCwd = workspace?.cwd ?? "";
+    const telegramWorkspacePath = useTelegramViewStore.getState().workspacePath;
+    const paths =
+      activeCwd && !knownWorkspaces.some((path) => path === activeCwd)
+        ? [activeCwd, ...knownWorkspaces]
+        : [...knownWorkspaces];
+    if (activeCwd) {
+      paths.sort((left, right) => (left === activeCwd ? -1 : right === activeCwd ? 1 : 0));
+    }
+    return [
+      {
+        path: "",
+        value: GLOBAL_SCOPE,
+        basename: t("pluginsScopeGlobalChip"),
+        isActive: false,
+        isTelegram: false,
+        isGlobal: true,
+      },
+      ...paths.map((path) => ({
+        path,
+        /** "" = active workspace (cheap active-workspace channel). */
+        value: path === activeCwd ? "" : path,
+        basename: workspaceBasename(path),
+        isActive: path === activeCwd,
+        isTelegram: isSameTelegramPath(path, telegramWorkspacePath),
+        isGlobal: false,
+      })),
+    ];
+  }
 
   async function loadCatalog(args: { refresh?: boolean } = {}) {
     if (!host) return;
@@ -649,21 +756,51 @@ export function PluginLibraryPage() {
   }
 
   async function ensurePackages() {
-    if (!host || !workspace?.servicesReady || packages) return;
+    if (!host || !workspace?.servicesReady) {
+      setPackagesLoading(false);
+      return;
+    }
+    const target = targetParams();
+    // Active workspace: the store snapshot is authoritative; nothing to fetch.
+    if (!target) {
+      setPackagesLoading(false);
+      return;
+    }
     const request = ++listRequest.current;
-    setPackagesLoading(true);
+    const cacheKey = `${host.hostInstanceId}:${target.targetWorkspaceCwd}`;
+    setPackageLoadError("");
+    const hasCachedSnapshot = workspacePackageCache.has(cacheKey);
+    // Cached data remains visible while a fresh projection is fetched.
+    setPackagesLoading(!hasCachedSnapshot);
     try {
-      const response = await hostClient.request(
-        "package.list",
-        workspaceContext(host, workspace),
-        PACKAGE_LIST_PARAMS,
-        PACKAGE_LIST_TIMEOUT_MS,
+      const response = await requestWithRetry(() =>
+        hostClient.request(
+          "package.list",
+          workspaceContext(host, workspace),
+          {
+            scope: "all",
+            includeResources: true,
+            ...target,
+          } satisfies HostRequestParams["package.list"],
+          PACKAGE_LIST_TIMEOUT_MS,
+        ),
       );
       if (request !== listRequest.current) return;
-      if (response.ok) setPackages(response.result);
-    } catch {
-      // The cards fall back to the current (possibly empty) snapshot; mutations
-      // surface their own errors.
+      if (response?.ok) {
+        setWorkspacePackageCache((previous) => {
+          const next = new Map(previous);
+          next.set(cacheKey, response.result);
+          return next;
+        });
+      } else if (!hasCachedSnapshot) {
+        setPackageLoadError(response?.error?.message ?? t("pluginsWorkspaceLoadFailed"));
+      }
+    } catch (error) {
+      if (!hasCachedSnapshot) {
+        setPackageLoadError(
+          error instanceof Error ? error.message : t("pluginsWorkspaceLoadFailed"),
+        );
+      }
     } finally {
       if (request === listRequest.current) setPackagesLoading(false);
     }
@@ -677,7 +814,13 @@ export function PluginLibraryPage() {
   useEffect(() => {
     void ensurePackages();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [host?.hostInstanceId, workspace?.id, workspace?.servicesReady]);
+  }, [
+    host?.hostInstanceId,
+    workspace?.id,
+    workspace?.revision,
+    workspace?.servicesReady,
+    selectedWorkspacePath,
+  ]);
 
   const updateCheckSupported = host?.capabilities.packageUpdateCheck ?? false;
   useEffect(() => {
@@ -704,10 +847,10 @@ export function PluginLibraryPage() {
 
   const updateRows = useMemo(
     () =>
-      catalog && packages && pluginUpdates
-        ? computePluginUpdateRows(catalog, packages, pluginUpdates)
+      catalog && managedPackages && pluginUpdates
+        ? computePluginUpdateRows(catalog, managedPackages, pluginUpdates)
         : [],
-    [catalog, packages, pluginUpdates],
+    [catalog, managedPackages, pluginUpdates],
   );
   const updatesBusy = Object.keys(pendingOps).some((id) => id.startsWith("plugin-update:"));
 
@@ -753,20 +896,34 @@ export function PluginLibraryPage() {
 
   async function runMutation(
     method:
-      "package.install" | "package.update" | "resource.setPreferences" | "pluginLibrary.apply",
+      | "package.install"
+      | "package.update"
+      | "resource.setPreferences"
+      | "pluginLibrary.apply",
     params: HostRequestParams[typeof method],
     pluginId: string,
     name: string,
     options?: { notifyInstalled?: boolean },
   ): Promise<boolean> {
     if (!host || !workspace) return false;
+    const target = targetParams();
+    // Cross-workspace toggles bypass the active session's package channel:
+    // the host applies them onto a transient view of the target workspace and
+    // never touches the active graph's locks/revisions. Only session-bound
+    // mutation contexts carry the workspace target.
+    const base = sessionPackageContext(host, workspace);
+    const context: typeof base = target
+      ? { ...base, expectedSessionId: null, expectedSessionRevision: 0 }
+      : base;
     const generation = captureRequestGeneration(host);
     setPendingOps((prev) => ({ ...prev, [pluginId]: true }));
     try {
       const response = await hostClient.request(
         method,
-        sessionPackageContext(host, workspace),
-        params as never,
+        context,
+        (target && method === "resource.setPreferences"
+          ? { ...params, ...target }
+          : params) as never,
         MUTATION_TIMEOUT_MS,
       );
       const current = useAppStore.getState();
@@ -778,10 +935,26 @@ export function PluginLibraryPage() {
         return false;
       if (!response.ok)
         throw new Error(
-          response.error ? localizeHostError(response.error, t) : t("notifPluginActionFailed"),
+          response.error?.code === "AGENT_BUSY" && target
+            ? t("pluginsWorkspaceTargetBusy")
+            : response.error
+              ? localizeHostError(response.error, t)
+              : t("notifPluginActionFailed"),
         );
       listRequest.current += 1;
-      applyPackageMutationResult(response.result as PackageMutationResult);
+      const result = response.result as PackageMutationResult;
+      // Targeted mutations update only this page's scoped snapshot;
+      // active-workspace mutations flow through the shared store.
+      if (target) {
+        const cacheKey = `${host.hostInstanceId}:${target.targetWorkspaceCwd}`;
+        setWorkspacePackageCache((previous) => {
+          const next = new Map(previous);
+          next.set(cacheKey, result.packageSnapshot);
+          return next;
+        });
+      } else {
+        useAppStore.getState().applyPackageMutationResult(result);
+      }
       const currentHost = useAppStore.getState().host;
       const nextHost = currentHost && mergeHostIdentity(currentHost, response);
       if (nextHost) useAppStore.getState().setHost(nextHost);
@@ -831,13 +1004,9 @@ export function PluginLibraryPage() {
 
   async function toggle(entry: PluginLibraryEntry, enable: boolean): Promise<boolean> {
     if (!catalog) return false;
-    const state = pluginCardState(entry, catalog, packages);
-    const updates = buildResourcePreferenceUpdates(
-      state.extensionResources,
-      "user",
-      enable ? "enabled" : "disabled",
-    );
-    if (updates.length === 0) return true;
+    const state = pluginWorkspaceCardState(entry, catalog, managedPackages);
+    const updates = buildScopedToggleUpdates(state.extensionResources, toggleScope, enable);
+    if (!updates) return true;
     return runMutation("resource.setPreferences", { updates }, entry.id, entry.name);
   }
 
@@ -976,6 +1145,57 @@ export function PluginLibraryPage() {
         </button>
       </SettingsTopBarActions>
 
+      <div className="flex flex-col gap-1.5 border-b border-border px-4 py-2.5">
+        <div
+          className="flex flex-wrap items-center gap-1.5"
+          role="group"
+          aria-label={t("pluginsManageScope")}
+        >
+          <span className="shrink-0 text-xs text-muted">{t("pluginsManageScope")}</span>
+          {workspaceChips().map((chip) => {
+            const selected = chip.value === selectedWorkspacePath;
+            const label = chip.isActive
+              ? `${chip.basename} · ${t("pluginsWorkspaceActive")}`
+              : chip.basename;
+            return (
+              <button
+                key={chip.path}
+                type="button"
+                aria-pressed={selected}
+                aria-label={label}
+                title={chip.path || undefined}
+                className={`flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors ${
+                  selected
+                    ? "border-accent/60 bg-accent/10 text-foreground"
+                    : "border-border text-muted hover:bg-surface-overlay hover:text-foreground"
+                }`}
+                onClick={() => setSelectedWorkspacePath(chip.value)}
+              >
+                {chip.isTelegram && (
+                  <Send size={12} className="shrink-0 text-muted" aria-hidden />
+                )}
+                <span className="max-w-48 truncate">{chip.basename}</span>
+                {chip.isActive && !chip.isGlobal && (
+                  <span
+                    className="size-1.5 shrink-0 rounded-full bg-success"
+                    title={t("pluginsWorkspaceActive")}
+                    aria-hidden
+                  />
+                )}
+              </button>
+            );
+          })}
+          {packagesLoading && <RefreshCw size={12} className="animate-spin text-muted" />}
+        </div>
+        <div className="flex items-center gap-2">
+          <p className="text-[11px] text-muted">
+            {globalFilter
+              ? t("pluginsScopeUserHint")
+              : t("pluginsWorkspaceTargetHint")}
+          </p>
+        </div>
+      </div>
+
       {catalog && catalog.warnings.length > 0 && (
         <div
           data-settings-top-banner
@@ -1008,6 +1228,21 @@ export function PluginLibraryPage() {
         <p className="p-8 text-center text-sm text-muted">{t("pluginsLoading")}</p>
       ) : catalog.plugins.length === 0 ? (
         <p className="p-8 text-center text-sm text-muted">{t("pluginsEmpty")}</p>
+      ) : targetSelection && !managedPackages && packagesLoading ? (
+        <p className="p-8 text-center text-sm text-muted">{t("pluginsWorkspaceLoading")}</p>
+      ) : targetSelection && !managedPackages && packageLoadError ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+          <AlertTriangle size={24} className="text-danger" />
+          <p className="max-w-lg text-xs text-muted">{packageLoadError}</p>
+          <button
+            type="button"
+            className={secondaryButton}
+            onClick={() => void ensurePackages()}
+          >
+            <RefreshCw size={13} />
+            {t("pluginsRetry")}
+          </button>
+        </div>
       ) : (
         <div
           className="scrollbar-subtle grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-2 overflow-y-auto p-3 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
@@ -1017,8 +1252,11 @@ export function PluginLibraryPage() {
             <PluginCard
               key={entry.id}
               entry={entry}
-              catalog={catalog}
+              state={pluginWorkspaceCardState(entry, catalog, managedPackages)}
               pending={pendingOps[entry.id] === true}
+              manageLocked={targetParams() !== undefined}
+              showConfig={globalFilter}
+              scope={toggleScope}
               onInstall={(item) => setReview(item)}
               onToggle={toggle}
               onConfigure={setConfigFor}
