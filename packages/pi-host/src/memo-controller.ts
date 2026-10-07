@@ -13,6 +13,15 @@ import { completeSimple, type Context, type Model } from "@earendil-works/pi-ai/
 import { ModelRegistry, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { getMemoStore, type MemoCreateInput, type MemoUpdatePatch } from "./memo-store.js";
 import { getMemoSync, scheduleMemoAutoSync, type MemoSyncStats } from "./memo-sync.js";
+import { isRepoPluginEnabled, MEMO_PLUGIN_ENTRY_FILE } from "./plugin-gate.js";
+
+/** Error returned for every memo.* call while the piabyss-memo plugin is off. */
+function memoPluginDisabledError() {
+  return createHostError(
+    "RESOURCE_NOT_FOUND",
+    "The memo plugin (piabyss-memo) is disabled. Enable it in the plugin library to use the memo page.",
+  );
+}
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -108,10 +117,21 @@ export function createMemoHandlers(
   // Host 启动：autoSync 开启时在后台先同步一次（多设备拉齐 / 补传积压变更）。
   getMemoSync(agentDir).startupSync();
 
+  // The memo page's backend lives in the Host (memo.* handlers), but the
+  // feature is owned by the piabyss-memo plugin: gate every method on the
+  // plugin's user-level enablement so the plugin-library switch controls both
+  // the agent tool and this page. Checked per call — toggling in the plugin
+  // library takes effect without a Host restart.
+  const gate = (): boolean => isRepoPluginEnabled(agentDir, MEMO_PLUGIN_ENTRY_FILE);
+
   return {
-    "memo.list": async () => ({ result: { notes: store.list() } }),
+    "memo.list": async () => {
+      if (!gate()) return { error: memoPluginDisabledError() };
+      return { result: { notes: store.list() } };
+    },
 
     "memo.optimize": async (ctx) => {
+      if (!gate()) return { error: memoPluginDisabledError() };
       if (!modelRuntime || !modelRegistry) {
         return { error: createHostError("AGENT_NOT_READY", "AI model runtime is unavailable") };
       }
@@ -215,6 +235,7 @@ export function createMemoHandlers(
     },
 
     "memo.create": async (ctx) => {
+      if (!gate()) return { error: memoPluginDisabledError() };
       const params = ctx.params as Record<string, unknown>;
       const input: MemoCreateInput = {
         type: asString(params.type) as MemoCreateInput["type"],
@@ -230,6 +251,7 @@ export function createMemoHandlers(
       return { result: { note } };
     },
     "memo.update": async (ctx) => {
+      if (!gate()) return { error: memoPluginDisabledError() };
       const params = ctx.params as Record<string, unknown>;
       const id = asString(params.id);
       const rawPatch = (params.patch ?? {}) as Record<string, unknown>;
@@ -261,6 +283,7 @@ export function createMemoHandlers(
     },
 
     "memo.delete": async (ctx) => {
+      if (!gate()) return { error: memoPluginDisabledError() };
       const params = ctx.params as Record<string, unknown>;
       store.remove(asString(params.id));
       scheduleMemoAutoSync(agentDir);
@@ -268,6 +291,7 @@ export function createMemoHandlers(
     },
 
     "memo.readImage": async (ctx) => {
+      if (!gate()) return { error: memoPluginDisabledError() };
       const params = ctx.params as Record<string, unknown>;
       return {
         result: store.readImage(asString(params.noteId), asString(params.imageId)),
@@ -276,10 +300,12 @@ export function createMemoHandlers(
 
     // 草稿仅本地持久化（不参与云同步，也不触发 autoSync）。
     "memo.getDraft": async () => {
+      if (!gate()) return { error: memoPluginDisabledError() };
       return { result: { draft: store.getDraft() } };
     },
 
     "memo.setDraft": async (ctx) => {
+      if (!gate()) return { error: memoPluginDisabledError() };
       const params = ctx.params as {
         draft: { type: unknown; contentMd: unknown; workspaceHint?: unknown };
       };
@@ -295,25 +321,30 @@ export function createMemoHandlers(
     },
 
     "memo.clearDraft": async () => {
+      if (!gate()) return { error: memoPluginDisabledError() };
       store.clearDraft();
       return { result: { ok: true } };
     },
 
     "memo.getSyncConfig": async () => {
+      if (!gate()) return { error: memoPluginDisabledError() };
       return { result: { settings: getMemoSync(agentDir).getSettings() } };
     },
 
     "memo.setSyncConfig": async (ctx) => {
+      if (!gate()) return { error: memoPluginDisabledError() };
       const params = ctx.params as { settings: MemoSyncConfig };
       return { result: { settings: getMemoSync(agentDir).setConfig(params.settings) } };
     },
 
     "memo.testSync": async (ctx) => {
+      if (!gate()) return { error: memoPluginDisabledError() };
       const params = ctx.params as { settings: MemoSyncConfig };
       return { result: await getMemoSync(agentDir).test(params.settings) };
     },
 
     "memo.syncNow": async () => {
+      if (!gate()) return { error: memoPluginDisabledError() };
       const stats: MemoSyncStats = await getMemoSync(agentDir).syncNow();
       return { result: stats };
     },

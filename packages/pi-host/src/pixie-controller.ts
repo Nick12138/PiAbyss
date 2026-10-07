@@ -13,27 +13,35 @@
  */
 import { createHostError, type PixieDispatchRecord } from "@piabyss/protocol";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import {
-  DefaultResourceLoader,
-  SessionManager,
-  type ToolDefinition,
-} from "@earendil-works/pi-coding-agent";
+import { DefaultResourceLoader, SessionManager } from "@earendil-works/pi-coding-agent";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import type { WorkspaceGraph } from "./workspace-graph-types.js";
 import type { MethodHandler } from "./server.js";
 import {
   abortPixie,
   continuePixieSession,
+  deliverReportToPixie,
+  findDispatchBySession,
   listDispatches,
   pixieState,
   pixieTranscriptFrom,
   registerDispatch,
   sendPixieMessage,
 } from "./pixie-agent-runner.js";
-import { armPixieDispatch, buildPixieDispatchTool, failDispatch } from "./pixie-tool.js";
+import { armPixieDispatch, failDispatch } from "./pixie-tool.js";
+import type { PixieControlPlaneDeps } from "./pixie-control-plane.js";
 import { recordPixieDispatch, recordPixieInteraction, readPixieUsage } from "./pixie-usage.js";
 import { createHostAgentSession } from "./agent-session-factory.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
+import { isRepoPluginEnabled, PIXIE_PLUGIN_ENTRY_FILE } from "./plugin-gate.js";
+
+/** Error returned for every pixie.* call while the pi-pixie plugin is off. */
+function pixiePluginDisabledError() {
+  return createHostError(
+    "RESOURCE_NOT_FOUND",
+    "The pixie plugin (pi-pixie) is disabled. Enable it in the plugin library to use the pixie page.",
+  );
+}
 
 /** The delegation prompt template (V1: a first-class built-in artifact). */
 export function buildDispatchTaskPrompt(input: { task: string; from: string }): string {
@@ -197,7 +205,11 @@ async function createTargetSession(
   }
 }
 
-/** The delegation engine behind pixie_dispatch. */
+/**
+ * The delegation engine behind pixie_dispatch. The plugin-side tool shell
+ * (my-pi-plugins pi-pixie) reaches it through the loopback control plane
+ * (startPixieControlPlane); the engine itself stays Host-owned.
+ */
 async function dispatchPixieTask(
   factory: WorkspaceGraphFactory,
   request: { cwd: string; task: string; newSession?: boolean },
@@ -265,55 +277,78 @@ async function dispatchPixieTask(
   return { ok: true, dispatchId: dispatch.id, sessionId, sessionPath, queued: false };
 }
 
-/** The pixie_dispatch tool wired to the delegation engine (registered on the
- *  resident pixie session only). */
-function createPixieDispatchToolFor(factory: WorkspaceGraphFactory): ToolDefinition {
-  return buildPixieDispatchTool(async (request) => {
-    const out = await dispatchPixieTask(factory, request);
-    if (!out.ok) return { ok: false as const, error: out.error };
-    armPixieDispatch({
-      cwd: request.cwd,
-      sessionId: out.sessionId,
-      sessionPath: out.sessionPath,
-      task: request.task,
-    });
-    return {
-      ok: true as const,
-      sessionId: out.sessionId,
-      sessionPath: out.sessionPath,
-      queued: out.queued,
-    };
-  });
+/**
+ * Control-plane callbacks wired to the delegation engine (the loopback server
+ * in pixie-control-plane.ts exposes them to the pi-pixie plugin shell). The
+ * dispatch path mirrors the former createPixieDispatchToolFor exactly: engine
+ * first, then the arm that flips the delegated session's report gating.
+ */
+export function createPixieControlPlaneDeps(factory: WorkspaceGraphFactory): PixieControlPlaneDeps {
+  return {
+    dispatch: async (request) => {
+      const out = await dispatchPixieTask(factory, request);
+      if (!out.ok) return { ok: false as const, error: out.error };
+      const dispatchId = armPixieDispatch({
+        cwd: request.cwd,
+        sessionId: out.sessionId,
+        sessionPath: out.sessionPath,
+        task: request.task,
+      });
+      return {
+        ok: true as const,
+        dispatchId,
+        sessionId: out.sessionId,
+        sessionPath: out.sessionPath,
+        queued: out.queued,
+      };
+    },
+    report: (args) =>
+      deliverReportToPixie({
+        agentDir: factory.deps.agentDir,
+        dispatchId: args.dispatchId,
+        summary: args.summary,
+      }),
+    dispatchState: (sessionId) => {
+      const found = findDispatchBySession(sessionId);
+      return found ? { armed: true, dispatchId: found.id } : { armed: false, dispatchId: null };
+    },
+  };
 }
 
 export function createPixieHandlers(
   factory: WorkspaceGraphFactory,
 ): Partial<Record<string, MethodHandler>> {
   const agentDir = factory.deps.agentDir;
+  // The pixie page's delegation engine lives in the Host, but the feature is
+  // owned by the pi-pixie plugin: gate every method on the plugin's user-level
+  // enablement so the plugin-library switch controls both the agent-side
+  // dispatch tools and this page. Checked per call — toggling in the plugin
+  // library takes effect without a Host restart.
+  const gate = (): boolean => isRepoPluginEnabled(agentDir, PIXIE_PLUGIN_ENTRY_FILE);
   return {
     "pixie.state": async () => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
       return { result: pixieState() };
     },
 
     "pixie.send": async (ctx) => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
       const params = ctx.params as { text: string };
-      const out = await sendPixieMessage({
-        agentDir,
-        text: params.text,
-        customTools: [createPixieDispatchToolFor(factory)],
-      });
+      // The resident session loads the pi-pixie extension from the installed
+      // my-pi-plugins checkout (buildPixieSession); no customTools injection.
+      const out = await sendPixieMessage({ agentDir, text: params.text });
       if (!out.ok) return { error: createHostError("AGENT_BUSY", out.error, { retryable: true }) };
       recordPixieInteraction(agentDir);
       return { result: { sessionId: out.sessionId } };
     },
 
     "pixie.continue": async (ctx) => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
       const params = ctx.params as { sessionPath: string; text: string };
       const out = await continuePixieSession({
         agentDir,
         sessionPath: params.sessionPath,
         text: params.text,
-        customTools: [createPixieDispatchToolFor(factory)],
       });
       if (!out.ok) return { error: createHostError("RESOURCE_NOT_FOUND", out.error) };
       recordPixieInteraction(agentDir);
@@ -321,22 +356,26 @@ export function createPixieHandlers(
     },
 
     "pixie.abort": async () => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
       return { result: { ok: abortPixie() } };
     },
 
     "pixie.transcript": async (ctx) => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
       const params = ctx.params as { sessionPath: string };
       const messages = pixieTranscriptFrom(params.sessionPath);
       return { result: { found: messages.length > 0, messages } };
     },
 
     "pixie.dispatches": async (ctx) => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
       const params = (ctx.params ?? {}) as { limit?: number };
       const dispatches: PixieDispatchRecord[] = listDispatches(params.limit ?? 20);
       return { result: { dispatches } };
     },
 
     "pixie.usage": async () => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
       return { result: readPixieUsage(agentDir) };
     },
   };

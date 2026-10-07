@@ -253,6 +253,17 @@ export function pluginCardState(
  ** - "project"：工作区开关（覆盖全局，写目标工作区的 .pi/settings.json） */
 export type PluginToggleScope = "user" | "project";
 
+/** Scopes a registry entry may omit `toggleScopes` for: both layers are
+ ** writable, which is the behavior every plugin had before the field existed. */
+export const DEFAULT_PLUGIN_TOGGLE_SCOPES: ReadonlyArray<"user" | "project"> = ["user", "project"];
+
+/** Registry-declared toggle scopes, defaulting to both layers. */
+export function pluginToggleScopes(entry: PluginLibraryEntry): ReadonlyArray<"user" | "project"> {
+  return entry.toggleScopes && entry.toggleScopes.length > 0
+    ? entry.toggleScopes
+    : DEFAULT_PLUGIN_TOGGLE_SCOPES;
+}
+
 /** Per-card plugin state for the workspace being managed.
  *  `installed` reflects the plugin's extension resources in the snapshot;
  *  `enabled` layers the target workspace's project preference over the
@@ -266,16 +277,26 @@ export type PluginWorkspaceCardState = {
   /** Extension resources backing this plugin in this workspace. */
   extensionResources: ResourceRecord[];
   /** True when at least one resource can carry a project-scope preference;
-  ** false for resources locked to user scope (e.g. project-local installs
-  ** where the toggle already belongs to the workspace itself). */
+   ** false for resources locked to user scope (e.g. project-local installs
+   ** where the toggle already belongs to the workspace itself) and for plugins
+   ** the registry restricts to global toggling alone. */
   workspaceConfigurable: boolean;
   /** True when at least one resource can carry a user-scope preference. */
   userConfigurable: boolean;
+  /** The registry declares this plugin global-only (`toggleScopes: ["user"]`):
+   ** no workspace may enable or disable it, so the workspace view replaces the
+   ** switch with a read-only badge instead of disabling it. */
+  globalOnly: boolean;
+  /** True when a resource still carries a project-scope override. For a
+   ** global-only plugin such an override is legacy state that keeps winning at
+   ** runtime, so the UI must report it rather than imply the workspace cannot
+   ** affect the plugin. */
+  hasProjectOverride: boolean;
 };
 
 /** Layered preference: project wins, then user, then the snapshot's resolved
  ** enabled state. Mirrors effectiveEnabled() in SkillsSettings. */
-export function layeredEnabled(resource: ResourceRecord): boolean {
+function layeredEnabled(resource: ResourceRecord): boolean {
   const project = resource.preferences.project;
   if (project === "enabled") return true;
   if (project === "disabled") return false;
@@ -290,6 +311,11 @@ function isProjectConfigurable(resource: ResourceRecord): boolean {
   return resource.control.kind === "preference" && resource.control.scopes.includes("project");
 }
 
+/** True when this resource carries an explicit project-scope override. */
+function hasProjectOverride(resource: ResourceRecord): boolean {
+  return resource.preferences.project === "enabled" || resource.preferences.project === "disabled";
+}
+
 /** Plugin card state for a specific workspace snapshot. Workspace snapshots
  ** come from a targeted `package.list` (scope "all", includeResources) and
  ** may be null while loading. */
@@ -298,6 +324,8 @@ export function pluginWorkspaceCardState(
   catalog: PluginLibraryCatalog,
   packages: PackageSnapshot | null,
 ): PluginWorkspaceCardState {
+  const scopes = pluginToggleScopes(entry);
+  const globalOnly = !scopes.includes("project");
   const state = pluginCardState(entry, catalog, packages);
   const installed = state.status !== "not-installed";
   if (!installed) {
@@ -307,6 +335,8 @@ export function pluginWorkspaceCardState(
       extensionResources: [],
       workspaceConfigurable: false,
       userConfigurable: false,
+      globalOnly,
+      hasProjectOverride: false,
     };
   }
   const resources = state.extensionResources;
@@ -317,10 +347,17 @@ export function pluginWorkspaceCardState(
     enabled: resources.some((resource) => layeredEnabled(resource)),
     extensionResources: resources,
     workspaceConfigurable:
-      resources.length > 0 && resources.every((resource) => isProjectConfigurable(resource)),
-    userConfigurable: resources.some(
-      (resource) => resource.control.kind === "preference" && resource.control.scopes.includes("user"),
-    ),
+      !globalOnly &&
+      resources.length > 0 &&
+      resources.every((resource) => isProjectConfigurable(resource)),
+    userConfigurable:
+      scopes.includes("user") &&
+      resources.some(
+        (resource) =>
+          resource.control.kind === "preference" && resource.control.scopes.includes("user"),
+      ),
+    globalOnly,
+    hasProjectOverride: resources.some((resource) => hasProjectOverride(resource)),
   };
 }
 
@@ -345,7 +382,11 @@ export function buildScopedToggleUpdates(
         ? layeredEnabled(resource)
         : (resource.preferences.user ?? (resource.enabled ? "enabled" : "disabled")) === "enabled";
     if (currentEnabled === enable) continue;
-    updates.push({ resourceId: resource.id, targetScope: scope, preference: enable ? "enabled" : "disabled" });
+    updates.push({
+      resourceId: resource.id,
+      targetScope: scope,
+      preference: enable ? "enabled" : "disabled",
+    });
   }
   return updates.length > 0 ? updates : null;
 }

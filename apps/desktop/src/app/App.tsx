@@ -19,6 +19,11 @@ import { SchedulePage } from "../features/schedule/SchedulePage";
 import { ScheduleAgentPage } from "../features/schedule/ScheduleAgentPage";
 import { MemoPage } from "../features/memo/MemoPage";
 import { PixiePage } from "../features/pixie/PixiePage";
+import { usePluginEnabled } from "../features/plugin-library/plugin-gate";
+
+/** The plugin-library entries backing the Memo and Pixie pages. */
+const MEMO_PLUGIN_ID = "piabyss-memo";
+const PIXIE_PLUGIN_ID = "pi-pixie";
 import { startSchedulePushPolling } from "../features/schedule/schedule-push";
 import { SettingsTopBarActionsContext } from "../features/settings/settings-top-bar";
 import { ExtensionUiModal } from "../features/chat/ExtensionUiModal";
@@ -717,6 +722,15 @@ export function App() {
   const [actionsEl, setActionsEl] = useState<HTMLDivElement | null>(null);
   const page = useAppStore((s) => s.page);
   const setPage = useAppStore((s) => s.setPage);
+  // Plugin-backed pages fall back to chat while their plugin is disabled —
+  // the sidebar hides the entries, but a persisted page (or a deep link)
+  // could still land on one.
+  const memoEnabled = usePluginEnabled(MEMO_PLUGIN_ID);
+  const pixieEnabled = usePluginEnabled(PIXIE_PLUGIN_ID);
+  useEffect(() => {
+    if (page === "memo" && !memoEnabled) setPage("chat");
+    if (page === "pixie" && !pixieEnabled) setPage("chat");
+  }, [page, memoEnabled, pixieEnabled, setPage]);
   const settingsSection = useAppStore((s) => s.settingsSection);
   const hostFatal = useAppStore((s) => s.hostFatal);
   const connecting = useAppStore((s) => s.connecting);

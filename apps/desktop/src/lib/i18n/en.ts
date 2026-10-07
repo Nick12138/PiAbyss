@@ -195,8 +195,6 @@ export const en = {
   generalSubtitle: "Startup behavior and Pi Host configuration",
   generalStartupGroup: "Startup",
   generalPiSettingsGroup: "Pi defaults",
-  generalAskUserQuestion: "Ask user question tool",
-  generalAskUserQuestionDesc: "Let the model ask questions in the conversation.",
   generalDefaultModel: "Default model",
   generalDefaultModelDesc: "Choose the default provider and model for new sessions.",
   generalDefaultProvider: "Default provider",
@@ -704,6 +702,11 @@ export const en = {
     "A session is running; stop it before modifying the selected workspace's plugins.",
   pluginsWorkspaceInstallDisabled:
     "Switch to this workspace to install plugins — installation always lands in the active workspace.",
+  pluginsScopeGlobalOnly: "Global only",
+  pluginsScopeGlobalOnlyHint:
+    "This plugin can only be enabled or disabled globally; workspaces have no enable switch.",
+  pluginsScopeGlobalOnlyOverrideHint:
+    "This plugin can only be toggled globally, but this workspace still carries a legacy override that wins at runtime.",
   pluginsRefresh: "Refresh",
   pluginsUpdateAction: "Updates available",
   pluginsUpdateTitle: "{count} update(s) available",

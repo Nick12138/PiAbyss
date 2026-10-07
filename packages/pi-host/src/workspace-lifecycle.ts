@@ -27,18 +27,6 @@ import { buildPackageSnapshot, type ResourceIdMap } from "./package-snapshot.js"
 import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
 import { createReadAttachmentTool } from "./attachment-tool.js";
-import { buildMemoTool, createMemoActivationExtension, memoSessionInfo } from "./memo-tool.js";
-import {
-  buildPresentFilesTool,
-  createPresentFilesActivationExtension,
-} from "./present-files-tool.js";
-import {
-  buildAskUserQuestionTool,
-  createAskUserQuestionActivationExtension,
-  isAskUserQuestionEnabled,
-} from "./ask-user-question-tool.js";
-import { buildPixieReportTool, createPixieReportActivationExtension } from "./pixie-tool.js";
-import { deliverReportToPixie, findDispatchBySession } from "./pixie-agent-runner.js";
 import type { SessionRuntimeCache } from "./session-runtime-cache.js";
 import type { PiHostServer } from "./server.js";
 import type { GraphFactoryDeps, WorkspaceGraph } from "./workspace-graph-types.js";
@@ -1322,13 +1310,10 @@ export class WorkspaceLifecycle {
         cwd: args.canonicalCwd,
         agentDir,
         settingsManager,
-        extensionFactories: [
-          ...(statusBridge ? [statusBridge.extension] : []),
-          createAskUserQuestionActivationExtension(() => isAskUserQuestionEnabled(agentDir)),
-          createMemoActivationExtension(),
-          createPresentFilesActivationExtension(),
-          createPixieReportActivationExtension(),
-        ],
+        // The ask/memo/present-files/pixie-report tools come from the
+        // my-pi-plugins plugins now (loaded as normal package extensions);
+        // the Host injects only the status bridge inline extension.
+        extensionFactories: [...(statusBridge ? [statusBridge.extension] : [])],
       });
       // Workspace selection (including the startup preload) must not reach the
       // network; see withoutImplicitPackageInstall. Resource discovery and the
@@ -1388,48 +1373,9 @@ export class WorkspaceLifecycle {
             sessionManager,
             ...(this.context.deps.attachmentStore
               ? {
-                  customTools: [
-                    createReadAttachmentTool(this.context.deps.attachmentStore),
-                    buildAskUserQuestionTool(),
-                    buildMemoTool(agentDir, () => memoSessionInfo(sessionManager)),
-                    buildPresentFilesTool(() => sessionManager.getCwd()),
-                    buildPixieReportTool({
-                      agentDir,
-                      getSessionId: () => sessionManager.getSessionId(),
-                      report: (input) =>
-                        deliverReportToPixie({
-                          agentDir,
-                          dispatchId: input.dispatchId,
-                          summary: input.summary,
-                        }),
-                      findDispatch: (sessionId) => {
-                        const found = findDispatchBySession(sessionId);
-                        return found ? { id: found.id } : undefined;
-                      },
-                    }),
-                  ],
+                  customTools: [createReadAttachmentTool(this.context.deps.attachmentStore)],
                 }
-              : {
-                  customTools: [
-                    buildAskUserQuestionTool(),
-                    buildMemoTool(agentDir, () => memoSessionInfo(sessionManager)),
-                    buildPresentFilesTool(() => sessionManager.getCwd()),
-                    buildPixieReportTool({
-                      agentDir,
-                      getSessionId: () => sessionManager.getSessionId(),
-                      report: (input) =>
-                        deliverReportToPixie({
-                          agentDir,
-                          dispatchId: input.dispatchId,
-                          summary: input.summary,
-                        }),
-                      findDispatch: (sessionId) => {
-                        const found = findDispatchBySession(sessionId);
-                        return found ? { id: found.id } : undefined;
-                      },
-                    }),
-                  ],
-                }),
+              : {}),
           }),
       );
       candidateSession = session;

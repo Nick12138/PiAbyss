@@ -31,18 +31,6 @@ import {
 } from "./session-list-projection.js";
 import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { createReadAttachmentTool } from "./attachment-tool.js";
-import { buildMemoTool, createMemoActivationExtension, memoSessionInfo } from "./memo-tool.js";
-import {
-  buildPresentFilesTool,
-  createPresentFilesActivationExtension,
-} from "./present-files-tool.js";
-import {
-  buildAskUserQuestionTool,
-  createAskUserQuestionActivationExtension,
-  isAskUserQuestionEnabled,
-} from "./ask-user-question-tool.js";
-import { buildPixieReportTool, createPixieReportActivationExtension } from "./pixie-tool.js";
-import { deliverReportToPixie, findDispatchBySession } from "./pixie-agent-runner.js";
 import { createHostAgentSession } from "./agent-session-factory.js";
 
 function sessionStorageDirs(factory: WorkspaceGraphFactory, g: WorkspaceGraph) {
@@ -491,15 +479,10 @@ async function createSessionResourceLoader(
     cwd: g.canonicalCwd,
     agentDir: factory.deps.agentDir,
     settingsManager: g.settingsManager!,
-    extensionFactories: [
-      ...(g.subagentStatusBridge ? [g.subagentStatusBridge.extension] : []),
-      createAskUserQuestionActivationExtension(() =>
-        isAskUserQuestionEnabled(factory.deps.agentDir),
-      ),
-      createMemoActivationExtension(),
-      createPresentFilesActivationExtension(),
-      createPixieReportActivationExtension(),
-    ],
+    // The ask/memo/present-files/pixie-report tools come from the my-pi-plugins
+    // plugins now (loaded as normal package extensions); the Host injects only
+    // the status bridge inline extension and the read_attachment customTool.
+    extensionFactories: [...(g.subagentStatusBridge ? [g.subagentStatusBridge.extension] : [])],
   });
   // Session create/open must not reach the network. Without this the SDK would
   // npm-install or git-clone any configured package missing from disk, in a
@@ -648,48 +631,9 @@ export async function createSession(
       sessionManager,
       ...(factory.deps.attachmentStore
         ? {
-            customTools: [
-              createReadAttachmentTool(factory.deps.attachmentStore),
-              buildAskUserQuestionTool(),
-              buildMemoTool(factory.deps.agentDir, () => memoSessionInfo(sessionManager)),
-              buildPresentFilesTool(() => sessionManager.getCwd()),
-              buildPixieReportTool({
-                agentDir: factory.deps.agentDir,
-                getSessionId: () => sessionManager.getSessionId(),
-                report: (input) =>
-                  deliverReportToPixie({
-                    agentDir: factory.deps.agentDir,
-                    dispatchId: input.dispatchId,
-                    summary: input.summary,
-                  }),
-                findDispatch: (sessionId) => {
-                  const found = findDispatchBySession(sessionId);
-                  return found ? { id: found.id } : undefined;
-                },
-              }),
-            ],
+            customTools: [createReadAttachmentTool(factory.deps.attachmentStore)],
           }
-        : {
-            customTools: [
-              buildAskUserQuestionTool(),
-              buildMemoTool(factory.deps.agentDir, () => memoSessionInfo(sessionManager)),
-              buildPresentFilesTool(() => sessionManager.getCwd()),
-              buildPixieReportTool({
-                agentDir: factory.deps.agentDir,
-                getSessionId: () => sessionManager.getSessionId(),
-                report: (input) =>
-                  deliverReportToPixie({
-                    agentDir: factory.deps.agentDir,
-                    dispatchId: input.dispatchId,
-                    summary: input.summary,
-                  }),
-                findDispatch: (sessionId) => {
-                  const found = findDispatchBySession(sessionId);
-                  return found ? { id: found.id } : undefined;
-                },
-              }),
-            ],
-          }),
+        : {}),
     });
     const session = created.session;
     const extensionsResult = created.extensionsResult;
@@ -1018,48 +962,9 @@ export async function openSession(
         sessionManager,
         ...(factory.deps.attachmentStore
           ? {
-              customTools: [
-                createReadAttachmentTool(factory.deps.attachmentStore),
-                buildAskUserQuestionTool(),
-                buildMemoTool(factory.deps.agentDir, () => memoSessionInfo(sessionManager)),
-                buildPresentFilesTool(() => sessionManager.getCwd()),
-                buildPixieReportTool({
-                  agentDir: factory.deps.agentDir,
-                  getSessionId: () => sessionManager.getSessionId(),
-                  report: (input) =>
-                    deliverReportToPixie({
-                      agentDir: factory.deps.agentDir,
-                      dispatchId: input.dispatchId,
-                      summary: input.summary,
-                    }),
-                  findDispatch: (sessionId) => {
-                    const found = findDispatchBySession(sessionId);
-                    return found ? { id: found.id } : undefined;
-                  },
-                }),
-              ],
+              customTools: [createReadAttachmentTool(factory.deps.attachmentStore)],
             }
-          : {
-              customTools: [
-                buildAskUserQuestionTool(),
-                buildMemoTool(factory.deps.agentDir, () => memoSessionInfo(sessionManager)),
-                buildPresentFilesTool(() => sessionManager.getCwd()),
-                buildPixieReportTool({
-                  agentDir: factory.deps.agentDir,
-                  getSessionId: () => sessionManager.getSessionId(),
-                  report: (input) =>
-                    deliverReportToPixie({
-                      agentDir: factory.deps.agentDir,
-                      dispatchId: input.dispatchId,
-                      summary: input.summary,
-                    }),
-                  findDispatch: (sessionId) => {
-                    const found = findDispatchBySession(sessionId);
-                    return found ? { id: found.id } : undefined;
-                  },
-                }),
-              ],
-            }),
+          : {}),
       });
       candidateSession = created.session;
       const session = created.session;

@@ -185,8 +185,6 @@ export const zh: Record<MessageKey, string> = {
   generalSubtitle: "启动行为与 Pi Host 配置",
   generalStartupGroup: "启动",
   generalPiSettingsGroup: "Pi 默认设置",
-  generalAskUserQuestion: "提问工具",
-  generalAskUserQuestionDesc: "允许模型直接在对话中提问。",
   generalDefaultModel: "默认模型",
   generalDefaultModelDesc: "选择新会话默认使用的模型服务商和模型。",
   generalDefaultProvider: "默认服务商",
@@ -657,8 +655,11 @@ export const zh: Record<MessageKey, string> = {
   pluginsWorkspaceTargetHint:
     "正在管理所选工作区：启用开关作用于该工作区（写入其 .pi/settings.json）；安装与配置仍为全局。",
   pluginsWorkspaceTargetBusy: "有会话正在运行，无法修改所选工作区的插件；请先停止相关会话。",
-  pluginsWorkspaceInstallDisabled:
-    "请切换到该工作区再安装插件——安装始终作用于当前工作区。",
+  pluginsWorkspaceInstallDisabled: "请切换到该工作区再安装插件——安装始终作用于当前工作区。",
+  pluginsScopeGlobalOnly: "仅全局",
+  pluginsScopeGlobalOnlyHint: "该插件只能在全局启用/禁用：工作区不提供启用/禁用开关。",
+  pluginsScopeGlobalOnlyOverrideHint:
+    "该插件只能在全局启用/禁用，但此工作区仍存在历史覆盖设置，运行时会以该覆盖为准。",
   pluginsRefresh: "刷新",
   pluginsUpdateAction: "有可用更新",
   pluginsUpdateTitle: "{count} 项可更新",

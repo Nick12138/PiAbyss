@@ -193,7 +193,7 @@ export function matchesResourcePattern(
   return candidates.some((candidate) => minimatch(candidate, normalizedPattern));
 }
 
-function isEnabledByPackagePatterns(path: string, patterns: string[]): boolean {
+export function isEnabledByPackagePatterns(path: string, patterns: string[]): boolean {
   const includes = patterns.filter((pattern) => !/^[!+-]/.test(pattern));
   const excludes = patterns
     .filter((pattern) => pattern.startsWith("!"))

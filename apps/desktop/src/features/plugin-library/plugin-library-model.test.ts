@@ -463,9 +463,7 @@ describe("config helpers", () => {
 });
 
 describe("workspace card state", () => {
-  function wsResource(
-    overrides: Partial<ResourceRecord> = {},
-  ): ResourceRecord {
+  function wsResource(overrides: Partial<ResourceRecord> = {}): ResourceRecord {
     return resource({
       id: "res-web",
       packageId: "pkg-repo",
@@ -499,6 +497,8 @@ describe("workspace card state", () => {
       extensionResources: [],
       workspaceConfigurable: false,
       userConfigurable: false,
+      globalOnly: false,
+      hasProjectOverride: false,
     });
   });
 
@@ -529,9 +529,7 @@ describe("workspace card state", () => {
     const locked = repoSnapshot([
       wsResource({ control: { kind: "preference", scopes: ["user"] } }),
     ]);
-    expect(pluginWorkspaceCardState(REPO_ENTRY, CATALOG, locked).workspaceConfigurable).toBe(
-      false,
-    );
+    expect(pluginWorkspaceCardState(REPO_ENTRY, CATALOG, locked).workspaceConfigurable).toBe(false);
   });
 
   it("reports userConfigurable only when some resource allows user scope", () => {
@@ -542,12 +540,52 @@ describe("workspace card state", () => {
     ]);
     expect(pluginWorkspaceCardState(REPO_ENTRY, CATALOG, locked).userConfigurable).toBe(false);
   });
+
+  it("honors a registry entry restricted to global toggling", () => {
+    const globalOnlyEntry: PluginLibraryEntry = { ...REPO_ENTRY, toggleScopes: ["user"] };
+    const state = pluginWorkspaceCardState(globalOnlyEntry, CATALOG, repoSnapshot([wsResource()]));
+    // The resource itself allows a project preference; the registry forbids it.
+    expect(state.workspaceConfigurable).toBe(false);
+    expect(state.globalOnly).toBe(true);
+    expect(state.userConfigurable).toBe(true);
+  });
+
+  it("keeps both layers when the registry declares both toggle scopes", () => {
+    const entry: PluginLibraryEntry = { ...REPO_ENTRY, toggleScopes: ["user", "project"] };
+    const state = pluginWorkspaceCardState(entry, CATALOG, repoSnapshot([wsResource()]));
+    expect(state.globalOnly).toBe(false);
+    expect(state.workspaceConfigurable).toBe(true);
+  });
+
+  it("honors a registry entry restricted to workspace toggling", () => {
+    const projectOnlyEntry: PluginLibraryEntry = { ...REPO_ENTRY, toggleScopes: ["project"] };
+    const state = pluginWorkspaceCardState(projectOnlyEntry, CATALOG, repoSnapshot([wsResource()]));
+    expect(state.globalOnly).toBe(false);
+    expect(state.workspaceConfigurable).toBe(true);
+    expect(state.userConfigurable).toBe(false);
+  });
+
+  it("flags a global-only plugin that still carries a legacy project override", () => {
+    const globalOnlyEntry: PluginLibraryEntry = { ...REPO_ENTRY, toggleScopes: ["user"] };
+    const overridden = repoSnapshot([
+      wsResource({ enabled: true, preferences: { user: "enabled", project: "disabled" } }),
+    ]);
+    const state = pluginWorkspaceCardState(globalOnlyEntry, CATALOG, overridden);
+    expect(state.hasProjectOverride).toBe(true);
+    // The override still decides the effective state at runtime.
+    expect(state.enabled).toBe(false);
+
+    const inherited = repoSnapshot([
+      wsResource({ enabled: true, preferences: { user: "enabled" } }),
+    ]);
+    expect(pluginWorkspaceCardState(globalOnlyEntry, CATALOG, inherited).hasProjectOverride).toBe(
+      false,
+    );
+  });
 });
 
 describe("buildScopedToggleUpdates", () => {
-  function toggleResource(
-    overrides: Partial<ResourceRecord> = {},
-  ): ResourceRecord {
+  function toggleResource(overrides: Partial<ResourceRecord> = {}): ResourceRecord {
     return resource({
       id: "res-web",
       control: { kind: "preference", scopes: ["user", "project"] },
@@ -557,16 +595,11 @@ describe("buildScopedToggleUpdates", () => {
 
   it("emits project-scope updates only for resources that change state", () => {
     const updates = buildScopedToggleUpdates(
-      [
-        toggleResource({ id: "a", enabled: true }),
-        toggleResource({ id: "b", enabled: false }),
-      ],
+      [toggleResource({ id: "a", enabled: true }), toggleResource({ id: "b", enabled: false })],
       "project",
       false,
     );
-    expect(updates).toEqual([
-      { resourceId: "a", targetScope: "project", preference: "disabled" },
-    ]);
+    expect(updates).toEqual([{ resourceId: "a", targetScope: "project", preference: "disabled" }]);
   });
 
   it("returns null when nothing would change", () => {
@@ -595,8 +628,6 @@ describe("buildScopedToggleUpdates", () => {
       "user",
       true,
     );
-    expect(updates).toEqual([
-      { resourceId: "b", targetScope: "user", preference: "enabled" },
-    ]);
+    expect(updates).toEqual([{ resourceId: "b", targetScope: "user", preference: "enabled" }]);
   });
 });

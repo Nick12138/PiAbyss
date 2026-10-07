@@ -24,14 +24,15 @@ describe("Sidebar", () => {
     },
   );
 
-  it("disables the memo entry until the Host is ready", () => {
+  it("hides plugin-backed entries (memo, pixie) while their plugins are not known-enabled", () => {
+    // The plugin gate resolves to false in SSR (no host/catalog yet), so the
+    // memo and pixie entries render only once their plugins are enabled.
     const html = renderToStaticMarkup(
       createElement(SidebarLayout, { page: "chat", setPage: vi.fn() }),
     );
 
-    expect(html).toContain('data-testid="sidebar-memo-entry"');
-    expect(html).toContain('title="Memos · host not ready"');
-    expect(html).toMatch(/data-testid="sidebar-memo-entry"[^>]*disabled/);
+    expect(html).not.toContain('data-testid="sidebar-memo-entry"');
+    expect(html).not.toContain('data-testid="sidebar-pixie-entry"');
   });
 
   it("renders the aside as a zero-width strip when the sidebar is collapsed", async () => {

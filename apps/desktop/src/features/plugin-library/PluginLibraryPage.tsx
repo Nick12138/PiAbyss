@@ -62,6 +62,7 @@ import {
 } from "./plugin-updates";
 import {
   buildScopedToggleUpdates,
+  pluginToggleScopes,
   pluginWorkspaceCardState,
   type PluginToggleScope,
   type PluginWorkspaceCardState,
@@ -514,6 +515,15 @@ function PluginCard({
   const configurable = showConfig && (entry.config?.length ?? 0) > 0;
   const enabled = optimistic ?? state.enabled;
   const toggleAllowed = scope === "user" ? state.userConfigurable : state.workspaceConfigurable;
+  // Global-only plugins (registry `toggleScopes: ["user"]`) are not workspace
+  // manageable: the switch is replaced by a read-only state readout, because a
+  // workspace can neither enable nor disable them.
+  const globalOnlyCard = scope === "project" && state.globalOnly;
+  /** A legacy project override still wins at runtime, so say so instead of
+   ** implying the workspace cannot affect this plugin. */
+  const globalOnlyHint = state.hasProjectOverride
+    ? t("pluginsScopeGlobalOnlyOverrideHint")
+    : t("pluginsScopeGlobalOnlyHint");
 
   async function handleToggle(next: boolean) {
     if (pending) return;
@@ -558,13 +568,38 @@ function PluginCard({
                   aria-hidden="true"
                 />
               ))}
-            {/* The switch itself carries the state; a separate badge is redundant. */}
-            <Switch
-              checked={enabled}
-              disabled={pending || !toggleAllowed}
-              label={t("pluginStatusEnabled")}
-              onChange={(next) => void handleToggle(next)}
-            />
+            {/* The switch itself carries the state; a separate badge is redundant.
+                Global-only plugins get a read-only readout in the workspace view. */}
+            {globalOnlyCard ? (
+              <span
+                data-plugin-global-only={entry.id}
+                title={globalOnlyHint}
+                className="flex shrink-0 items-center gap-1.5"
+              >
+                <span className="rounded bg-surface-overlay px-1.5 py-0.5 text-[11px] text-muted">
+                  {t("pluginsScopeGlobalOnly")}
+                </span>
+                {state.hasProjectOverride && (
+                  <span title={t("pluginsScopeGlobalOnlyOverrideHint")}>
+                    <AlertTriangle
+                      size={12}
+                      className="text-warning"
+                      aria-label={t("pluginsScopeGlobalOnlyOverrideHint")}
+                    />
+                  </span>
+                )}
+                <span className="text-[11px] tabular-nums text-muted">
+                  {enabled ? t("pluginStatusEnabled") : t("pluginStatusDisabled")}
+                </span>
+              </span>
+            ) : (
+              <Switch
+                checked={enabled}
+                disabled={pending || !toggleAllowed}
+                label={t("pluginStatusEnabled")}
+                onChange={(next) => void handleToggle(next)}
+              />
+            )}
           </div>
         )}
       </div>
@@ -618,9 +653,9 @@ export function PluginLibraryPage() {
   const [catalogError, setCatalogError] = useState("");
   /** Target workspace snapshots stay cached while switching between chips,
    ** so revisiting a workspace renders immediately instead of flashing empty. */
-  const [workspacePackageCache, setWorkspacePackageCache] = useState<
-    Map<string, PackageSnapshot>
-  >(() => new Map());
+  const [workspacePackageCache, setWorkspacePackageCache] = useState<Map<string, PackageSnapshot>>(
+    () => new Map(),
+  );
   const [packagesLoading, setPackagesLoading] = useState(false);
   const [packageLoadError, setPackageLoadError] = useState("");
   // Per-card pending set: flipping one plugin never locks the others.
@@ -896,10 +931,7 @@ export function PluginLibraryPage() {
 
   async function runMutation(
     method:
-      | "package.install"
-      | "package.update"
-      | "resource.setPreferences"
-      | "pluginLibrary.apply",
+      "package.install" | "package.update" | "resource.setPreferences" | "pluginLibrary.apply",
     params: HostRequestParams[typeof method],
     pluginId: string,
     name: string,
@@ -1004,6 +1036,10 @@ export function PluginLibraryPage() {
 
   async function toggle(entry: PluginLibraryEntry, enable: boolean): Promise<boolean> {
     if (!catalog) return false;
+    // The registry decides which layers may carry the switch. A global-only
+    // plugin renders a read-only badge instead of a switch; this guard keeps
+    // any other caller from writing a workspace override behind its back.
+    if (!pluginToggleScopes(entry).includes(toggleScope)) return false;
     const state = pluginWorkspaceCardState(entry, catalog, managedPackages);
     const updates = buildScopedToggleUpdates(state.extensionResources, toggleScope, enable);
     if (!updates) return true;
@@ -1171,9 +1207,7 @@ export function PluginLibraryPage() {
                 }`}
                 onClick={() => setSelectedWorkspacePath(chip.value)}
               >
-                {chip.isTelegram && (
-                  <Send size={12} className="shrink-0 text-muted" aria-hidden />
-                )}
+                {chip.isTelegram && <Send size={12} className="shrink-0 text-muted" aria-hidden />}
                 <span className="max-w-48 truncate">{chip.basename}</span>
                 {chip.isActive && !chip.isGlobal && (
                   <span
@@ -1189,9 +1223,7 @@ export function PluginLibraryPage() {
         </div>
         <div className="flex items-center gap-2">
           <p className="text-[11px] text-muted">
-            {globalFilter
-              ? t("pluginsScopeUserHint")
-              : t("pluginsWorkspaceTargetHint")}
+            {globalFilter ? t("pluginsScopeUserHint") : t("pluginsWorkspaceTargetHint")}
           </p>
         </div>
       </div>
@@ -1234,11 +1266,7 @@ export function PluginLibraryPage() {
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <AlertTriangle size={24} className="text-danger" />
           <p className="max-w-lg text-xs text-muted">{packageLoadError}</p>
-          <button
-            type="button"
-            className={secondaryButton}
-            onClick={() => void ensurePackages()}
-          >
+          <button type="button" className={secondaryButton} onClick={() => void ensurePackages()}>
             <RefreshCw size={13} />
             {t("pluginsRetry")}
           </button>

@@ -1502,7 +1502,7 @@ function isPluginLibraryEntry(value: unknown): boolean {
     hasExactKeys(
       value,
       ["id", "name", "description", "icon", "version", "install"],
-      ["author", "tags", "config"],
+      ["author", "tags", "config", "toggleScopes"],
     ) &&
     isNonEmptyString(value.id) &&
     isString(value.name) &&
@@ -1511,6 +1511,10 @@ function isPluginLibraryEntry(value: unknown): boolean {
     isString(value.version) &&
     (value.author === undefined || isString(value.author)) &&
     (value.tags === undefined || (Array.isArray(value.tags) && value.tags.every(isString))) &&
+    (value.toggleScopes === undefined ||
+      (Array.isArray(value.toggleScopes) &&
+        value.toggleScopes.length > 0 &&
+        value.toggleScopes.every((scope) => scope === "user" || scope === "project"))) &&
     (value.config === undefined ||
       (Array.isArray(value.config) && value.config.every(isPluginLibraryConfigItem))) &&
     isPluginLibraryInstallSource(value.install)
@@ -2804,13 +2808,7 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
             "followUpMode",
             "models",
           ],
-          [
-            "defaultProvider",
-            "defaultModel",
-            "defaultTools",
-            "askUserQuestionEnabled",
-            "httpProxy",
-          ],
+          ["defaultProvider", "defaultModel", "defaultTools", "httpProxy"],
         ) &&
         (result.defaultProvider === undefined || isString(result.defaultProvider)) &&
         (result.defaultModel === undefined || isString(result.defaultModel)) &&
@@ -2818,9 +2816,6 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         (result.defaultTools === undefined ||
           (Array.isArray(result.defaultTools) &&
             result.defaultTools.every((name) => isString(name)))) &&
-        // Always present on the wire: the Host normalizes a missing/invalid
-        // setting to `true`, so an absent key is a Host bug, not "default on".
-        isBoolean(result.askUserQuestionEnabled) &&
         ["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(
           String(result.defaultThinkingLevel),
         ) &&

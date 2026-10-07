@@ -35,7 +35,6 @@ const DEFAULT_SETTINGS: PiSettingsSnapshot = {
   defaultProjectTrust: "ask",
   steeringMode: "one-at-a-time",
   followUpMode: "one-at-a-time",
-  askUserQuestionEnabled: true,
   models: [],
 };
 

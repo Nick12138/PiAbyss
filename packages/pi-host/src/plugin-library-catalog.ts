@@ -17,21 +17,6 @@ export const PLUGIN_LIBRARY_REGISTRY_URL =
   "https://raw.githubusercontent.com/Nick12138/my-pi-plugins/main/plugins.json";
 export const PLUGIN_LIBRARY_REPO_SOURCE = "git:github.com/Nick12138/my-pi-plugins";
 
-/**
- * Registry entries whose functionality PiAbyss now ships built in.
- *
- * The curated registry still advertises them, but installing one would give the
- * user a package whose tool can never run (the Host's built-in implementation
- * wins the name). They are filtered out of the catalog so the library only
- * offers things that can actually take effect, and a warning records the drop
- * instead of silently hiding a registry entry.
- *
- * Keyed by install source, so it keeps working if the registry renames the id.
- */
-export const SUPERSEDED_PLUGIN_SOURCES: readonly string[] = [
-  "npm:@juicesharp/rpiv-ask-user-question",
-];
-
 /** Registry entries change rarely; serve the in-memory catalog for a day and
  *  rely on the explicit refresh button (or a host restart) for updates. */
 const CATALOG_TTL_MS = 24 * 60 * 60_000;
@@ -145,6 +130,17 @@ function sanitizeEntry(value: unknown): PluginLibraryEntry | null {
   if (Array.isArray(value.tags)) {
     entry.tags = value.tags.filter((tag): tag is string => isString(tag));
   }
+  // Unknown or malformed toggle scopes are dropped (entry kept) so a registry
+  // typo degrades to the default "user + project" behavior instead of removing
+  // the plugin from the library.
+  if (Array.isArray(value.toggleScopes)) {
+    const scopes = value.toggleScopes.filter(
+      (scope): scope is "user" | "project" => scope === "user" || scope === "project",
+    );
+    if (scopes.length > 0 && scopes.length === value.toggleScopes.length) {
+      entry.toggleScopes = [...new Set(scopes)];
+    }
+  }
   if (value.config !== undefined) {
     if (!Array.isArray(value.config)) return null;
     const config = value.config
@@ -240,11 +236,8 @@ export async function getPluginLibraryCatalog(
       warnings.push(`Dropped duplicate registry entry "${entry.id}"`);
       continue;
     }
-    if (entry.install.type !== "repo" && SUPERSEDED_PLUGIN_SOURCES.includes(entry.install.source)) {
-      warnings.push(`Hid registry entry "${entry.id}": PiAbyss ships this built in`);
-      continue;
-    }
     seenIds.add(entry.id);
+
     plugins.push(entry);
   }
   const catalog: PluginLibraryCatalog = {

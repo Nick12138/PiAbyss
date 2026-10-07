@@ -41,7 +41,8 @@ import { createShellJobHandlers } from "./shelljob-controller.js";
 import { startShellJobWatcher } from "./shelljob-watcher.js";
 import { configureScheduleAgentRuntime } from "./schedule-agent-runner.js";
 import { configurePixieRuntime } from "./pixie-agent-runner.js";
-import { createPixieHandlers } from "./pixie-controller.js";
+import { createPixieHandlers, createPixieControlPlaneDeps } from "./pixie-controller.js";
+import { startPixieControlPlane, type PixieControlPlane } from "./pixie-control-plane.js";
 import { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { applyKnownThinkingProfiles } from "./model-thinking.js";
 import { FileCredentialStore } from "./credential-store.js";
@@ -56,7 +57,7 @@ import { createGitHandlers } from "./git-controller.js";
 import { GitAsyncTaskRunner } from "./git-async-tasks.js";
 import { GitService } from "./git-service.js";
 import { refreshActiveSessionSnapshot } from "./session-snapshot.js";
-import { createPiSettingsHandlers, removeSupersededPackages } from "./pi-settings-controller.js";
+import { createPiSettingsHandlers } from "./pi-settings-controller.js";
 import { createSkillHandlers } from "./skill-controller.js";
 import { createPromptHandlers } from "./prompt-controller.js";
 import { createSubagentStatusBridge } from "./subagent-status-extension.js";
@@ -65,8 +66,12 @@ function resolveAgentDir(): string {
   const envDir = process.env.PI_CODING_AGENT_DIR;
   if (envDir && envDir.trim()) return envDir.trim();
   const arg = process.argv.find((a) => a.startsWith("--agent-dir="));
-  if (arg) return arg.slice("--agent-dir=".length);
-  return join(homedir(), ".pi", "agent");
+  const resolved = arg ? arg.slice("--agent-dir=".length) : join(homedir(), ".pi", "agent");
+  // Align plugins that resolve the agent dir via the SDK (getAgentDir reads
+  // this env): without the write-back, a Host started with --agent-dir= would
+  // disagree with the piabyss-memo plugin about <agentDir>/piabyss/memo.
+  process.env.PI_CODING_AGENT_DIR ??= resolved;
+  return resolved;
 }
 
 function resolveInitialCwd(): string | null {
@@ -203,11 +208,8 @@ async function main(): Promise<void> {
   // while the pre-migration bytes still exist.
   const migrationBackup = await ensureMigrationBackup(agentDir);
 
-  // PiAbyss now ships its own `ask_user_question` tool, so the third-party
-  // package that used to provide it is dropped from the package list before
-  // any resource loader reads settings. Runs after the migration backup so the
-  // pre-removal bytes are always recoverable.
-  removeSupersededPackages(agentDir);
+  // PiAbyss 0.1.x used to filter superseded packages here; the built-in tools
+  // moved to my-pi-plugins so nothing is superseded anymore.
 
   // Cwd-independent services (PROJECT_SPEC §8.1)
   const credentialStore = FileCredentialStore.forAgentDir(agentDir);
@@ -348,6 +350,21 @@ async function main(): Promise<void> {
   // The pixie (小精灵) resident session shares the same authoritative runtime.
   configurePixieRuntime(modelRuntime);
 
+  // Loopback control plane for the pi-pixie plugin (pixie_dispatch/report
+  // forward here). Must exist before ANY agent session is created — the port
+  // is discovered by the plugin through the process environment.
+  let pixieControlPlane: PixieControlPlane | null = null;
+  try {
+    pixieControlPlane = await startPixieControlPlane(createPixieControlPlaneDeps(graphFactory));
+    process.env.PIABYSS_PIXIE_HTTP_PORT = String(pixieControlPlane.port);
+  } catch (err) {
+    // Non-fatal: the plugin's tools degrade to readable errors; everything
+    // else keeps working.
+    logger.warn("Failed to start the pixie loopback control plane", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   const handlers = {
     ...createWorkspaceHandlers(graphFactory, workspaceFiles, gitService),
     ...createGitHandlers(graphFactory, gitService, gitAsyncTasks),
@@ -389,6 +406,10 @@ async function main(): Promise<void> {
       workspaceFiles.dispose();
       gitAsyncTasks.abortAll("Host shutdown");
       gitService.dispose();
+      if (pixieControlPlane) {
+        await pixieControlPlane.close();
+        delete process.env.PIABYSS_PIXIE_HTTP_PORT;
+      }
       const { cancelAllPending } = await import("./extension-ui-bridge.js");
       cancelAllPending("Host shutdown");
       const g = graphFactory.getGraph();

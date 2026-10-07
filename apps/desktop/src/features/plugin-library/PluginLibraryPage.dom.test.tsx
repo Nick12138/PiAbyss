@@ -287,6 +287,45 @@ function snapshotWithRepo(webEnabled: boolean): PackageSnapshot {
   };
 }
 
+function catalogWithGlobalOnlyPlugin(): PluginLibraryCatalog {
+  const memoPlugin: PluginLibraryCatalog["plugins"][number] = {
+    id: "piabyss-memo",
+    name: "PiAbyss 备忘录",
+    description: "Memo board tool.",
+    icon: "📌",
+    version: "0.1.0",
+    install: { type: "repo", path: "packages/piabyss-memo" },
+    // Registry-declared: workspaces may neither enable nor disable it.
+    toggleScopes: ["user"],
+  };
+  return { ...catalog(), plugins: [...catalog().plugins, memoPlugin] };
+}
+
+function snapshotWithGlobalOnlyPlugin(projectOverride?: "enabled" | "disabled"): PackageSnapshot {
+  const repoPkg = packageRecord({
+    id: "pkg-repo",
+    identity: REPO_SOURCE,
+    source: REPO_SOURCE,
+    kind: "git",
+    displayName: "my-pi-plugins",
+  });
+  return {
+    ...emptySnapshot(),
+    configured: [repoPkg],
+    resources: [
+      resource({
+        id: "res-memo",
+        packageId: "pkg-repo",
+        path: "C:/agent/git/github.com/Nick12138/my-pi-plugins/packages/piabyss-memo/extensions/piabyss-memo.ts",
+        enabled: true,
+        ...(projectOverride
+          ? { preferences: { user: "enabled" as const, project: projectOverride } }
+          : {}),
+      }),
+    ],
+  };
+}
+
 function snapshotWithVision(): PackageSnapshot {
   const repoPkg = packageRecord({
     id: "pkg-repo",
@@ -1028,12 +1067,48 @@ describe("PluginLibraryPage DOM workflows", () => {
     const user = userEvent.setup();
     render(<PluginLibraryPage />);
 
-    const activeWorkspaceChip = await screen.findByRole("button", { name: /workspace.*Current workspace/ });
+    const activeWorkspaceChip = await screen.findByRole("button", {
+      name: /workspace.*Current workspace/,
+    });
     await user.click(activeWorkspaceChip);
 
     const card = screen.getByText("浏览器").closest("article")!;
     expect(within(card).getByRole("switch")).toHaveAttribute("aria-checked", "true");
     expect(within(card).queryByRole("button", { name: "Install…" })).not.toBeInTheDocument();
+  });
+
+  it("replaces the workspace switch with a global-only readout for restricted plugins", async () => {
+    currentCatalog = catalogWithGlobalOnlyPlugin();
+    currentSnapshot = snapshotWithGlobalOnlyPlugin();
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    // Global scope: the plugin toggles globally like any other card.
+    const globalCard = (await screen.findByText("PiAbyss 备忘录")).closest("article")!;
+    expect(within(globalCard).getByRole("switch")).toHaveAttribute("aria-checked", "true");
+
+    // Workspace scope: no switch at all — a read-only readout instead.
+    await user.click(screen.getByRole("button", { name: /workspace.*Current workspace/ }));
+    const card = screen.getByText("PiAbyss 备忘录").closest("article")!;
+    expect(within(card).queryByRole("switch")).not.toBeInTheDocument();
+    expect(within(card).getByText("Global only")).toBeInTheDocument();
+    expect(within(card).getByText("Enabled")).toBeInTheDocument();
+  });
+
+  it("flags a legacy workspace override on a global-only plugin", async () => {
+    currentCatalog = catalogWithGlobalOnlyPlugin();
+    currentSnapshot = snapshotWithGlobalOnlyPlugin("disabled");
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    await user.click(await screen.findByRole("button", { name: /workspace.*Current workspace/ }));
+    const card = screen.getByText("PiAbyss 备忘录").closest("article")!;
+    // The legacy override still decides the effective state, and the UI says so
+    // rather than claiming the workspace cannot affect this plugin.
+    expect(within(card).getByText("Disabled")).toBeInTheDocument();
+    expect(within(card).getByLabelText(/legacy override/)).toBeInTheDocument();
   });
 
   it("reuses a workspace snapshot when switching back to a previously viewed workspace", async () => {
@@ -1045,9 +1120,10 @@ describe("PluginLibraryPage DOM workflows", () => {
     const targetChip = await screen.findByRole("button", { name: "other-project" });
     await user.click(targetChip);
     const listCall = await waitFor(() =>
-      request.mock.calls.find(([method, , params]) =>
-        method === "package.list" &&
-        (params as { targetWorkspaceCwd?: string }).targetWorkspaceCwd === "C:/other-project",
+      request.mock.calls.find(
+        ([method, , params]) =>
+          method === "package.list" &&
+          (params as { targetWorkspaceCwd?: string }).targetWorkspaceCwd === "C:/other-project",
       ),
     );
     expect(listCall).toBeDefined();
@@ -1121,7 +1197,9 @@ describe("PluginLibraryPage DOM workflows", () => {
       }
       return envelope(method, method === "package.list" ? currentSnapshot : currentCatalog);
     });
-    await waitFor(() => expect(within(card).getByRole("switch")).toHaveAttribute("aria-checked", "false"));
+    await waitFor(() =>
+      expect(within(card).getByRole("switch")).toHaveAttribute("aria-checked", "false"),
+    );
     // Store snapshot untouched by the cross-workspace mutation.
     expect(useAppStore.getState().packages?.revision).toBe(1);
   });

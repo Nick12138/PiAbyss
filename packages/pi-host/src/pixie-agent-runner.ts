@@ -8,24 +8,53 @@
  *
  * Unlike the schedule flow this session is a long-lived singleton (one map
  * entry, restarted by forking its persisted file after a Host restart) and it
- * carries the delegation registry: `pixie_dispatch` enqueues tasks for
- * workspace sessions, their agents answer through the host-injected
- * `pixie_report` tool, and every report is fed back into this session as a
- * user message so the pixie can relay it to the user.
+ * carries the delegation registry: `pixie_dispatch` (from the pi-pixie plugin,
+ * loaded from the installed my-pi-plugins checkout) enqueues tasks for
+ * workspace sessions, their agents answer through the pi-pixie `pixie_report`
+ * tool (gated per turn via the loopback control plane), and every report is
+ * fed back into this session as a user message so the pixie can relay it to
+ * the user.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
+  DefaultPackageManager,
   DefaultResourceLoader,
   SessionManager,
   SettingsManager,
   type AgentSession,
   type ModelRuntime,
-  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { PixieAgentMessage, PixieDispatchRecord } from "@piabyss/protocol";
 import { createHostAgentSession } from "./agent-session-factory.js";
 import { piabyssDataDir } from "./piabyss-data.js";
+import { logger } from "./logger.js";
+
+/** The plugin package that provides the pixie tool shells (dispatch/report). */
+const PIXIE_PLUGIN_SOURCE = "git:github.com/Nick12138/my-pi-plugins";
+const PIXIE_PLUGIN_EXTENSION = join("packages", "pi-pixie", "extensions", "pi-pixie.ts");
+
+/**
+ * Locate the installed pi-pixie extension entry in the user's my-pi-plugins
+ * checkout. The delegation engine's plugin-side shell lives there; without it
+ * the resident session has no dispatch tool (the control plane still runs, so
+ * the plugin degrades gracefully instead of erroring the session).
+ */
+function resolvePixiePluginExtensionPath(agentDir: string): string | null {
+  try {
+    const packageManager = new DefaultPackageManager({
+      cwd: agentDir,
+      agentDir,
+      settingsManager: SettingsManager.create(agentDir, agentDir),
+    });
+    const installedRoot = packageManager.getInstalledPath(PIXIE_PLUGIN_SOURCE, "user");
+    if (!installedRoot) return null;
+    const entry = join(installedRoot, PIXIE_PLUGIN_EXTENSION);
+    return existsSync(entry) ? entry : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Dispatch accepted but the target session has not reported back yet. */
 type PixieDispatchStatus = "dispatched" | "reported" | "failed";
@@ -92,10 +121,13 @@ const PIXIE_SESSION_NAME = "🧚 小精灵";
 async function buildPixieSession(
   agentDir: string,
   sessionManager: SessionManager,
-  customTools: ToolDefinition[] = [],
 ): Promise<AgentSession> {
   const cwd = agentDir; // Host-owned dir: the pixie never touches a workspace cwd.
   const settings = SettingsManager.create(cwd, agentDir);
+  // The pixie tool shells live in the pi-pixie plugin package. `noExtensions`
+  // keeps every other extension out; the additional path loads exactly the
+  // pi-pixie entry (resolveLocalExtensionSource accepts a single file).
+  const pixieExtensionPath = resolvePixiePluginExtensionPath(agentDir);
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir,
@@ -104,8 +136,22 @@ async function buildPixieSession(
     noSkills: true,
     noPromptTemplates: true,
     noThemes: true,
+    ...(pixieExtensionPath ? { additionalExtensionPaths: [pixieExtensionPath] } : {}),
   });
-  await resourceLoader.reload();
+  if (!pixieExtensionPath) {
+    // Non-fatal: the plugin's dispatch tool is absent until my-pi-plugins is
+    // (re)installed; the report side on workspace sessions is unaffected.
+    logger.warn("pi-pixie extension not found; pixie_dispatch unavailable (update my-pi-plugins)");
+  }
+  // The pi-pixie extension entry reads this marker once at factory-invocation
+  // time (inside reload()) to register pixie_dispatch instead of pixie_report.
+  // Workspace sessions never see it unless they reload during this window.
+  if (pixieExtensionPath) process.env.PIABYSS_PIXIE_RESIDENT = "1";
+  try {
+    await resourceLoader.reload();
+  } finally {
+    delete process.env.PIABYSS_PIXIE_RESIDENT;
+  }
   const created = await createHostAgentSession({
     cwd,
     agentDir,
@@ -113,17 +159,13 @@ async function buildPixieSession(
     resourceLoader,
     settingsManager: settings,
     sessionManager,
-    ...(customTools.length > 0 ? { customTools } : {}),
   });
   return created.session;
 }
 
-async function startResident(
-  agentDir: string,
-  customTools: ToolDefinition[] = [],
-): Promise<PixieSessionEntry> {
+async function startResident(agentDir: string): Promise<PixieSessionEntry> {
   const sessionManager = SessionManager.create(agentDir, agentSessionsDir(agentDir));
-  const session = await buildPixieSession(agentDir, sessionManager, customTools);
+  const session = await buildPixieSession(agentDir, sessionManager);
   try {
     session.setSessionName(PIXIE_SESSION_NAME);
   } catch {
@@ -138,14 +180,11 @@ async function startResident(
   return entry;
 }
 
-/** Ensure the resident session exists (idempotent). The dispatch tool is
- *  injected on first build so the pixie can delegate from turn one. */
-async function ensurePixieSession(
-  agentDir: string,
-  customTools: ToolDefinition[] = [],
-): Promise<PixieSessionEntry> {
+/** Ensure the resident session exists (idempotent). The pi-pixie extension
+ *  (loaded on first build) provides the dispatch tool from turn one. */
+async function ensurePixieSession(agentDir: string): Promise<PixieSessionEntry> {
   if (resident) return resident;
-  return startResident(agentDir, customTools);
+  return startResident(agentDir);
 }
 
 /** Send a user message to the resident pixie (fire-and-forget like the
@@ -153,10 +192,8 @@ async function ensurePixieSession(
 export async function sendPixieMessage(args: {
   agentDir: string;
   text: string;
-  /** Custom tools registered when the session is first built (dispatch). */
-  customTools?: ToolDefinition[];
 }): Promise<{ ok: true; sessionId: string } | { ok: false; error: string }> {
-  const entry = await ensurePixieSession(args.agentDir, args.customTools ?? []);
+  const entry = await ensurePixieSession(args.agentDir);
   if (entry.session.isStreaming) {
     return { ok: false, error: "上一条回复还在生成中" };
   }
@@ -173,7 +210,6 @@ export async function continuePixieSession(args: {
   agentDir: string;
   sessionPath: string;
   text: string;
-  customTools?: ToolDefinition[];
 }): Promise<{ ok: true; sessionId: string; sessionPath: string } | { ok: false; error: string }> {
   if (!existsSync(args.sessionPath)) {
     return { ok: false, error: `会话文件不存在：${args.sessionPath}` };
@@ -183,7 +219,7 @@ export async function continuePixieSession(args: {
     args.agentDir,
     agentSessionsDir(args.agentDir),
   );
-  const session = await buildPixieSession(args.agentDir, sessionManager, args.customTools ?? []);
+  const session = await buildPixieSession(args.agentDir, sessionManager);
   try {
     session.setSessionName(PIXIE_SESSION_NAME);
   } catch {

@@ -123,7 +123,6 @@ describe("GeneralSettings network proxy", () => {
       defaultProjectTrust: "ask",
       steeringMode: "one-at-a-time",
       followUpMode: "one-at-a-time",
-      askUserQuestionEnabled: true,
       models: [],
       ...overrides,
     };

@@ -18,6 +18,11 @@ import { PiMark } from "./PiMark";
 import { sidebarPref, setSidebarPref } from "../lib/sidebar-prefs";
 import { subscribeSessionReveal } from "../lib/session-reveal";
 import { useSchedulePluginEnabled } from "../features/schedule/schedule-plugin-gate";
+import { usePluginEnabled } from "../features/plugin-library/plugin-gate";
+
+/** The plugin-library entries backing the Pixie and Memo pages. */
+const PIXIE_PLUGIN_ID = "pi-pixie";
+const MEMO_PLUGIN_ID = "piabyss-memo";
 import { resolveConversationMinWidth } from "../features/chat/conversation-layout";
 import {
   createNewSession,
@@ -132,6 +137,8 @@ export function SidebarLayout({
 }) {
   const t = useT();
   const scheduleEnabled = useSchedulePluginEnabled();
+  const memoEnabled = usePluginEnabled(MEMO_PLUGIN_ID);
+  const pixieEnabled = usePluginEnabled(PIXIE_PLUGIN_ID);
   const hostReady = Boolean(useAppStore((s) => s.host?.hostInstanceId));
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const telegramViewActive = useTelegramWorkspaceActive();
@@ -336,27 +343,29 @@ export function SidebarLayout({
               </div>
             )}
 
-            <div className="px-2 pb-2">
-              <button
-                type="button"
-                disabled={!hostReady}
-                onClick={() => setPage(page === "pixie" ? "chat" : "pixie")}
-                data-ui="nav-item"
-                data-testid="sidebar-pixie-entry"
-                data-state={page === "pixie" ? "active" : "inactive"}
-                title={hostReady ? t("pixieTitle") : `${t("pixieTitle")} · host not ready`}
-                aria-label={t("pixieTitle")}
-                aria-pressed={page === "pixie"}
-                className={`flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] transition-colors ${
-                  page === "pixie"
-                    ? "theme-nav-active bg-nav-active text-nav-active-foreground"
-                    : "text-foreground hover:bg-surface-overlay"
-                } disabled:cursor-not-allowed disabled:opacity-40`}
-              >
-                <Sparkles size={18} className="shrink-0" />
-                <span>{t("pixieTitle")}</span>
-              </button>
-            </div>
+            {pixieEnabled && (
+              <div className="px-2 pb-2">
+                <button
+                  type="button"
+                  disabled={!hostReady}
+                  onClick={() => setPage(page === "pixie" ? "chat" : "pixie")}
+                  data-ui="nav-item"
+                  data-testid="sidebar-pixie-entry"
+                  data-state={page === "pixie" ? "active" : "inactive"}
+                  title={hostReady ? t("pixieTitle") : `${t("pixieTitle")} · host not ready`}
+                  aria-label={t("pixieTitle")}
+                  aria-pressed={page === "pixie"}
+                  className={`flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] transition-colors ${
+                    page === "pixie"
+                      ? "theme-nav-active bg-nav-active text-nav-active-foreground"
+                      : "text-foreground hover:bg-surface-overlay"
+                  } disabled:cursor-not-allowed disabled:opacity-40`}
+                >
+                  <Sparkles size={18} className="shrink-0" />
+                  <span>{t("pixieTitle")}</span>
+                </button>
+              </div>
+            )}
 
             {scheduleEnabled && (
               <div className="px-2 pb-2">
@@ -381,27 +390,29 @@ export function SidebarLayout({
               </div>
             )}
 
-            <div className="px-2 pb-2">
-              <button
-                type="button"
-                disabled={!hostReady}
-                onClick={() => setPage(page === "memo" ? "chat" : "memo")}
-                data-ui="nav-item"
-                data-testid="sidebar-memo-entry"
-                data-state={page === "memo" ? "active" : "inactive"}
-                title={hostReady ? t("memoTitle") : `${t("memoTitle")} · host not ready`}
-                aria-label={t("memoTitle")}
-                aria-pressed={page === "memo"}
-                className={`flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] transition-colors ${
-                  page === "memo"
-                    ? "theme-nav-active bg-nav-active text-nav-active-foreground"
-                    : "text-foreground hover:bg-surface-overlay"
-                } disabled:cursor-not-allowed disabled:opacity-40`}
-              >
-                <ListTodo size={18} className="shrink-0" />
-                <span>{t("memoTitle")}</span>
-              </button>
-            </div>
+            {memoEnabled && (
+              <div className="px-2 pb-2">
+                <button
+                  type="button"
+                  disabled={!hostReady}
+                  onClick={() => setPage(page === "memo" ? "chat" : "memo")}
+                  data-ui="nav-item"
+                  data-testid="sidebar-memo-entry"
+                  data-state={page === "memo" ? "active" : "inactive"}
+                  title={hostReady ? t("memoTitle") : `${t("memoTitle")} · host not ready`}
+                  aria-label={t("memoTitle")}
+                  aria-pressed={page === "memo"}
+                  className={`flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] transition-colors ${
+                    page === "memo"
+                      ? "theme-nav-active bg-nav-active text-nav-active-foreground"
+                      : "text-foreground hover:bg-surface-overlay"
+                  } disabled:cursor-not-allowed disabled:opacity-40`}
+                >
+                  <ListTodo size={18} className="shrink-0" />
+                  <span>{t("memoTitle")}</span>
+                </button>
+              </div>
+            )}
 
             <div className="px-2 pb-2">
               <button

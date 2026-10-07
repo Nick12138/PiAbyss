@@ -356,11 +356,6 @@ export type PiSettingsSnapshot = {
   followUpMode: "all" | "one-at-a-time";
   /** Built-in tools enabled for new sessions; omitted means pi's own defaults. */
   defaultTools?: string[];
-  /**
-   * Whether PiAbyss's built-in `ask_user_question` tool is offered to the model.
-   * Omitted means enabled.
-   */
-  askUserQuestionEnabled?: boolean;
   /** HTTP(S) proxy URL the Host applies process-wide at startup; omitted means none. */
   httpProxy?: string;
   models: PiSettingsModel[];
@@ -375,7 +370,6 @@ export type PiSettingsPatch = {
   steeringMode?: "all" | "one-at-a-time";
   followUpMode?: "all" | "one-at-a-time";
   defaultTools?: string[];
-  askUserQuestionEnabled?: boolean;
   /** HTTP(S) proxy URL to persist; an empty string clears the setting. */
   httpProxy?: string;
 };
@@ -1395,6 +1389,13 @@ export type PluginLibraryEntry = {
   author?: string;
   tags?: string[];
   install: PluginLibraryInstallSource;
+  /** Preference scopes this plugin's enable switch may write.
+   *  Omitted (or empty) means `["user", "project"]`: the card toggles the
+   *  user-level preference globally and a workspace may override it.
+   *  `["user"]` marks a plugin coupled to host-wide state: the workspace view
+   *  shows a read-only "global only" badge instead of a switch, so a single
+   *  workspace can neither enable nor disable it. */
+  toggleScopes?: Array<"user" | "project">;
   /** Omitted (or empty) means the plugin needs no configuration. */
   config?: PluginLibraryConfigItem[];
 };

@@ -1379,35 +1379,18 @@ describe("ModelConfigHealth degraded state", () => {
     ).toMatchObject({ ok: false });
   });
 
-  // Regression: the Host gained `askUserQuestionEnabled` on the snapshot, but the
-  // result validator's key whitelist was not widened with it, so every
-  // piSettings.get/patch response failed with "Handler returned invalid ... result".
   const PI_SETTINGS = {
     defaultThinkingLevel: "medium",
     retryMaxRetries: 3,
     defaultProjectTrust: "ask",
     steeringMode: "one-at-a-time",
     followUpMode: "one-at-a-time",
-    askUserQuestionEnabled: true,
     models: [],
   };
 
-  it("accepts a piSettings snapshot carrying askUserQuestionEnabled", () => {
+  it("accepts a piSettings snapshot", () => {
     expect(validateSuccessResult("piSettings.get", PI_SETTINGS)).toMatchObject({ ok: true });
     expect(validateSuccessResult("piSettings.patch", PI_SETTINGS)).toMatchObject({ ok: true });
-  });
-
-  it("rejects a piSettings snapshot that omits askUserQuestionEnabled", () => {
-    // The Host normalizes a missing setting to true, so the key is always on the
-    // wire; its absence means the Host regressed, not "default enabled".
-    const { askUserQuestionEnabled: _omitted, ...withoutFlag } = PI_SETTINGS;
-    expect(validateSuccessResult("piSettings.get", withoutFlag)).toMatchObject({ ok: false });
-  });
-
-  it("rejects a non-boolean askUserQuestionEnabled", () => {
-    expect(
-      validateSuccessResult("piSettings.get", { ...PI_SETTINGS, askUserQuestionEnabled: "yes" }),
-    ).toMatchObject({ ok: false });
   });
 
   it("still accepts a snapshot with the optional defaultTools list", () => {
@@ -1417,22 +1400,18 @@ describe("ModelConfigHealth degraded state", () => {
   });
 
   // Regression: piSettings.patch's param whitelist drifts behind the SDK
-  // settings it proxies. `defaultTools` and `askUserQuestionEnabled` were both
-  // persisted by the Host but rejected here, so the desktop switch silently
-  // failed with "invalid piSettings.patch params".
-  it("accepts defaultTools and askUserQuestionEnabled in a piSettings.patch", () => {
+  // settings it proxies. `defaultTools` was persisted by the Host but rejected
+  // here, so the desktop control silently failed with "invalid piSettings.patch params".
+  it("accepts defaultTools in a piSettings.patch", () => {
     expect(
       validateRequestParams("piSettings.patch", {
         defaultTools: ["read", "bash"],
-        askUserQuestionEnabled: false,
       }),
     ).toMatchObject({ ok: true });
   });
 
   it("accepts each piSettings.patch field on its own", () => {
     for (const params of [
-      { askUserQuestionEnabled: true },
-      { askUserQuestionEnabled: false },
       { defaultTools: [] },
       { defaultProvider: "openai", defaultModel: "gpt-5" },
       { defaultThinkingLevel: "high" },
@@ -1447,7 +1426,6 @@ describe("ModelConfigHealth degraded state", () => {
 
   it("rejects malformed piSettings.patch values", () => {
     for (const params of [
-      { askUserQuestionEnabled: "yes" },
       { defaultTools: ["read", 1] },
       { defaultTools: "read" },
       { retryMaxRetries: -1 },
