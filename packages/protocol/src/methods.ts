@@ -62,6 +62,7 @@ export const HOST_METHODS = [
   "subagents.continue",
   "subagents.resume",
   "shelljobs.list",
+  "shelljobs.output",
   "shelljobs.stop",
   "agent.prompt",
   "agent.steer",
@@ -329,6 +330,7 @@ export type WorkspaceOnlyMethod =
   | "subagents.continue"
   | "subagents.resume"
   | "shelljobs.list"
+  | "shelljobs.output"
   | "shelljobs.stop"
   | "skill.list"
   | "skill.addPath"
@@ -474,6 +476,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "subagents.continue": "workspace",
   "subagents.resume": "workspace",
   "shelljobs.list": "host",
+  "shelljobs.output": "host",
   "shelljobs.stop": "host",
   "agent.prompt": "activeSession",
   "agent.steer": "activeSession",

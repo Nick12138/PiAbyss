@@ -2,7 +2,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { readShellJob, readShellJobs, shelljobJobsRoot } from "./shelljob-store.js";
+import {
+  readShellJob,
+  readShellJobOutput,
+  readShellJobs,
+  shelljobJobsRoot,
+} from "./shelljob-store.js";
 
 let home: string;
 
@@ -82,5 +87,37 @@ describe("shelljob-store", () => {
     writeJob("job_x");
     expect(readShellJob("job_x")?.sessionId).toBe(SESSION_ID);
     expect(readShellJob("job_missing")).toBeNull();
+  });
+
+  it("returns null for jobs without output", () => {
+    writeJob("job_quiet");
+    expect(readShellJobOutput("job_quiet")).toBeNull();
+    expect(readShellJobOutput("job_missing")).toBeNull();
+  });
+
+  it("tails the last lines and drops the trailing newline", () => {
+    writeJob("job_out");
+    writeFileSync(join(shelljobJobsRoot(), "job_out", "output.log"), "a\nb\nc\n", "utf8");
+    expect(readShellJobOutput("job_out", 10)).toEqual({
+      lines: ["a", "b", "c"],
+      truncated: false,
+    });
+    expect(readShellJobOutput("job_out", 2)).toEqual({
+      lines: ["b", "c"],
+      truncated: true,
+    });
+  });
+
+  it("clamps the limit and drops the partial first line of a byte-window tail", () => {
+    writeJob("job_big");
+    const content = `${Array.from({ length: 10_000 }, (_, i) => `${"x".repeat(64)}${i}`).join("\n")}\n`;
+    writeFileSync(join(shelljobJobsRoot(), "job_big", "output.log"), content, "utf8");
+
+    const output = readShellJobOutput("job_big", 999);
+
+    expect(output?.lines.length).toBe(500);
+    expect(output?.truncated).toBe(true);
+    expect(output?.lines[0]).toMatch(/9500$/);
+    expect(output?.lines[499]).toMatch(/9999$/);
   });
 });

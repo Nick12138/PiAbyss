@@ -1057,6 +1057,15 @@ export type TelegramConfigResult = {
   assistant?: TelegramAssistantConfig;
   voice?: TelegramVoiceConfig;
   threads?: TelegramThreadsConfig;
+  /** Whether the @llblab/pi-telegram plugin is configured anywhere visible
+   *  to this Host (project scope in the telegram workspace, or legacy user
+   *  scope in the global agent settings). */
+  pluginInstalled?: boolean;
+  /** Where the plugin is currently configured: "project" = dedicated
+   *  telegram workspace (the scope PiAbyss installs into); "user" = legacy
+   *  global scope, reported so the desktop can offer migration; null when
+   *  not installed. */
+  pluginScope?: "user" | "project" | null;
 };
 
 export type SerializableAgentContent = {
@@ -2204,4 +2213,12 @@ export type ShellJobSummary = {
 /** 全量后台 shell 任务快照（list 结果与 changed 事件共用）。 */
 export type ShellJobsSnapshot = {
   jobs: ShellJobSummary[];
+};
+
+/** 后台任务输出尾部（shelljobs.output 结果）。 */
+export type ShellJobOutput = {
+  /** 最后 N 行输出，每行已截断到安全长度。 */
+  lines: string[];
+  /** true 表示只返回了尾部（输出超过读取上限或行数上限）。 */
+  truncated: boolean;
 };

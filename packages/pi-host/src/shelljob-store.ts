@@ -8,13 +8,18 @@
  * malformed files (the directory also accumulates test debris), and all
  * layout knowledge is intentionally confined to this module.
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ShellJobStatus, ShellJobSummary } from "@piabyss/protocol";
 
 /** Directory may contain test debris; keep scans bounded. */
 const MAX_JOBS = 200;
+
+/** Tail-read caps so a huge output.log never becomes a memory/UI problem. */
+const OUTPUT_TAIL_BYTES = 256 * 1024;
+const OUTPUT_MAX_LINES = 500;
+const OUTPUT_LINE_MAX_CHARS = 4_000;
 
 type ShellJobRecord = {
   id?: unknown;
@@ -111,4 +116,46 @@ export function readShellJob(
   root: string = shelljobJobsRoot(),
 ): ShellJobSummary | null {
   return readShellJobs(root).find((job) => job.id === jobId) ?? null;
+}
+
+/**
+ * Tail-read a job's `output.log`: the last `limit` lines (1..500, default 200),
+ * capped at OUTPUT_TAIL_BYTES from the end of file so long-running jobs stay
+ * cheap. Null when there is no output file yet (job not started / debris).
+ */
+export function readShellJobOutput(
+  jobId: string,
+  limit: number = 200,
+  root: string = shelljobJobsRoot(),
+): { lines: string[]; truncated: boolean } | null {
+  const boundedLimit = Math.min(Math.max(Math.trunc(limit) || 200, 1), OUTPUT_MAX_LINES);
+  let fd: number;
+  try {
+    fd = openSync(join(shelljobDir(jobId, root), "output.log"), "r");
+  } catch {
+    return null;
+  }
+  try {
+    const size = fstatSync(fd).size;
+    const readSize = Math.min(size, OUTPUT_TAIL_BYTES);
+    const buffer = Buffer.alloc(readSize);
+    readSync(fd, buffer, 0, readSize, Math.max(0, size - readSize));
+    let lines = buffer.toString("utf8").split(/\r?\n/);
+    let truncated = readSize < size;
+    // The read window can start mid-line/mid-character — drop the first fragment.
+    if (truncated && lines.length > 0) lines = lines.slice(1);
+    // Files usually end with a newline; drop the empty trailing entry.
+    if (lines.length > 0 && lines[lines.length - 1] === "") lines = lines.slice(0, -1);
+    // Defensively cap pathological single lines (minified dumps, progress bars).
+    lines = lines.map((line) =>
+      line.length > OUTPUT_LINE_MAX_CHARS ? `${line.slice(0, OUTPUT_LINE_MAX_CHARS - 1)}…` : line,
+    );
+    if (lines.length > boundedLimit) {
+      lines = lines.slice(-boundedLimit);
+      truncated = true;
+    }
+    return { lines, truncated };
+  } finally {
+    closeSync(fd);
+  }
 }

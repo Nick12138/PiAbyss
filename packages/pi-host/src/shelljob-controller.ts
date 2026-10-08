@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createHostError, type HostError } from "@piabyss/protocol";
 import type { MethodHandler } from "./server.js";
-import { readShellJob, readShellJobs } from "./shelljob-store.js";
+import { readShellJob, readShellJobOutput, readShellJobs } from "./shelljob-store.js";
 
 const DEFAULT_CONTROL_PORT = 18_767;
 const CONTROL_TIMEOUT_MS = 15_000;
@@ -36,6 +36,17 @@ function jobError(code: HostError["code"], message: string): HostError {
 export function createShellJobHandlers(): Record<string, MethodHandler> {
   return {
     "shelljobs.list": async () => ({ result: { jobs: readShellJobs() } }),
+
+    "shelljobs.output": async (ctx) => {
+      const params = ctx.params as { jobId: string; limit?: number };
+      const job = readShellJob(params.jobId);
+      if (!job) {
+        return { error: jobError("RESOURCE_NOT_FOUND", `后台任务 ${params.jobId} 不存在`) };
+      }
+      // A missing output.log is "no output yet", not an error.
+      const output = readShellJobOutput(params.jobId, params.limit ?? 200);
+      return { result: output ?? { lines: [], truncated: false } };
+    },
 
     "shelljobs.stop": async (ctx) => {
       const jobId = (ctx.params as { jobId: string }).jobId;

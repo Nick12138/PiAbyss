@@ -109,6 +109,45 @@ const FINISHED_JOB = {
   finishedAt: Date.now() - 1_000,
 };
 
+const STALE_JOB = {
+  ...FINISHED_JOB,
+  id: "job_stale1",
+  finishedAt: Date.now() - 120_000,
+};
+
+// Same id as RUNNING_JOB — a running job that has just transitioned to failed.
+const FAILED_JOB = {
+  ...RUNNING_JOB,
+  status: "failed" as const,
+  finishedAt: Date.now() - 500,
+};
+
+/** Mocks shelljobs.* requests with the given job snapshot + output tail. */
+function mockShellJobRequests(
+  jobs: unknown[],
+  output: { lines: string[]; truncated?: boolean } = { lines: [] },
+) {
+  return vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+    if (method === "shelljobs.list") {
+      return envelope(method, { jobs }) as never;
+    }
+    if (method === "shelljobs.output") {
+      return envelope(method, {
+        lines: output.lines,
+        truncated: output.truncated ?? false,
+      }) as never;
+    }
+    if (method === "shelljobs.stop") {
+      return envelope(method, { stopped: true }) as never;
+    }
+    return envelope(method, { accepted: true }) as never;
+  });
+}
+
+async function expand(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByTestId("shell-jobs-toggle"));
+}
+
 describe("ShellJobsBar", () => {
   beforeEach(() => {
     useAppStore.getState().setHost(host());
@@ -119,21 +158,19 @@ describe("ShellJobsBar", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
     cleanup();
   });
 
-  it("renders nothing without running jobs", () => {
-    useAppStore.getState().setShellJobs([FINISHED_JOB] as never);
+  it("renders nothing without running or recently finished jobs", () => {
+    mockShellJobRequests([]);
+    useAppStore.getState().setShellJobs([STALE_JOB] as never);
     const { container } = render(<ShellJobsBar />);
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("shows only running jobs and hydrates via shelljobs.list", async () => {
-    const request = vi
-      .spyOn(hostClient, "request")
-      .mockResolvedValue(
-        envelope("shelljobs.list", { jobs: [RUNNING_JOB, FINISHED_JOB] }) as never,
-      );
+  it("collapses into a summary row and hydrates via shelljobs.list", async () => {
+    const request = mockShellJobRequests([RUNNING_JOB, FINISHED_JOB]);
     render(<ShellJobsBar />);
 
     await waitFor(() =>
@@ -142,9 +179,16 @@ describe("ShellJobsBar", () => {
         "job_done1",
       ]),
     );
+    // Collapsed: a compact pill (not the full-width bar) with the running
+    // count in its accessible name and the first command as a preview.
+    const pill = screen.getByTestId("shell-jobs-toggle");
+    expect(pill).toHaveAttribute("aria-expanded", "false");
+    expect(pill).toHaveAttribute("aria-label", "Background jobs (1)");
+    expect(pill).toHaveClass("rounded-full");
     expect(screen.getByText("npm run dev")).toBeInTheDocument();
+    // No per-job rows (or the finished job) before expanding.
+    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
     expect(screen.queryByText("job_done1")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
     expect(request).toHaveBeenCalledWith(
       "shelljobs.list",
       { expectedHostInstanceId: HOST_ID },
@@ -152,18 +196,74 @@ describe("ShellJobsBar", () => {
     );
   });
 
+  it("opens a floating popover with job rows and recently finished jobs", async () => {
+    const user = userEvent.setup();
+    mockShellJobRequests([RUNNING_JOB, FINISHED_JOB]);
+    useAppStore.getState().setShellJobs([RUNNING_JOB, FINISHED_JOB] as never);
+    render(<ShellJobsBar />);
+
+    await expand(user);
+    expect(screen.getByTestId("shell-jobs-toggle")).toHaveAttribute("aria-expanded", "true");
+    // The job list lives in a portal popover, not the composer column.
+    const panel = screen.getByTestId("shell-jobs-panel");
+    expect(panel.ownerDocument.body).toContain(panel);
+    // Running job gets a stop control; the finished one stays visible without it.
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    expect(screen.getByText("30s")).toBeInTheDocument();
+  });
+
+  it("closes the popover on outside click, Escape, and pill toggle", async () => {
+    const user = userEvent.setup();
+    mockShellJobRequests([RUNNING_JOB]);
+    useAppStore.getState().setShellJobs([RUNNING_JOB] as never);
+    render(<ShellJobsBar />);
+
+    await expand(user);
+    expect(screen.getByTestId("shell-jobs-panel")).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByTestId("shell-jobs-panel")).not.toBeInTheDocument();
+    expect(screen.getByTestId("shell-jobs-toggle")).toHaveAttribute("aria-expanded", "false");
+
+    await expand(user);
+    // Clicking anywhere outside (pill and panel) closes the popover.
+    await user.click(document.body);
+    expect(screen.queryByTestId("shell-jobs-panel")).not.toBeInTheDocument();
+
+    await expand(user);
+    await user.click(screen.getByTestId("shell-jobs-toggle"));
+    expect(screen.queryByTestId("shell-jobs-panel")).not.toBeInTheDocument();
+  });
+
+  it("groups other sessions under a separate section with a cwd badge", async () => {
+    const user = userEvent.setup();
+    const otherJob = {
+      ...RUNNING_JOB,
+      id: "job_other",
+      cwd: "/other/workspace",
+      sessionId: "s-other",
+    };
+    mockShellJobRequests([RUNNING_JOB, otherJob]);
+    useAppStore.getState().setShellJobs([RUNNING_JOB, otherJob] as never);
+    render(<ShellJobsBar />);
+
+    await expand(user);
+    expect(screen.getByText("Other sessions")).toBeInTheDocument();
+    expect(screen.getByText("workspace")).toBeInTheDocument();
+  });
+
   it("clicking a job opens the session that submitted it", async () => {
     const user = userEvent.setup();
     useAppStore.getState().setShellJobs([RUNNING_JOB] as never);
-    vi.spyOn(hostClient, "request").mockResolvedValue(
-      envelope("shelljobs.list", { jobs: [RUNNING_JOB] }) as never,
-    );
+    mockShellJobRequests([RUNNING_JOB]);
     const navigate = vi
       .spyOn(sessionNavigation, "openSessionAcrossWorkspaces")
       .mockResolvedValue({ status: "opened" });
     render(<ShellJobsBar />);
 
-    await user.click(screen.getByRole("button", { name: /npm run dev/ }));
+    await expand(user);
+    // The header also shows the command text, so target the row via its title.
+    await user.click(screen.getByTitle("Open the session that started this job (/repo)"));
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith(
         { cwd: "/repo", sessionId: SESSION_ID },
@@ -175,17 +275,10 @@ describe("ShellJobsBar", () => {
   it("stops with a two-click confirm without sending a duplicate Agent notification", async () => {
     const user = userEvent.setup();
     useAppStore.getState().setShellJobs([RUNNING_JOB] as never);
-    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
-      if (method === "shelljobs.list") {
-        return envelope(method, { jobs: [RUNNING_JOB] }) as never;
-      }
-      if (method === "shelljobs.stop") {
-        return envelope(method, { stopped: true }) as never;
-      }
-      return envelope(method, { accepted: true }) as never;
-    });
+    const request = mockShellJobRequests([RUNNING_JOB]);
     render(<ShellJobsBar />);
 
+    await expand(user);
     const stop = await screen.findByRole("button", { name: "Stop" });
     await user.click(stop);
     // First click only arms the confirm state.
@@ -205,16 +298,47 @@ describe("ShellJobsBar", () => {
         { jobId: "job_run1" },
       ),
     );
-    await waitFor(() =>
-      expect(request).toHaveBeenCalledWith("shelljobs.stop", expect.anything(), {
-        jobId: "job_run1",
-      }),
-    );
     expect(request).not.toHaveBeenCalledWith("agent.prompt", expect.anything(), expect.anything());
     expect(request).not.toHaveBeenCalledWith(
       "agent.followUp",
       expect.anything(),
       expect.anything(),
     );
+  });
+
+  it("toggles a live output tail that hydrates from shelljobs.output", async () => {
+    const user = userEvent.setup();
+    useAppStore.getState().setShellJobs([RUNNING_JOB] as never);
+    const request = mockShellJobRequests([RUNNING_JOB], {
+      lines: ["vite ready", "listening on 5173"],
+    });
+    render(<ShellJobsBar />);
+
+    await expand(user);
+    await user.click(screen.getByRole("button", { name: "Output" }));
+
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "shelljobs.output",
+        { expectedHostInstanceId: HOST_ID },
+        { jobId: "job_run1", limit: 200 },
+      ),
+    );
+    expect(await screen.findByText("vite ready")).toBeInTheDocument();
+    expect(screen.getByText("listening on 5173")).toBeInTheDocument();
+  });
+
+  it("raises an error notification when a seen-running job fails", async () => {
+    useAppStore.getState().setShellJobs([RUNNING_JOB] as never);
+    mockShellJobRequests([FAILED_JOB]);
+    render(<ShellJobsBar />);
+
+    // Simulate the watcher pushing the failed snapshot.
+    useAppStore.getState().setShellJobs([FAILED_JOB] as never);
+    await waitFor(() => {
+      const notifications = useAppStore.getState().notifications;
+      expect(notifications.some((item) => item.message.includes("npm run dev"))).toBe(true);
+      expect(notifications.some((item) => item.level === "error")).toBe(true);
+    });
   });
 });

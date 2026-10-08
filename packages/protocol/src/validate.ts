@@ -355,6 +355,11 @@ function isScheduleLimit(value: unknown): boolean {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= 200;
 }
 
+/** shelljobs.output 的行数上限：1..500。 */
+function isShellOutputLimit(value: unknown): boolean {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= 500;
+}
+
 /** Shared field validators for schedule.createJob / schedule.updateJob. */
 function isScheduleJobFields(params: Record<string, unknown>): boolean {
   return (
@@ -1425,6 +1430,13 @@ export function validateRequestParams<M extends HostMethod>(
         : fail("invalid schedule.listNotifications params", { method });
     case "shelljobs.list":
       return params === null ? ok(null) : fail("params must be null", { method });
+    case "shelljobs.output":
+      return exactObject(params, ["jobId"], ["limit"]) &&
+        isNonEmptyString(params.jobId) &&
+        params.jobId.length <= 160 &&
+        (params.limit === undefined || isShellOutputLimit(params.limit))
+        ? ok(params)
+        : fail(`invalid ${method} params`, { method });
     case "shelljobs.stop":
       return exactObject(params, ["jobId"], []) &&
         isNonEmptyString(params.jobId) &&

@@ -2585,6 +2585,17 @@ function isShellJobsSnapshot(value: unknown): boolean {
   );
 }
 
+function isShellJobOutput(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["lines", "truncated"]) &&
+    Array.isArray(value.lines) &&
+    value.lines.length <= 500 &&
+    value.lines.every((line) => isString(line) && line.length <= 4_000) &&
+    (value.truncated === true || value.truncated === false)
+  );
+}
+
 function isScheduleNotification(value: unknown): boolean {
   return (
     isPlainObject(value) &&
@@ -3367,7 +3378,7 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         hasExactKeys(
           result,
           ["default", "workspacePath"],
-          ["tokenMasked", "bound", "assistant", "voice", "threads"],
+          ["tokenMasked", "bound", "assistant", "voice", "threads", "pluginInstalled", "pluginScope"],
         ) &&
         (result.default === null || isTelegramProfileSummary(result.default)) &&
         isNonEmptyString(result.workspacePath) &&
@@ -3377,7 +3388,12 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
           isTelegramBoundUser(result.bound)) &&
         (result.assistant === undefined || isTelegramAssistantConfig(result.assistant)) &&
         (result.voice === undefined || isTelegramVoiceConfig(result.voice)) &&
-        (result.threads === undefined || isTelegramThreadsConfig(result.threads))
+        (result.threads === undefined || isTelegramThreadsConfig(result.threads)) &&
+        (result.pluginInstalled === undefined || isBoolean(result.pluginInstalled)) &&
+        (result.pluginScope === undefined ||
+          result.pluginScope === null ||
+          result.pluginScope === "user" ||
+          result.pluginScope === "project")
         ? null
         : "invalid telegram.getConfig result";
     case "telegram.updateConfig":
@@ -3467,6 +3483,8 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         : "invalid schedule.listNotifications result";
     case "shelljobs.list":
       return isShellJobsSnapshot(result) ? null : "invalid ShellJobsSnapshot";
+    case "shelljobs.output":
+      return isShellJobOutput(result) ? null : "invalid ShellJobOutput";
     case "shelljobs.stop":
       return isPlainObject(result) && hasExactKeys(result, ["stopped"]) && result.stopped === true
         ? null

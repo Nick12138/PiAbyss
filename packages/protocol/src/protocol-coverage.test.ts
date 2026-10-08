@@ -150,6 +150,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "subagents.continue": { nodeId: "run-1" },
   "subagents.resume": { nodeId: "run-1" },
   "shelljobs.list": null,
+  "shelljobs.output": { jobId: "job_abc123", limit: 100 },
   "shelljobs.stop": { jobId: "job_abc123" },
   "agent.prompt": { text: "hi" },
   "agent.steer": { text: "hi" },

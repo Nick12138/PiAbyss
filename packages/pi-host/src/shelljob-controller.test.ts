@@ -18,6 +18,7 @@ vi.mock("node:os", () => ({ homedir: () => "/home/test" }));
 vi.mock("./shelljob-store.js", () => ({
   readShellJob: vi.fn(() => JOB),
   readShellJobs: vi.fn(() => [JOB]),
+  readShellJobOutput: vi.fn(() => null),
 }));
 
 function context(params: unknown): HandlerContext {
@@ -68,5 +69,44 @@ describe("shelljobs.stop handler", () => {
     const outcome = await handler(context({ jobId: JOB.id }));
 
     expect("error" in outcome).toBe(true);
+  });
+});
+
+describe("shelljobs.output handler", () => {
+  it("tails the job output with the requested limit", async () => {
+    const { readShellJob, readShellJobOutput } = await import("./shelljob-store.js");
+    vi.mocked(readShellJob).mockReturnValue(JOB);
+    vi.mocked(readShellJobOutput).mockReturnValue({ lines: ["line1"], truncated: true });
+    const handler = createShellJobHandlers()["shelljobs.output"]!;
+
+    const outcome = await handler(context({ jobId: JOB.id, limit: 100 }));
+
+    expect(outcome).toEqual({ result: { lines: ["line1"], truncated: true } });
+    expect(readShellJobOutput).toHaveBeenCalledWith(JOB.id, 100);
+  });
+
+  it("defaults the tail limit and treats a missing output file as empty", async () => {
+    const { readShellJob, readShellJobOutput } = await import("./shelljob-store.js");
+    vi.mocked(readShellJob).mockReturnValue(JOB);
+    vi.mocked(readShellJobOutput).mockReturnValue(null);
+    const handler = createShellJobHandlers()["shelljobs.output"]!;
+
+    const outcome = await handler(context({ jobId: JOB.id }));
+
+    expect(outcome).toEqual({ result: { lines: [], truncated: false } });
+    expect(readShellJobOutput).toHaveBeenCalledWith(JOB.id, 200);
+  });
+
+  it("reports unknown jobs as not found", async () => {
+    const { readShellJob } = await import("./shelljob-store.js");
+    vi.mocked(readShellJob).mockReturnValue(null);
+    const handler = createShellJobHandlers()["shelljobs.output"]!;
+
+    const outcome = await handler(context({ jobId: "job_missing" }));
+
+    expect("error" in outcome).toBe(true);
+    if ("error" in outcome) {
+      expect(outcome.error.code).toBe("RESOURCE_NOT_FOUND");
+    }
   });
 });

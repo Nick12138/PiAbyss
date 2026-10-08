@@ -96,6 +96,7 @@ import type {
   PluginLibraryEnvUpdate,
   SubagentsStatusSnapshot,
   ShellJobsSnapshot,
+  ShellJobOutput,
   ScheduleJob,
   ScheduleJobInput,
   ScheduleJobPatch,
@@ -185,6 +186,7 @@ export type HostContextMap = {
   "subagents.continue": WorkspaceContext;
   "subagents.resume": WorkspaceContext;
   "shelljobs.list": HostContext;
+  "shelljobs.output": HostContext;
   "shelljobs.stop": HostContext;
   "agent.prompt": ActiveSessionContext;
   "agent.steer": ActiveSessionContext;
@@ -379,6 +381,7 @@ export type HostRequestParams = {
   "subagents.continue": { nodeId: string };
   "subagents.resume": { nodeId: string };
   "shelljobs.list": null;
+  "shelljobs.output": { jobId: string; limit?: number };
   "shelljobs.stop": { jobId: string };
   "agent.prompt": {
     text: string;
@@ -653,6 +656,7 @@ export type HostResultMap = {
   "subagents.continue": { continued: boolean };
   "subagents.resume": { resumed: boolean };
   "shelljobs.list": ShellJobsSnapshot;
+  "shelljobs.output": ShellJobOutput;
   "shelljobs.stop": { stopped: boolean };
   "agent.prompt": { accepted: true; runId: string };
   "agent.steer": { accepted: true };
