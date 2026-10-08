@@ -665,6 +665,7 @@ export const zh: Record<MessageKey, string> = {
   pluginsUpdateTitle: "{count} 项可更新",
   pluginsUpdateAll: "全部更新",
   pluginsUpdateOne: "更新",
+  pluginsUpdating: "正在更新…",
   pluginsUpdateRepoBundle: "含 {count} 个插件",
   pluginsLoading: "正在加载插件注册清单…",
   pluginsLoadFailed: "插件注册清单加载失败",

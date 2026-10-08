@@ -712,6 +712,7 @@ export const en = {
   pluginsUpdateTitle: "{count} update(s) available",
   pluginsUpdateAll: "Update all",
   pluginsUpdateOne: "Update",
+  pluginsUpdating: "Updating…",
   pluginsUpdateRepoBundle: "{count} plugins bundled",
   pluginsLoading: "Loading the plugin registry…",
   pluginsLoadFailed: "Failed to load the plugin registry",

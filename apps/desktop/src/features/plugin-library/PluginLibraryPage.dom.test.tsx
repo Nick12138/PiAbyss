@@ -658,6 +658,58 @@ describe("PluginLibraryPage DOM workflows", () => {
     await waitFor(() => expect(document.querySelector("[data-plugin-updates]")).toBeNull());
   });
 
+  it("shows an in-progress state on the popup while an update is running", async () => {
+    currentSnapshot = snapshotWithBrowser(true);
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    updateCheckResult = {
+      supported: true,
+      updates: [
+        {
+          packageId: "pkg-browser",
+          source: "npm:betterwright",
+          current: "1.9.0",
+          available: "1.10.0",
+        },
+      ],
+    };
+    // Hold package.update open until the test releases it, so the pending
+    // state (spinner + "Updating…" labels) is observable.
+    let releaseUpdate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseUpdate = resolve;
+    });
+    const base = request.getMockImplementation()! as (method: string) => Promise<HostResponseEnvelope>;
+    request.mockImplementation(async (method: string) => {
+      if (method === "package.update") {
+        await gate;
+        return envelope(method, mutationResult(currentSnapshot));
+      }
+      return base(method);
+    });
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    await screen.findByText("浏览器");
+    await user.click(await screen.findByRole("button", { name: "Updates available" }));
+    const menu = document.querySelector<HTMLElement>("[data-plugin-updates-menu]")!;
+    const row = menu.querySelector<HTMLElement>('[data-plugin-update-row="plugin:pkg-browser"]')!;
+    const one = row.querySelector<HTMLElement>("[data-plugin-update-one]")!;
+
+    await user.click(one);
+    // Both buttons and the header swap to the updating copy while busy, and
+    // the buttons are disabled so no second update can be fired.
+    await waitFor(() => expect(one.textContent).toContain("Updating"));
+    expect(one.querySelector(".animate-spin")).not.toBeNull();
+    expect(one).toBeDisabled();
+    const all = menu.querySelector<HTMLElement>("[data-plugin-update-all]")!;
+    expect(all.textContent).toContain("Update all");
+    expect(all).toBeDisabled();
+    expect(menu.textContent).toContain("Updating");
+
+    releaseUpdate();
+    await waitFor(() => expect(document.querySelector("[data-plugin-updates]")).toBeNull());
+  });
+
   it("installs an npm plugin via package.install after review", async () => {
     const user = userEvent.setup();
     render(<PluginLibraryPage />);
