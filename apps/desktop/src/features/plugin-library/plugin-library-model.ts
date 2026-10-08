@@ -255,7 +255,7 @@ export type PluginToggleScope = "user" | "project";
 
 /** Scopes a registry entry may omit `toggleScopes` for: both layers are
  ** writable, which is the behavior every plugin had before the field existed. */
-export const DEFAULT_PLUGIN_TOGGLE_SCOPES: ReadonlyArray<"user" | "project"> = ["user", "project"];
+const DEFAULT_PLUGIN_TOGGLE_SCOPES: ReadonlyArray<"user" | "project"> = ["user", "project"];
 
 /** Registry-declared toggle scopes, defaulting to both layers. */
 export function pluginToggleScopes(entry: PluginLibraryEntry): ReadonlyArray<"user" | "project"> {

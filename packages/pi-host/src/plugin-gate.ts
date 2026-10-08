@@ -20,7 +20,7 @@ import type { PackageSource } from "./package-filters.js";
 import { PLUGIN_LIBRARY_REPO_SOURCE } from "./plugin-library-catalog.js";
 
 /** The my-pi-plugins repo install source every gated plugin belongs to. */
-export const PLUGIN_REPO_SOURCE = PLUGIN_LIBRARY_REPO_SOURCE;
+const PLUGIN_REPO_SOURCE = PLUGIN_LIBRARY_REPO_SOURCE;
 
 export const MEMO_PLUGIN_ENTRY_FILE = "packages/piabyss-memo/extensions/piabyss-memo.ts";
 export const PIXIE_PLUGIN_ENTRY_FILE = "packages/pi-pixie/extensions/pi-pixie.ts";
