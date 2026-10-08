@@ -715,7 +715,7 @@ export function MemoPage() {
     injectMemoReference(
       target,
       note,
-      withMemoPrompt("", composeMemoPrompt(note), t("memoAgentPrompt")),
+      withMemoPrompt("", composeMemoPrompt(note, state.host?.agentDir ?? null), t("memoAgentPrompt")),
     );
     state.setPage("chat");
   }
@@ -883,7 +883,10 @@ export function MemoPage() {
       pushNotification(t("memoAgentNoWorkspace"), "warning");
       return;
     }
-    const block = [composeMemoPrompt(note), composeMemoResultSection(note)]
+    const block = [
+      composeMemoPrompt(note, state.host?.agentDir ?? null),
+      composeMemoResultSection(note),
+    ]
       .filter(Boolean)
       .join("\n\n");
     injectMemoReference(target, note, withMemoPrompt("", block, t("memoFollowupPrompt")));

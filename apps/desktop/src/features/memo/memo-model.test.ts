@@ -12,6 +12,7 @@ import {
   formatTags,
   noteExcerpt,
   noteMatchesWorkspace,
+  memoImagePath,
   pathBasename,
   resolveWorkspaceHint,
   sortNotesForList,
@@ -216,8 +217,30 @@ describe("defaultProjectWorkspacePath", () => {
   });
 });
 
+describe("memoImagePath", () => {
+  it("joins the agent dir with piabyss/memo/images (windows backslashes)", () => {
+    expect(memoImagePath("C:\\Users\\liu\\.pi\\agent", "note-1", "a.png")).toBe(
+      "C:\\Users\\liu\\.pi\\agent\\piabyss\\memo\\images\\note-1\\a.png",
+    );
+  });
+
+  it("trims trailing separators and uses forward slashes otherwise", () => {
+    expect(memoImagePath("/home/liu/.pi/agent/", "note-1", "a.png")).toBe(
+      "/home/liu/.pi/agent/piabyss/memo/images/note-1/a.png",
+    );
+    expect(memoImagePath("C:/Users/liu/.pi/agent/", "note-1", "a.png")).toBe(
+      "C:/Users/liu/.pi/agent/piabyss/memo/images/note-1/a.png",
+    );
+  });
+
+  it("falls back to the cloud-relative key when agentDir is missing", () => {
+    expect(memoImagePath(null, "note-1", "a.png")).toBe("piabyss/memo/images/note-1/a.png");
+    expect(memoImagePath("   ", "note-1", "a.png")).toBe("piabyss/memo/images/note-1/a.png");
+  });
+});
+
 describe("composeMemoPrompt", () => {
-  it("renders a structured reference block with image paths", () => {
+  it("renders a structured reference block with absolute image paths", () => {
     const block = composeMemoPrompt(
       note({
         type: "task",
@@ -228,15 +251,25 @@ describe("composeMemoPrompt", () => {
         workspaceHint: "PiAbyss",
         images: [{ id: "img", fileName: "a.png", mediaType: "image/png", bytes: 8 }],
       }),
+      "C:\\Users\\liu\\.pi\\agent",
     );
     expect(block).toContain('<piabyss-memo id="note-');
     expect(block).toContain('type="task" status="open"');
     expect(block).toContain('tags="bug,p0"');
     expect(block).toContain('workspace="PiAbyss"');
     expect(block).toContain("# 修复 bug");
-    expect(block).toContain("piabyss/memo/images/");
-    expect(block).toContain("- piabyss/memo/images/");
+    expect(block).toContain(
+      "- C:\\Users\\liu\\.pi\\agent\\piabyss\\memo\\images\\note-",
+    );
+    expect(block).toContain("\\a.png");
     expect(block.trim().endsWith("</piabyss-memo>")).toBe(true);
+  });
+
+  it("falls back to relative image keys without agentDir", () => {
+    const block = composeMemoPrompt(
+      note({ images: [{ id: "img", fileName: "a.png", mediaType: "image/png", bytes: 8 }] }),
+    );
+    expect(block).toContain("- piabyss/memo/images/");
   });
 
   it("omits optional attributes when absent", () => {
