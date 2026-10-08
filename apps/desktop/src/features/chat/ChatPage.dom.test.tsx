@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import type { SessionSnapshot } from "@piabyss/protocol";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -149,7 +149,16 @@ describe("ChatPage conversation width", () => {
 
     const footer = container.querySelector<HTMLElement>('[data-composer-footer="docked"]');
     expect(footer).not.toBeNull();
-    expect(footer!.nextElementSibling).toBe(container.querySelector("[data-composer-stats]"));
+    const stats = container.querySelector<HTMLElement>("[data-composer-stats]");
+    expect(footer!.nextElementSibling).toBe(stats);
+    // The context chip that carries auto-compaction moved out of the composer
+    // toolbar into this row, so it appears with the two pills.
+    expect(
+      within(stats!).getByRole("button", { name: "No model context available" }),
+    ).toBeVisible();
+    expect(
+      within(footer!).queryByRole("button", { name: "No model context available" }),
+    ).toBeNull();
   });
 
   it("leaves the composer as the last child when no stats row renders", () => {

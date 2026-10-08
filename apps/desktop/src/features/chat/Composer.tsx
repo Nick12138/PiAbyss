@@ -49,7 +49,7 @@ import {
   buildAttachedPathBlock,
 } from "./transcript-model";
 import { joinOutgoingParts } from "./injected-references";
-import { ContextUsageRing, ModelControls } from "./ModelControls";
+import { ModelControls } from "./ModelControls";
 import { QueuePanel } from "./QueuePanel";
 import { ShellJobsBar } from "./ShellJobsBar";
 import {
@@ -2242,7 +2242,6 @@ export function Composer({
             >
               <Paperclip size={14} />
             </button>
-            <ContextUsageRing />
             <TodoPopoverButton />
             <SubagentsPopoverButton />
             <ExtensionWidgetsButton open={extensionWidgetsOpen} onToggle={toggleExtensionWidgets} />

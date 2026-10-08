@@ -9,6 +9,11 @@
  * wall time, exact token buckets, persisted TTFT/decode) and survive
  * restarts and session switches; the live-measured stream timings are the
  * fallback while nothing has been persisted yet.
+ *
+ * The context-usage chip (its panel carries auto-compaction and Compact now)
+ * is the row's third chip rather than a control inside the composer, so the
+ * compaction affordance sits where its figures are and appears on exactly the
+ * same terms as the other two: nothing measured, nothing shown.
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -32,6 +37,7 @@ import {
   outputTokensPerSecond,
   type FoldedUsage,
 } from "./stats-format";
+import { ContextUsageRing } from "./ModelControls";
 
 /** Exact integer token count with digit grouping. */
 function exactTokens(value: number): string {
@@ -269,6 +275,7 @@ function PillRow({
           )}
         </span>
       )}
+      <ContextUsageRing />
     </div>
   );
 }

@@ -209,6 +209,26 @@ describe("ContextUsageRing panel", () => {
     expect(usageButton).toHaveTextContent("--");
   });
 
+  it("draws the accent arc only when a share is known", () => {
+    const { unmount } = render(<ContextUsageRing />);
+
+    const known = screen.getByRole("button", { name: "50k / 100k context tokens" });
+    expect(known).toHaveTextContent("50%");
+    expect(known.querySelectorAll("circle")).toHaveLength(2);
+
+    unmount();
+    useAppStore
+      .getState()
+      .applySessionSnapshot(session({ contextUsage: { tokens: null, contextWindow: 100_000 } }));
+    render(<ContextUsageRing />);
+
+    const unknown = screen.getByRole("button", {
+      name: "Context usage unknown / 100k tokens",
+    });
+    expect(unknown).toHaveTextContent("--");
+    expect(unknown.querySelectorAll("circle")).toHaveLength(1);
+  });
+
   it("toggles auto-compaction through the switch", async () => {
     const request = vi
       .spyOn(hostClient, "request")

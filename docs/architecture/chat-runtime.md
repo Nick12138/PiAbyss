@@ -46,8 +46,11 @@ extension commands, skills) with PiAbyss's built-in commands
 draft matching a built-in command runs locally instead of being sent to the
 model; unknown `/name` text still goes to the model unchanged. Manual
 compaction requires an idle agent and shares the per-session operation lock
-with `agent.prompt`. The context-usage ring in the Composer opens a panel with
-the usage breakdown, a Compact now action, and the auto-compaction switch.
+with `agent.prompt`. The context-usage chip closes the stats row under the
+Composer (a usage ring icon plus the percentage); it opens a panel with the
+usage breakdown, a Compact now action, and the auto-compaction switch, and it
+renders on exactly the same terms as the row's speed and cache-hit chips —
+nothing measured yet, nothing shown.
 `/session` opens a dialog with message, token, and cost aggregates from
 `session.getStats`, which the Host builds from `AgentSession.getSessionStats()`
 (whole-history aggregates, including compacted-away entries). `/tree` opens the

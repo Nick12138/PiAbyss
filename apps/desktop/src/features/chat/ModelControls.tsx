@@ -213,6 +213,41 @@ export function canRequestModelList(args: {
   );
 }
 
+/** The usage ring drawn as an SVG stroke instead of a conic-gradient disc: a
+ *  stroke has no filled centre, so the icon needs no background-coloured hole
+ *  and reads identically on the composer surface and on the stats row below it.
+ *  `null` (no exact or estimated total yet) draws the bare track. */
+function ContextRingIcon({ percent }: { percent: number | null }) {
+  const radius = 5;
+  const circumference = 2 * Math.PI * radius;
+  const share = percent === null ? 0 : Math.min(100, Math.max(0, percent)) / 100;
+  return (
+    <svg viewBox="0 0 13 13" width={13} height={13} className="shrink-0" aria-hidden>
+      <circle
+        cx={6.5}
+        cy={6.5}
+        r={radius}
+        fill="none"
+        stroke="var(--color-border)"
+        strokeWidth={1.75}
+      />
+      {share > 0 && (
+        <circle
+          cx={6.5}
+          cy={6.5}
+          r={radius}
+          fill="none"
+          stroke="var(--color-accent)"
+          strokeWidth={1.75}
+          strokeLinecap="round"
+          strokeDasharray={`${share * circumference} ${circumference}`}
+          transform="rotate(-90 6.5 6.5)"
+        />
+      )}
+    </svg>
+  );
+}
+
 export function ContextUsageRing() {
   const t = useT();
   const session = useAppStore((s) => s.session);
@@ -274,27 +309,25 @@ export function ContextUsageRing() {
     <span ref={containerRef} className="relative flex shrink-0 items-center">
       <button
         type="button"
-        className="relative flex size-[18px] shrink-0 items-center justify-center rounded-full"
-        style={{
-          background: `conic-gradient(var(--color-accent) ${
-            percent === null ? 0 : percent * 3.6
-          }deg, var(--color-border) 0deg)`,
-        }}
+        className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-[11px] text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
         aria-label={title}
         aria-haspopup="dialog"
         aria-expanded={open}
         title={title}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="absolute inset-2 rounded-full bg-surface-raised" />
-        <span className="relative text-[6px] tabular-nums text-muted">
+        <ContextRingIcon percent={percent} />
+        <span className="flex items-center tabular-nums">
           {roundedPercent === null ? "--" : `${isEstimated ? "~" : ""}${roundedPercent}%`}
         </span>
       </button>
+      {/* The chip sits right of centre in the stats row under the composer, so
+          the panel hangs off its right edge; only in a narrow viewport (where
+          that edge is too close to the window) is it centred instead. */}
       {open && (
         <div
           className={`theme-floating-surface absolute bottom-full z-50 mb-2 flex w-64 flex-col rounded-md border border-border bg-surface-raised p-3 text-left text-[11px] leading-4 text-foreground shadow-lg ${
-            centerPopover ? "left-1/2 -translate-x-1/2" : "left-0"
+            centerPopover ? "left-1/2 -translate-x-1/2" : "right-0"
           }`}
         >
           <span className="font-medium">{t("contextUsageTitle")}</span>

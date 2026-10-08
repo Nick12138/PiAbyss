@@ -174,6 +174,22 @@ describe("SessionStatsPills", () => {
     expect(usagePill).not.toHaveTextContent("tok");
   });
 
+  it("renders the context chip as the row's third chip", async () => {
+    vi.spyOn(hostClient, "request").mockResolvedValue(
+      envelope("session.getStats", statsResult()) as never,
+    );
+    const { container } = render(<SessionStatsPills />);
+
+    const row = container.querySelector("[data-composer-stats]");
+    expect(row).not.toBeNull();
+    // The chip that opens the context panel (auto-compaction, Compact now) is
+    // part of the row below the composer, after the speed and cache-hit pills.
+    const chip = screen.getByRole("button", { name: "No model context available" });
+    expect(row!.contains(chip)).toBe(true);
+    const chips = [...row!.querySelectorAll("button")];
+    expect(chips[chips.length - 1]).toBe(chip);
+  });
+
   it("opens the time dialog with turn/step counts and whole-history timings", async () => {
     const request = vi
       .spyOn(hostClient, "request")
@@ -238,6 +254,10 @@ describe("SessionStatsPills", () => {
     render(<SessionStatsPills />);
     expect(screen.queryByRole("button", { name: /Session stats/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Token usage/ })).not.toBeInTheDocument();
+    // The context chip rides the row: no figures, no row, no chip.
+    expect(
+      screen.queryByRole("button", { name: "No model context available" }),
+    ).not.toBeInTheDocument();
   });
 
   it("hides a pill whose figure is missing instead of showing an icon alone", async () => {
@@ -268,6 +288,9 @@ describe("SessionStatsPills", () => {
     expect(screen.queryByRole("button", { name: /Session stats/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Token usage/ })).not.toBeInTheDocument();
     expect(container.querySelector("[data-composer-stats]")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "No model context available" }),
+    ).not.toBeInTheDocument();
   });
 
   it("falls back to the visible-window fold when the fetch fails", async () => {
