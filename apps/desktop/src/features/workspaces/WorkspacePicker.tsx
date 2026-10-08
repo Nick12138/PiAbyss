@@ -49,7 +49,6 @@ import { TelegramAddDialog } from "../bot/TelegramAddDialog";
 import { loadBotGateways, removeGateway, type BotGateway } from "../bot/gateway-store";
 import { TelegramInstallDialog } from "../telegram/TelegramInstallDialog";
 import { TelegramWorkspaceRow } from "../telegram/TelegramWorkspaceRow";
-import { isTelegramPluginInstalled } from "../telegram/telegram-plugin";
 import { useTelegramViewStore, useTelegramWorkspaceActive } from "../telegram/telegram-view-store";
 import { isSameTelegramPath } from "../../lib/telegram-path";
 
@@ -197,6 +196,7 @@ export function WorkspacePicker() {
   }, [addMenuOpen]);
   const [telegramDialogOpen, setTelegramDialogOpen] = useState(false);
   const [telegramInstallOpen, setTelegramInstallOpen] = useState(false);
+  const [telegramInstallMode, setTelegramInstallMode] = useState<"install" | "migrate">("install");
   const [gateways, setGateways] = useState<BotGateway[]>(() => loadBotGateways());
   const [gatewaysCollapsed, setGatewaysCollapsed] = useState(() =>
     sidebarPref("piabyss.sidebar.botGatewaysCollapsed"),
@@ -416,24 +416,17 @@ export function WorkspacePicker() {
   }
 
   /**
-   * "Add → TG workspace": install the plugin first when missing, then create/
-   * enter the dedicated telegram workspace and bind a bot (token dialog when
-   * none is configured yet; otherwise just enter the workspace).
+   * Telegram plugin install state, straight from `telegram.getConfig` (the
+   * Host reads both the telegram workspace's project settings and the global
+   * user settings): "project" = installed where PiAbyss wants it;
+   * "user" = legacy install pending migration; null = not installed.
    */
-  const checkTelegramPluginInstalled = async (): Promise<boolean> => {
-    const { host: hostNow, workspace: workspaceNow } = useAppStore.getState();
-    if (!hostNow || !workspaceNow) return false;
-    try {
-      const res = await hostClient.request(
-        "package.list",
-        workspaceContext(hostNow, workspaceNow),
-        { scope: "user" },
-        30_000,
-      );
-      return res.ok && isTelegramPluginInstalled(res.result);
-    } catch {
-      return false;
-    }
+  const readTelegramPluginState = async (): Promise<"user" | "project" | null> => {
+    const { host: hostNow } = useAppStore.getState();
+    if (!hostNow) return null;
+    const path = await useTelegramViewStore.getState().ensureTelegramWorkspace();
+    if (!path) return null;
+    return useTelegramViewStore.getState().pluginScope;
   };
 
   async function startTelegramAdd() {
@@ -444,7 +437,16 @@ export function WorkspacePicker() {
       pushNotification(t("tgInstallNeedsWorkspace"), "warning");
       return;
     }
-    if (!(await checkTelegramPluginInstalled())) {
+    const scope = await readTelegramPluginState();
+    if (scope === null) {
+      setTelegramInstallMode("install");
+      setTelegramInstallOpen(true);
+      return;
+    }
+    if (scope === "user") {
+      // Legacy user-scope install: migrate to the telegram workspace's
+      // project scope so other workspaces stop loading the plugin.
+      setTelegramInstallMode("migrate");
       setTelegramInstallOpen(true);
       return;
     }
@@ -759,6 +761,7 @@ export function WorkspacePicker() {
       {telegramDialogOpen && <TelegramAddDialog onCancel={() => setTelegramDialogOpen(false)} />}
       {telegramInstallOpen && (
         <TelegramInstallDialog
+          mode={telegramInstallMode}
           onCancel={() => setTelegramInstallOpen(false)}
           onInstalled={() => {
             setTelegramInstallOpen(false);

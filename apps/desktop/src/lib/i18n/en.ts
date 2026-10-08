@@ -1033,7 +1033,8 @@ export const en = {
   tgSessionPickHint: "Select a session from the sidebar to view it.",
   tgInstallNeedsWorkspace: "Select a workspace first, then add the Telegram workspace.",
   tgInstallTitle: "Installing Telegram plugin",
-  tgInstallSubtitle: "Installing @llblab/pi-telegram (the plugin handles messaging).",
+  tgInstallSubtitle:
+    "Installing @llblab/pi-telegram into the Telegram workspace (loads only there; the plugin handles messaging).",
   tgInstallProgress: "Install progress",
   tgInstallWaiting: "Installing, please wait…",
   tgInstallPreparing: "Preparing install…",
@@ -1041,6 +1042,10 @@ export const en = {
   tgInstallFailed: "Plugin install failed.",
   tgInstallDone: "Plugin installed.",
   tgInstallNext: "Configure token",
+  tgMigrateTitle: "Migrating Telegram plugin",
+  tgMigrateSubtitle:
+    "Moving @llblab/pi-telegram from the global user scope into the Telegram workspace (project scope); other workspaces will no longer load it.",
+  tgMigrateWaiting: "Migrating, please wait…",
   tgCtxSettings: "Settings",
   tgCtxRename: "Rename",
   tgCtxOpenFolder: "Open Telegram workspace folder",

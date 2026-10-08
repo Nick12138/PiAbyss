@@ -267,6 +267,54 @@ describe("telegram sessions controller", () => {
       expect(result.voice).toEqual({ replyMode: "mirror" });
       expect(result.threads).toEqual({ automaticCleanup: true });
     });
+
+    it("reports the plugin as not installed when no settings configure it", async () => {
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
+      const response = await handlers(agentDir)["telegram.getConfig"]!({} as never);
+      if (!("result" in response)) throw new Error("expected result");
+      const result = response.result as {
+        pluginInstalled: boolean;
+        pluginScope: "user" | "project" | null;
+      };
+      expect(result.pluginInstalled).toBe(false);
+      expect(result.pluginScope).toBeNull();
+    });
+
+    it("reports project scope when the telegram workspace settings configure the plugin", async () => {
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
+      const workspaceSettings = join(agentDir, "workspace", "telegram", ".pi");
+      mkdirSync(workspaceSettings, { recursive: true });
+      writeFileSync(
+        join(workspaceSettings, "settings.json"),
+        JSON.stringify({ packages: ["npm:@llblab/pi-telegram"] }),
+        "utf8",
+      );
+      const response = await handlers(agentDir)["telegram.getConfig"]!({} as never);
+      if (!("result" in response)) throw new Error("expected result");
+      const result = response.result as {
+        pluginInstalled: boolean;
+        pluginScope: "user" | "project" | null;
+      };
+      expect(result.pluginInstalled).toBe(true);
+      expect(result.pluginScope).toBe("project");
+    });
+
+    it("reports legacy user scope from the global agent settings (string and object entries)", async () => {
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
+      writeFileSync(
+        join(agentDir, "settings.json"),
+        JSON.stringify({ packages: [{ source: "npm:@llblab/pi-telegram", extensions: [] }] }),
+        "utf8",
+      );
+      const response = await handlers(agentDir)["telegram.getConfig"]!({} as never);
+      if (!("result" in response)) throw new Error("expected result");
+      const result = response.result as {
+        pluginInstalled: boolean;
+        pluginScope: "user" | "project" | null;
+      };
+      expect(result.pluginInstalled).toBe(true);
+      expect(result.pluginScope).toBe("user");
+    });
   });
 
   describe("telegram.updateConfig", () => {
@@ -350,6 +398,36 @@ describe("telegram sessions controller", () => {
       expect(existsSync(join(agentDir, "workspace", "telegram"))).toBe(false);
       expect(existsSync(tgSession)).toBe(false);
       expect(existsSync(plainSession)).toBe(true);
+    });
+
+    it("preserves the workspace .pi dir (project-scope plugin install) across the wipe", async () => {
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
+      writeFileSync(join(agentDir, "telegram.json"), JSON.stringify({}), "utf8");
+      const piDir = join(agentDir, "workspace", "telegram", ".pi");
+      mkdirSync(piDir, { recursive: true });
+      writeFileSync(
+        join(piDir, "settings.json"),
+        JSON.stringify({ packages: ["npm:@llblab/pi-telegram"] }),
+        "utf8",
+      );
+      writeFileSync(join(agentDir, "workspace", "telegram", "note.txt"), "x", "utf8");
+
+      const response = await handlers(agentDir)["telegram.reset"]!({} as never);
+      if (!("result" in response)) throw new Error("expected result");
+
+      // The workspace dir is recreated to host the preserved `.pi` install.
+      expect(existsSync(join(agentDir, "workspace", "telegram"))).toBe(true);
+      expect(existsSync(join(agentDir, "workspace", "telegram", "note.txt"))).toBe(false);
+      const saved = JSON.parse(readFileSync(join(piDir, "settings.json"), "utf8")) as {
+        packages: string[];
+      };
+      expect(saved.packages).toEqual(["npm:@llblab/pi-telegram"]);
+      expect(existsSync(join(agentDir, "tmp", "telegram-reset-pi-backup"))).toBe(false);
+
+      // The preserved install still reports as project scope.
+      const config = await handlers(agentDir)["telegram.getConfig"]!({} as never);
+      if (!("result" in config)) throw new Error("expected result");
+      expect(config.result).toMatchObject({ pluginInstalled: true, pluginScope: "project" });
     });
   });
 

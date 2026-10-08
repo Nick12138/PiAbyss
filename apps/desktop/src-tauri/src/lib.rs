@@ -191,6 +191,7 @@ pub fn run() {
             commands::pi_host_activity,
             commands::pi_host_acknowledge_terminal,
             commands::pi_host_bootstrap_telegram,
+            commands::pi_host_install_telegram_plugin,
             system_notification::system_notify,
             taskbar_flash::taskbar_flash,
             commands::shell_terminal_create,

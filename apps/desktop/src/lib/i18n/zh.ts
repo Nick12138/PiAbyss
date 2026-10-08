@@ -971,7 +971,8 @@ export const zh: Record<MessageKey, string> = {
   tgSessionPickHint: "从左侧选择一个会话查看。",
   tgInstallNeedsWorkspace: "请先选择一个工作区，再添加 Telegram 工作区。",
   tgInstallTitle: "正在安装 Telegram 插件",
-  tgInstallSubtitle: "正在安装 @llblab/pi-telegram（收发由插件负责）。",
+  tgInstallSubtitle:
+    "正在安装 @llblab/pi-telegram 到 Telegram 工作区（仅此工作区加载，收发由插件负责）。",
   tgInstallProgress: "安装进度",
   tgInstallWaiting: "正在安装，请稍候…",
   tgInstallPreparing: "正在准备安装…",
@@ -979,6 +980,10 @@ export const zh: Record<MessageKey, string> = {
   tgInstallFailed: "插件安装失败。",
   tgInstallDone: "插件安装完成。",
   tgInstallNext: "配置 token",
+  tgMigrateTitle: "正在迁移 Telegram 插件",
+  tgMigrateSubtitle:
+    "正在把 @llblab/pi-telegram 从全局作用域迁移到 Telegram 工作区（project 作用域），其他工作区的会话将不再加载它。",
+  tgMigrateWaiting: "正在迁移，请稍候…",
   tgCtxSettings: "设置",
   tgCtxRename: "重命名",
   tgCtxOpenFolder: "打开 Telegram 工作区文件夹",

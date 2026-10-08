@@ -538,6 +538,165 @@ pub async fn pi_host_bootstrap_telegram(
     Ok(())
 }
 
+/// Outcome of `pi_host_install_telegram_plugin`. Failures are reported in-band
+/// (never as a rejected invoke) so the renderer can retry transient errors with
+/// the same install dialog.
+#[derive(Debug, Serialize)]
+pub struct TelegramPluginInstallOutcome {
+    pub ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+}
+
+/// Start (or reuse) the telegram workspace's dedicated Host in the BACKGROUND
+/// — without changing the renderer's active route — and install a package into
+/// that workspace at PROJECT scope. Project scope persists into
+/// `<cwd>/.pi/settings.json`, so the plugin (and its tools/commands) loads only
+/// in the telegram workspace's sessions, never in the user's other workspaces.
+/// The Host reloads the session graph on success, so `/telegram-connect`
+/// becomes available in this Host without a restart.
+#[tauri::command]
+pub async fn pi_host_install_telegram_plugin(
+    state: State<'_, AppState>,
+    cwd: String,
+    source: String,
+) -> Result<TelegramPluginInstallOutcome, String> {
+    let settings = state.settings.lock().await;
+    let (_route_id, manager, created) = {
+        let mut hosts = state.hosts.lock().await;
+        // force_dedicated mirrors the bootstrap: package.install must run
+        // against the telegram workspace's own graph, never the shared
+        // foreground Host's active workspace.
+        hosts.activate_workspace(Path::new(&cwd), &settings, true)?
+    };
+    drop(settings);
+    if created || !manager.lock().await.is_running() {
+        crate::pi_host::start_unlocked(&manager, crate::pi_host::StartKind::Fresh).await?;
+    }
+
+    let mut mgr = manager.lock().await;
+
+    // 1. system.hello → fresh identity for the telegram workspace Host.
+    let hello_id = uuid::Uuid::new_v4().to_string();
+    let hello = serde_json::json!({
+        "protocolVersion": 1,
+        "id": hello_id,
+        "method": "system.hello",
+        "context": {},
+        "params": {
+            "clientName": "piabyss",
+            "clientVersion": "0.1.0",
+            "protocolVersion": 1,
+            "extensionDecisionPresentation": "auto",
+        },
+    });
+    let hello_resp = mgr
+        .request(hello.to_string(), Duration::from_secs(30))
+        .await?;
+    let hello_json: serde_json::Value =
+        serde_json::from_str(&hello_resp).map_err(|e| format!("parse hello response: {e}"))?;
+    if hello_json.get("ok").and_then(|v| v.as_bool()) != Some(true) {
+        return Err(format!(
+            "hello failed: {}",
+            hello_json
+                .get("error")
+                .map(|e| e.to_string())
+                .unwrap_or_default()
+        ));
+    }
+    let result = hello_json.get("result").ok_or("hello missing result")?;
+    let host_instance_id = result
+        .get("hostInstanceId")
+        .and_then(|v| v.as_str())
+        .ok_or("hello missing hostInstanceId")?
+        .to_string();
+    let workspace_id = result
+        .get("workspaceId")
+        .and_then(|v| v.as_str())
+        .ok_or("telegram Host did not preload its workspace")?
+        .to_string();
+    let workspace_revision = result
+        .get("workspaceRevision")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    let session_id = result
+        .get("sessionId")
+        .and_then(|v| v.as_str())
+        .ok_or("telegram Host did not preload its session")?
+        .to_string();
+    let session_revision = result
+        .get("sessionRevision")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    let package_revision = result
+        .get("packageRevision")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+
+    // 2. package.install at project scope, scoped to the telegram workspace.
+    let install_id = uuid::Uuid::new_v4().to_string();
+    let install = serde_json::json!({
+        "protocolVersion": 1,
+        "id": install_id,
+        "method": "package.install",
+        "context": {
+            "expectedHostInstanceId": host_instance_id,
+            "expectedWorkspaceId": workspace_id,
+            "expectedWorkspaceRevision": workspace_revision,
+            "expectedSessionId": session_id,
+            "expectedSessionRevision": session_revision,
+            "expectedPackageRevision": package_revision,
+        },
+        "params": { "source": source, "scope": "project" },
+    });
+    // npm installs can take minutes on cold caches; mirror the renderer's
+    // previous 615s budget.
+    let install_resp = match mgr
+        .request(install.to_string(), Duration::from_secs(615))
+        .await
+    {
+        Ok(response) => response,
+        Err(e) => {
+            return Ok(TelegramPluginInstallOutcome {
+                ok: false,
+                error_code: None,
+                error_message: Some(format!("install request failed: {e}")),
+            });
+        }
+    };
+    let install_json: serde_json::Value = match serde_json::from_str(&install_resp) {
+        Ok(value) => value,
+        Err(e) => {
+            return Ok(TelegramPluginInstallOutcome {
+                ok: false,
+                error_code: None,
+                error_message: Some(format!("parse install response: {e}")),
+            });
+        }
+    };
+    if install_json.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+        return Ok(TelegramPluginInstallOutcome {
+            ok: true,
+            error_code: None,
+            error_message: None,
+        });
+    }
+    let error = install_json.get("error");
+    Ok(TelegramPluginInstallOutcome {
+        ok: false,
+        error_code: error
+            .and_then(|e| e.get("code"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        error_message: error
+            .and_then(|e| e.get("message"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+    })
+}
+
 #[tauri::command]
 pub async fn shell_terminal_create(
     state: State<'_, AppState>,

@@ -29,6 +29,42 @@ export async function bootstrapTelegramHost(cwd: string, connect = true): Promis
   return true;
 }
 
+/** In-band outcome of `pi_host_install_telegram_plugin`: failures carry the
+ *  host error code/message so the install dialog can retry transient errors. */
+export type TelegramPluginInstallOutcome = {
+  ok: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+};
+
+/**
+ * Installs the telegram plugin into the DEDICATED telegram workspace at
+ * PROJECT scope, entirely in the background: activates + starts the telegram
+ * workspace Host (without switching the foreground route) and runs
+ * `package.install { scope: "project" }` against that workspace. The plugin
+ * and its tools then load only in the telegram workspace's sessions.
+ */
+export async function installTelegramPlugin(
+  cwd: string,
+  source: string,
+): Promise<TelegramPluginInstallOutcome> {
+  const { invoke, isTauri } = await import("@tauri-apps/api/core");
+  if (!isTauri()) {
+    return { ok: false, errorMessage: "Telegram plugin install requires the desktop app." };
+  }
+  try {
+    return await invoke<TelegramPluginInstallOutcome>("pi_host_install_telegram_plugin", {
+      cwd,
+      source,
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      errorMessage: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 export async function prepareWorkspaceHost(cwd: string, activeBusy: boolean): Promise<boolean> {
   const { invoke, isTauri } = await import("@tauri-apps/api/core");
   if (!isTauri()) return false;

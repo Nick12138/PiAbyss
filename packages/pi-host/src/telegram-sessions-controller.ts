@@ -1,5 +1,5 @@
 import { createReadStream, readdirSync, readFileSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import type {
@@ -17,6 +17,7 @@ import type {
 } from "@piabyss/protocol";
 import { createHostError } from "@piabyss/protocol";
 import type { MethodHandler } from "./server.js";
+import { logger } from "./logger.js";
 import { workspaceStorageKey } from "./piabyss-data.js";
 
 /**
@@ -38,6 +39,8 @@ const TELEGRAM_CONFIG_FILE = "telegram.json";
 const TELEGRAM_SESSIONS_DIR = "sessions";
 const TELEGRAM_TMP_DIR = "tmp/telegram";
 const TELEGRAM_WORKSPACE_SEGMENT = "workspace/telegram";
+/** Where PiAbyss installs the @llblab/pi-telegram plugin (project scope). */
+const TELEGRAM_PLUGIN_SOURCE = "npm:@llblab/pi-telegram";
 /** Plugin transport-ownership store; the default profile locks key `default`. */
 const TELEGRAM_OWNERS_FILE = "owners.json";
 const TELEGRAM_DEFAULT_OWNERS_KEY = "default";
@@ -315,6 +318,33 @@ async function readJson(path: string): Promise<unknown | null> {
   }
 }
 
+/** True when a settings `packages` array configures the telegram plugin.
+ *  Entries are plain source strings or `{ source, ...filters }` objects. */
+function settingsConfigureTelegramPlugin(settings: unknown): boolean {
+  if (!isRecord(settings) || !Array.isArray(settings.packages)) return false;
+  return settings.packages.some((entry) => {
+    const source = typeof entry === "string" ? entry : isRecord(entry) ? entry.source : null;
+    return (
+      typeof source === "string" &&
+      source.trim().toLowerCase() === TELEGRAM_PLUGIN_SOURCE.toLowerCase()
+    );
+  });
+}
+
+/** Reads the telegram plugin's configured scope: "project" (dedicated
+ *  telegram workspace settings — the scope PiAbyss installs into), "user"
+ *  (legacy global agent settings, pending migration), or null when absent. */
+async function readTelegramPluginScope(
+  agentDir: string,
+  workspacePath: string,
+): Promise<"user" | "project" | null> {
+  const projectSettings = await readJson(join(workspacePath, ".pi", "settings.json"));
+  if (settingsConfigureTelegramPlugin(projectSettings)) return "project";
+  const userSettings = await readJson(join(agentDir, "settings.json"));
+  if (settingsConfigureTelegramPlugin(userSettings)) return "user";
+  return null;
+}
+
 export function createTelegramSessionHandlers(
   agentDir: string,
 ): Partial<Record<string, MethodHandler>> {
@@ -475,15 +505,19 @@ export function createTelegramSessionHandlers(
       const voice = sanitizeVoiceConfig(config.voice);
       const threads = sanitizeThreadsConfig(config.threads);
       const bound = boundUser(config, inboxDir);
+      const workspaceDir = await ensureTelegramWorkspace();
+      const pluginScope = await readTelegramPluginScope(agentDir, workspaceDir);
       return {
         result: {
           default: defaultProfile,
-          workspacePath: await ensureTelegramWorkspace(),
+          workspacePath: workspaceDir,
           ...(maskedToken(config) ? { tokenMasked: maskedToken(config) } : {}),
           ...(bound !== undefined ? { bound } : {}),
           ...(Object.keys(assistant).length > 0 ? { assistant } : {}),
           ...(Object.keys(voice).length > 0 ? { voice } : {}),
           ...(Object.keys(threads).length > 0 ? { threads } : {}),
+          pluginInstalled: pluginScope !== null,
+          pluginScope,
         },
       };
     },
@@ -524,10 +558,43 @@ export function createTelegramSessionHandlers(
     "telegram.reset": async (): Promise<{ result: { reset: true } }> => {
       // Restore the pre-configuration state: plugin config, its temp state,
       // the workspace dir, and every telegram-driven session. The plugin
-      // package itself is left installed.
+      // package itself is left installed — with project scope its settings
+      // entry AND its npm store live inside the workspace's `.pi` dir, so
+      // that directory is moved aside across the wipe and restored after.
       await rm(configPath, { force: true });
       await rm(join(agentDir, TELEGRAM_TMP_DIR), { recursive: true, force: true });
+      const workspacePiDir = join(workspacePath, ".pi");
+      const workspacePiBackup = join(agentDir, "tmp", "telegram-reset-pi-backup");
+      await rm(workspacePiBackup, { recursive: true, force: true });
+      let preservedPi = false;
+      try {
+        await mkdir(join(agentDir, "tmp"), { recursive: true });
+        await rename(workspacePiDir, workspacePiBackup);
+        preservedPi = true;
+      } catch (err) {
+        // Missing `.pi` (never installed) is expected; anything else keeps the
+        // wipe simple — the desktop offers a fresh install when it is gone.
+        if ((err as { code?: string }).code !== "ENOENT") {
+          logger.warn("telegram.reset could not preserve the workspace .pi dir", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
       await rm(join(agentDir, TELEGRAM_WORKSPACE_SEGMENT), { recursive: true, force: true });
+      if (preservedPi) {
+        await mkdir(workspacePath, { recursive: true });
+        try {
+          await rename(workspacePiBackup, workspacePiDir);
+          await rm(join(agentDir, "tmp", "telegram-reset-pi-backup"), {
+            recursive: true,
+            force: true,
+          });
+        } catch (err) {
+          logger.warn("telegram.reset could not restore the workspace .pi dir", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
       for (const sessionPath of await listAllSessionFiles()) {
         if ((await scanSession(sessionPath)) !== null) {
           await rm(sessionPath, { force: true });

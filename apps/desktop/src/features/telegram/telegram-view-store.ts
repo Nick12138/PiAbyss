@@ -86,6 +86,12 @@ type TelegramViewState = {
   assistant: TelegramAssistantConfig | null;
   voice: TelegramVoiceConfig | null;
   threads: TelegramThreadsConfig | null;
+  /** Whether the @llblab/pi-telegram plugin is configured (project scope in
+   *  the telegram workspace, or legacy user scope pending migration). */
+  pluginInstalled: boolean | null;
+  /** Where the plugin is configured: "project" = telegram workspace (target
+   *  state), "user" = legacy global scope, null = not installed. */
+  pluginScope: "user" | "project" | null;
   sessions: TelegramSessionSummary[];
   loading: boolean;
   loaded: boolean;
@@ -134,6 +140,8 @@ export const useTelegramViewStore = create<TelegramViewState>((set, get) => ({
   assistant: null,
   voice: null,
   threads: null,
+  pluginInstalled: null,
+  pluginScope: null,
   sessions: [],
   loading: false,
   loaded: false,
@@ -168,6 +176,8 @@ export const useTelegramViewStore = create<TelegramViewState>((set, get) => ({
         assistant: res.result.assistant ?? null,
         voice: res.result.voice ?? null,
         threads: res.result.threads ?? null,
+        pluginInstalled: res.result.pluginInstalled ?? null,
+        pluginScope: res.result.pluginScope ?? null,
       });
       return res.result.workspacePath;
     } catch {
@@ -189,6 +199,8 @@ export const useTelegramViewStore = create<TelegramViewState>((set, get) => ({
         assistant: res.result.assistant ?? null,
         voice: res.result.voice ?? null,
         threads: res.result.threads ?? null,
+        pluginInstalled: res.result.pluginInstalled ?? null,
+        pluginScope: res.result.pluginScope ?? null,
       });
     } catch {
       /* config refresh is best-effort; the entry still works from sessions */
@@ -222,6 +234,8 @@ export const useTelegramViewStore = create<TelegramViewState>((set, get) => ({
           profile: configRes.ok ? configRes.result.default : null,
           workspacePath: configRes.ok ? configRes.result.workspacePath : null,
           tokenMasked: configRes.ok ? (configRes.result.tokenMasked ?? null) : null,
+          pluginInstalled: configRes.ok ? (configRes.result.pluginInstalled ?? null) : null,
+          pluginScope: configRes.ok ? (configRes.result.pluginScope ?? null) : null,
           loaded: true,
           loading: false,
           error: listRes.error.message ?? "Telegram history unavailable",
@@ -237,6 +251,8 @@ export const useTelegramViewStore = create<TelegramViewState>((set, get) => ({
         assistant: configRes.ok ? (configRes.result.assistant ?? null) : null,
         voice: configRes.ok ? (configRes.result.voice ?? null) : null,
         threads: configRes.ok ? (configRes.result.threads ?? null) : null,
+        pluginInstalled: configRes.ok ? (configRes.result.pluginInstalled ?? null) : null,
+        pluginScope: configRes.ok ? (configRes.result.pluginScope ?? null) : null,
         // Keep the open transcript in sync; fall back to the previous
         // snapshot when no session is open or the re-fetch failed.
         sessionDetail: detailRes?.ok ? detailRes.result : get().sessionDetail,
