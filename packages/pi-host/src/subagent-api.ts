@@ -59,7 +59,15 @@ export type SubagentHttpControlResponse = {
   error?: string;
 };
 
-function rawRequest(path: string, method: "GET" | "POST"): Promise<string | null> {
+/** POST /api/runs/<id>/send response: `mode` reports the delivery path the
+ * plugin chose — steer inbox for a live child, resume for a finished run. */
+export type SubagentHttpSendResponse = {
+  ok: boolean;
+  mode?: "steer" | "resume";
+  error?: string;
+};
+
+function rawRequest(path: string, method: "GET" | "POST", body?: string): Promise<string | null> {
   return new Promise((resolve) => {
     const { port } = new URL(subagentApiBase());
     const request = http.request(
@@ -68,7 +76,10 @@ function rawRequest(path: string, method: "GET" | "POST"): Promise<string | null
         port: Number(port),
         path,
         method,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(body ? { "Content-Length": Buffer.byteLength(body) } : {}),
+        },
         timeout: REQUEST_TIMEOUT_MS,
       },
       (response) => {
@@ -79,7 +90,7 @@ function rawRequest(path: string, method: "GET" | "POST"): Promise<string | null
     );
     request.on("timeout", () => request.destroy());
     request.on("error", () => resolve(null));
-    request.end();
+    request.end(body);
   });
 }
 
@@ -90,8 +101,16 @@ function rawRequest(path: string, method: "GET" | "POST"): Promise<string | null
  * failed control request `{ok:false,error}`) still return their payload so
  * callers can surface the plugin's error message.
  */
-async function requestJson<T>(path: string, method: "GET" | "POST"): Promise<T | null> {
-  const text = await rawRequest(path, method);
+async function requestJson<T>(
+  path: string,
+  method: "GET" | "POST",
+  body?: unknown,
+): Promise<T | null> {
+  const text = await rawRequest(
+    path,
+    method,
+    method === "POST" && body !== undefined ? JSON.stringify(body) : undefined,
+  );
   if (text === null) return null;
   try {
     return JSON.parse(text) as T;
@@ -104,6 +123,6 @@ export function getSubagentApi<T>(path: string): Promise<T | null> {
   return requestJson<T>(path, "GET");
 }
 
-export function postSubagentApi<T>(path: string): Promise<T | null> {
-  return requestJson<T>(path, "POST");
+export function postSubagentApi<T>(path: string, body?: unknown): Promise<T | null> {
+  return requestJson<T>(path, "POST", body);
 }

@@ -12,7 +12,11 @@ import { buildSessionUsageReport } from "./session-usage-report.js";
 import { searchSessions } from "./session-search.js";
 import { invalidateSessionListProjection } from "./session-list-projection.js";
 import { isObject, readModelsConfig } from "./provider-models-config.js";
-import { postSubagentApi, type SubagentHttpControlResponse } from "./subagent-api.js";
+import {
+  postSubagentApi,
+  type SubagentHttpControlResponse,
+  type SubagentHttpSendResponse,
+} from "./subagent-api.js";
 import {
   mapSubagentRunState,
   readSubagentRunStatus,
@@ -364,6 +368,33 @@ export function createSessionHandlers(
     "subagents.pause": async (ctx) => controlSubagentRun(factory, ctx, "pause", "paused"),
     "subagents.continue": async (ctx) => controlSubagentRun(factory, ctx, "continue", "continued"),
     "subagents.resume": async (ctx) => controlSubagentRun(factory, ctx, "resume", "resumed"),
+    "subagents.send": async (ctx) => {
+      const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+      if (stale) return { error: stale };
+      const { nodeId, message } = ctx.params as { nodeId: string; message: string };
+      const runId = resolveSubagentRunId(nodeId);
+      const outcome = await postSubagentApi<SubagentHttpSendResponse>(
+        `/api/runs/${encodeURIComponent(runId)}/send`,
+        { message },
+      );
+      if (!outcome) {
+        return {
+          error: createHostError("HOST_NOT_READY", "pi-subagent API unavailable", {
+            retryable: true,
+          }),
+        };
+      }
+      if (!outcome.ok) {
+        return {
+          error: createHostError(
+            "AGENT_BUSY",
+            outcome.error ?? "Unable to send message to subagent",
+            { retryable: true },
+          ),
+        };
+      }
+      return { result: { sent: true, mode: outcome.mode === "resume" ? "resume" : "steer" } };
+    },
 
     "session.getSnapshot": async (ctx) => {
       const server = factory.getServer();

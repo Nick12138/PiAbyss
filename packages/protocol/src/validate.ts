@@ -779,6 +779,14 @@ export function validateRequestParams<M extends HostMethod>(
         params.nodeId.length <= 160
         ? ok(params)
         : fail(`invalid ${method} params`, { method });
+    case "subagents.send":
+      return exactObject(params, ["nodeId", "message"], []) &&
+        isNonEmptyString(params.nodeId) &&
+        params.nodeId.length <= 160 &&
+        isNonEmptyString(params.message) &&
+        params.message.length <= 64_000
+        ? ok(params)
+        : fail(`invalid ${method} params`, { method });
     case "agent.abort":
     case "agent.abortCompaction":
     case "agent.abortRetry":

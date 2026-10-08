@@ -149,6 +149,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "subagents.pause": { nodeId: "run-1" },
   "subagents.continue": { nodeId: "run-1" },
   "subagents.resume": { nodeId: "run-1" },
+  "subagents.send": { nodeId: "run-1", message: "check the results" },
   "shelljobs.list": null,
   "shelljobs.output": { jobId: "job_abc123", limit: 100 },
   "shelljobs.stop": { jobId: "job_abc123" },
@@ -537,6 +538,8 @@ function invalidParams(method: HostMethod): unknown {
       return { nodeId: "run-1", continued: true };
     case "subagents.resume":
       return { nodeId: "run-1", resumed: true };
+    case "subagents.send":
+      return { nodeId: "run-1", message: "" };
     case "agent.prompt":
     case "agent.steer":
     case "agent.followUp":

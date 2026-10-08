@@ -185,6 +185,7 @@ export type HostContextMap = {
   "subagents.pause": WorkspaceContext;
   "subagents.continue": WorkspaceContext;
   "subagents.resume": WorkspaceContext;
+  "subagents.send": WorkspaceContext;
   "shelljobs.list": HostContext;
   "shelljobs.output": HostContext;
   "shelljobs.stop": HostContext;
@@ -380,6 +381,7 @@ export type HostRequestParams = {
   "subagents.pause": { nodeId: string };
   "subagents.continue": { nodeId: string };
   "subagents.resume": { nodeId: string };
+  "subagents.send": { nodeId: string; message: string };
   "shelljobs.list": null;
   "shelljobs.output": { jobId: string; limit?: number };
   "shelljobs.stop": { jobId: string };
@@ -655,6 +657,7 @@ export type HostResultMap = {
   "subagents.pause": { paused: boolean };
   "subagents.continue": { continued: boolean };
   "subagents.resume": { resumed: boolean };
+  "subagents.send": { sent: boolean; mode: "steer" | "resume" };
   "shelljobs.list": ShellJobsSnapshot;
   "shelljobs.output": ShellJobOutput;
   "shelljobs.stop": { stopped: boolean };

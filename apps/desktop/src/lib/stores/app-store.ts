@@ -456,9 +456,9 @@ export type AppState = EpochState & {
   subagentsStatus: SubagentsStatusSnapshot;
   /** Background shell job summaries (pi shelljob tool) across sessions. */
   shellJobs: ShellJobSummary[];
-  /** Node id a popover/click wants the subagents tab to expand; consumed by
-   * SubagentsPanel and cleared after use. */
-  subagentsFocusNodeId: string | null;
+  /** Subagent run currently shown in the chat area instead of the main
+   * session (top-bar "主会话 / 子代理" view). Null = main session view. */
+  activeSubagentNodeId: string | null;
   /** Right dock visibility. Auto-opens for extension panels; manual toggles persist. */
   dockOpen: boolean;
   /** Dock state to restore when the auto-opened panel closes (null = user took over). */
@@ -577,7 +577,9 @@ export type AppState = EpochState & {
   ) => void;
   setSubagentsStatus: (status: SubagentsStatusSnapshot) => void;
   setShellJobs: (jobs: ShellJobSummary[]) => void;
-  focusSubagent: (nodeId: string | null) => void;
+  /** Switch the chat area to a subagent's conversation (null = back to the
+   * main session). Cleared automatically on session/workspace/host resets. */
+  setActiveSubagent: (nodeId: string | null) => void;
   setExtensionWidget: (widget: ExtensionWidgetState) => void;
   toggleExtensionWidgetCollapsed: (key: string) => void;
   setExtensionWidgetsOpen: (open: boolean) => void;
@@ -697,7 +699,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   extensionWidgetsOpen: false,
   lastExtensionWidgetAttentionRunId: null,
   extensionTerminal: null,
-  subagentsFocusNodeId: null,
+  activeSubagentNodeId: null,
   subagentsStatus: EMPTY_SUBAGENTS_STATUS,
   shellJobs: [],
   dockOpen: sidebarPref("piabyss.dock.open"),
@@ -877,7 +879,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       desyncReason: undefined,
       rehydrating: false,
       providerLogin: null,
-      subagentsFocusNodeId: null,
+      activeSubagentNodeId: null,
       subagentsStatus: EMPTY_SUBAGENTS_STATUS,
       shellJobs: [],
     });
@@ -953,7 +955,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       packageProgress: null,
       packageRetry: null,
       thinkingLevels: [],
-      subagentsFocusNodeId: null,
+      activeSubagentNodeId: null,
       subagentsStatus: EMPTY_SUBAGENTS_STATUS,
       shellJobs: [],
     });
@@ -1044,7 +1046,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             packageProgress: null,
             packageRetry: null,
             thinkingLevels: [],
-            subagentsFocusNodeId: null,
+            activeSubagentNodeId: null,
             subagentsStatus: EMPTY_SUBAGENTS_STATUS,
           }
         : {}),
@@ -1319,7 +1321,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   setSubagentsStatus: (subagentsStatus) => set({ subagentsStatus }),
   setShellJobs: (shellJobs) => set({ shellJobs }),
-  focusSubagent: (subagentsFocusNodeId) => set({ subagentsFocusNodeId }),
+  /** Switch the chat area to a subagent's conversation (null = back to the
+   * main session). Cleared automatically on session/workspace/host resets. */
+  setActiveSubagent: (activeSubagentNodeId) => set({ activeSubagentNodeId }),
   setExtensionMessageRender: (entryId, render) =>
     set((state) => {
       if (!state.session) return {};
@@ -1743,7 +1747,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...resetExtensionTerminal(current),
       packageProgress: null,
       packageRetry: null,
-      subagentsFocusNodeId: null,
+      activeSubagentNodeId: null,
       subagentsStatus: EMPTY_SUBAGENTS_STATUS,
       shellJobs: [],
     });

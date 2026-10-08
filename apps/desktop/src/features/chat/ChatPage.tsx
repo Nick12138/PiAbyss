@@ -11,6 +11,7 @@ import { conversationContentWidthStyle } from "./conversation-layout";
 import { TelegramHistoryView } from "../telegram/TelegramHistoryView";
 import { useTelegramWorkspaceActive } from "../telegram/telegram-view-store";
 import { useSessionTreeSync } from "../tree/tree-data";
+import { SubagentConversation } from "../subagents/SubagentConversation";
 
 export function ChatPage() {
   const t = useT();
@@ -28,6 +29,7 @@ export function ChatPage() {
   const conversationMinWidth = useAppStore((s) => s.desktopSettings?.conversationMinWidth);
   const conversationMaxWidth = useAppStore((s) => s.desktopSettings?.conversationMaxWidth);
   const telegramViewActive = useTelegramWorkspaceActive();
+  const activeSubagentNodeId = useAppStore((s) => s.activeSubagentNodeId);
 
   // A login/logout/config save bumps the revision: the blockage the banner
   // describes may be resolved, so re-check by sending again.
@@ -109,7 +111,13 @@ export function ChatPage() {
           </div>
         )}
         <div aria-hidden="true" data-chat-header-fade />
-        {session ? (
+        {activeSubagentNodeId ? (
+          // Subagent view: the whole chat surface belongs to the selected
+          // run's conversation (transcript + message composer + controls).
+          // The main session stays mounted behind the store; the top bar
+          // breadcrumb switches back.
+          <SubagentConversation />
+        ) : session ? (
           isNewConversation ? (
             <>
               <InlineExtensionUiRequest />

@@ -6,7 +6,6 @@ import {
   FolderTree,
   GitCompareArrows,
   LoaderCircle,
-  Users,
   Plus,
   RotateCcw,
   SquareTerminal,
@@ -35,14 +34,13 @@ import {
   fileTabSessionKey,
 } from "../features/dock/file-session";
 import { ChangesPanel } from "../features/dock/ChangesPanel";
-import { SubagentsPanel } from "../features/dock/SubagentsPanel";
 import { subscribeChangesPanel } from "../lib/dock-changes";
 import { subscribeOpenWorkspaceFileTab } from "../lib/dock-file-tabs";
 import { useT } from "../lib/i18n/use-t";
 import { subscribeDockCommands } from "../lib/commands/events";
 
 export type DockTabId =
-  "files" | "changes" | "subagents" | `shell:${number}` | `extension:${string}` | `file:${string}`;
+  "files" | "changes" | `shell:${number}` | `extension:${string}` | `file:${string}`;
 
 type ShellDockTab = {
   id: number;
@@ -340,18 +338,6 @@ export function RightDock() {
           setSidebarPref("piabyss.dock.open", open);
           return;
         }
-        if (request.kind === "activate-subagents") {
-          // Stable state setters only — safe inside the singleton subscription.
-          setTabOrder((current) =>
-            current.includes("subagents") ? current : [...current, "subagents"],
-          );
-          setActiveTab("subagents");
-          if (!useAppStore.getState().dockOpen) {
-            setDockOpen(true);
-            setSidebarPref("piabyss.dock.open", true);
-          }
-          return;
-        }
         const tabId = visibleTabIdsRef.current[request.index];
         if (!tabId) return;
         setActiveTab(tabId);
@@ -371,12 +357,6 @@ export function RightDock() {
   const createChanges = () => {
     setTabOrder((current) => (current.includes("changes") ? current : [...current, "changes"]));
     setActiveTab("changes");
-    setAddMenuOpen(false);
-  };
-
-  const createSubagents = () => {
-    setTabOrder((current) => (current.includes("subagents") ? current : [...current, "subagents"]));
-    setActiveTab("subagents");
     setAddMenuOpen(false);
   };
 
@@ -499,7 +479,7 @@ export function RightDock() {
       });
       return;
     }
-    if (tabId === "changes" || tabId === "subagents") {
+    if (tabId === "changes") {
       closeOrderTab(tabId);
       return;
     }
@@ -515,7 +495,6 @@ export function RightDock() {
     if (tabId.startsWith("file:"))
       return { label: fileTabLabel(fileTabPath(tabId)), Icon: FileText };
     if (tabId === "changes") return { label: t("gitChanges"), Icon: GitCompareArrows };
-    if (tabId === "subagents") return { label: t("dockSubagents"), Icon: Users };
     if (tabId.startsWith("shell:")) {
       const id = Number(tabId.slice("shell:".length));
       const shell = shellTabs.find((tab) => tab.id === id);
@@ -828,15 +807,6 @@ export function RightDock() {
                     <SquareTerminal size={14} />
                     {t("dockTerminal")}
                   </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay"
-                    onClick={createSubagents}
-                  >
-                    <Users size={14} />
-                    {t("dockSubagents")}
-                  </button>
                 </div>,
                 document.body,
               )}
@@ -878,16 +848,6 @@ export function RightDock() {
               <FileTabPanel sessionKey={tabId} path={fileTabPath(tabId)} />
             </div>
           ))}
-        {tabOrder.includes("subagents") && (
-          <div
-            role="tabpanel"
-            id="dock-panel-subagents"
-            aria-labelledby="dock-tab-subagents"
-            className={`min-h-0 min-w-0 flex-1 ${activeTab === "subagents" ? "flex" : "hidden"}`}
-          >
-            <SubagentsPanel />
-          </div>
-        )}
         {shellTabs.map((tab) => (
           <ShellTerminal
             key={`${tab.id}:${tab.generation}`}
@@ -932,15 +892,6 @@ export function RightDock() {
                 >
                   <GitCompareArrows size={17} className="shrink-0" />
                   <span>{t("gitChanges")}</span>
-                </button>
-                <button
-                  type="button"
-                  aria-label={t("dockOpenNamed", { label: t("dockSubagents") })}
-                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
-                  onClick={createSubagents}
-                >
-                  <Users size={17} className="shrink-0" />
-                  <span>{t("dockSubagents")}</span>
                 </button>
                 <button
                   type="button"

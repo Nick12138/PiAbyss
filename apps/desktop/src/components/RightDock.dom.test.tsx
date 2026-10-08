@@ -100,7 +100,6 @@ describe("RightDock pages", () => {
     expect(screen.getByRole("button", { name: "Open Files" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Open Changes" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Open Terminal" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Open Subagents" })).toBeVisible();
   });
 
   it("localizes Dock navigation and shortcuts in Chinese", async () => {
@@ -120,13 +119,11 @@ describe("RightDock pages", () => {
     expect(screen.getByRole("button", { name: "打开：文件" })).toBeVisible();
     expect(screen.getByRole("button", { name: "打开：改动" })).toBeVisible();
     expect(screen.getByRole("button", { name: "打开：终端" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "打开：子代理" })).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "新建 Dock 页面" }));
     expect(screen.getByRole("menuitem", { name: "文件" })).toBeVisible();
     expect(screen.getByRole("menuitem", { name: "改动" })).toBeVisible();
     expect(screen.getByRole("menuitem", { name: "终端" })).toBeVisible();
-    expect(screen.getByRole("menuitem", { name: "子代理" })).toBeVisible();
   });
 
   it("does not auto-open the dock when a session has active subagents", async () => {
@@ -207,10 +204,6 @@ describe("RightDock pages", () => {
     await user.click(screen.getByRole("button", { name: "Open Changes" }));
     expect(screen.getByRole("tab", { name: "Changes" })).toHaveAttribute("aria-selected", "true");
     await user.click(screen.getByRole("button", { name: "Close Changes" }));
-
-    await user.click(screen.getByRole("button", { name: "Open Subagents" }));
-    expect(screen.getByRole("tab", { name: "Subagents" })).toHaveAttribute("aria-selected", "true");
-    await user.click(screen.getByRole("button", { name: "Close Subagents" }));
 
     await user.click(screen.getByRole("button", { name: "Open Terminal" }));
     expect(screen.getByRole("tab", { name: "Shell - /workspace" })).toHaveAttribute(
@@ -302,8 +295,6 @@ describe("RightDock pages", () => {
     expect(screen.getByRole("menuitem", { name: "Changes" })).toHaveFocus();
     await user.keyboard("{ArrowDown}");
     expect(screen.getByRole("menuitem", { name: "Terminal" })).toHaveFocus();
-    await user.keyboard("{End}");
-    expect(screen.getByRole("menuitem", { name: "Subagents" })).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(screen.getByRole("button", { name: "New dock page" })).toHaveFocus();
   });

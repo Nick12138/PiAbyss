@@ -58,7 +58,6 @@ import {
   TodoPopoverButton,
 } from "./ExtensionWidgets";
 import { PiMark } from "../../components/PiMark";
-import { SubagentsPopoverButton } from "../dock/SubagentsPanel";
 import { bindMemoHandoffsToSession } from "../memo/memo-handoff";
 import { LightboxImage } from "../../components/ImageLightbox";
 import {
@@ -2243,7 +2242,6 @@ export function Composer({
               <Paperclip size={14} />
             </button>
             <TodoPopoverButton />
-            <SubagentsPopoverButton />
             <ExtensionWidgetsButton open={extensionWidgetsOpen} onToggle={toggleExtensionWidgets} />
             <div className="ml-auto flex items-center gap-2.5">
               <ModelControls />

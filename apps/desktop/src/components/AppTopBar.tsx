@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Search, CalendarClock, ListTodo } from "lucide-react";
 import { useAppStore } from "../lib/stores/app-store";
 import { useT } from "../lib/i18n/use-t";
@@ -10,6 +11,8 @@ import { SidebarBrandToggle } from "./Sidebar";
 import { MemoSyncHeaderActions } from "../features/memo/MemoSyncHeaderActions";
 import { MemoSyncStatusDot } from "../features/memo/memo-sync-status";
 import { SETTINGS_SECTION_META } from "../features/settings/settings-top-bar";
+import { SubagentTitleMenu } from "../features/subagents/SubagentTitleMenu";
+import { flattenNodes, subagentStateLabel } from "../features/subagents/subagent-model";
 
 /** Single full-width app-level top bar replacing the three independent header
  *  strips (sidebar brand / chat title / dock header).
@@ -35,6 +38,9 @@ export function AppTopBar({
   const sessionTreeNavigated = useAppStore((s) => s.sessionTreeNavigated);
   const host = useAppStore((s) => s.host);
   const scheduleOnline = useAppStore((s) => s.scheduleOnline);
+  const activeSubagentNodeId = useAppStore((s) => s.activeSubagentNodeId);
+  const subagentsStatus = useAppStore((s) => s.subagentsStatus);
+  const setActiveSubagent = useAppStore((s) => s.setActiveSubagent);
   const platform = resolveWindowControlsPlatform();
 
   const section = settingsSection ?? "general";
@@ -55,6 +61,48 @@ export function AppTopBar({
           ? t("chatStatusReady")
           : t("chatStatusWorking");
   const sessionActive = Boolean(session) && !isNewConversation;
+
+  // Subagent conversation view: the status dot reflects the selected run's
+  // state instead of the main session's runtime.
+  const subagentActive = Boolean(activeSubagentNodeId);
+  const activeSubagentNode = useMemo(
+    () =>
+      activeSubagentNodeId
+        ? (flattenNodes(subagentsStatus.runs).find(({ node }) => node.id === activeSubagentNodeId)
+            ?.node ?? null)
+        : null,
+    [subagentsStatus.runs, activeSubagentNodeId],
+  );
+  const subagentDotClass = (() => {
+    if (!activeSubagentNode) return "bg-muted";
+    switch (activeSubagentNode.state) {
+      case "running":
+        return "bg-success";
+      case "failed":
+      case "rejected":
+        return "bg-danger";
+      case "paused":
+      case "stopped":
+        return "bg-warning";
+      default:
+        return "bg-muted";
+    }
+  })();
+  const statusDotClass = subagentActive
+    ? subagentDotClass
+    : session?.isStreaming || (session && !session.isIdle)
+      ? "bg-success"
+      : "bg-muted";
+  const statusLabel = subagentActive
+    ? activeSubagentNode
+      ? subagentStateLabel(activeSubagentNode.state, t)
+      : t("subagentsTitle")
+    : runtimeLabel;
+  const statusTitle = subagentActive
+    ? statusLabel
+    : session
+      ? runtimeLabel
+      : t("chatNoActiveSession");
 
   return (
     <header
@@ -123,23 +171,43 @@ export function AppTopBar({
             <div className="pointer-events-none flex min-w-0 items-center justify-start gap-2">
               {sessionActive && (
                 <>
-                  <h1 className="truncate text-base font-semibold leading-5" title={sessionName}>
-                    {sessionName}
-                  </h1>
+                  {subagentActive ? (
+                    <h1
+                      className="pointer-events-none min-w-0 max-w-full text-base font-semibold leading-5"
+                      title={sessionName}
+                    >
+                      <button
+                        type="button"
+                        data-tauri-drag-region="false"
+                        data-back-to-main-session
+                        className="pointer-events-auto block max-w-full truncate rounded-md px-1.5 py-0.5 text-left transition-colors hover:bg-surface-overlay"
+                        title={t("chatBackToMainSession")}
+                        aria-label={t("chatBackToMainSession")}
+                        onClick={() => setActiveSubagent(null)}
+                      >
+                        {sessionName}
+                      </button>
+                    </h1>
+                  ) : (
+                    <h1 className="truncate text-base font-semibold leading-5" title={sessionName}>
+                      {sessionName}
+                    </h1>
+                  )}
+                  {/* Subagent view keeps the breadcrumb next to the main
+                      title; the main view puts the bot entry behind the
+                      runtime status ("待命"). */}
+                  {subagentActive && <SubagentTitleMenu />}
                   <span
                     className="flex shrink-0 items-center gap-1.5 text-[11px] leading-4 text-muted"
                     data-chat-status
                   >
                     <span
-                      className={`size-1.5 shrink-0 rounded-full ${
-                        session?.isStreaming || (session && !session.isIdle)
-                          ? "bg-success"
-                          : "bg-muted"
-                      }`}
-                      title={session ? runtimeLabel : t("chatNoActiveSession")}
+                      className={`size-1.5 shrink-0 rounded-full ${statusDotClass}`}
+                      title={statusTitle}
                     />
-                    <span>{runtimeLabel}</span>
+                    <span>{statusLabel}</span>
                   </span>
+                  {!subagentActive && <SubagentTitleMenu />}
                 </>
               )}
             </div>

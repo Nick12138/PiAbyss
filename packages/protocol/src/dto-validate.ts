@@ -2935,6 +2935,13 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
       return isPlainObject(result) && hasExactKeys(result, ["resumed"]) && isBoolean(result.resumed)
         ? null
         : "invalid subagent resume result";
+    case "subagents.send":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["sent", "mode"]) &&
+        isBoolean(result.sent) &&
+        (result.mode === "steer" || result.mode === "resume")
+        ? null
+        : "invalid subagent send result";
     case "session.getTree":
       return isPlainObject(result) &&
         hasExactKeys(result, ["tree", "leafId"]) &&
