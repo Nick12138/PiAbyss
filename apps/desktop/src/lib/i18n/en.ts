@@ -1414,6 +1414,9 @@ export const en = {
   modelListLoading: "Loading models...",
   subagentsModelPicker: "Subagent model",
   subagentsThinkingDefault: "Default",
+  composerToolsPicker: "Tools for this conversation",
+  composerToolsMenu: "Conversation tools",
+  composerToolsSetFailed: "Could not update tools",
   modelMenuTestHint: "Test connectivity via the model's own station channel (not the session's)",
   modelMenuPricing: "Model pricing",
   modelMenuPricingHint:

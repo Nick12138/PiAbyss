@@ -123,6 +123,7 @@ export function ChatPage() {
               <InlineExtensionUiRequest />
               <Composer
                 disabled={packageBlocked}
+                isNewConversation
                 welcomeWorkspaceName={workspaceDisplayName(workspace.cwd)}
               />
               <SessionStatsPills />

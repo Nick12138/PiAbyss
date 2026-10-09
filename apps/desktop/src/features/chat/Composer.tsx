@@ -50,6 +50,7 @@ import {
 } from "./transcript-model";
 import { joinOutgoingParts } from "./injected-references";
 import { ModelControls } from "./ModelControls";
+import { ComposerToolsPicker } from "./ComposerToolsPicker";
 import { QueuePanel } from "./QueuePanel";
 import { ShellJobsBar } from "./ShellJobsBar";
 import {
@@ -430,9 +431,12 @@ function fileSortKey(
 
 export function Composer({
   disabled,
+  isNewConversation,
   welcomeWorkspaceName,
 }: {
   disabled?: boolean;
+  /** Welcome-state composer: shows the per-session tool picker. */
+  isNewConversation?: boolean;
   welcomeWorkspaceName?: string;
 }) {
   const t = useT();
@@ -2244,6 +2248,7 @@ export function Composer({
             <TodoPopoverButton />
             <ExtensionWidgetsButton open={extensionWidgetsOpen} onToggle={toggleExtensionWidgets} />
             <div className="ml-auto flex items-center gap-2.5">
+              {isNewConversation && <ComposerToolsPicker />}
               <ModelControls />
               {busy ? (
                 canSend ? (

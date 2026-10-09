@@ -131,7 +131,6 @@ export function DefaultToolsSetting() {
             : t("generalDefaultToolsConfigureEmpty")}
         </button>
       </div>
-      <p className="text-xs text-muted">{t("generalDefaultToolsRestartHint")}</p>
       {dialogOpen && (
         <Dialog
           title={t("generalDefaultTools")}
@@ -180,7 +179,6 @@ export function DefaultToolsSetting() {
                 );
               })}
             </div>
-            <p className="text-xs text-muted">{t("generalDefaultToolsRestartHint")}</p>
           </div>
         </Dialog>
       )}
