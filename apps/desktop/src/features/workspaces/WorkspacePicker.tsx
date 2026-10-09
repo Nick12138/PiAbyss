@@ -51,6 +51,7 @@ import { TelegramInstallDialog } from "../telegram/TelegramInstallDialog";
 import { TelegramWorkspaceRow } from "../telegram/TelegramWorkspaceRow";
 import { useTelegramViewStore, useTelegramWorkspaceActive } from "../telegram/telegram-view-store";
 import { isSameTelegramPath } from "../../lib/telegram-path";
+import { loadTelegramWorkspaceDisplayName } from "../telegram/telegram-view-store";
 
 export function workspaceDisplayName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? "Workspace";
@@ -137,6 +138,7 @@ export function WorkspacePicker() {
   const telegramActive = useTelegramWorkspaceActive();
   const telegramWorkspacePath = useTelegramViewStore((s) => s.workspacePath);
   const telegramProfileConfigured = useTelegramViewStore((s) => s.profile?.configured ?? false);
+  const telegramProfile = useTelegramViewStore((s) => s.profile);
   const workspace = useAppStore((s) => s.workspace);
   const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces ?? NO_WORKSPACES);
   const switchTarget = useAppStore((s) => s.workspaceSwitchTarget);
@@ -506,6 +508,23 @@ export function WorkspacePicker() {
     currentCwd ? addKnownWorkspace(knownWorkspaces, currentCwd) : knownWorkspaces
   ).filter((path) => !isSameTelegramPath(path, telegramWorkspacePath));
 
+  // Collapsed-header summary of the current selection so the user can tell
+  // which workspace is active without expanding the list. Matches the row
+  // labels: folder rows use the folder name; the telegram row uses its
+  // display name (rename override > bot handle).
+  const collapsedActivePath = telegramActive ? telegramWorkspacePath : currentCwd;
+  const collapsedActiveName = telegramActive
+    ? (loadTelegramWorkspaceDisplayName() ??
+      (telegramProfile?.botUsername ? `@${telegramProfile.botUsername}` : "Telegram"))
+    : currentCwd
+      ? workspaceDisplayName(currentCwd)
+      : null;
+  const collapseButtonTitle = collapsed
+    ? collapsedActivePath
+      ? `${t("workspacesExpand")}\n${collapsedActivePath}`
+      : t("workspacesExpand")
+    : t("workspacesCollapse");
+
   return (
     <section>
       <div className="mb-1 flex h-7 items-center justify-between px-2">
@@ -514,10 +533,16 @@ export function WorkspacePicker() {
           onClick={toggleCollapsed}
           aria-expanded={!collapsed}
           aria-controls="workspace-list-region"
-          title={collapsed ? t("workspacesExpand") : t("workspacesCollapse")}
+          title={collapseButtonTitle}
           className="group flex min-w-0 items-center gap-1 text-[13px] font-medium text-muted transition-colors hover:text-foreground"
         >
-          <span>{t("workspacesTitle")}</span>
+          <span className="shrink-0">{t("workspacesTitle")}</span>
+          {collapsed && collapsedActiveName && (
+            <>
+              <span className="shrink-0 text-muted/60">·</span>
+              <span className="min-w-0 truncate text-foreground">{collapsedActiveName}</span>
+            </>
+          )}
           <ChevronDown
             size={12}
             className={`opacity-0 transition-all group-hover:opacity-100 ${
