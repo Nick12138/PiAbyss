@@ -117,7 +117,7 @@ export function DefaultToolsSetting() {
       <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
         <span className="min-w-0">
           <span className="block text-sm">{t("generalDefaultTools")}</span>
-          <span className="block text-xs text-muted">{t("generalDefaultToolsDesc")}</span>
+          <span className="mt-1 block text-xs leading-relaxed text-muted">{t("generalDefaultToolsDesc")}</span>
         </span>
         <button
           type="button"

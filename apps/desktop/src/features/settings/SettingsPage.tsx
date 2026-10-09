@@ -183,7 +183,7 @@ function GeneralSettings() {
               <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("generalAutoStartOnBoot")}</span>
-                  <span className="block text-xs text-muted">
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">
                     {t("generalAutoStartOnBootDesc")}
                   </span>
                 </span>
@@ -196,7 +196,7 @@ function GeneralSettings() {
               <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("generalSystemNotifications")}</span>
-                  <span className="block text-xs text-muted">
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">
                     {t("generalSystemNotificationsDesc")}
                   </span>
                 </span>
@@ -217,7 +217,7 @@ function GeneralSettings() {
               <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
                 <label htmlFor="busy-send-behavior" className="min-w-0 text-sm">
                   <span className="block">{t("generalBusySend")}</span>
-                  <span id="busy-send-behavior-help" className="block text-xs text-muted">
+                  <span id="busy-send-behavior-help" className="mt-1 block text-xs leading-relaxed text-muted">
                     {t("generalBusySendDesc")}
                   </span>
                 </label>
@@ -246,7 +246,10 @@ function GeneralSettings() {
             <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
               <div>
                 <p className="text-sm">{t("generalExtensionDecision")}</p>
-                <p id="extension-decision-presentation-help" className="text-xs text-muted">
+                <p
+                  id="extension-decision-presentation-help"
+                  className="mt-1 text-xs leading-relaxed text-muted"
+                >
                   {t("generalExtensionDecisionDesc")}
                 </p>
               </div>
@@ -304,7 +307,7 @@ function GeneralSettings() {
               <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
                 <label htmlFor="default-shell" className="min-w-0 text-sm">
                   <span className="block">{t("generalDefaultShell")}</span>
-                  <span className="block text-xs text-muted">{t("generalDefaultShellDesc")}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">{t("generalDefaultShellDesc")}</span>
                 </label>
                 <div className="flex min-w-0 items-center gap-1.5">
                   <Select

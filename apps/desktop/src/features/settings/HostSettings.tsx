@@ -208,7 +208,7 @@ export function HostSettings() {
               <div className="flex items-center justify-between gap-4">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("hostAutoRestart")}</span>
-                  <span className="block text-xs text-muted">{t("hostAutoRestartDesc")}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">{t("hostAutoRestartDesc")}</span>
                 </span>
                 <Switch
                   checked={desktopSettings?.autoRestartHostOnce ?? true}
@@ -219,7 +219,7 @@ export function HostSettings() {
               <div className="flex items-center justify-between gap-4">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("hostSharedHostMode")}</span>
-                  <span className="block text-xs text-muted">{t("hostSharedHostModeDesc")}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">{t("hostSharedHostModeDesc")}</span>
                 </span>
                 <Switch
                   checked={desktopSettings?.sharedHostMode ?? true}

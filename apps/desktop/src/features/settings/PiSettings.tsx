@@ -330,7 +330,7 @@ function SettingRow({
     <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
       <span className="min-w-0">
         <span className="block text-sm">{label}</span>
-        <span className="block text-xs text-muted">{description}</span>
+        <span className="mt-1 block text-xs leading-relaxed text-muted">{description}</span>
       </span>
       <div className={`min-w-0 max-w-full ${saving ? "opacity-60" : ""}`}>{children}</div>
     </div>

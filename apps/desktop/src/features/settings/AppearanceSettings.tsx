@@ -217,7 +217,7 @@ export function AppearanceSettings() {
               <div className="flex flex-col gap-3">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("appearanceThemeFamily")}</span>
-                  <span className="block text-xs text-muted">{t("appearanceThemeFamilyDesc")}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">{t("appearanceThemeFamilyDesc")}</span>
                 </span>
                 <div
                   data-ui="theme-family-selector"
@@ -263,7 +263,7 @@ export function AppearanceSettings() {
               <div className="flex flex-col gap-3">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("appearanceColorMode")}</span>
-                  <span className="block text-xs text-muted">{t("appearanceColorModeDesc")}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">{t("appearanceColorModeDesc")}</span>
                 </span>
                 <div
                   data-ui="color-mode-selector"
@@ -295,7 +295,7 @@ export function AppearanceSettings() {
               <div className="flex items-center justify-between gap-4">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("generalLanguage")}</span>
-                  <span className="block text-xs text-muted">{t("generalLanguageDesc")}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">{t("generalLanguageDesc")}</span>
                 </span>
                 <Select
                   className="w-24"
@@ -315,7 +315,7 @@ export function AppearanceSettings() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("appearanceDensity")}</span>
-                  <span className="block text-xs text-muted">{t("appearanceDensityDesc")}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">{t("appearanceDensityDesc")}</span>
                 </span>
                 <div
                   data-ui="segmented"
@@ -348,7 +348,7 @@ export function AppearanceSettings() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("appearanceFont")}</span>
-                  <span className="block text-xs text-muted">{t("appearanceFontDesc")}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">{t("appearanceFontDesc")}</span>
                 </span>
                 <Select
                   className="w-32"
@@ -378,7 +378,7 @@ export function AppearanceSettings() {
                   </label>
                   <span
                     id="conversation-max-width-description"
-                    className="block text-xs text-muted"
+                    className="mt-1 block text-xs leading-relaxed text-muted"
                   >
                     {t("generalConversationMaxWidthDesc", {
                       max: HARD_MAX_CONVERSATION_WIDTH,
@@ -467,7 +467,7 @@ export function AppearanceSettings() {
                   </label>
                   <span
                     id="conversation-min-width-description"
-                    className="block text-xs text-muted"
+                    className="mt-1 block text-xs leading-relaxed text-muted"
                   >
                     {t("generalConversationMinWidthDesc", {
                       min: HARD_MIN_CONVERSATION_WIDTH,
@@ -552,7 +552,7 @@ export function AppearanceSettings() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("appearanceConversationFontSize")}</span>
-                  <span className="block text-xs text-muted">
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">
                     {t("appearanceConversationFontSizeDesc")}
                   </span>
                 </span>
@@ -574,7 +574,7 @@ export function AppearanceSettings() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("appearanceConversationLineHeight")}</span>
-                  <span className="block text-xs text-muted">
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">
                     {t("appearanceConversationLineHeightDesc")}
                   </span>
                 </span>
@@ -600,7 +600,7 @@ export function AppearanceSettings() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("appearanceCodeFontSize")}</span>
-                  <span className="block text-xs text-muted">
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">
                     {t("appearanceCodeFontSizeDesc")}
                   </span>
                 </span>

@@ -73,7 +73,7 @@ export function ProxySetting() {
     <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
       <label htmlFor="proxy-url" className="min-w-0">
         <span className="block text-sm">{t("generalProxy")}</span>
-        <span className="block text-xs text-muted">{t("generalProxyDesc")}</span>
+        <span className="mt-1 block text-xs leading-relaxed text-muted">{t("generalProxyDesc")}</span>
       </label>
       <input
         id="proxy-url"
