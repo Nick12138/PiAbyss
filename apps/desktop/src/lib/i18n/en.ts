@@ -641,10 +641,10 @@ export const en = {
   skillsPreviewToggle: "Preview skill {name}",
   skillsPreviewLoading: "Loading skill content…",
   skillsPreviewLoadFailed: "Failed to load skill content",
-  skillsLoadedTitle: "Loaded skills",
+  skillsLoadedSkillsBadge: "{count} skills",
+  skillsLoadedPathsBadge: "{count} paths",
   skillsLoadedHint:
     "Changes apply to new or reloaded sessions; the current session keeps its original system prompt.",
-  skillsPathsTitle: "Skill paths",
   skillsPathsDescUser:
     "Written to the `skills` array in user settings (~/.pi/agent/settings.json); applies globally to every workspace.",
   skillsPathsDescProject:
@@ -655,12 +655,14 @@ export const en = {
   skillsScopeProject: "Project settings",
   skillsScopeUser: "User settings",
   skillsAddPath: "Add",
+  skillsAddPathTitle: "Add skill path",
+  skillsPathsExisting: "Configured paths",
   skillsRemovePath: "Remove",
   skillsPathMissing: "Path does not exist",
-  skillsPathsEmpty: "No skill paths configured",
   skillsDiagnosticsTitle: "Diagnostics",
-  skillsTrusted: "Project trusted",
   skillsUntrusted: "Project not trusted",
+  skillsUntrustedHint:
+    "Project not trusted: project settings and project-level prompts/skills are not loaded",
   skillsReloadRequired:
     "Resource reload failed after the last change. Restart the Host or reload the session.",
   notifSkillsLoadFailed: "Failed to load skills",

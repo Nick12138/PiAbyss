@@ -603,9 +603,9 @@ export const zh: Record<MessageKey, string> = {
   skillsPreviewToggle: "预览技能 {name}",
   skillsPreviewLoading: "正在加载技能内容…",
   skillsPreviewLoadFailed: "无法加载技能内容",
-  skillsLoadedTitle: "已加载技能",
+  skillsLoadedSkillsBadge: "技能 {count} 个",
+  skillsLoadedPathsBadge: "目录 {count} 个",
   skillsLoadedHint: "变更对新建或重载的会话生效；当前会话保持原有系统提示。",
-  skillsPathsTitle: "技能目录",
   skillsPathsDescUser:
     "写入用户设置（~/.pi/agent/settings.json）的 skills 数组，全局生效，作用于所有工作区。",
   skillsPathsDescProject:
@@ -616,13 +616,14 @@ export const zh: Record<MessageKey, string> = {
   skillsScopeProject: "项目设置",
   skillsScopeUser: "用户设置",
   skillsAddPath: "添加",
+  skillsAddPathTitle: "添加技能目录",
+  skillsPathsExisting: "已配置目录",
   skillsRemovePath: "移除",
   skillsPathMissing: "路径不存在",
-  skillsPathsEmpty: "未配置技能目录",
 
   skillsDiagnosticsTitle: "诊断信息",
-  skillsTrusted: "项目已信任",
   skillsUntrusted: "项目未信任",
+  skillsUntrustedHint: "项目未信任：项目设置与项目级提示词/技能未加载",
   skillsReloadRequired: "上次变更后资源重载失败，请重启 Host 或重载会话。",
   notifSkillsLoadFailed: "加载技能失败",
   notifSkillToggleFailed: "切换技能状态失败",

@@ -208,13 +208,16 @@ describe("SkillsSettings", () => {
   });
 
   it("renders loaded skills grouped by source with configured paths", async () => {
+    const user = userEvent.setup();
     render(<SkillsSettings />);
     await waitFor(() => expect(screen.getByText("Global (user)")).toBeInTheDocument());
     expect(screen.getByText("review")).toBeInTheDocument();
     expect(screen.getByText("Review changes")).toBeInTheDocument();
-    expect(screen.getByText("../.claude/skills")).toBeInTheDocument();
     // Trusted projects show no trust badge (only untrusted ones do).
     expect(screen.queryByText("Project not trusted")).not.toBeInTheDocument();
+    // Configured paths live in the add-path dialog now.
+    await user.click(screen.getByRole("button", { name: "Add skill path" }));
+    expect(await screen.findByText("../.claude/skills")).toBeInTheDocument();
     expect(request.mock.calls.some(([method]) => method === "skill.list")).toBe(true);
     expect(request.mock.calls.some(([method]) => method === "package.list")).toBe(true);
   });
@@ -344,6 +347,8 @@ describe("SkillsSettings", () => {
     ];
     const user = userEvent.setup();
     render(<SkillsSettings />);
+    // The project group is only visible while a workspace scope is selected.
+    await user.click(screen.getByRole("button", { name: /workspace · Current workspace/ }));
     const toggle = await screen.findByRole("switch", { name: "Toggle skill project-review" });
     await user.click(toggle);
     await waitFor(() => {
@@ -375,13 +380,20 @@ describe("SkillsSettings", () => {
     const user = userEvent.setup();
     render(<SkillsSettings />);
     const globalHeader = await screen.findByRole("button", { name: /Global \(user\)/ });
-    const projectHeader = screen.getByRole("button", { name: /Project/ });
     expect(globalHeader).toHaveAttribute("aria-expanded", "true");
+    // The project group only renders under a workspace scope.
+    await user.click(screen.getByRole("button", { name: /workspace · Current workspace/ }));
+    const projectHeader = await screen.findByRole("button", { name: /Project/ });
     expect(projectHeader).toHaveAttribute("aria-expanded", "true");
-    await user.click(globalHeader);
-    expect(globalHeader).toHaveAttribute("aria-expanded", "false");
-    await user.click(globalHeader);
-    expect(globalHeader).toHaveAttribute("aria-expanded", "true");
+    // Switching to the workspace scope hides the global group again.
+    expect(screen.queryByRole("button", { name: /Global \(user\)/ })).not.toBeInTheDocument();
+    // Back to the global scope to collapse/expand its header.
+    await user.click(screen.getByRole("button", { name: "Global" }));
+    const globalHeaderAgain = await screen.findByRole("button", { name: /Global \(user\)/ });
+    await user.click(globalHeaderAgain);
+    expect(globalHeaderAgain).toHaveAttribute("aria-expanded", "false");
+    await user.click(globalHeaderAgain);
+    expect(globalHeaderAgain).toHaveAttribute("aria-expanded", "true");
   });
 
   it("opens the skill's own folder rather than the SKILL.md file", async () => {
@@ -457,27 +469,36 @@ describe("SkillsSettings", () => {
     const user = userEvent.setup();
     render(<SkillsSettings />);
     await waitFor(() => expect(screen.getByText("Global (user)")).toBeInTheDocument());
-    await user.click(screen.getByRole("button", { name: "Choose folder…" }));
+    // The add-path flow lives behind the toolbar "+" button; the default scope
+    // is global, so the added path targets user settings.
+    await user.click(screen.getByRole("button", { name: "Add skill path" }));
+    await user.click(await screen.findByRole("button", { name: "Choose folder…" }));
     expect(dialogMock.open).toHaveBeenCalledWith({ directory: true, multiple: false });
     await user.click(screen.getByRole("button", { name: "Add" }));
     await waitFor(() => {
       const call = request.mock.calls.find(([method]) => method === "skill.addPath");
-      expect(call?.[2]).toEqual({ path: "C:/team/skills", scope: "project" });
+      expect(call?.[2]).toEqual({ path: "C:/team/skills", scope: "user" });
     });
   });
 
   it("renders existing prompt files inside the global and project groups", async () => {
+    const user = userEvent.setup();
     render(<SkillsSettings />);
     await waitFor(() => expect(screen.getByText("Global (user)")).toBeInTheDocument());
-    expect(screen.getByText("SYSTEM.md")).toBeInTheDocument();
     expect(screen.getByText("AGENTS.md")).toBeInTheDocument();
+    // The project prompt renders under the workspace scope.
+    await user.click(screen.getByRole("button", { name: /workspace · Current workspace/ }));
+    expect(await screen.findByText("SYSTEM.md")).toBeInTheDocument();
     // Prompt badge labels every entry; kind badges distinguish override/merge.
-    expect(screen.getAllByText("Prompt").length).toBe(2);
+    expect(screen.getByText("Prompt")).toBeInTheDocument();
     expect(screen.getByText("Override")).toBeInTheDocument();
-    expect(screen.getByText("Merge")).toBeInTheDocument();
     expect(screen.getByText("C:/workspace/.pi/SYSTEM.md")).toBeInTheDocument();
-    expect(screen.getByText("C:/agent/AGENTS.md")).toBeInTheDocument();
     expect(request.mock.calls.some(([method]) => method === "prompt.list")).toBe(true);
+    // The global prompt renders under the global scope.
+    await user.click(screen.getByRole("button", { name: "Global" }));
+    expect(await screen.findByText("AGENTS.md")).toBeInTheDocument();
+    expect(screen.getByText("Merge")).toBeInTheDocument();
+    expect(screen.getByText("C:/agent/AGENTS.md")).toBeInTheDocument();
   });
 
   it("marks a shadowed global prompt as not loaded", async () => {
@@ -500,10 +521,14 @@ describe("SkillsSettings", () => {
         },
       ],
     });
+    const user = userEvent.setup();
     render(<SkillsSettings />);
+    // The shadowed global prompt shows in the global scope's group.
     await waitFor(() => expect(screen.getByText("Global (user)")).toBeInTheDocument());
     expect(screen.getByText("Not loaded")).toBeInTheDocument();
-    expect(screen.getAllByText("Loaded").length).toBe(1);
+    // Switch to the workspace scope to see the loaded project prompt.
+    await user.click(screen.getByRole("button", { name: /workspace · Current workspace/ }));
+    expect(await screen.findByText("Loaded")).toBeInTheDocument();
   });
 
   it("opens a prompt preview dialog reusing the skill preview modal", async () => {
@@ -524,11 +549,11 @@ describe("SkillsSettings", () => {
     try {
       const user = userEvent.setup();
       render(<SkillsSettings />);
-      const previewButton = (
-        await screen.findAllByRole("button", {
-          name: "Preview prompt SYSTEM.md",
-        })
-      )[0];
+      // The project SYSTEM.md prompt only renders under the workspace scope.
+      await user.click(screen.getByRole("button", { name: /workspace · Current workspace/ }));
+      const previewButton = await screen.findByRole("button", {
+        name: "Preview prompt SYSTEM.md",
+      });
       await user.click(previewButton);
       expect(await screen.findByRole("dialog")).toBeInTheDocument();
       expect(invokeMock).toHaveBeenCalledWith("desktop_read_small_file", {
@@ -592,7 +617,6 @@ describe("SkillsSettings", () => {
       expect(request.mock.calls.find(([method]) => method === "prompt.list")?.[2]).toEqual({
         targetWorkspaceCwd: "C:/other",
       });
-      expect(screen.getByText(/Managing the selected workspace/)).toBeInTheDocument();
     });
 
     it("adds a skill directory into the selected workspace's settings", async () => {
@@ -604,7 +628,8 @@ describe("SkillsSettings", () => {
       await waitFor(() =>
         expect(request.mock.calls.some(([method]) => method === "skill.list")).toBeTruthy(),
       );
-      await user.click(screen.getByRole("button", { name: "Choose folder…" }));
+      await user.click(screen.getByRole("button", { name: "Add skill path" }));
+      await user.click(await screen.findByRole("button", { name: "Choose folder…" }));
       await user.click(screen.getByRole("button", { name: "Add" }));
       await waitFor(() => {
         const call = request.mock.calls.find(([method]) => method === "skill.addPath");
@@ -617,9 +642,29 @@ describe("SkillsSettings", () => {
     });
 
     it("routes cross-workspace skill toggles through resource.setPreferences", async () => {
+      // A project-scoped fixture so the toggle is visible under the workspace
+      // scope (workspace scope renders only the project group).
+      currentSkills = skillSnapshot({
+        skills: [
+          loadedSkill({
+            filePath: "C:/workspace/.pi/skills/review/SKILL.md",
+            baseDir: "C:/workspace/.pi/skills/review",
+            source: "project",
+            scope: "project",
+          }),
+        ],
+      });
+      currentResources = [
+        skillResource({
+          path: "C:/workspace/.pi/skills/review/SKILL.md",
+          relativePath: "review",
+          scope: "project",
+          source: "project",
+          control: { kind: "preference", scopes: ["project"] },
+        }),
+      ];
       const user = userEvent.setup();
       render(<SkillsSettings />);
-      await screen.findByRole("switch", { name: "Toggle skill review" });
       await selectWorkspace(user, "other");
       const targetToggle = await screen.findByRole("switch", { name: "Toggle skill review" });
       await user.click(targetToggle);
@@ -629,7 +674,7 @@ describe("SkillsSettings", () => {
           updates: [
             {
               resourceId: "resource:skill:review",
-              targetScope: "user",
+              targetScope: "project",
               preference: "disabled",
             },
           ],
