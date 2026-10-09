@@ -1193,9 +1193,7 @@ export const en = {
   chatStatusStreaming: "Streaming",
   chatStatusCompacting: "Compacting",
   chatStatusRetrying: "Retrying",
-  chatStatusReady: "Ready",
   chatStatusWorking: "Working",
-  chatNoActiveSession: "No active session",
 
   // Transcript
   transcriptShowEarlier: "Show earlier messages ({count} hidden)",

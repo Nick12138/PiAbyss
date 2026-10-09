@@ -53,6 +53,7 @@ import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import { requestExport } from "../../lib/export-actions";
 import { deleteSessionDrafts } from "../../lib/draft-persistence";
+import { clampSessionTitleForDisplay } from "../../lib/session-title-display";
 import {
   canArchiveSession,
   canDeleteSession,
@@ -1151,7 +1152,9 @@ export function SessionList({
                                     <span
                                       className={`min-w-0 flex-1 truncate ${active ? "font-medium" : ""}`}
                                     >
-                                      {sessionDisplayName(item, t("sessionsUntitled"))}
+                                      {clampSessionTitleForDisplay(
+                                        sessionDisplayName(item, t("sessionsUntitled")),
+                                      )}
                                     </span>
                                     {decisionWaiting && decisionWaitingLabel ? (
                                       <span
@@ -1266,7 +1269,9 @@ export function SessionList({
                   <p className="mt-2 text-sm text-muted">
                     {confirmAction.kind === "delete"
                       ? t("sessionsDeleteConfirmBody", {
-                          name: sessionDisplayName(confirmAction.item, t("sessionsUntitled")),
+                          name: clampSessionTitleForDisplay(
+                            sessionDisplayName(confirmAction.item, t("sessionsUntitled")),
+                          ),
                         })
                       : t("sessionsCleanupConfirmBody", { count: confirmAction.count })}
                   </p>

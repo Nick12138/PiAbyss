@@ -10,7 +10,10 @@ import {
 
 const DEFAULT_SESSION_TITLE = "新会话";
 const DEFAULT_TITLE_EMOJI = "💬";
-const MAX_SESSION_TITLE_LENGTH = 28;
+// Total budget for the whole title. The leading emoji + separator take 2
+// characters and the trailing ellipsis 1, leaving up to 15 characters for the
+// title text itself.
+const MAX_SESSION_TITLE_LENGTH = 18;
 
 /**
  * Topic keyword -> emoji mapping, ordered from most to least specific.
@@ -277,17 +280,18 @@ export async function generateRefinedSessionTitle(args: {
     systemPrompt: [
       "Create a concise title for this coding-agent conversation.",
       "Use the same language as the user.",
-      "Use 4-10 words or 8-20 CJK characters.",
+      "Use at most 15 characters for CJK (at most 10 words for other languages).",
       "Begin with exactly one emoji that matches the topic, and use no other emoji.",
       "Do not use quotes, markdown, labels, or ending punctuation.",
+      "Never include file paths, command lines, URLs, or code identifiers; write a human-readable topic title instead.",
       "Return only the title.",
     ].join(" "),
     messages: [
       {
         role: "user",
         content: [
-          `User request:\n${args.userPrompt.slice(0, 2_000)}`,
-          args.assistantText ? `Assistant response:\n${args.assistantText.slice(0, 2_000)}` : "",
+          `User request:\n${args.userPrompt}`,
+          args.assistantText ? `Assistant response:\n${args.assistantText}` : "",
         ]
           .filter(Boolean)
           .join("\n\n"),
@@ -299,9 +303,9 @@ export async function generateRefinedSessionTitle(args: {
     apiKey: auth.apiKey,
     headers: auth.headers,
     env: auth.env,
-    maxTokens: 64,
+    maxTokens: 96,
     reasoning: "minimal",
-    timeoutMs: 15_000,
+    timeoutMs: 120_000,
     maxRetries: 0,
   });
   if (response.stopReason === "error" || response.stopReason === "aborted") {

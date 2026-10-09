@@ -2,13 +2,15 @@ import { ChevronDown, LoaderCircle, RefreshCw, Send } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { TelegramSessionSummary } from "@piabyss/protocol";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
+import { clampSessionTitleForDisplay } from "../../lib/session-title-display";
 import { sidebarPref, setSidebarPref } from "../../lib/sidebar-prefs";
 import { useT } from "../../lib/i18n/use-t";
 import { useTelegramViewStore } from "./telegram-view-store";
 
 /** Display title for a telegram-driven session row. */
 export function telegramSessionTitle(session: TelegramSessionSummary): string {
-  if (session.name?.trim()) return session.name.trim();
+  const named = session.name?.trim();
+  if (named) return clampSessionTitleForDisplay(named);
   const cwdName = session.cwd?.split(/[\\/]/).filter(Boolean).at(-1);
   if (cwdName) return cwdName;
   return session.sessionPath.split(/[\\/]/).filter(Boolean).at(-1) ?? "Telegram session";

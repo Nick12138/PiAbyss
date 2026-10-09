@@ -1123,9 +1123,7 @@ export const zh: Record<MessageKey, string> = {
   chatStatusStreaming: "✍️ 在编了",
   chatStatusCompacting: "📦 打包中",
   chatStatusRetrying: "🔄 重试中",
-  chatStatusReady: "⚡ 待命",
   chatStatusWorking: "🤔 琢磨中",
-  chatNoActiveSession: "没有活动会话",
 
   // Transcript
   transcriptShowEarlier: "显示更早的消息（已隐藏 {count} 条）",

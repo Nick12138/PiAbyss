@@ -8,6 +8,7 @@ import { hostContext } from "../../lib/bridge/host-context";
 import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import { subscribeGlobalSearchOpen } from "../../lib/commands/events";
 import { useT } from "../../lib/i18n/use-t";
+import { clampSessionTitleForDisplay } from "../../lib/session-title-display";
 import { useAppStore } from "../../lib/stores/app-store";
 import { workspaceDisplayName } from "../workspaces/WorkspacePicker";
 import {
@@ -236,7 +237,9 @@ export function GlobalSearchModal({ onClose }: { onClose: () => void }) {
                         <div className="flex items-center gap-1.5">
                           <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
                             <Highlighted
-                              text={item.name?.trim() || t("sessionsUntitled")}
+                              text={clampSessionTitleForDisplay(
+                                item.name?.trim() || t("sessionsUntitled"),
+                              )}
                               terms={item.nameMatched ? terms : []}
                             />
                           </span>

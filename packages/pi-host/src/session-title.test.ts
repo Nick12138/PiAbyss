@@ -23,7 +23,7 @@ describe("session titles", () => {
 
   it("cleans model labels, quotes, punctuation, and excessive length", () => {
     expect(sanitizeSessionTitle('标题："修复桌面会话恢复。"')).toBe("🐛 修复桌面会话恢复");
-    expect(sanitizeSessionTitle("a".repeat(40))).toBe(`💬 ${"a".repeat(25)}…`);
+    expect(sanitizeSessionTitle("a".repeat(40))).toBe(`💬 ${"a".repeat(15)}…`);
   });
 
   it("keeps an existing leading emoji and avoids a duplicate emoji", () => {
@@ -97,7 +97,7 @@ describe("session titles", () => {
       complete,
     });
 
-    expect(title).toBe("💬 Restore desktop sessions");
+    expect(title).toBe("💬 Restore desktop…");
     expect(complete).toHaveBeenCalledOnce();
     expect(complete.mock.calls[0]?.[1]).toMatchObject({
       systemPrompt: expect.stringContaining(
@@ -106,10 +106,10 @@ describe("session titles", () => {
     });
     expect(complete.mock.calls[0]?.[2]).toMatchObject({
       apiKey: "test-key",
-      maxTokens: 64,
+      maxTokens: 96,
       maxRetries: 0,
       reasoning: "minimal",
-      timeoutMs: 15_000,
+      timeoutMs: 120_000,
     });
   });
 });

@@ -26,6 +26,7 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { workspaceContext } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
 import { formatTokenCount } from "../../lib/format-token-count";
+import { clampSessionTitleForDisplay } from "../../lib/session-title-display";
 import { requestUsageReportWithRetry } from "./usage-report-request";
 
 type UsageReportResponse = HostResponseEnvelope<"session.usageReport">;
@@ -451,7 +452,7 @@ function UsageSettingsContent({
                         </>
                       )}
                       <span className="truncate font-medium" title={session.sessionPath}>
-                        {session.name ?? t("usageUntitledSession")}
+                        {clampSessionTitleForDisplay(session.name ?? t("usageUntitledSession"))}
                       </span>
                     </div>
                   </td>
