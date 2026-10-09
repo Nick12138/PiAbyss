@@ -155,7 +155,7 @@ export const zh: Record<MessageKey, string> = {
   appearanceDensityComfortable: "宽松",
   appearanceFont: "界面字体",
   appearanceFontDesc:
-    "默认使用内置鸿蒙黑体 HarmonyOS Sans SC（中英文）；系统跟随 Windows/macOS 界面字体。",
+    "默认为内置 HarmonyOS Sans SC；系统跟随 Windows/macOS 界面字体。",
   appearanceFontDefault: "默认",
   appearanceFontSystem: "系统",
   appearanceConversationGroup: "会话",
@@ -245,9 +245,9 @@ export const zh: Record<MessageKey, string> = {
   generalAdvancedRestartHint: "更改将在重启 Host 后生效。",
   generalProxy: "网络代理",
   generalProxyDesc:
-    "Host 出网请求（模型 API、插件市场等）使用的 HTTP(S) 代理。留空表示不使用；环境变量 HTTP_PROXY/HTTPS_PROXY 优先。",
+    "Host 出网请求的 HTTP(S) 代理，留空停用；环境变量优先。",
   generalDefaultTools: "默认工具",
-  generalDefaultToolsDesc: "新会话启用的内置工具。未勾选的工具仍可通过 bash 调用。",
+  generalDefaultToolsDesc: "新会话启用的工具，未勾选的仍可用 bash 调用。",
   generalDefaultToolsReadDesc: "读取文件内容",
   generalDefaultToolsBashDesc: "执行 shell 命令",
   generalDefaultToolsEditDesc: "原地编辑文件",
@@ -255,7 +255,6 @@ export const zh: Record<MessageKey, string> = {
   generalDefaultToolsGrepDesc: "用 ripgrep 搜索文件内容",
   generalDefaultToolsFindDesc: "用 fd 按文件名查找",
   generalDefaultToolsLsDesc: "列出目录条目",
-  generalDefaultToolsRestartHint: "对新会话生效；重启 Host 可立即应用。",
   generalDefaultToolsConfigure: "配置（{count}）",
   generalDefaultToolsConfigureEmpty: "配置",
   notifSettingsFileOpenFailed: "无法打开设置文件",
@@ -586,12 +585,12 @@ export const zh: Record<MessageKey, string> = {
   skillsNoWorkspace: "打开工作区后才能查看技能。技能发现依赖于工作区目录。",
   skillsManageScope: "管理范围",
   skillsWorkspaceActive: "当前工作区",
-  skillsWorkspaceTargetHint:
-    "正在管理所选工作区：技能目录的添加/移除与启用开关都作用于该工作区（写入其 .pi/settings.json）。",
   skillsWorkspaceTargetBusy: "有会话正在运行，无法修改所选工作区的技能；请先停止相关会话。",
   skillsGroupUser: "全局（用户）",
   skillsGroupProject: "项目",
   skillsGroupBundle: "包与扩展",
+  skillsScopeGlobal: "全局",
+  skillsScopeGlobalHint: "管理用户级（全局）技能，作用于所有工作区",
   skillsGroupEmpty: "空",
   skillsBadgeCommandOnly: "仅命令调用",
   skillsBadgeDisabled: "已禁用",
@@ -607,8 +606,10 @@ export const zh: Record<MessageKey, string> = {
   skillsLoadedTitle: "已加载技能",
   skillsLoadedHint: "变更对新建或重载的会话生效；当前会话保持原有系统提示。",
   skillsPathsTitle: "技能目录",
-  skillsPathsDesc:
-    "对应 settings.json 中的 skills 数组，可写入用户（~/.pi/agent/settings.json）或项目（.pi/settings.json）设置。",
+  skillsPathsDescUser:
+    "写入用户设置（~/.pi/agent/settings.json）的 skills 数组，全局生效，作用于所有工作区。",
+  skillsPathsDescProject:
+    "写入所选工作区项目设置（.pi/settings.json）的 skills 数组，仅对该工作区生效。",
   skillsBrowseDirectory: "选择文件夹…",
   skillsPickDirectoryPlaceholder: "点击选择技能文件夹…",
   skillsEnterPath: "请输入技能目录路径",
@@ -618,6 +619,7 @@ export const zh: Record<MessageKey, string> = {
   skillsRemovePath: "移除",
   skillsPathMissing: "路径不存在",
   skillsPathsEmpty: "未配置技能目录",
+
   skillsDiagnosticsTitle: "诊断信息",
   skillsTrusted: "项目已信任",
   skillsUntrusted: "项目未信任",
@@ -652,8 +654,6 @@ export const zh: Record<MessageKey, string> = {
   pluginsWorkspaceActive: "当前工作区",
   pluginsWorkspaceLoading: "正在加载该工作区的插件状态…",
   pluginsWorkspaceLoadFailed: "加载该工作区的插件状态失败。",
-  pluginsWorkspaceTargetHint:
-    "正在管理所选工作区：启用开关作用于该工作区（写入其 .pi/settings.json）；安装与配置仍为全局。",
   pluginsWorkspaceTargetBusy: "有会话正在运行，无法修改所选工作区的插件；请先停止相关会话。",
   pluginsWorkspaceInstallDisabled: "请切换到该工作区再安装插件——安装始终作用于当前工作区。",
   pluginsScopeGlobalOnly: "仅全局",

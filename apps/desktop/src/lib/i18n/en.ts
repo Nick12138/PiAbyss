@@ -162,7 +162,7 @@ export const en = {
   appearanceDensityComfortable: "Comfortable",
   appearanceFont: "Interface font",
   appearanceFontDesc:
-    "Default uses bundled HarmonyOS Sans SC (Latin & CJK); System follows the Windows/macOS UI font.",
+    "Default uses bundled HarmonyOS Sans SC; System follows the Windows/macOS UI font.",
   appearanceFontDefault: "Default",
   appearanceFontSystem: "System",
   appearanceConversationGroup: "Conversation",
@@ -261,10 +261,10 @@ export const en = {
   generalAdvancedRestartHint: "Changes take effect after restarting the Host.",
   generalProxy: "Network proxy",
   generalProxyDesc:
-    "HTTP(S) proxy for the Host's outbound requests (model APIs, plugin registry, etc.). Leave empty to disable; the HTTP_PROXY/HTTPS_PROXY environment variables take precedence.",
+    "HTTP(S) proxy for the Host's outbound requests. Leave empty to disable; environment variables take precedence.",
   generalDefaultTools: "Default tools",
   generalDefaultToolsDesc:
-    "Built-in tools enabled for new sessions. Unchecked tools stay callable through bash.",
+    "Tools enabled for new sessions; unchecked ones stay callable through bash.",
   generalDefaultToolsReadDesc: "Read file contents",
   generalDefaultToolsBashDesc: "Run shell commands",
   generalDefaultToolsEditDesc: "Edit files in place",
@@ -272,7 +272,6 @@ export const en = {
   generalDefaultToolsGrepDesc: "Search file contents with ripgrep",
   generalDefaultToolsFindDesc: "Find files by name with fd",
   generalDefaultToolsLsDesc: "List directory entries",
-  generalDefaultToolsRestartHint: "Applies to new sessions; restart the Host to apply now.",
   generalDefaultToolsConfigure: "Configure ({count})",
   generalDefaultToolsConfigureEmpty: "Configure",
   notifSettingsFileOpenFailed: "Couldn't open the settings file",
@@ -623,13 +622,13 @@ export const en = {
     "Open a workspace to inspect skills. Discovery depends on the workspace directory.",
   skillsManageScope: "Managing",
   skillsWorkspaceActive: "Current workspace",
-  skillsWorkspaceTargetHint:
-    "Managing the selected workspace: skill directory add/remove and enable toggles apply to it (written to its .pi/settings.json).",
   skillsWorkspaceTargetBusy:
     "A session is running; stop it before modifying the selected workspace's skills.",
   skillsGroupUser: "Global (user)",
   skillsGroupProject: "Project",
   skillsGroupBundle: "Packages & Extensions",
+  skillsScopeGlobal: "Global",
+  skillsScopeGlobalHint: "Manage user-level (global) skills shared across workspaces",
   skillsGroupEmpty: "None",
   skillsBadgeCommandOnly: "Command-only",
   skillsBadgeDisabled: "Disabled",
@@ -646,8 +645,10 @@ export const en = {
   skillsLoadedHint:
     "Changes apply to new or reloaded sessions; the current session keeps its original system prompt.",
   skillsPathsTitle: "Skill paths",
-  skillsPathsDesc:
-    "Entries of the `skills` array in settings.json. Added to user (~/.pi/agent/settings.json) or project (.pi/settings.json) settings.",
+  skillsPathsDescUser:
+    "Written to the `skills` array in user settings (~/.pi/agent/settings.json); applies globally to every workspace.",
+  skillsPathsDescProject:
+    "Written to the `skills` array in the selected workspace's project settings (.pi/settings.json); applies to that workspace only.",
   skillsBrowseDirectory: "Choose folder…",
   skillsPickDirectoryPlaceholder: "Choose a skills folder…",
   skillsEnterPath: "Enter the skill directory path",
@@ -696,8 +697,6 @@ export const en = {
   pluginsWorkspaceActive: "Current workspace",
   pluginsWorkspaceLoading: "Loading this workspace's plugin state…",
   pluginsWorkspaceLoadFailed: "Failed to load this workspace's plugin state.",
-  pluginsWorkspaceTargetHint:
-    "Managing the selected workspace: enable toggles apply to it (written to its .pi/settings.json). Install/configure stay global.",
   pluginsWorkspaceTargetBusy:
     "A session is running; stop it before modifying the selected workspace's plugins.",
   pluginsWorkspaceInstallDisabled:

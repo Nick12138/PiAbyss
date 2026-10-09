@@ -182,11 +182,11 @@ export function SkillsSettings() {
   const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false);
   const [newPath, setNewPath] = useState("");
-  const [newScope, setNewScope] = useState<SkillSettingsScope>("project");
   const [previewSkill, setPreviewSkill] = useState<{ name: string; filePath: string } | null>(null);
   const [showPromptHelp, setShowPromptHelp] = useState(false);
-  // "" = active workspace; otherwise the selected workspace's raw path.
-  const [selectedWorkspacePath, setSelectedWorkspacePath] = useState("");
+  // "" = active workspace; "user" = global scope; otherwise a workspace path.
+  // Global is the default since it applies to every workspace.
+  const [selectedWorkspacePath, setSelectedWorkspacePath] = useState("user");
   // Tracks which workspace the rendered snapshots belong to, so a selection
   // change drops the previous workspace's data while the new one loads.
   const snapshotSourceRef = useRef("");
@@ -198,8 +198,16 @@ export function SkillsSettings() {
   });
   const refreshRequest = useRef(0);
 
+  /** True when the scope row's "全局" chip is selected. */
+  const isUserScope = selectedWorkspacePath === "user";
+  // New skill paths follow the scope row: global adds user paths, a workspace
+  // adds project paths for that workspace.
+  const newScope: SkillSettingsScope = isUserScope ? "user" : "project";
+
   /** Cross-workspace targeting for host requests; undefined = active workspace. */
   function targetParams(): WorkspaceTargetRef | undefined {
+    // The global scope manages the user's own config, not another workspace.
+    if (isUserScope) return undefined;
     // Unset selection resolves to the active workspace's own entry.
     const selected = selectedWorkspacePath || workspace?.cwd;
     if (!selected || selected === workspace?.cwd) return undefined;
@@ -481,14 +489,17 @@ export function SkillsSettings() {
   }
 
   const rows = snapshot ? buildRows(snapshot.skills, resources) : [];
-  // Every group stays visible so empty scopes are discoverable.
-  const groups: Array<{ id: SkillGroupId; rows: SkillRow[]; prompts: PromptInfo[] }> = (
-    ["user", "project", "bundle"] as const
-  ).map((id) => ({
-    id,
-    rows: rows.filter((row) => row.groupId === id),
-    prompts: promptsForGroup(promptSnapshot, id),
-  }));
+  // Group visibility follows the scope row: the global scope shows the fixed
+  // user & bundle groups; a workspace shows only its own project skills.
+  const visibleGroupIds: readonly SkillGroupId[] = isUserScope
+    ? ["user", "bundle"]
+    : ["project"];
+  const groups: Array<{ id: SkillGroupId; rows: SkillRow[]; prompts: PromptInfo[] }> =
+    visibleGroupIds.map((id) => ({
+      id,
+      rows: rows.filter((row) => row.groupId === id),
+      prompts: promptsForGroup(promptSnapshot, id),
+    }));
   const groupLabel = (id: SkillGroupId) =>
     id === "user"
       ? t("skillsGroupUser")
@@ -525,70 +536,67 @@ export function SkillsSettings() {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-skills-settings>
       <div className="min-h-0 flex-1 overflow-auto p-6" data-settings-scroll>
         <div className="mx-auto flex max-w-5xl flex-col gap-6">
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <span className="rounded-full bg-surface-overlay px-2.5 py-1 text-[11px] text-muted">
-                  {t("skillsLoadedBadge", { loaded: String(rows.length) })}
-                </span>
-                <span className="rounded-full bg-surface-overlay px-2.5 py-1 text-[11px] text-muted">
-                  {t("skillsConfiguredBadge", {
-                    configured: String(snapshot?.configuredPaths.length ?? 0),
-                  })}
-                </span>
-              </div>
-              {refreshButton}
-            </div>
-
-            {knownWorkspaces.length > 0 && (
-              <div className="flex flex-col gap-1.5">
-                <div
-                  className="flex flex-wrap items-center gap-1.5"
-                  role="group"
-                  aria-label={t("skillsManageScope")}
+          {knownWorkspaces.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <div
+                className="flex flex-wrap items-center gap-1.5"
+                role="group"
+                aria-label={t("skillsManageScope")}
+              >
+                <span className="shrink-0 text-xs text-muted">{t("skillsManageScope")}</span>
+                <button
+                  type="button"
+                  aria-pressed={isUserScope}
+                  aria-label={t("skillsScopeGlobal")}
+                  title={t("skillsScopeGlobalHint")}
+                  disabled={busy}
+                  className={`flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors disabled:cursor-default disabled:opacity-60 ${
+                    isUserScope
+                      ? "border-accent/60 bg-accent/10 text-foreground"
+                      : "border-border text-muted hover:bg-surface-overlay hover:text-foreground"
+                  }`}
+                  onClick={() => setSelectedWorkspacePath(isUserScope ? "" : "user")}
                 >
-                  <span className="shrink-0 text-xs text-muted">{t("skillsManageScope")}</span>
-                  {workspaceChips().map((chip) => {
-                    const selected = chip.value === selectedWorkspacePath;
-                    const label = chip.isActive
-                      ? `${chip.basename} · ${t("skillsWorkspaceActive")}`
-                      : chip.basename;
-                    return (
-                      <button
-                        key={chip.path}
-                        type="button"
-                        aria-pressed={selected}
-                        aria-label={label}
-                        title={chip.path}
-                        disabled={busy}
-                        className={`flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors disabled:cursor-default disabled:opacity-60 ${
-                          selected
-                            ? "border-accent/60 bg-accent/10 text-foreground"
-                            : "border-border text-muted hover:bg-surface-overlay hover:text-foreground"
-                        }`}
-                        onClick={() => setSelectedWorkspacePath(chip.value)}
-                      >
-                        {chip.isTelegram && (
-                          <Send size={12} className="shrink-0 text-muted" aria-hidden />
-                        )}
-                        <span className="max-w-48 truncate">{chip.basename}</span>
-                        {chip.isActive && (
-                          <span
-                            className="size-1.5 shrink-0 rounded-full bg-success"
-                            title={t("skillsWorkspaceActive")}
-                            aria-hidden
-                          />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-                {targetParams() && (
-                  <p className="text-[11px] text-muted">{t("skillsWorkspaceTargetHint")}</p>
-                )}
+                  <User size={12} className="shrink-0 text-muted" aria-hidden />
+                  <span>{t("skillsScopeGlobal")}</span>
+                </button>
+                {workspaceChips().map((chip) => {
+                  const selected = chip.value === selectedWorkspacePath;
+                  const label = chip.isActive
+                    ? `${chip.basename} · ${t("skillsWorkspaceActive")}`
+                    : chip.basename;
+                  return (
+                    <button
+                      key={chip.path}
+                      type="button"
+                      aria-pressed={selected}
+                      aria-label={label}
+                      title={chip.path}
+                      disabled={busy}
+                      className={`flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors disabled:cursor-default disabled:opacity-60 ${
+                        selected
+                          ? "border-accent/60 bg-accent/10 text-foreground"
+                          : "border-border text-muted hover:bg-surface-overlay hover:text-foreground"
+                      }`}
+                      onClick={() => setSelectedWorkspacePath(chip.value)}
+                    >
+                      {chip.isTelegram && (
+                        <Send size={12} className="shrink-0 text-muted" aria-hidden />
+                      )}
+                      <span className="max-w-48 truncate">{chip.basename}</span>
+                      {chip.isActive && (
+                        <span
+                          className="size-1.5 shrink-0 rounded-full bg-success"
+                          title={t("skillsWorkspaceActive")}
+                          aria-hidden
+                        />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {snapshot?.resourceReloadRequired && (
             <p
@@ -630,9 +638,11 @@ export function SkillsSettings() {
           )}
 
           <section>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-3">
                 <h2 className="text-[13px] font-medium text-muted">{t("skillsLoadedTitle")}</h2>
+              </div>
+              <div className="flex items-center gap-2">
                 {(snapshot || promptSnapshot) && (
                   <button
                     type="button"
@@ -644,18 +654,19 @@ export function SkillsSettings() {
                     <HelpCircle size={14} />
                   </button>
                 )}
+                {refreshButton}
+                {snapshot && (
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[11px] ${
+                      snapshot.projectTrusted
+                        ? "bg-success/15 text-success"
+                        : "bg-warning/15 text-warning"
+                    }`}
+                  >
+                    {snapshot.projectTrusted ? t("skillsTrusted") : t("skillsUntrusted")}
+                  </span>
+                )}
               </div>
-              {snapshot && (
-                <span
-                  className={`rounded-full px-2 py-0.5 text-[11px] ${
-                    snapshot.projectTrusted
-                      ? "bg-success/15 text-success"
-                      : "bg-warning/15 text-warning"
-                  }`}
-                >
-                  {snapshot.projectTrusted ? t("skillsTrusted") : t("skillsUntrusted")}
-                </span>
-              )}
             </div>
             <div className="flex flex-col gap-4">
               {groups.map((group) => {
@@ -682,8 +693,10 @@ export function SkillsSettings() {
                         <ChevronDown size={14} className="shrink-0 text-muted" aria-hidden />
                       )}
                       <Icon size={14} className="shrink-0 text-muted" aria-hidden />
-                      <span className="text-[13px] font-medium">{groupLabel(group.id)}</span>
-                      <span className="text-[11px] text-muted">
+                      <span className="text-[13px] font-medium leading-none">
+                        {groupLabel(group.id)}
+                      </span>
+                      <span className="text-[11px] leading-none text-muted">
                         {group.rows.length + group.prompts.length}
                       </span>
                     </button>
@@ -771,16 +784,10 @@ export function SkillsSettings() {
                                     </span>
                                   </div>
                                   {row.description && (
-                                    <span className="line-clamp-2 break-words text-xs text-muted">
+                                    <span className="line-clamp-3 break-words text-xs leading-relaxed text-muted">
                                       {row.description}
                                     </span>
                                   )}
-                                  <span
-                                    className="truncate font-mono text-[11px] text-muted"
-                                    title={row.filePath}
-                                  >
-                                    {row.filePath}
-                                  </span>
                                 </div>
                               </li>
                             );
@@ -826,16 +833,11 @@ export function SkillsSettings() {
                                   <button
                                     type="button"
                                     className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground"
-                                    title={t("promptsPreviewToggle", { name: prompt.name })}
-                                    aria-label={t("promptsPreviewToggle", { name: prompt.name })}
-                                    onClick={() =>
-                                      setPreviewSkill({
-                                        name: prompt.name,
-                                        filePath: prompt.filePath,
-                                      })
-                                    }
+                                    title={t("skillsOpen")}
+                                    aria-label={`${t("skillsOpen")} ${prompt.filePath}`}
+                                    onClick={() => void openPath(prompt.filePath)}
                                   >
-                                    <Eye size={14} />
+                                    <FolderOpen size={14} />
                                   </button>
                                 </div>
                                 <span
@@ -860,7 +862,9 @@ export function SkillsSettings() {
           <section>
             <h2 className="mb-2 text-[13px] font-medium text-muted">{t("skillsPathsTitle")}</h2>
             <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-              <p className="text-xs text-muted">{t("skillsPathsDesc")}</p>
+              <p className="text-xs text-muted">
+                {t(isUserScope ? "skillsPathsDescUser" : "skillsPathsDescProject")}
+              </p>
               <ul className="flex flex-col gap-2">
                 {(snapshot?.configuredPaths ?? []).length === 0 && (
                   <li className="text-xs text-muted">{t("skillsPathsEmpty")}</li>
@@ -914,16 +918,14 @@ export function SkillsSettings() {
                     {newPath || t("skillsPickDirectoryPlaceholder")}
                   </span>
                 </button>
-                <Select
-                  className="min-w-32"
-                  ariaLabel={t("skillsPathsTitle")}
-                  value={newScope}
-                  onChange={(value) => setNewScope(value as SkillSettingsScope)}
-                  options={[
-                    { value: "project", label: t("skillsScopeProject") },
-                    { value: "user", label: t("skillsScopeUser") },
-                  ]}
-                />
+                <span
+                  className={`flex h-8 shrink-0 items-center rounded-md border border-border px-2.5 text-xs ${
+                    isUserScope ? "text-muted" : "text-foreground"
+                  }`}
+                  title={t(isUserScope ? "skillsPathsDescUser" : "skillsPathsDescProject")}
+                >
+                  {t(isUserScope ? "skillsScopeUser" : "skillsScopeProject")}
+                </span>
                 <button
                   type="button"
                   className={secondaryButton}

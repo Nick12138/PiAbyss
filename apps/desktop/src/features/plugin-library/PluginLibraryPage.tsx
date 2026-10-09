@@ -1069,7 +1069,7 @@ export function PluginLibraryPage() {
 
   if (!workspace?.servicesReady) {
     return (
-      <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted">
+      <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted">
         {t("packagesSelectWorkspace")}
       </div>
     );
@@ -1256,7 +1256,7 @@ export function PluginLibraryPage() {
       )}
 
       {catalogState === "error" && !catalog ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
           <AlertTriangle size={24} className="text-danger" />
           <div>
             <p className="text-sm font-medium">{t("pluginsLoadFailed")}</p>
@@ -1272,13 +1272,13 @@ export function PluginLibraryPage() {
           </button>
         </div>
       ) : !catalog ? (
-        <p className="p-8 text-center text-sm text-muted">{t("pluginsLoading")}</p>
+        <p className="p-6 text-center text-sm text-muted">{t("pluginsLoading")}</p>
       ) : catalog.plugins.length === 0 ? (
-        <p className="p-8 text-center text-sm text-muted">{t("pluginsEmpty")}</p>
+        <p className="p-6 text-center text-sm text-muted">{t("pluginsEmpty")}</p>
       ) : targetSelection && !managedPackages && packagesLoading ? (
-        <p className="p-8 text-center text-sm text-muted">{t("pluginsWorkspaceLoading")}</p>
+        <p className="p-6 text-center text-sm text-muted">{t("pluginsWorkspaceLoading")}</p>
       ) : targetSelection && !managedPackages && packageLoadError ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
           <AlertTriangle size={24} className="text-danger" />
           <p className="max-w-lg text-xs text-muted">{packageLoadError}</p>
           <button type="button" className={secondaryButton} onClick={() => void ensurePackages()}>
