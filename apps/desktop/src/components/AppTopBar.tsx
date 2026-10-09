@@ -81,7 +81,7 @@ export function AppTopBar({
         <SidebarBrandToggle collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
         {!sidebarCollapsed && (
           <span className="text-[13px] font-semibold" data-sidebar-brand>
-            Pi Agent
+            Pi Abyss
           </span>
         )}
         <div className="ml-auto flex items-center gap-0.5">
