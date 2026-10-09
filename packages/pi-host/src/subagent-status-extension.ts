@@ -48,6 +48,7 @@ export function mapSubagentHttpRun(run: SubagentHttpRunSummary): SubagentStatusN
     label,
     ...(run.agent?.trim() ? { role: run.agent } : {}),
     ...(run.model?.trim() ? { model: run.model } : {}),
+    ...(run.thinking?.trim() ? { thinking: run.thinking } : {}),
     state: mapSubagentRunState(run.status),
     ...(typeof run.startedAt === "number" ? { startedAt: run.startedAt } : {}),
     ...(typeof run.finishedAt === "number" ? { endedAt: run.finishedAt } : {}),

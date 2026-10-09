@@ -7,13 +7,13 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { workspaceContext } from "../../lib/bridge/host-context";
 import { buildTranscriptRows, type TranscriptRow } from "../chat/transcript-model";
 import { TranscriptRowView } from "../chat/Transcript";
+import { flattenNodes } from "./subagent-model";
+import { SubagentModelPicker } from "./SubagentModelPicker";
 import {
-  flattenNodes,
-  subagentRoleEmoji,
-  subagentRoleLabel,
-  subagentStateClass,
-  subagentStateLabel,
-} from "./subagent-model";
+  getPendingSubagentOverride,
+  setPendingSubagentOverride,
+  type SubagentModelOverride,
+} from "./subagent-pending-model";
 
 /** Full-page conversation surface for the active subagent run. Replaces the
  * former right-dock panel expansion: the chat area renders the run's
@@ -36,6 +36,13 @@ export function SubagentConversation() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [pendingActions, setPendingActions] = useState<ReadonlySet<string>>(new Set());
+  // Pending model/thinking override picked in this view (see
+  // subagent-pending-model): rides along with the next send / resume,
+  // cleared once a respawn consumed it (mode "resume" / successful resume
+  // control).
+  const [pendingOverride, setPendingOverride] = useState<SubagentModelOverride | undefined>(() =>
+    getPendingSubagentOverride(activeSubagentNodeId),
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const stickToBottomRef = useRef(true);
@@ -64,6 +71,7 @@ export function SubagentConversation() {
     setLoadError(false);
     setSendError(null);
     stickToBottomRef.current = true;
+    setPendingOverride(getPendingSubagentOverride(activeSubagentNodeId));
   }, [activeSubagentNodeId]);
 
   const nodeId = activeSubagentNodeId;
@@ -163,7 +171,27 @@ export function SubagentConversation() {
           resume: "subagents.resume",
         }[action] as
           "subagents.stop" | "subagents.pause" | "subagents.continue" | "subagents.resume";
-        await hostClient.request(method, workspaceContext(host, workspace), { nodeId }, 15_000);
+        const response = await hostClient.request(
+          method,
+          workspaceContext(host, workspace),
+          // A resume respawns the child, so the pending model/thinking
+          // override applies there; other controls operate on the live
+          // process.
+          action === "resume" && pendingOverride
+            ? {
+                nodeId,
+                ...(pendingOverride.model !== undefined ? { model: pendingOverride.model } : {}),
+                ...(pendingOverride.thinking !== undefined
+                  ? { thinking: pendingOverride.thinking }
+                  : {}),
+              }
+            : { nodeId },
+          15_000,
+        );
+        if (response.ok && action === "resume" && pendingOverride) {
+          setPendingSubagentOverride(nodeId, undefined);
+          setPendingOverride(undefined);
+        }
       } finally {
         setPendingActions((current) => {
           const next = new Set(current);
@@ -172,13 +200,15 @@ export function SubagentConversation() {
         });
       }
     },
-    [host, workspace, nodeId],
+    [host, workspace, nodeId, pendingOverride],
   );
 
   const isPending = (action: string) =>
     nodeId !== null && pendingActions.has(`${nodeId}:${action}`);
 
   const queued = node?.state === "queued";
+  const stoppable =
+    node?.state === "running" || node?.state === "paused" || node?.state === "queued";
   const canSend = !sending && !queued && draft.trim().length > 0;
 
   const send = async () => {
@@ -190,12 +220,29 @@ export function SubagentConversation() {
       const response = await hostClient.request(
         "subagents.send",
         workspaceContext(host, workspace),
-        { nodeId, message },
+        // The pending model/thinking override rides with this message; it is
+        // consumed when the plugin respawns a finished run (mode "resume").
+        // A steer to a live process cannot hot-swap either, so the override
+        // stays pending for the eventual respawn.
+        pendingOverride
+          ? {
+              nodeId,
+              message,
+              ...(pendingOverride.model !== undefined ? { model: pendingOverride.model } : {}),
+              ...(pendingOverride.thinking !== undefined
+                ? { thinking: pendingOverride.thinking }
+                : {}),
+            }
+          : { nodeId, message },
         15_000,
       );
       if (response.ok) {
         setDraft("");
         if (textareaRef.current) textareaRef.current.style.height = "auto";
+        if (response.result.mode === "resume" && pendingOverride) {
+          setPendingSubagentOverride(nodeId, undefined);
+          setPendingOverride(undefined);
+        }
         // Resume-with-message restarts the run; an immediate refresh picks up
         // the new turn faster than the poll interval.
         void loadSession();
@@ -214,7 +261,7 @@ export function SubagentConversation() {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 280)}px`;
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -225,10 +272,6 @@ export function SubagentConversation() {
   };
 
   if (!nodeId || !node) return null;
-
-  const role = node.role?.trim();
-  const localizedRole = subagentRoleLabel(role, t);
-  const roleBadge = subagentRoleEmoji(role) ?? localizedRole;
 
   return (
     <section
@@ -283,22 +326,26 @@ export function SubagentConversation() {
         </div>
       </div>
 
-      <footer className="shrink-0 px-4 pb-4 pt-1">
-        <div className="conversation-content-width mx-auto flex flex-col gap-1.5">
+      <footer className="shrink-0 px-5 pb-5 pt-2">
+        <div className="conversation-content-width mx-auto w-full">
           {sendError && (
             <div
               role="alert"
-              className="flex items-center gap-1.5 text-xs text-danger"
+              className="flex items-center gap-1.5 pb-1.5 text-xs text-danger"
               data-subagent-send-error
             >
               <CircleAlert size={13} aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate">{sendError}</span>
             </div>
           )}
-          <div className="theme-composer-surface flex items-end gap-1.5 rounded-xl border border-border bg-surface-overlay px-3 py-2">
+          {/* Same surface as the main chat composer (chat-composer-surface) so
+              the subagent view's input reads as the same control, not a
+              variant: identical border, background, padding and internal
+              textarea-above / toolbar-below layout. */}
+          <div className="chat-composer-surface rounded-xl border-[1.5px] border-border bg-surface-raised p-2 shadow-sm">
             <textarea
               ref={textareaRef}
-              className="max-h-40 min-h-9 flex-1 resize-none self-center bg-transparent text-sm leading-6 outline-none placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-50"
+              className="chat-composer-input min-h-[60px] max-h-[280px] w-full resize-none bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-50"
               rows={1}
               placeholder={t("subagentComposerPlaceholder")}
               disabled={queued}
@@ -307,92 +354,94 @@ export function SubagentConversation() {
               onKeyDown={handleKeyDown}
               data-subagent-composer
             />
-            <div className="flex shrink-0 items-center gap-1 self-center">
+            <div className="composer-toolbar flex h-8 items-center gap-2.5 px-1">
               {node.state === "running" && (
                 <button
                   type="button"
-                  className="flex size-6 items-center justify-center rounded text-warning transition-colors hover:bg-warning/15 disabled:cursor-wait disabled:opacity-60"
+                  className="flex size-7 items-center justify-center rounded-md text-warning transition-colors hover:bg-warning/15 disabled:cursor-wait disabled:opacity-60"
                   title={t("subagentsPause")}
                   aria-label={t("subagentsPause")}
                   disabled={isPending("pause")}
                   onClick={() => void runControl("pause")}
                 >
-                  <Pause size={13} fill="currentColor" />
+                  <Pause size={14} fill="currentColor" />
                 </button>
               )}
               {node.state === "paused" && (
                 <button
                   type="button"
-                  className="flex size-6 items-center justify-center rounded text-success transition-colors hover:bg-success/15 disabled:cursor-wait disabled:opacity-60"
+                  className="flex size-7 items-center justify-center rounded-md text-success transition-colors hover:bg-success/15 disabled:cursor-wait disabled:opacity-60"
                   title={t("subagentsContinue")}
                   aria-label={t("subagentsContinue")}
                   disabled={isPending("continue")}
                   onClick={() => void runControl("continue")}
                 >
-                  <Play size={13} fill="currentColor" />
+                  <Play size={14} fill="currentColor" />
                 </button>
               )}
               {node.state === "failed" && (
                 <button
                   type="button"
-                  className="flex size-6 items-center justify-center rounded text-success transition-colors hover:bg-success/15 disabled:cursor-wait disabled:opacity-60"
+                  className="flex size-7 items-center justify-center rounded-md text-success transition-colors hover:bg-success/15 disabled:cursor-wait disabled:opacity-60"
                   title={t("subagentsResume")}
                   aria-label={t("subagentsResume")}
                   disabled={isPending("resume")}
                   onClick={() => void runControl("resume")}
                 >
-                  <RotateCcw size={13} />
+                  <RotateCcw size={14} />
                 </button>
               )}
-              {(node.state === "running" || node.state === "paused" || node.state === "queued") && (
-                <button
-                  type="button"
-                  className="flex size-6 items-center justify-center rounded text-danger transition-colors hover:bg-danger/15 disabled:cursor-wait disabled:opacity-60"
-                  title={t("subagentsStop")}
-                  aria-label={t("subagentsStop")}
-                  disabled={isPending("stop")}
-                  onClick={() => void runControl("stop")}
-                >
-                  <Square size={13} fill="currentColor" />
-                </button>
-              )}
-              <button
-                type="button"
-                title={t("composerSend")}
-                aria-label={t("composerSend")}
-                className="theme-send-control flex size-7 items-center justify-center rounded-full bg-foreground text-surface transition-colors hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-30"
-                disabled={!canSend}
-                onClick={() => void send()}
-                data-subagent-send
-              >
-                {sending ? (
-                  <LoaderCircle size={15} className="animate-spin" />
+              {/* Merged send/stop control on the right, mirroring the main
+                  composer: while the run is alive the slot is the stop
+                  button, and switches to send as soon as the user has a
+                  draft to steer/queue; pause/continue/resume stay
+                  independent on the left. */}
+              <div className="ml-auto flex items-center gap-2.5">
+                <SubagentModelPicker
+                  currentModel={node.model ?? undefined}
+                  currentThinking={node.thinking}
+                  override={pendingOverride}
+                  onChange={(next) => {
+                    if (!nodeId) return;
+                    setPendingSubagentOverride(nodeId, next);
+                    setPendingOverride(next);
+                  }}
+                />
+                {stoppable && !canSend ? (
+                  <button
+                    type="button"
+                    title={t("subagentsStop")}
+                    aria-label={t("subagentsStop")}
+                    className="flex size-7 items-center justify-center rounded-full bg-danger/15 text-danger transition-colors hover:bg-danger/20 disabled:cursor-wait disabled:opacity-60"
+                    disabled={isPending("stop")}
+                    onClick={() => void runControl("stop")}
+                    data-subagent-stop
+                  >
+                    <Square size={14} fill="currentColor" className="block shrink-0" />
+                  </button>
                 ) : (
-                  <ArrowUp size={17} strokeWidth={2.25} className="block shrink-0" />
+                  <button
+                    type="button"
+                    title={t("composerSend")}
+                    aria-label={t("composerSend")}
+                    className="theme-send-control flex size-7 items-center justify-center rounded-full bg-foreground text-surface transition-colors hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-30"
+                    disabled={!canSend}
+                    onClick={() => void send()}
+                    data-subagent-send
+                  >
+                    {sending ? (
+                      <LoaderCircle size={15} className="animate-spin" />
+                    ) : (
+                      <ArrowUp size={18} strokeWidth={2.25} className="block shrink-0" />
+                    )}
+                  </button>
                 )}
-              </button>
+              </div>
             </div>
           </div>
-          <div className="flex min-h-4 items-center gap-2 text-[11px] text-muted">
-            <span className={subagentStateClass(node.state)}>
-              {subagentStateLabel(node.state, t)}
-            </span>
-            {roleBadge && role !== (node.name ?? node.label) && <span aria-hidden="true">·</span>}
-            {roleBadge && role !== (node.name ?? node.label) && (
-              <span title={t("subagentsRole", { role: localizedRole ?? "" })}>{roleBadge}</span>
-            )}
-            {node.model && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span className="truncate">{t("subagentsModel", { model: node.model })}</span>
-              </>
-            )}
-            {queued && (
-              <span className="ml-auto shrink-0 text-warning">
-                {t("subagentComposerQueuedHint")}
-              </span>
-            )}
-          </div>
+          {/* No status line under the composer: run state is carried by the
+              toolbar (pause/stop affordances + spinner), the role emoji by
+              the top-bar breadcrumb, and the model by the picker itself. */}
         </div>
       </footer>
     </section>

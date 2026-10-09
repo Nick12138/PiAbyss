@@ -773,18 +773,31 @@ export function validateRequestParams<M extends HostMethod>(
     case "subagents.stop":
     case "subagents.pause":
     case "subagents.continue":
-    case "subagents.resume":
       return exactObject(params, ["nodeId"], []) &&
         isNonEmptyString(params.nodeId) &&
         params.nodeId.length <= 160
         ? ok(params)
         : fail(`invalid ${method} params`, { method });
+    case "subagents.resume":
+      return exactObject(params, ["nodeId"], ["model", "thinking"]) &&
+        isNonEmptyString(params.nodeId) &&
+        params.nodeId.length <= 160 &&
+        (params.model === undefined ||
+          (isNonEmptyString(params.model) && params.model.length <= 200)) &&
+        (params.thinking === undefined ||
+          (isNonEmptyString(params.thinking) && params.thinking.length <= 32))
+        ? ok(params)
+        : fail(`invalid ${method} params`, { method });
     case "subagents.send":
-      return exactObject(params, ["nodeId", "message"], []) &&
+      return exactObject(params, ["nodeId", "message"], ["model", "thinking"]) &&
         isNonEmptyString(params.nodeId) &&
         params.nodeId.length <= 160 &&
         isNonEmptyString(params.message) &&
-        params.message.length <= 64_000
+        params.message.length <= 64_000 &&
+        (params.model === undefined ||
+          (isNonEmptyString(params.model) && params.model.length <= 200)) &&
+        (params.thinking === undefined ||
+          (isNonEmptyString(params.thinking) && params.thinking.length <= 32))
         ? ok(params)
         : fail(`invalid ${method} params`, { method });
     case "agent.abort":

@@ -34,6 +34,9 @@ export type SubagentHttpRunSummary = {
   statusLabel: string;
   pid?: number | null;
   model?: string | null;
+  /** Effective thinking level fixed into the task at spawn (null = pi's
+   *  global default thinking level applies). */
+  thinking?: string | null;
   createdAt: number;
   startedAt?: number | null;
   finishedAt?: number | null;

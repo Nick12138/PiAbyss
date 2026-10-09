@@ -117,7 +117,17 @@ function isSubagentStatusNode(value: unknown, depth = 0): boolean {
     !hasExactKeys(
       value,
       ["id", "kind", "label", "state"],
-      ["name", "role", "model", "startedAt", "updatedAt", "endedAt", "activity", "children"],
+      [
+        "name",
+        "role",
+        "model",
+        "thinking",
+        "startedAt",
+        "updatedAt",
+        "endedAt",
+        "activity",
+        "children",
+      ],
     )
   )
     return false;
@@ -128,6 +138,7 @@ function isSubagentStatusNode(value: unknown, depth = 0): boolean {
     isOptionalBoundedString(value.name, 160) &&
     isOptionalBoundedString(value.role, 160) &&
     isOptionalBoundedString(value.model, 160) &&
+    isOptionalBoundedString(value.thinking, 160) &&
     ["queued", "running", "complete", "failed", "paused", "stopped", "rejected"].includes(
       String(value.state),
     ) &&
@@ -3385,7 +3396,15 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         hasExactKeys(
           result,
           ["default", "workspacePath"],
-          ["tokenMasked", "bound", "assistant", "voice", "threads", "pluginInstalled", "pluginScope"],
+          [
+            "tokenMasked",
+            "bound",
+            "assistant",
+            "voice",
+            "threads",
+            "pluginInstalled",
+            "pluginScope",
+          ],
         ) &&
         (result.default === null || isTelegramProfileSummary(result.default)) &&
         isNonEmptyString(result.workspacePath) &&

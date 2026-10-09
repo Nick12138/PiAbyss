@@ -163,6 +163,7 @@ async function controlSubagentRun(
   ctx: HandlerContext,
   action: "stop" | "pause" | "continue" | "resume",
   resultKey: "stopped" | "paused" | "continued" | "resumed",
+  body?: Record<string, string>,
 ): Promise<{ result: unknown } | { error: HostError }> {
   const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
   if (stale) return { error: stale };
@@ -170,6 +171,7 @@ async function controlSubagentRun(
   const runId = resolveSubagentRunId(nodeId);
   const outcome = await postSubagentApi<SubagentHttpControlResponse>(
     `/api/runs/${encodeURIComponent(runId)}/${action}`,
+    body,
   );
   if (!outcome) {
     return {
@@ -367,15 +369,34 @@ export function createSessionHandlers(
     "subagents.stop": async (ctx) => controlSubagentRun(factory, ctx, "stop", "stopped"),
     "subagents.pause": async (ctx) => controlSubagentRun(factory, ctx, "pause", "paused"),
     "subagents.continue": async (ctx) => controlSubagentRun(factory, ctx, "continue", "continued"),
-    "subagents.resume": async (ctx) => controlSubagentRun(factory, ctx, "resume", "resumed"),
+    "subagents.resume": async (ctx) => {
+      const { nodeId, model, thinking } = ctx.params as {
+        nodeId: string;
+        model?: string;
+        thinking?: string;
+      };
+      return controlSubagentRun(factory, ctx, "resume", "resumed", {
+        ...(model ? { model } : {}),
+        ...(thinking ? { thinking } : {}),
+      });
+    },
     "subagents.send": async (ctx) => {
       const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
       if (stale) return { error: stale };
-      const { nodeId, message } = ctx.params as { nodeId: string; message: string };
+      const { nodeId, message, model, thinking } = ctx.params as {
+        nodeId: string;
+        message: string;
+        model?: string;
+        thinking?: string;
+      };
       const runId = resolveSubagentRunId(nodeId);
       const outcome = await postSubagentApi<SubagentHttpSendResponse>(
         `/api/runs/${encodeURIComponent(runId)}/send`,
-        { message },
+        {
+          message,
+          ...(model ? { model } : {}),
+          ...(thinking ? { thinking } : {}),
+        },
       );
       if (!outcome) {
         return {

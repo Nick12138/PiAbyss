@@ -134,7 +134,7 @@ export function AppTopBar({
                         type="button"
                         data-tauri-drag-region="false"
                         data-back-to-main-session
-                        className="pointer-events-auto block max-w-full truncate rounded-md px-1.5 py-0.5 text-left transition-colors hover:bg-surface-overlay"
+                        className="pointer-events-auto -mx-1.5 block max-w-full truncate rounded-md px-1.5 py-1 text-left leading-none transition-colors hover:bg-surface-overlay"
                         title={t("chatBackToMainSession")}
                         aria-label={t("chatBackToMainSession")}
                         onClick={() => setActiveSubagent(null)}
@@ -143,7 +143,13 @@ export function AppTopBar({
                       </button>
                     </h1>
                   ) : (
-                    <h1 className="truncate text-base font-semibold leading-5" title={sessionName}>
+                    <h1
+                      /* Same leading-none + py/-my compensation as the
+                         subagent-view back button so the title glyph stays
+                         pixel-identical when the view switches. */
+                      className="-my-1 truncate py-1 text-base font-semibold leading-none"
+                      title={sessionName}
+                    >
                       {sessionNameDisplay}
                     </h1>
                   )}

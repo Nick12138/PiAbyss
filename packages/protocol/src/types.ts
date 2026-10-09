@@ -38,6 +38,9 @@ export type SubagentStatusNode = {
   role?: string;
   /** Model used by the run when the status source exposes it. */
   model?: string;
+  /** Effective thinking level the run was spawned with (unset means pi's
+   *  global default thinking level applies). */
+  thinking?: string;
   state: SubagentStatusState;
   startedAt?: number;
   updatedAt?: number;

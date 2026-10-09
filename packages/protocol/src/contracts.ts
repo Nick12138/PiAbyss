@@ -380,8 +380,11 @@ export type HostRequestParams = {
   "subagents.stop": { nodeId: string };
   "subagents.pause": { nodeId: string };
   "subagents.continue": { nodeId: string };
-  "subagents.resume": { nodeId: string };
-  "subagents.send": { nodeId: string; message: string };
+  /** `model` (provider/id) and `thinking` (level) ride along as the
+   *  next-spawn overrides: applied when the send/resume respawns the child,
+   *  ignored while it only steers a live process. */
+  "subagents.resume": { nodeId: string; model?: string; thinking?: string };
+  "subagents.send": { nodeId: string; message: string; model?: string; thinking?: string };
   "shelljobs.list": null;
   "shelljobs.output": { jobId: string; limit?: number };
   "shelljobs.stop": { jobId: string };

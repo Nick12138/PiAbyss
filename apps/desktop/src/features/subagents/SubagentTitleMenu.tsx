@@ -114,6 +114,14 @@ export function SubagentTitleMenu() {
   // top-bar title stays clean when there is nothing to browse.
   if (!status.available || nodes.length === 0) return null;
 
+  // Role emoji before the breadcrumb title — same visibility rule as the run
+  // list rows and the composer status line: only when the role has a glyph
+  // and the display name isn't the bare role itself.
+  const activeRole = activeNode?.role?.trim();
+  const activeDisplayName = activeNode ? (activeNode.name ?? activeNode.label) : undefined;
+  const roleEmoji =
+    activeRole && activeRole !== activeDisplayName ? subagentRoleEmoji(activeRole) : undefined;
+
   const trigger = activeSubagentNodeId ? (
     <button
       ref={triggerRef}
@@ -123,11 +131,16 @@ export function SubagentTitleMenu() {
       aria-label={t("subagentsTitle")}
       title={t("subagentsTitle")}
       data-tauri-drag-region="false"
-      className={`pointer-events-auto flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-base font-semibold leading-5 transition-colors ${
+      className={`pointer-events-auto flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-base font-semibold leading-none transition-colors ${
         open ? "bg-surface-overlay text-foreground" : "text-foreground hover:bg-surface-overlay"
       }`}
       onClick={() => setOpen((value) => !value)}
     >
+      {roleEmoji && (
+        <span className="shrink-0" aria-hidden="true">
+          {roleEmoji}
+        </span>
+      )}
       <span className="max-w-60 truncate">
         {activeNode ? (activeNode.name ?? activeNode.label) : t("subagentsTitle")}
       </span>
@@ -185,10 +198,14 @@ export function SubagentTitleMenu() {
       style={popoverStyle ?? { visibility: "hidden", left: 0, top: 0 }}
       aria-label={t("subagentsTitle")}
     >
-      {/* No header row: the list opens directly under the top-bar trigger,
-          so a "子代理" caption would only repeat what the trigger already
-          says; the trigger's badge carries the running count. */}
-      <div className="scrollbar-subtle min-h-0 overflow-y-auto p-2">
+      {/* Small caption header so the floating list is self-describing even
+          when detached from the trigger visually (e.g. near the screen
+          edge the popover shifts and the trigger is no longer directly
+          above it). Mirrors the omitted-count footer's muted styling. */}
+      <div className="shrink-0 px-3 pb-0.5 pt-1.5 text-[10px] text-muted">
+        {t("subagentsTitle")}
+      </div>
+      <div className="scrollbar-subtle min-h-0 overflow-y-auto p-2 pt-1.5">
         <ul className="flex flex-col gap-0.5">
           {nodes.map(({ node, depth }) => {
             const displayName = node.name ?? node.label;

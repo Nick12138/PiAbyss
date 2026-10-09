@@ -1411,6 +1411,9 @@ export const en = {
   modelSelect: "Select model",
   modelNone: "No model",
   modelMenuLabel: "Models",
+  modelListLoading: "Loading models...",
+  subagentsModelPicker: "Subagent model",
+  subagentsThinkingDefault: "Default",
   modelMenuTestHint: "Test connectivity via the model's own station channel (not the session's)",
   modelMenuPricing: "Model pricing",
   modelMenuPricingHint:
