@@ -249,6 +249,31 @@ describe("SessionStatsPills", () => {
     expect(screen.getByRole("dialog", { name: "Token usage" })).toBeVisible();
   });
 
+  it("keeps the context panel exclusive with both pill dialogs", async () => {
+    vi.spyOn(hostClient, "request").mockResolvedValue(
+      envelope("session.getStats", statsResult()) as never,
+    );
+    const user = userEvent.setup();
+    render(<SessionStatsPills />);
+
+    // Session stats open: opening the context-usage chip's panel closes it.
+    await user.click(screen.getByRole("button", { name: /Session stats/ }));
+    expect(screen.getByRole("dialog", { name: "Session stats" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "No model context available" }));
+    expect(screen.queryByRole("dialog", { name: "Session stats" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Context usage" })).toBeVisible();
+
+    // Context panel open: opening the token-usage pill closes it in turn.
+    await user.click(screen.getByRole("button", { name: /Token usage/ }));
+    expect(screen.queryByRole("dialog", { name: "Context usage" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Token usage" })).toBeVisible();
+
+    // Clicking the open pill's own trigger toggles it closed again.
+    await user.click(screen.getByRole("button", { name: /Token usage/ }));
+    expect(screen.queryByRole("dialog", { name: "Token usage" })).not.toBeInTheDocument();
+  });
+
   it("renders nothing for a fresh conversation", () => {
     useAppStore.getState().applySessionSnapshot(session({ messages: [] }));
     render(<SessionStatsPills />);

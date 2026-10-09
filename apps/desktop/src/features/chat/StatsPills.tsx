@@ -3,8 +3,9 @@
  * pills: a gauge pill labelled with the output speed opening the
  * time-and-speed dialog (turn/step counts live in the dialog), and a target
  * pill labelled with the cache-hit percentage opening the token-usage dialog.
- * Both dialogs share one exclusive slot — opening either pill closes the
- * other. The pills fetch `session.getStats` on mount and refetch when a run
+ * All three panels in the row — both pill dialogs and the context-usage
+ * chip's panel — share one exclusive slot: opening any one closes the
+ * others. The pills fetch `session.getStats` on mount and refetch when a run
  * settles, so the labels ride the durable whole-history aggregates (LLM/tool
  * wall time, exact token buckets, persisted TTFT/decode) and survive
  * restarts and session switches; the live-measured stream timings are the
@@ -16,7 +17,7 @@
  * same terms as the other two: nothing measured, nothing shown.
  */
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Crosshair, Gauge } from "lucide-react";
 import type { SessionStatsSnapshot } from "@piabyss/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -37,6 +38,7 @@ import {
   outputTokensPerSecond,
   type FoldedUsage,
 } from "./stats-format";
+import { usePopoverLeft } from "./popover-placement";
 import { ContextUsageRing } from "./ModelControls";
 
 /** Exact integer token count with digit grouping. */
@@ -117,18 +119,22 @@ function useSessionStats(enabled: boolean): {
   return { stats, error };
 }
 
+/** The row's single popover slot: the session-stats pill ("time"), the
+ * token-usage pill ("usage") or the context-usage chip ("context"). At most
+ * one is open at a time; opening one closes whichever was open. The panels'
+ * horizontal clamp lives in popover-placement.ts. */
+export type StatsPopoverId = "time" | "usage" | "context";
+
 export function SessionStatsPills() {
   const t = useT();
   const session = useAppStore((s) => s.session);
   const messages = useMemo(() => session?.messages ?? [], [session?.messages]);
   const stats = useMemo(() => derivePillStats(messages), [messages]);
-  const [openPill, setOpenPill] = useState<"time" | "usage" | null>(null);
+  const [openPopover, setOpenPopover] = useState<StatsPopoverId | null>(null);
 
   const hasTokens = billedInputTokens(stats.usage) > 0 || stats.usage.output > 0;
   const visible = stats.steps > 0 || hasTokens;
   const { stats: fetched, error: fetchError } = useSessionStats(visible);
-
-  if (!visible) return null;
 
   // Pill labels ride the durable whole-history aggregates when fetched,
   // falling back to the live-measured visible snapshot while streaming.
@@ -152,12 +158,20 @@ export function SessionStatsPills() {
   const timeLabel =
     tps !== null && tps > 0 ? t("statsTokensPerSecond", { tps: Math.round(tps) }) : null;
   const usageLabel = cacheHit !== null && cacheHit !== "0" ? `${cacheHit}%` : null;
-  if (timeLabel === null && usageLabel === null) return null;
+
+  // The row — and with it every popover trigger — disappears when no pill
+  // has a figure; the shared popover slot must not come back open later.
+  const rowVisible = visible && (timeLabel !== null || usageLabel !== null);
+  useEffect(() => {
+    if (!rowVisible) setOpenPopover(null);
+  }, [rowVisible]);
+
+  if (!rowVisible) return null;
 
   return (
     <PillRow
-      openPill={openPill}
-      setOpenPill={setOpenPill}
+      openPopover={openPopover}
+      setOpenPopover={setOpenPopover}
       timeLabel={timeLabel}
       timeTitle={t("statsPillSessionTitle")}
       usageLabel={usageLabel}
@@ -172,8 +186,8 @@ export function SessionStatsPills() {
 }
 
 type PillRowProps = {
-  openPill: "time" | "usage" | null;
-  setOpenPill: (pill: "time" | "usage" | null) => void;
+  openPopover: StatsPopoverId | null;
+  setOpenPopover: (popover: StatsPopoverId | null) => void;
   /** The time pill's outer reading — the output speed only; null hides the
    * whole pill (nothing decoded yet). */
   timeLabel: string | null;
@@ -189,11 +203,12 @@ type PillRowProps = {
   dialogTotal: number;
 };
 
-/** One exclusive slot for both dialogs: opening either pill closes the other,
- * outside pointerdown and Escape close both. */
+/** One exclusive slot for all three panels — both pill dialogs and the
+ * context-usage chip's: opening any chip closes whichever panel was open,
+ * outside pointerdown and Escape close it. */
 function PillRow({
-  openPill,
-  setOpenPill,
+  openPopover,
+  setOpenPopover,
   timeLabel,
   timeTitle,
   usageLabel,
@@ -206,14 +221,30 @@ function PillRow({
 }: PillRowProps) {
   const t = useT();
   const containerRef = useRef<HTMLDivElement>(null);
+  const timeAnchorRef = useRef<HTMLSpanElement>(null);
+  const timePanelRef = useRef<HTMLDivElement>(null);
+  const usageAnchorRef = useRef<HTMLSpanElement>(null);
+  const usagePanelRef = useRef<HTMLDivElement>(null);
+  const timePanelLeft = usePopoverLeft(
+    timeAnchorRef,
+    timePanelRef,
+    openPopover === "time",
+    "center",
+  );
+  const usagePanelLeft = usePopoverLeft(
+    usageAnchorRef,
+    usagePanelRef,
+    openPopover === "usage",
+    "center",
+  );
 
   useEffect(() => {
-    if (openPill === null) return;
+    if (openPopover === null) return;
     const closeOnPointerDown = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) setOpenPill(null);
+      if (!containerRef.current?.contains(event.target as Node)) setOpenPopover(null);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpenPill(null);
+      if (event.key === "Escape") setOpenPopover(null);
     };
     document.addEventListener("pointerdown", closeOnPointerDown);
     document.addEventListener("keydown", closeOnEscape);
@@ -221,7 +252,7 @@ function PillRow({
       document.removeEventListener("pointerdown", closeOnPointerDown);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [openPill, setOpenPill]);
+  }, [openPopover, setOpenPopover]);
 
   // No top padding: the composer above trims its own bottom padding to the
   // same exact 5px when this row is present (see the `:has(+ …)` rule in
@@ -235,17 +266,17 @@ function PillRow({
       data-composer-stats
     >
       {timeLabel !== null && (
-        <span className="relative flex items-center">
+        <span ref={timeAnchorRef} className="relative flex items-center">
           <PillButton
-            open={openPill === "time"}
-            onClick={() => setOpenPill(openPill === "time" ? null : "time")}
+            open={openPopover === "time"}
+            onClick={() => setOpenPopover(openPopover === "time" ? null : "time")}
             title={timeTitle}
             label={timeLabel}
           >
             <Gauge size={13} className="shrink-0" aria-hidden />
           </PillButton>
-          {openPill === "time" && (
-            <PillPanel title={timeTitle}>
+          {openPopover === "time" && (
+            <PillPanel title={timeTitle} left={timePanelLeft} panelRef={timePanelRef}>
               {fetchError ? (
                 <span className="text-danger">{fetchError}</span>
               ) : !fetched ? (
@@ -258,24 +289,32 @@ function PillRow({
         </span>
       )}
       {usageLabel !== null && (
-        <span className="relative flex items-center">
+        <span ref={usageAnchorRef} className="relative flex items-center">
           <PillButton
-            open={openPill === "usage"}
-            onClick={() => setOpenPill(openPill === "usage" ? null : "usage")}
+            open={openPopover === "usage"}
+            onClick={() => setOpenPopover(openPopover === "usage" ? null : "usage")}
             title={usageTitle}
             label={usageLabel}
           >
             <Crosshair size={13} className="shrink-0" aria-hidden />
           </PillButton>
-          {openPill === "usage" && (
-            <PillPanel title={usageTitle} value={exactTokens(dialogTotal)}>
+          {openPopover === "usage" && (
+            <PillPanel
+              title={usageTitle}
+              value={exactTokens(dialogTotal)}
+              left={usagePanelLeft}
+              panelRef={usagePanelRef}
+            >
               {fetchError ? <span className="text-danger">{fetchError}</span> : null}
               <UsagePanelRows usage={dialogUsage} t={t} />
             </PillPanel>
           )}
         </span>
       )}
-      <ContextUsageRing />
+      <ContextUsageRing
+        open={openPopover === "context"}
+        onOpenChange={(open) => setOpenPopover(open ? "context" : null)}
+      />
     </div>
   );
 }
@@ -376,18 +415,27 @@ function PillButton({
 function PillPanel({
   title,
   value,
+  left,
+  panelRef,
   children,
 }: {
   title: string;
   /** Exact aggregate shown right of the title, matching DSH's titleValue. */
   value?: string;
+  /** Clamped left offset (px) from the pill's anchor span, keeping the panel
+   * inside the visible chat column; null before the first measurement falls
+   * back to centring the panel on its pill. */
+  left: number | null;
+  panelRef: RefObject<HTMLDivElement | null>;
   children: ReactNode;
 }) {
   return (
     <div
+      ref={panelRef}
       role="dialog"
       aria-label={title}
-      className="theme-floating-surface absolute bottom-full left-1/2 z-30 mb-1 flex w-72 -translate-x-1/2 flex-col gap-y-1 rounded-md border border-border bg-surface-raised p-3 text-left text-[11px] leading-5 shadow-lg"
+      className="theme-floating-surface absolute bottom-full z-30 mb-1 flex w-72 flex-col gap-y-1 rounded-md border border-border bg-surface-raised p-3 text-left text-[11px] leading-5 shadow-lg"
+      style={left === null ? { left: "50%", translate: "-50%" } : { left }}
     >
       <span className="flex items-baseline justify-between gap-3">
         <span className="font-medium">{title}</span>

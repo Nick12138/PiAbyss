@@ -9,7 +9,13 @@ import {
   FlaskConical,
   RefreshCw,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import type { ModelSummary, SessionContextBreakdown } from "@piabyss/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -23,6 +29,7 @@ import {
 import { formatTokenCount } from "../../lib/format-token-count";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
 import { requestCompact, setAutoCompaction } from "./compaction-actions";
+import { usePopoverLeft } from "./popover-placement";
 import { relayPriceCandidates, useRelayMenuData, useRelayModelTest } from "./model-menu-relay";
 import { Switch } from "../../components/Switch";
 import { useT } from "../../lib/i18n/use-t";
@@ -32,7 +39,6 @@ const MODEL_MENU_DEFAULT_MAX_WIDTH = 640;
 const MODEL_MENU_MAX_WIDTH = 640;
 const MODEL_MENU_ROW_CONTROLS_WIDTH = 96;
 const MODEL_MENU_VIEWPORT_GUTTER = 12;
-const CONTEXT_POPOVER_CENTER_MAX_WIDTH = 560;
 
 /** Frozen empty map shared for clearing the store's `providerNames`. */
 const EMPTY_PROVIDER_NAMES: ReadonlyMap<string, string> = new Map<string, string>();
@@ -50,14 +56,6 @@ function buildProviderNames(models: readonly ModelSummary[]): ReadonlyMap<string
   return names;
 }
 
-function subscribeToViewportWidth(onChange: () => void): () => void {
-  window.addEventListener("resize", onChange);
-  return () => window.removeEventListener("resize", onChange);
-}
-
-function getViewportWidth(): number {
-  return window.innerWidth;
-}
 const CONTEXT_BREAKDOWN_KEYS = [
   "systemPrompt",
   "toolDefinitions",
@@ -248,23 +246,36 @@ function ContextRingIcon({ percent }: { percent: number | null }) {
   );
 }
 
-export function ContextUsageRing() {
+export function ContextUsageRing({
+  open: openProp,
+  onOpenChange,
+}: {
+  /** Exclusive-slot control from the stats pills row: when provided, the
+   * panel takes the row's single popover slot — opening it closes the row's
+   * pill panels and vice versa. Standalone it toggles its own local state. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+} = {}) {
   const t = useT();
   const session = useAppStore((s) => s.session);
-  const viewportWidth = useSyncExternalStore(
-    subscribeToViewportWidth,
-    getViewportWidth,
-    getViewportWidth,
-  );
-  const centerPopover = viewportWidth <= CONTEXT_POPOVER_CENTER_MAX_WIDTH;
   const contextUsage = session?.contextUsage;
   const breakdown = contextUsage?.breakdown;
   const estimatedTokens = contextUsage?.tokens === null ? estimatedContextTokens(breakdown) : null;
   const displayTokens = contextUsage?.tokens ?? estimatedTokens;
   const isEstimated = contextUsage?.tokens === null && estimatedTokens !== null;
-  const [open, setOpen] = useState(false);
+  const [openLocal, setOpenLocal] = useState(false);
+  const open = openProp !== undefined ? openProp : openLocal;
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (openProp !== undefined) onOpenChange?.(next);
+      else setOpenLocal(next);
+    },
+    [openProp, onOpenChange],
+  );
   const [compactPending, setCompactPending] = useState(false);
   const containerRef = useRef<HTMLSpanElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const panelLeft = usePopoverLeft(containerRef, panelRef, open, "right");
   const percent =
     displayTokens === null || !contextUsage
       ? null
@@ -294,7 +305,7 @@ export function ContextUsageRing() {
       document.removeEventListener("pointerdown", closeOnPointerDown);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [open]);
+  }, [open, setOpen]);
 
   async function compactNow() {
     setCompactPending(true);
@@ -314,7 +325,7 @@ export function ContextUsageRing() {
         aria-haspopup="dialog"
         aria-expanded={open}
         title={title}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => setOpen(!open)}
       >
         <ContextRingIcon percent={percent} />
         <span className="flex items-center tabular-nums">
@@ -322,13 +333,18 @@ export function ContextUsageRing() {
         </span>
       </button>
       {/* The chip sits right of centre in the stats row under the composer, so
-          the panel hangs off its right edge; only in a narrow viewport (where
-          that edge is too close to the window) is it centred instead. */}
+          the panel hangs off its right edge (`right-0` stands until measured).
+          The measured clamp in usePopoverLeft keeps it inside the visible chat
+          column — which a narrow window, an expanded sidebar, or the dock can
+          push past the chip's right edge — by shifting it left just enough;
+          the inline `left` wins over the over-constrained `right-0`. */}
       {open && (
         <div
-          className={`theme-floating-surface absolute bottom-full z-50 mb-2 flex w-64 flex-col rounded-md border border-border bg-surface-raised p-3 text-left text-[11px] leading-4 text-foreground shadow-lg ${
-            centerPopover ? "left-1/2 -translate-x-1/2" : "right-0"
-          }`}
+          ref={panelRef}
+          role="dialog"
+          aria-label={t("contextUsageTitle")}
+          className="theme-floating-surface absolute bottom-full right-0 z-50 mb-2 flex w-64 flex-col rounded-md border border-border bg-surface-raised p-3 text-left text-[11px] leading-4 text-foreground shadow-lg"
+          style={panelLeft === null ? undefined : { left: panelLeft }}
         >
           <span className="font-medium">{t("contextUsageTitle")}</span>
           <span className="mt-0.5 tabular-nums text-muted">{title}</span>
