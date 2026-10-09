@@ -213,7 +213,8 @@ describe("SkillsSettings", () => {
     expect(screen.getByText("review")).toBeInTheDocument();
     expect(screen.getByText("Review changes")).toBeInTheDocument();
     expect(screen.getByText("../.claude/skills")).toBeInTheDocument();
-    expect(screen.getByText("Project trusted")).toBeInTheDocument();
+    // Trusted projects show no trust badge (only untrusted ones do).
+    expect(screen.queryByText("Project not trusted")).not.toBeInTheDocument();
     expect(request.mock.calls.some(([method]) => method === "skill.list")).toBe(true);
     expect(request.mock.calls.some(([method]) => method === "package.list")).toBe(true);
   });

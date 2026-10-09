@@ -14,7 +14,7 @@ import {
   Trash2,
   User,
 } from "lucide-react";
-import { Dialog, secondaryButton } from "../../components/Dialog";
+import { Dialog } from "../../components/Dialog";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { Select } from "../../components/Select";
 import { Switch } from "../../components/Switch";
@@ -184,6 +184,7 @@ export function SkillsSettings() {
   const [newPath, setNewPath] = useState("");
   const [previewSkill, setPreviewSkill] = useState<{ name: string; filePath: string } | null>(null);
   const [showPromptHelp, setShowPromptHelp] = useState(false);
+  const [showAddPathDialog, setShowAddPathDialog] = useState(false);
   // "" = active workspace; "user" = global scope; otherwise a workspace path.
   // Global is the default since it applies to every workspace.
   const [selectedWorkspacePath, setSelectedWorkspacePath] = useState("user");
@@ -534,69 +535,78 @@ export function SkillsSettings() {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-skills-settings>
-      <div className="min-h-0 flex-1 overflow-auto p-6" data-settings-scroll>
-        <div className="mx-auto flex max-w-5xl flex-col gap-6">
-          {knownWorkspaces.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              <div
-                className="flex flex-wrap items-center gap-1.5"
-                role="group"
-                aria-label={t("skillsManageScope")}
+      {/* 管理范围行固定在滚动区外（与插件库一致）：内容滚动时保持可见，
+          内层 max-w-5xl 与下方滚动内容对齐。 */}
+      {knownWorkspaces.length > 0 && (
+        <div className="px-6 pt-6 pb-6">
+          <div className="mx-auto flex max-w-5xl flex-col gap-1.5">
+            <div
+              className="flex flex-wrap items-center gap-1.5"
+              role="group"
+              aria-label={t("skillsManageScope")}
+            >
+              <span className="shrink-0 text-xs text-muted">{t("skillsManageScope")}</span>
+              <button
+                type="button"
+                aria-pressed={isUserScope}
+                aria-label={t("skillsScopeGlobal")}
+                title={t("skillsScopeGlobalHint")}
+                disabled={busy}
+                className={`flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors disabled:cursor-default disabled:opacity-60 ${
+                  isUserScope
+                    ? "border-accent/60 bg-accent/10 text-foreground"
+                    : "border-border text-muted hover:bg-surface-overlay hover:text-foreground"
+                }`}
+                onClick={() => setSelectedWorkspacePath(isUserScope ? "" : "user")}
               >
-                <span className="shrink-0 text-xs text-muted">{t("skillsManageScope")}</span>
-                <button
-                  type="button"
-                  aria-pressed={isUserScope}
-                  aria-label={t("skillsScopeGlobal")}
-                  title={t("skillsScopeGlobalHint")}
-                  disabled={busy}
-                  className={`flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors disabled:cursor-default disabled:opacity-60 ${
-                    isUserScope
-                      ? "border-accent/60 bg-accent/10 text-foreground"
-                      : "border-border text-muted hover:bg-surface-overlay hover:text-foreground"
-                  }`}
-                  onClick={() => setSelectedWorkspacePath(isUserScope ? "" : "user")}
-                >
-                  <User size={12} className="shrink-0 text-muted" aria-hidden />
-                  <span>{t("skillsScopeGlobal")}</span>
-                </button>
-                {workspaceChips().map((chip) => {
-                  const selected = chip.value === selectedWorkspacePath;
-                  const label = chip.isActive
-                    ? `${chip.basename} · ${t("skillsWorkspaceActive")}`
-                    : chip.basename;
-                  return (
-                    <button
-                      key={chip.path}
-                      type="button"
-                      aria-pressed={selected}
-                      aria-label={label}
-                      title={chip.path}
-                      disabled={busy}
-                      className={`flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors disabled:cursor-default disabled:opacity-60 ${
-                        selected
-                          ? "border-accent/60 bg-accent/10 text-foreground"
-                          : "border-border text-muted hover:bg-surface-overlay hover:text-foreground"
-                      }`}
-                      onClick={() => setSelectedWorkspacePath(chip.value)}
-                    >
-                      {chip.isTelegram && (
-                        <Send size={12} className="shrink-0 text-muted" aria-hidden />
-                      )}
-                      <span className="max-w-48 truncate">{chip.basename}</span>
-                      {chip.isActive && (
-                        <span
-                          className="size-1.5 shrink-0 rounded-full bg-success"
-                          title={t("skillsWorkspaceActive")}
-                          aria-hidden
-                        />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+                <User size={12} className="shrink-0 text-muted" aria-hidden />
+                <span>{t("skillsScopeGlobal")}</span>
+              </button>
+              {workspaceChips().map((chip) => {
+                const selected = chip.value === selectedWorkspacePath;
+                const label = chip.isActive
+                  ? `${chip.basename} · ${t("skillsWorkspaceActive")}`
+                  : chip.basename;
+                return (
+                  <button
+                    key={chip.path}
+                    type="button"
+                    aria-pressed={selected}
+                    aria-label={label}
+                    title={chip.path}
+                    disabled={busy}
+                    className={`flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors disabled:cursor-default disabled:opacity-60 ${
+                      selected
+                        ? "border-accent/60 bg-accent/10 text-foreground"
+                        : "border-border text-muted hover:bg-surface-overlay hover:text-foreground"
+                    }`}
+                    onClick={() => setSelectedWorkspacePath(chip.value)}
+                  >
+                    {chip.isTelegram && (
+                      <Send size={12} className="shrink-0 text-muted" aria-hidden />
+                    )}
+                    <span className="max-w-48 truncate">{chip.basename}</span>
+                    {chip.isActive && (
+                      <span
+                        className="size-1.5 shrink-0 rounded-full bg-success"
+                        title={t("skillsWorkspaceActive")}
+                        aria-hidden
+                      />
+                    )}
+                  </button>
+                );
+              })}
             </div>
-          )}
+          </div>
+        </div>
+      )}
+      <div
+        className={`min-h-0 flex-1 overflow-auto px-6 pb-6 ${
+          knownWorkspaces.length > 0 ? "" : "pt-6"
+        }`}
+        data-settings-scroll
+      >
+        <div className="mx-auto flex max-w-5xl flex-col gap-6">
 
           {snapshot?.resourceReloadRequired && (
             <p
@@ -640,9 +650,25 @@ export function SkillsSettings() {
           <section>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-3">
-                <h2 className="text-[13px] font-medium text-muted">{t("skillsLoadedTitle")}</h2>
+                <h2 className="text-[13px] font-medium text-muted">
+                  {t("skillsLoadedSummary", {
+                    skills: String(
+                      groups.reduce((sum, group) => sum + group.rows.length, 0),
+                    ),
+                    paths: String(snapshot?.configuredPaths.length ?? 0),
+                  })}
+                </h2>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="flex size-6 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground"
+                  title={t("skillsAddPathTitle")}
+                  aria-label={t("skillsAddPathTitle")}
+                  onClick={() => setShowAddPathDialog(true)}
+                >
+                  <Plus size={14} />
+                </button>
                 {(snapshot || promptSnapshot) && (
                   <button
                     type="button"
@@ -655,15 +681,12 @@ export function SkillsSettings() {
                   </button>
                 )}
                 {refreshButton}
-                {snapshot && (
+                {snapshot && !snapshot.projectTrusted && (
                   <span
-                    className={`rounded-full px-2 py-0.5 text-[11px] ${
-                      snapshot.projectTrusted
-                        ? "bg-success/15 text-success"
-                        : "bg-warning/15 text-warning"
-                    }`}
+                    className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] text-warning"
+                    title={t("skillsUntrustedHint")}
                   >
-                    {snapshot.projectTrusted ? t("skillsTrusted") : t("skillsUntrusted")}
+                    {t("skillsUntrusted")}
                   </span>
                 )}
               </div>
@@ -858,88 +881,81 @@ export function SkillsSettings() {
               <p className="text-xs text-muted">{t("skillsLoadedHint")}</p>
             </div>
           </section>
-
-          <section>
-            <h2 className="mb-2 text-[13px] font-medium text-muted">{t("skillsPathsTitle")}</h2>
-            <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-              <p className="text-xs text-muted">
-                {t(isUserScope ? "skillsPathsDescUser" : "skillsPathsDescProject")}
-              </p>
-              <ul className="flex flex-col gap-2">
-                {(snapshot?.configuredPaths ?? []).length === 0 && (
-                  <li className="text-xs text-muted">{t("skillsPathsEmpty")}</li>
-                )}
-                {(snapshot?.configuredPaths ?? []).map((entry) => (
-                  <li
-                    key={`${entry.scope}:${entry.path}`}
-                    className="flex min-w-0 items-center gap-2"
-                  >
-                    <span
-                      className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${
-                        entry.scope === "user"
-                          ? "bg-surface-overlay text-muted"
-                          : "bg-selection/40 text-muted"
-                      }`}
-                    >
-                      {entry.scope === "user" ? t("skillsScopeUser") : t("skillsScopeProject")}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate font-mono text-xs">{entry.path}</span>
-                    {!entry.exists && (
-                      <span className="shrink-0 text-[11px] text-warning">
-                        {t("skillsPathMissing")}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      disabled={busy}
-                      className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-danger disabled:opacity-50"
-                      title={t("skillsRemovePath")}
-                      aria-label={`${t("skillsRemovePath")} ${entry.path}`}
-                      onClick={() => void mutatePath("skill.removePath", entry.path, entry.scope)}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <div className="flex min-w-0 items-center gap-2">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void pickSkillDirectory()}
-                  title={newPath || t("skillsBrowseDirectory")}
-                  aria-label={t("skillsBrowseDirectory")}
-                  className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-surface px-2.5 text-xs transition-colors hover:bg-surface-overlay/60 focus:border-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <FolderOpen size={14} className="shrink-0 text-muted" />
-                  <span
-                    className={`min-w-0 flex-1 truncate text-left ${newPath ? "text-foreground" : "text-muted"}`}
-                  >
-                    {newPath || t("skillsPickDirectoryPlaceholder")}
-                  </span>
-                </button>
-                <span
-                  className={`flex h-8 shrink-0 items-center rounded-md border border-border px-2.5 text-xs ${
-                    isUserScope ? "text-muted" : "text-foreground"
-                  }`}
-                  title={t(isUserScope ? "skillsPathsDescUser" : "skillsPathsDescProject")}
-                >
-                  {t(isUserScope ? "skillsScopeUser" : "skillsScopeProject")}
-                </span>
-                <button
-                  type="button"
-                  className={secondaryButton}
-                  disabled={busy || newPath.trim().length === 0}
-                  onClick={() => void mutatePath("skill.addPath", newPath.trim(), newScope)}
-                >
-                  <Plus size={14} />
-                  {t("skillsAddPath")}
-                </button>
-              </div>
-            </div>
-          </section>
         </div>
       </div>
+      {showAddPathDialog && (
+        <Dialog
+          title={t("skillsAddPathTitle")}
+          confirmLabel={t("skillsAddPath")}
+          showCloseIcon
+          onCancel={() => setShowAddPathDialog(false)}
+          onConfirm={() => {
+            if (newPath.trim().length === 0) return;
+            void mutatePath("skill.addPath", newPath.trim(), newScope);
+            setShowAddPathDialog(false);
+          }}
+        >
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-muted">
+              {t(isUserScope ? "skillsPathsDescUser" : "skillsPathsDescProject")}
+            </p>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void pickSkillDirectory()}
+              title={newPath || t("skillsBrowseDirectory")}
+              aria-label={t("skillsBrowseDirectory")}
+              className="flex h-8 min-w-0 w-full items-center gap-2 rounded-md border border-border bg-surface px-2.5 text-xs transition-colors hover:bg-surface-overlay/60 focus:border-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <FolderOpen size={14} className="shrink-0 text-muted" />
+              <span
+                className={`min-w-0 flex-1 truncate text-left ${newPath ? "text-foreground" : "text-muted"}`}
+              >
+                {newPath || t("skillsPickDirectoryPlaceholder")}
+              </span>
+            </button>
+            {(snapshot?.configuredPaths ?? []).length > 0 && (
+              <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+                <p className="text-[11px] text-muted">{t("skillsPathsExisting")}</p>
+                <ul className="flex flex-col gap-2">
+                  {(snapshot?.configuredPaths ?? []).map((entry) => (
+                    <li
+                      key={`${entry.scope}:${entry.path}`}
+                      className="flex min-w-0 items-center gap-2"
+                    >
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${
+                          entry.scope === "user"
+                            ? "bg-surface-overlay text-muted"
+                            : "bg-selection/40 text-muted"
+                        }`}
+                      >
+                        {entry.scope === "user" ? t("skillsScopeUser") : t("skillsScopeProject")}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate font-mono text-xs">{entry.path}</span>
+                      {!entry.exists && (
+                        <span className="shrink-0 text-[11px] text-warning">
+                          {t("skillsPathMissing")}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        disabled={busy}
+                        className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-danger disabled:opacity-50"
+                        title={t("skillsRemovePath")}
+                        aria-label={`${t("skillsRemovePath")} ${entry.path}`}
+                        onClick={() => void mutatePath("skill.removePath", entry.path, entry.scope)}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </Dialog>
+      )}
       {previewSkill && (
         <SkillPreviewModal
           name={previewSkill.name}

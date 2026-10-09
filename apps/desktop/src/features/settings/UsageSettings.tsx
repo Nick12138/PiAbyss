@@ -300,7 +300,7 @@ function UsageSettingsContent({
     : 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <MetricCard
           label={t("usageTotalTokens")}
@@ -559,9 +559,9 @@ export function UsageSettings() {
         </button>
       </SettingsTopBarActions>
 
-      <div className="min-h-0 flex-1 overflow-auto" data-settings-scroll>
+      <div className="min-h-0 flex-1 overflow-auto p-6" data-settings-scroll>
         {error ? (
-          <div className="m-6 rounded-lg border border-danger/35 bg-danger/10 px-3 py-2 text-sm text-danger">
+          <div className="mx-auto max-w-6xl rounded-lg border border-danger/35 bg-danger/10 px-3 py-2 text-sm text-danger">
             {error}
           </div>
         ) : !report && loading ? (

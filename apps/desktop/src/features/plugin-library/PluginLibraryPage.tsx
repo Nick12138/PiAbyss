@@ -13,6 +13,7 @@ import {
   Send,
   Settings2,
   Tag,
+  User,
 } from "lucide-react";
 import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
 import { Select } from "../../components/Select";
@@ -1201,7 +1202,9 @@ export function PluginLibraryPage() {
         </button>
       </SettingsTopBarActions>
 
-      <div className="flex flex-col gap-1.5 border-b border-border px-6 py-2.5">
+      {/* 管理范围行与技能页同款：不做通栏工具栏，四周与内容区同为 24px，
+          与卡片网格之间也留 24px，和技能页 gap-6 的节奏一致。 */}
+      <div className="flex flex-col gap-1.5 px-6 pt-6 pb-6">
         <div
           className="flex flex-wrap items-center gap-1.5"
           role="group"
@@ -1227,7 +1230,13 @@ export function PluginLibraryPage() {
                 }`}
                 onClick={() => setSelectedWorkspacePath(chip.value)}
               >
-                {chip.isTelegram && <Send size={12} className="shrink-0 text-muted" aria-hidden />}
+                {chip.isGlobal ? (
+                  <User size={12} className="shrink-0 text-muted" aria-hidden />
+                ) : (
+                  chip.isTelegram && (
+                    <Send size={12} className="shrink-0 text-muted" aria-hidden />
+                  )
+                )}
                 <span className="max-w-48 truncate">{chip.basename}</span>
                 {chip.isActive && !chip.isGlobal && (
                   <span
@@ -1288,7 +1297,7 @@ export function PluginLibraryPage() {
         </div>
       ) : (
         <div
-          className="scrollbar-subtle grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-2 overflow-y-auto p-6 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
+          className="scrollbar-subtle grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-2 overflow-y-auto px-6 pb-6 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
           data-settings-scroll
         >
           {catalog.plugins.map((entry) => (
