@@ -194,6 +194,15 @@ export class SessionRuntimeCache {
   private readonly pendingRuntimeErrors = new WeakMap<AgentSession, string>();
   private readonly sessionOperationLocks = new WeakMap<AgentSession, AgentOperationLock>();
   private readonly runIds = new WeakMap<AgentSession, string>();
+  /** Fallback run identity for runs the Host did not start (extension
+   * sendMessage with triggerTurn, SDK-internal continuations): opened at
+   * agent_start, reused by every event of the run, retired at
+   * agent_settled/error. Per-event randomUUID would give every delta its
+   * own run id and the desktop's streamRunMatches row-adoption guard would
+   * open a new message row per delta, shattering the live stream into
+   * fragment blocks (reloads look fine because persisted history holds one
+   * message per turn). */
+  private readonly derivedRunIds = new WeakMap<AgentSession, string>();
   private readonly disposedSessions = new WeakSet<AgentSession>();
   private readonly messageTimings = new AgentMessageTimingTracker();
   private readonly idleCacheTimers = new WeakMap<
@@ -218,10 +227,15 @@ export class SessionRuntimeCache {
 
   setSessionRunId(session: AgentSession, runId: string): void {
     this.runIds.set(session, runId);
+    // A host-started run supersedes any derived identity still open from a
+    // just-settled extension-triggered run.
+    this.derivedRunIds.delete(session);
   }
 
   clearSessionRunId(session: AgentSession): void {
     this.runIds.delete(session);
+    // Also retire a derived id so a stale one never leaks into the next run.
+    this.derivedRunIds.delete(session);
   }
 
   publishCurrentRuntimeState(session: AgentSession, identity: HostIdentity): void {
@@ -521,6 +535,29 @@ export class SessionRuntimeCache {
     graph.idleSessionRecency?.delete(sessionId);
   }
 
+  /** Stable run identity for one agent run. Host-started runs are registered
+   * via setSessionRunId (agent.prompt). Runs the Host did not start — an
+   * extension calling sendMessage({triggerTurn:true}), SDK continuation
+   * after agent_end, retry/compaction loops — fall back to the host-wide
+   * currentRunId and then to a per-run derived id: opened at agent_start,
+   * reused until the run settles (agent_settled/error), so every event of
+   * the same run shares one id. */
+  private resolveEventRunId(session: AgentSession, eventType: string): string {
+    const registered = this.runIds.get(session) ?? this.context.getCurrentRunId();
+    if (registered) return registered;
+    if (eventType === "agent_start") {
+      const derived = randomUUID();
+      this.derivedRunIds.set(session, derived);
+      return derived;
+    }
+    if (eventType === "agent_settled" || eventType === "error") {
+      const derived = this.derivedRunIds.get(session);
+      this.derivedRunIds.delete(session);
+      return derived ?? randomUUID();
+    }
+    return this.derivedRunIds.get(session) ?? randomUUID();
+  }
+
   async disposeBackgroundSessionRuntimeIfIdle(
     graph: WorkspaceGraph,
     sessionId: string,
@@ -769,7 +806,7 @@ export class SessionRuntimeCache {
       return;
     }
 
-    const runId = this.runIds.get(sourceSession) ?? this.context.getCurrentRunId() ?? randomUUID();
+    const runId = this.resolveEventRunId(sourceSession, eventType);
     const serialized = normalizeAgentEvent(event);
     this.observeRuntimeOutcome(sourceSession, eventType, serialized);
     this.observeMessageTiming(sourceSession, eventType, event, sessionManager);

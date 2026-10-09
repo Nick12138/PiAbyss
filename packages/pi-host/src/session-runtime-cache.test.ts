@@ -345,6 +345,100 @@ describe("active Session state", () => {
 
     expect(graph.sessionTreeCache).toBeUndefined();
   });
+
+  it("derives one stable run id for host-unstarted runs (extension sendMessage turns)", () => {
+    const identity: HostIdentity = {
+      hostInstanceId: "host-1",
+      workspaceId: "ws-1",
+      workspaceRevision: 1,
+      sessionId: "current",
+      sessionRevision: 2,
+      packageRevision: 1,
+    };
+    const emitForIdentity = vi.fn();
+    const server = {
+      identity,
+      getIdentity: () => identity,
+      emitForIdentity,
+      emitForBoundIdentity: vi.fn(),
+      getPhase: () => "ready",
+    } as unknown as PiHostServer;
+    const session = {
+      sessionId: "current",
+      isIdle: false,
+      isCompacting: false,
+      isRetrying: false,
+      model: undefined,
+      messages: [],
+      thinkingLevel: "off",
+      autoCompactionEnabled: true,
+      autoRetryEnabled: true,
+      steeringMode: "all",
+      followUpMode: "all",
+      getSteeringMessages: () => [],
+      getFollowUpMessages: () => [],
+      getAllTools: () => [],
+      getActiveToolNames: () => [],
+    } as unknown as AgentSession;
+    const graph = {
+      ...graphFrom(activeSlots("current")),
+      canonicalCwd: "C:/workspace",
+      workspaceId: "ws-1",
+      backgroundSessions: new Map(),
+      sessionSnapshot: {
+        sessionId: "current",
+        revision: 2,
+        entries: [],
+        messages: [],
+        cwd: "C:/workspace",
+        workspaceId: "ws-1",
+        toolRevision: 3,
+      },
+      // graphFrom's spread drops nothing, but handleAgentEvent requires a
+      // sessionManager on the graph for the active session.
+      sessionManager: {},
+    } as unknown as WorkspaceGraph;
+    graph.agentSession = session;
+    const cache = new SessionRuntimeCache({
+      getGraph: () => graph,
+      getServer: () => server,
+      getCurrentRunId: () => null,
+      sessionPathsEqual: () => false,
+    });
+
+    // A run the Host did not start (extension sendMessage triggerTurn):
+    // agent_start opens a derived id, every per-token event of the run must
+    // reuse it, and it retires at agent_settled. Per-event random ids would
+    // make the desktop's row-adoption guard open a new message row per
+    // delta, shattering the live stream into fragment blocks.
+    cache.handleAgentEvent(graph, session, { type: "agent_start" });
+    cache.handleAgentEvent(graph, session, {
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "我看" },
+    });
+    cache.handleAgentEvent(graph, session, {
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "到" },
+    });
+
+    const runIds = emitForIdentity.mock.calls
+      .filter((call) => call[1] === "agent.event")
+      .map((call) => (call[2] as { runId: string }).runId);
+    expect(runIds.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(runIds).size).toBe(1);
+
+    // Settle retires the derived id: the next run opens a fresh one.
+    cache.handleAgentEvent(graph, session, { type: "agent_settled" });
+    cache.handleAgentEvent(graph, session, { type: "agent_start" });
+    cache.handleAgentEvent(graph, session, {
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "next" },
+    });
+    const afterSettle = emitForIdentity.mock.calls
+      .filter((call) => call[1] === "agent.event")
+      .map((call) => (call[2] as { runId: string }).runId);
+    expect(new Set(afterSettle).size).toBe(2);
+  });
 });
 
 describe("background runtime promotion", () => {
