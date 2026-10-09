@@ -91,6 +91,17 @@ describe("persistDesktopSettings", () => {
     expect(useAppStore.getState().desktopSettings?.themeFamily).toBe("apple");
   });
 
+  it("persists and clears the accent color override outside Tauri", async () => {
+    mocks.isTauri.mockReturnValue(false);
+
+    await persistDesktopSettings({ accentColor: "#8b5cf6" });
+    expect(useAppStore.getState().desktopSettings?.accentColor).toBe("#8b5cf6");
+
+    await persistDesktopSettings({ accentColor: null });
+    expect("accentColor" in (useAppStore.getState().desktopSettings ?? {})).toBe(false);
+    expect(useAppStore.getState().desktopSettings?.accentColor).toBeUndefined();
+  });
+
   it("applies shortcut override maps through the browser settings path", async () => {
     mocks.isTauri.mockReturnValue(false);
 
@@ -133,6 +144,15 @@ describe("persistDesktopSettings", () => {
     );
     await expect(persistDesktopSettings({ codeFontSize: 19 })).rejects.toThrow(
       "codeFontSize must be an integer between 10 and 18",
+    );
+    await expect(persistDesktopSettings({ accentColor: "orange" })).rejects.toThrow(
+      "Invalid accent color",
+    );
+    await expect(persistDesktopSettings({ accentColor: "#8B5CF6" })).rejects.toThrow(
+      "Invalid accent color",
+    );
+    await expect(persistDesktopSettings({ accentColor: "#8b5cf" })).rejects.toThrow(
+      "Invalid accent color",
     );
 
     expect(useAppStore.getState().desktopSettings).toEqual(initialSettings);

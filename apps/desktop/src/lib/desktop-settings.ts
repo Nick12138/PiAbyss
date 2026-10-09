@@ -9,6 +9,7 @@ import {
   type DesktopSettings,
 } from "@piabyss/protocol";
 import {
+  isAccentColor,
   MAX_CODE_FONT_SIZE,
   MAX_CONVERSATION_FONT_SIZE,
   MAX_CONVERSATION_LINE_HEIGHT,
@@ -33,13 +34,15 @@ export type DesktopSettingsSnapshot = {
 
 export type DesktopSettingsUpdate = Omit<
   Partial<DesktopSettings>,
-  "defaultWorkspace" | "lastWorkspace" | "lastSessionPath" | "agentDir" | "language"
+  "defaultWorkspace" | "lastWorkspace" | "lastSessionPath" | "agentDir" | "language" | "accentColor"
 > & {
   defaultWorkspace?: string | null;
   lastWorkspace?: string | null;
   lastSessionPath?: string | null;
   agentDir?: string | null;
   language?: DesktopSettings["language"] | null;
+  /** null clears the override so the theme family's own accent applies. */
+  accentColor?: DesktopSettings["accentColor"] | null;
 };
 
 const DESKTOP_SETTINGS_KEYS = new Set([
@@ -58,6 +61,7 @@ const DESKTOP_SETTINGS_KEYS = new Set([
   "language",
   "interfaceDensity",
   "interfaceFont",
+  "accentColor",
   "conversationMinWidth",
   "conversationMaxWidth",
   "conversationFontSize",
@@ -129,6 +133,13 @@ function assertDesktopSettingsUpdate(patch: DesktopSettingsUpdate): void {
     !isOneOf(values.interfaceFont, DESKTOP_INTERFACE_FONTS)
   ) {
     throw new Error("Invalid interface font");
+  }
+  if (
+    values.accentColor !== undefined &&
+    values.accentColor !== null &&
+    !isAccentColor(values.accentColor)
+  ) {
+    throw new Error("Invalid accent color");
   }
   const conversationMinWidth = values.conversationMinWidth;
   if (

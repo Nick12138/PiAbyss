@@ -70,6 +70,9 @@ afterEach(() => {
   document.documentElement.style.removeProperty("--conversation-font-size");
   document.documentElement.style.removeProperty("--conversation-line-height");
   document.documentElement.style.removeProperty("--code-font-size");
+  document.documentElement.style.removeProperty("--color-accent");
+  document.documentElement.style.removeProperty("--color-accent-hover");
+  document.documentElement.style.removeProperty("--color-accent-foreground");
   vi.restoreAllMocks();
 });
 
@@ -285,6 +288,66 @@ describe("SettingsPage navigation guard", () => {
     expect(useAppStore.getState().desktopSettings?.themeFamily).toBe("apple");
     expect(document.documentElement).toHaveClass("light");
     expect(document.documentElement.dataset.themeFamily).toBe("apple");
+  });
+
+  it("persists the accent color override and applies it immediately", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage initialSection="appearance" />);
+
+    const accent = screen.getByRole("group", { name: "Accent color" });
+    const themeDefault = within(accent).getByRole("button", { name: "Theme default" });
+    const violet = within(accent).getByRole("button", { name: "Accent color #8B5CF6" });
+    const custom = within(accent).getByRole("button", { name: "Custom" });
+    expect(themeDefault).toHaveAttribute("aria-pressed", "true");
+    expect(custom).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(violet);
+    await waitFor(() =>
+      expect(useAppStore.getState().desktopSettings?.accentColor).toBe("#8b5cf6"),
+    );
+    expect(document.documentElement.style.getPropertyValue("--color-accent")).toBe("#8b5cf6");
+    expect(document.documentElement.style.getPropertyValue("--color-accent-hover")).toBe("#764ed1");
+    expect(document.documentElement.style.getPropertyValue("--color-accent-foreground")).toBe(
+      "#ffffff",
+    );
+    expect(violet).toHaveAttribute("aria-pressed", "true");
+    expect(themeDefault).toHaveAttribute("aria-pressed", "false");
+
+    // The custom entry opens a rounded in-app popover instead of the native
+    // OS color dialog (whose chrome cannot follow the app design language).
+    await user.click(custom);
+    expect(custom).toHaveAttribute("aria-expanded", "true");
+    const picker = await screen.findByRole("dialog", { name: "Custom accent color" });
+    expect(picker.className).toContain("rounded-lg");
+
+    const hexInput = within(picker).getByLabelText("Hex color");
+    await user.clear(hexInput);
+    await user.type(hexInput, "#123456");
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(useAppStore.getState().desktopSettings?.accentColor).toBe("#123456"),
+    );
+    expect(custom.getAttribute("data-state")).toBe("active");
+
+    // Swatches inside the popover apply immediately and keep it open.
+    await user.click(within(picker).getByRole("button", { name: "Accent color #0EA5E9" }));
+    await waitFor(() =>
+      expect(useAppStore.getState().desktopSettings?.accentColor).toBe("#0ea5e9"),
+    );
+    expect(within(picker).getByLabelText("Hex color")).toHaveValue("#0ea5e9");
+
+    // Escape closes the popover and returns focus to the trigger.
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Custom accent color" })).toBeNull();
+    expect(custom).toHaveFocus();
+    expect(custom).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(themeDefault);
+    await waitFor(() =>
+      expect(useAppStore.getState().desktopSettings?.accentColor).toBeUndefined(),
+    );
+    expect(document.documentElement.style.getPropertyValue("--color-accent")).toBe("");
+    expect(themeDefault).toHaveAttribute("aria-pressed", "true");
   });
 
   it("switches sections directly when the Providers form is clean", async () => {

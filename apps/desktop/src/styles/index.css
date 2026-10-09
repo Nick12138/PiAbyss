@@ -638,6 +638,18 @@ select option {
   background: var(--color-preview-surface);
 }
 
+/* Accent color picker (Appearance → Interface): the "theme default" chip pairs
+   its label with a mini swatch of the active family's built-in accent. The
+   custom entry opens an in-app rounded popover (see AppearanceSettings). */
+.accent-chip-swatch {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 0.875rem;
+  height: 0.875rem;
+  border: 1px solid color-mix(in srgb, var(--color-foreground) 22%, transparent);
+  border-radius: 9999px;
+}
+
 @layer base {
   button {
     font: inherit;

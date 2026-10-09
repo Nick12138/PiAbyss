@@ -1,13 +1,16 @@
 import type { CSSProperties } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type {
   DesktopInterfaceDensity,
   DesktopInterfaceFont,
   DesktopThemeFamily,
 } from "@piabyss/protocol";
-import { Minus, Plus } from "lucide-react";
+import { Minus, Pipette, Plus } from "lucide-react";
 import { Select } from "../../components/Select";
 import {
+  ACCENT_COLOR_PICKER_PALETTE,
+  ACCENT_COLOR_PRESETS,
   applyAppearancePreferences,
   CONVERSATION_LINE_HEIGHT_STEP,
   DEFAULT_CONVERSATION_LINE_HEIGHT,
@@ -17,11 +20,13 @@ import {
   MIN_CODE_FONT_SIZE,
   MIN_CONVERSATION_FONT_SIZE,
   MIN_CONVERSATION_LINE_HEIGHT,
+  resolveAccentColor,
   resolveCodeFontSize,
   resolveConversationFontSize,
   resolveConversationLineHeight,
   resolveInterfaceDensity,
   resolveInterfaceFont,
+  THEME_DEFAULT_ACCENTS,
 } from "../../lib/appearance-preferences";
 import {
   notifyDesktopSettingsSaveFailure,
@@ -30,7 +35,7 @@ import {
 } from "../../lib/desktop-settings";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
-import { applyTheme } from "../../lib/theme";
+import { applyTheme, resolveEffectiveTheme } from "../../lib/theme";
 import {
   HARD_MAX_CONVERSATION_WIDTH,
   HARD_MIN_CONVERSATION_WIDTH,
@@ -114,6 +119,230 @@ function ColorModePreview({ mode }: { mode: "light" | "dark" | "system" }) {
   );
 }
 
+const ACCENT_PICKER_PANEL_WIDTH = 240;
+const ACCENT_PICKER_VIEWPORT_MARGIN = 8;
+const ACCENT_PICKER_TRIGGER_GAP = 6;
+
+/** Custom accent color entry: a pipette swatch that opens an in-app popover
+ *  (rounded floating surface) with an extended palette and a hex input. The
+ *  native <input type="color"> dialog is intentionally not used — its OS
+ *  chrome cannot follow the app's rounded design language. */
+function AccentCustomColorPicker({
+  value,
+  active,
+  onApply,
+}: {
+  /** Current canonical accent, or null when the theme default applies. */
+  value: string | null;
+  /** True when the current accent is a non-preset (custom) color. */
+  active: boolean;
+  onApply: (hex: string) => void;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const [hexDraft, setHexDraft] = useState(value ?? "");
+  const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const resolvedDraft = resolveAccentColor(hexDraft);
+  const panelId = "accent-color-picker-panel";
+
+  // Keep the draft in sync with the applied value (palette clicks, resets).
+  useEffect(() => {
+    setHexDraft(value ?? "");
+  }, [value]);
+
+  // Dismiss like the app's other popovers: outside pointer-down, Escape
+  // (returning focus to the trigger), and any scroll or resize.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    const close = () => setOpen(false);
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
+
+  // Float the rounded popover below the trigger, or above it when the space
+  // below is tight; clamp horizontally into the viewport.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const updatePosition = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const width = Math.min(
+        ACCENT_PICKER_PANEL_WIDTH,
+        window.innerWidth - ACCENT_PICKER_VIEWPORT_MARGIN * 2,
+      );
+      const left = Math.min(
+        Math.max(ACCENT_PICKER_VIEWPORT_MARGIN, rect.left),
+        Math.max(
+          ACCENT_PICKER_VIEWPORT_MARGIN,
+          window.innerWidth - width - ACCENT_PICKER_VIEWPORT_MARGIN,
+        ),
+      );
+      const below = rect.bottom + ACCENT_PICKER_TRIGGER_GAP;
+      const panelHeight = panelRef.current?.offsetHeight ?? 224;
+      if (window.innerHeight - below >= panelHeight + ACCENT_PICKER_VIEWPORT_MARGIN) {
+        setPanelStyle({ left, top: below, width });
+      } else {
+        setPanelStyle({
+          left,
+          bottom: window.innerHeight - rect.top + ACCENT_PICKER_TRIGGER_GAP,
+          width,
+        });
+      }
+    };
+    updatePosition();
+  }, [open]);
+
+  // Focus the hex input once the popover has been positioned.
+  useEffect(() => {
+    if (!open) return;
+    const frame = requestAnimationFrame(() => {
+      panelRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
+
+  const trigger = (
+    <button
+      ref={triggerRef}
+      type="button"
+      data-ui="accent-color-custom"
+      data-state={active ? "active" : "inactive"}
+      title={t("appearanceAccentCustom")}
+      aria-label={t("appearanceAccentCustom")}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      aria-controls={open ? panelId : undefined}
+      onClick={() => setOpen((previous) => !previous)}
+      className={`relative inline-flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border transition-[border-color,box-shadow,outline-color] ${
+        active
+          ? "border-focus outline outline-2 outline-offset-2 outline-focus"
+          : "border-border hover:border-border-strong"
+      }`}
+    >
+      <span
+        className="absolute inset-0"
+        style={{ backgroundColor: active && value ? value : "var(--color-surface-overlay)" }}
+        aria-hidden="true"
+      />
+      <Pipette
+        size={11}
+        className={`relative ${active ? "text-accent-foreground" : "text-muted"}`}
+        aria-hidden="true"
+      />
+    </button>
+  );
+
+  const panel =
+    open && panelStyle ? (
+      <div
+        ref={panelRef}
+        id={panelId}
+        role="dialog"
+        aria-label={t("appearanceAccentPickerTitle")}
+        data-ui="accent-color-picker"
+        className="theme-floating-surface fixed z-50 overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl"
+        style={panelStyle}
+      >
+        <div className="flex min-h-9 items-center gap-2 border-b border-border px-3 py-2">
+          <Pipette size={13} className="shrink-0 text-muted" aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
+            {t("appearanceAccentPickerTitle")}
+          </span>
+          {value && (
+            <span className="shrink-0 font-mono text-[10px] uppercase text-muted">{value}</span>
+          )}
+        </div>
+        <div
+          className="grid grid-cols-8 gap-1.5 p-3"
+          role="group"
+          aria-label={t("appearanceAccentPaletteLabel")}
+        >
+          {ACCENT_COLOR_PICKER_PALETTE.map((color) => (
+            <button
+              key={color}
+              type="button"
+              aria-pressed={value === color}
+              title={t("appearanceAccentOption", { value: color.toUpperCase() })}
+              aria-label={t("appearanceAccentOption", { value: color.toUpperCase() })}
+              data-ui="accent-color-picker-swatch"
+              data-state={value === color ? "active" : "inactive"}
+              className={`h-5 w-5 rounded-md border transition-[border-color,box-shadow,outline-color] hover:border-border-strong ${
+                value === color
+                  ? "border-focus outline outline-2 outline-offset-1 outline-focus"
+                  : "border-border"
+              }`}
+              style={{ backgroundColor: color }}
+              onClick={() => onApply(color)}
+            />
+          ))}
+        </div>
+        <div className="flex items-center gap-2 border-t border-border px-3 py-2.5">
+          <span
+            className="h-5 w-5 shrink-0 rounded-md border border-border"
+            style={{ backgroundColor: resolvedDraft ?? "var(--color-surface-overlay)" }}
+            aria-hidden="true"
+          />
+          <input
+            type="text"
+            spellCheck={false}
+            maxLength={7}
+            value={hexDraft}
+            aria-label={t("appearanceAccentHexLabel")}
+            placeholder="#RRGGBB"
+            className="h-7 min-w-0 flex-1 rounded-md border border-border bg-surface px-2 font-mono text-xs text-foreground outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-focus"
+            onChange={(event) => setHexDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || !resolvedDraft) return;
+              event.preventDefault();
+              onApply(resolvedDraft);
+            }}
+          />
+          <button
+            type="button"
+            disabled={!resolvedDraft}
+            className="h-7 shrink-0 rounded-md border border-border px-2 text-xs text-foreground transition-colors hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={() => resolvedDraft && onApply(resolvedDraft)}
+          >
+            {t("appearanceAccentApply")}
+          </button>
+        </div>
+        {hexDraft !== "" && !resolvedDraft && (
+          <p className="border-t border-border px-3 py-2 text-[10px] leading-relaxed text-danger">
+            {t("appearanceAccentInvalidHex")}
+          </p>
+        )}
+      </div>
+    ) : null;
+
+  return (
+    <>
+      {trigger}
+      {typeof document === "undefined" || !panel ? null : createPortal(panel, document.body)}
+    </>
+  );
+}
+
 export function AppearanceSettings() {
   const t = useT();
   const desktopSettings = useAppStore((state) => state.desktopSettings);
@@ -157,6 +386,10 @@ export function AppearanceSettings() {
     void patchDesktop({ conversationMinWidth: clamped });
   }
   const codeFontSize = resolveCodeFontSize(desktopSettings?.codeFontSize);
+  const accentColor = resolveAccentColor(desktopSettings?.accentColor);
+  const isCustomAccent =
+    accentColor !== null && !(ACCENT_COLOR_PRESETS as readonly string[]).includes(accentColor);
+  const defaultAccentPreview = THEME_DEFAULT_ACCENTS[themeFamily][resolveEffectiveTheme(themeMode)];
 
   async function patchDesktop(patch: DesktopSettingsUpdate) {
     try {
@@ -217,7 +450,9 @@ export function AppearanceSettings() {
               <div className="flex flex-col gap-3">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("appearanceThemeFamily")}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted">{t("appearanceThemeFamilyDesc")}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">
+                    {t("appearanceThemeFamilyDesc")}
+                  </span>
                 </span>
                 <div
                   data-ui="theme-family-selector"
@@ -263,7 +498,9 @@ export function AppearanceSettings() {
               <div className="flex flex-col gap-3">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("appearanceColorMode")}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted">{t("appearanceColorModeDesc")}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">
+                    {t("appearanceColorModeDesc")}
+                  </span>
                 </span>
                 <div
                   data-ui="color-mode-selector"
@@ -292,10 +529,73 @@ export function AppearanceSettings() {
                 </div>
               </div>
 
+              <div className="flex flex-col gap-3">
+                <span className="min-w-0">
+                  <span className="block text-sm">{t("appearanceAccentColor")}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">
+                    {t("appearanceAccentColorDesc")}
+                  </span>
+                </span>
+                <div
+                  data-ui="accent-color-selector"
+                  className="flex flex-wrap items-center gap-2"
+                  role="group"
+                  aria-label={t("appearanceAccentColor")}
+                >
+                  <button
+                    type="button"
+                    aria-pressed={accentColor === null}
+                    data-ui="accent-color-option"
+                    data-value="default"
+                    data-state={accentColor === null ? "active" : "inactive"}
+                    title={t("appearanceAccentDefault")}
+                    className={`inline-flex h-7 items-center gap-1.5 rounded-full border pl-1 pr-2.5 text-xs transition-[border-color,background-color,box-shadow] ${
+                      accentColor === null
+                        ? "border-focus bg-focus/10 font-medium text-foreground shadow-sm"
+                        : "border-border bg-surface-raised text-muted hover:border-border-strong hover:text-foreground"
+                    }`}
+                    onClick={() => void patchDesktop({ accentColor: null })}
+                  >
+                    <span
+                      className="accent-chip-swatch"
+                      style={{ backgroundColor: defaultAccentPreview }}
+                      aria-hidden="true"
+                    />
+                    {t("appearanceAccentDefault")}
+                  </button>
+                  {ACCENT_COLOR_PRESETS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      aria-pressed={accentColor === preset}
+                      data-ui="accent-color-option"
+                      data-value={preset}
+                      data-state={accentColor === preset ? "active" : "inactive"}
+                      title={t("appearanceAccentOption", { value: preset.toUpperCase() })}
+                      aria-label={t("appearanceAccentOption", { value: preset.toUpperCase() })}
+                      className={`h-6 w-6 rounded-full border transition-[border-color,box-shadow,outline-color] hover:border-border-strong ${
+                        accentColor === preset
+                          ? "border-focus outline outline-2 outline-offset-2 outline-focus"
+                          : "border-border"
+                      }`}
+                      style={{ backgroundColor: preset }}
+                      onClick={() => void patchDesktop({ accentColor: preset })}
+                    />
+                  ))}
+                  <AccentCustomColorPicker
+                    value={accentColor}
+                    active={isCustomAccent}
+                    onApply={(hex) => void patchDesktop({ accentColor: hex })}
+                  />
+                </div>
+              </div>
+
               <div className="flex items-center justify-between gap-4">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("generalLanguage")}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted">{t("generalLanguageDesc")}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">
+                    {t("generalLanguageDesc")}
+                  </span>
                 </span>
                 <Select
                   className="w-24"
@@ -315,7 +615,9 @@ export function AppearanceSettings() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("appearanceDensity")}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted">{t("appearanceDensityDesc")}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">
+                    {t("appearanceDensityDesc")}
+                  </span>
                 </span>
                 <div
                   data-ui="segmented"
@@ -348,7 +650,9 @@ export function AppearanceSettings() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("appearanceFont")}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted">{t("appearanceFontDesc")}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted">
+                    {t("appearanceFontDesc")}
+                  </span>
                 </span>
                 <Select
                   className="w-32"

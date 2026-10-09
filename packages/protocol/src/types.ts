@@ -1817,6 +1817,10 @@ export type DesktopSettings = {
   interfaceDensity?: DesktopInterfaceDensity;
   /** Sans font family used across the interface; absent values use the theme default. */
   interfaceFont?: DesktopInterfaceFont;
+  /** Accent (highlight) color as a normalized `#rrggbb` hex string used for
+   *  buttons, links and selection states; absent values follow the theme
+   *  family's own accent. */
+  accentColor?: string;
   /** Minimum width of the aligned conversation surfaces, in CSS pixels. */
   conversationMinWidth?: number;
   /** Maximum width of the aligned conversation surfaces, in CSS pixels. */

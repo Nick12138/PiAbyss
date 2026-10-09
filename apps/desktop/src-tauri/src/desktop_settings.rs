@@ -116,6 +116,25 @@ fn legacy_extension_decision_presentation() -> ExtensionDecisionPresentation {
     ExtensionDecisionPresentation::LegacyModal
 }
 
+/// Canonical stored accent form: `#` followed by six lowercase hex digits.
+fn is_canonical_accent_color(value: &str) -> bool {
+    value.len() == 7
+        && value.as_bytes()[0] == b'#'
+        && value.as_bytes()[1..]
+            .iter()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+}
+
+/// Load-time best effort: accept any-cased `#rrggbb` (lowercasing it) and drop
+/// anything else so a stray legacy value can never brick the settings file.
+fn sanitize_accent_color(value: &str) -> Option<String> {
+    if is_canonical_accent_color(value) {
+        return Some(value.to_string());
+    }
+    let lowered = value.trim().to_ascii_lowercase();
+    is_canonical_accent_color(&lowered).then(|| lowered)
+}
+
 fn default_conversation_line_height() -> f32 {
     DEFAULT_CONVERSATION_LINE_HEIGHT
 }
@@ -146,6 +165,10 @@ pub struct DesktopSettings {
     pub interface_density: DesktopInterfaceDensity,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub interface_font: Option<DesktopInterfaceFont>,
+    /// Accent (highlight) color override as a canonical `#rrggbb` hex string.
+    /// `None` follows the theme family's own accent palette.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accent_color: Option<String>,
     pub conversation_min_width: u32,
     pub conversation_max_width: u32,
     pub conversation_font_size: u32,
@@ -188,6 +211,7 @@ impl Default for DesktopSettings {
             language: None,
             interface_density: DesktopInterfaceDensity::Standard,
             interface_font: None,
+            accent_color: None,
             conversation_min_width: DEFAULT_CONVERSATION_MIN_WIDTH,
             conversation_max_width: DEFAULT_CONVERSATION_MAX_WIDTH,
             conversation_font_size: DEFAULT_CONVERSATION_FONT_SIZE,
@@ -357,6 +381,10 @@ impl DesktopSettingsStore {
         settings.code_font_size = settings
             .code_font_size
             .clamp(MIN_CODE_FONT_SIZE, MAX_CODE_FONT_SIZE);
+        settings.accent_color = settings
+            .accent_color
+            .as_deref()
+            .and_then(sanitize_accent_color);
         Ok((settings, legacy || removed_theme_family))
     }
 
@@ -423,6 +451,11 @@ impl DesktopSettingsStore {
         }
         if settings.host_idle_rss_retire_mb > 8192 {
             return Err("hostIdleRssRetireMb must be between 0 and 8192".to_string());
+        }
+        if let Some(accent) = &settings.accent_color {
+            if !is_canonical_accent_color(accent) {
+                return Err("accentColor must be a #rrggbb hex string".to_string());
+            }
         }
         for (plugin_id, vars) in &settings.plugin_env {
             if plugin_id.is_empty() || plugin_id.chars().count() > 64 {
@@ -568,6 +601,7 @@ impl DesktopSettingsStore {
                     | "language"
                     | "interfaceDensity"
                     | "interfaceFont"
+                    | "accentColor"
                     | "conversationMinWidth"
                     | "conversationMaxWidth"
                     | "conversationFontSize"
@@ -745,6 +779,8 @@ mod tests {
             serde_json::json!({ "themeFamily": "neon" }),
             serde_json::json!({ "language": "fr" }),
             serde_json::json!({ "interfaceDensity": "dense" }),
+            serde_json::json!({ "accentColor": "orange" }),
+            serde_json::json!({ "accentColor": "#8b5cf" }),
             serde_json::json!({ "conversationFontSize": 11 }),
             serde_json::json!({ "conversationLineHeight": 0.9 }),
             serde_json::json!({ "conversationLineHeight": 1.75 }),
@@ -815,6 +851,57 @@ mod tests {
             .unwrap_err()
             .contains("between 10 and 18"));
         assert_eq!(invalid.settings.code_font_size, 15);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn persists_and_clears_the_accent_color_override() {
+        let dir = test_dir("accent-color");
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(store.settings.accent_color, None);
+
+        store
+            .patch(serde_json::json!({ "accentColor": "#8b5cf6" }))
+            .unwrap();
+        assert_eq!(store.settings.accent_color.as_deref(), Some("#8b5cf6"));
+
+        let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(reloaded.settings.accent_color.as_deref(), Some("#8b5cf6"));
+
+        let mut cleared = reloaded;
+        cleared
+            .patch(serde_json::json!({ "accentColor": null }))
+            .unwrap();
+        assert_eq!(cleared.settings.accent_color, None);
+        let raw = fs::read_to_string(cleared.path.clone()).unwrap();
+        assert!(!raw.contains("accentColor"));
+
+        let mut invalid = cleared;
+        assert!(invalid
+            .patch(serde_json::json!({ "accentColor": "red" }))
+            .is_err());
+        assert_eq!(invalid.settings.accent_color, None);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn sanitizes_stale_accent_colors_on_load() {
+        let dir = test_dir("accent-color-legacy");
+        fs::write(
+            dir.join(SETTINGS_FILE_NAME),
+            r##"{"schemaVersion":1,"settings":{"theme":"light","accentColor":"#8B5CF6"}}"##,
+        )
+        .unwrap();
+        let loaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(loaded.settings.accent_color.as_deref(), Some("#8b5cf6"));
+
+        fs::write(
+            dir.join(SETTINGS_FILE_NAME),
+            r#"{"schemaVersion":1,"settings":{"theme":"light","accentColor":"orange"}}"#,
+        )
+        .unwrap();
+        let dropped = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(dropped.settings.accent_color, None);
         fs::remove_dir_all(dir).unwrap();
     }
 
