@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   ArrowDownToLine,
   Download,
-  ExternalLink,
   Eye,
   EyeOff,
   Loader2,
@@ -1058,16 +1057,6 @@ export function PluginLibraryPage() {
     return runMutation("resource.setPreferences", { updates }, entry.id, entry.name);
   }
 
-  async function openRegistry() {
-    const url = "https://github.com/Nick12138/my-pi-plugins";
-    try {
-      const { open } = await import("@tauri-apps/plugin-shell");
-      await open(url);
-    } catch {
-      window.open(url, "_blank", "noopener,noreferrer");
-    }
-  }
-
   if (!workspace?.servicesReady) {
     return (
       <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted">
@@ -1192,13 +1181,6 @@ export function PluginLibraryPage() {
           onClick={() => void loadCatalog({ refresh: true })}
         >
           <RefreshCw size={14} className={catalogState === "loading" ? "animate-spin" : ""} />
-        </button>
-        <button
-          type="button"
-          className="inline-flex h-8 items-center gap-1 text-xs text-muted hover:text-accent"
-          onClick={() => void openRegistry()}
-        >
-          {t("pluginsRegistryLink")} <ExternalLink size={11} />
         </button>
       </SettingsTopBarActions>
 

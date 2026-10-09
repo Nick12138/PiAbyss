@@ -671,7 +671,6 @@ export const zh: Record<MessageKey, string> = {
   pluginsLoadFailed: "插件注册清单加载失败",
   pluginsRetry: "重试",
   pluginsEmpty: "注册清单中还没有插件。",
-  pluginsRegistryLink: "来源",
   pluginsWarnings: "注册清单警告",
   pluginStatusEnabled: "已启用",
   pluginStatusDisabled: "已禁用",

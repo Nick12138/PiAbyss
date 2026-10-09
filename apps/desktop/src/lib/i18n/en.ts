@@ -717,7 +717,6 @@ export const en = {
   pluginsLoadFailed: "Failed to load the plugin registry",
   pluginsRetry: "Retry",
   pluginsEmpty: "The registry has no plugins yet.",
-  pluginsRegistryLink: "Registry source",
   pluginsWarnings: "Registry warnings",
   pluginStatusEnabled: "Enabled",
   pluginStatusDisabled: "Disabled",
