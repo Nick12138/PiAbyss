@@ -1129,14 +1129,8 @@ export function PluginLibraryPage() {
               >
                 <div className="flex items-center justify-between gap-2 px-1 pb-1.5">
                   <span className="flex min-w-0 items-center gap-1 truncate text-xs font-medium">
-                    {updatesBusy ? (
-                      <>
-                        <Loader2 size={12} className="shrink-0 animate-spin text-warning" />
-                        <span className="truncate">{t("pluginsUpdating")}</span>
-                      </>
-                    ) : (
-                      t("pluginsUpdateTitle", { count: updateRows.length })
-                    )}
+                    {updatesBusy && <Loader2 size={12} className="shrink-0 animate-spin text-warning" />}
+                    <span className="truncate">{t("pluginsUpdateTitle", { count: updateRows.length })}</span>
                   </span>
                   <button
                     type="button"
@@ -1146,7 +1140,7 @@ export function PluginLibraryPage() {
                     onClick={() => void applyAllPluginUpdates()}
                   >
                     {updateAllRunning && <Loader2 size={11} className="animate-spin" />}
-                    {updateAllRunning ? t("pluginsUpdating") : t("pluginsUpdateAll")}
+                    {t("pluginsUpdateAll")}
                   </button>
                 </div>
                 <div className="flex flex-col">
@@ -1207,7 +1201,7 @@ export function PluginLibraryPage() {
         </button>
       </SettingsTopBarActions>
 
-      <div className="flex flex-col gap-1.5 border-b border-border px-4 py-2.5">
+      <div className="flex flex-col gap-1.5 border-b border-border px-6 py-2.5">
         <div
           className="flex flex-wrap items-center gap-1.5"
           role="group"
@@ -1247,17 +1241,12 @@ export function PluginLibraryPage() {
           })}
           {packagesLoading && <RefreshCw size={12} className="animate-spin text-muted" />}
         </div>
-        <div className="flex items-center gap-2">
-          <p className="text-[11px] text-muted">
-            {globalFilter ? t("pluginsScopeUserHint") : t("pluginsWorkspaceTargetHint")}
-          </p>
-        </div>
       </div>
 
       {catalog && catalog.warnings.length > 0 && (
         <div
           data-settings-top-banner
-          className="flex flex-wrap items-center gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs"
+          className="flex flex-wrap items-center gap-2 border-b border-warning/40 bg-warning/10 px-6 py-2 text-xs"
         >
           <AlertTriangle size={14} className="text-warning" />
           <span className="min-w-48 flex-1 text-warning" title={catalog.warnings.join("\n")}>
@@ -1299,7 +1288,7 @@ export function PluginLibraryPage() {
         </div>
       ) : (
         <div
-          className="scrollbar-subtle grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-2 overflow-y-auto p-3 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
+          className="scrollbar-subtle grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-2 overflow-y-auto p-6 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
           data-settings-scroll
         >
           {catalog.plugins.map((entry) => (
