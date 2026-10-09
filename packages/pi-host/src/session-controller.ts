@@ -370,7 +370,7 @@ export function createSessionHandlers(
     "subagents.pause": async (ctx) => controlSubagentRun(factory, ctx, "pause", "paused"),
     "subagents.continue": async (ctx) => controlSubagentRun(factory, ctx, "continue", "continued"),
     "subagents.resume": async (ctx) => {
-      const { nodeId, model, thinking } = ctx.params as {
+      const { model, thinking } = ctx.params as {
         nodeId: string;
         model?: string;
         thinking?: string;

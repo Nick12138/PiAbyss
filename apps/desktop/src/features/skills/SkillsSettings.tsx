@@ -4,7 +4,6 @@ import {
   Boxes,
   ChevronDown,
   ChevronRight,
-  Eye,
   FolderOpen,
   Folder,
   HelpCircle,
@@ -16,7 +15,6 @@ import {
 } from "lucide-react";
 import { Dialog } from "../../components/Dialog";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
-import { Select } from "../../components/Select";
 import { Switch } from "../../components/Switch";
 import type {
   HostRequestParams,
@@ -492,9 +490,7 @@ export function SkillsSettings() {
   const rows = snapshot ? buildRows(snapshot.skills, resources) : [];
   // Group visibility follows the scope row: the global scope shows the fixed
   // user & bundle groups; a workspace shows only its own project skills.
-  const visibleGroupIds: readonly SkillGroupId[] = isUserScope
-    ? ["user", "bundle"]
-    : ["project"];
+  const visibleGroupIds: readonly SkillGroupId[] = isUserScope ? ["user", "bundle"] : ["project"];
   const groups: Array<{ id: SkillGroupId; rows: SkillRow[]; prompts: PromptInfo[] }> =
     visibleGroupIds.map((id) => ({
       id,
@@ -601,7 +597,6 @@ export function SkillsSettings() {
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-6 pb-6" data-settings-scroll>
         <div className="mx-auto flex max-w-5xl flex-col gap-6">
-
           {snapshot?.resourceReloadRequired && (
             <p
               role="status"
@@ -928,7 +923,9 @@ export function SkillsSettings() {
                       >
                         {entry.scope === "user" ? t("skillsScopeUser") : t("skillsScopeProject")}
                       </span>
-                      <span className="min-w-0 flex-1 truncate font-mono text-xs">{entry.path}</span>
+                      <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                        {entry.path}
+                      </span>
                       {!entry.exists && (
                         <span className="shrink-0 text-[11px] text-warning">
                           {t("skillsPathMissing")}
