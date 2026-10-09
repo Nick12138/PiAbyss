@@ -28,21 +28,18 @@ function pluginStatus(
 let catalogCache: { hostId: string; catalog: PluginLibraryCatalog } | null = null;
 
 /**
- * True while the given plugin-library plugin is installed and enabled. Loads
- * the plugin-library catalog (host-scoped) and the package snapshot
- * (workspace-scoped, shared through the app store) on demand.
- *
- * Used to hide sidebar entries whose backing protocol handlers the Host gates
- * on the same plugin state (memo, pixie, schedule).
+ * Catalog + package snapshot for plugin attribution UI (tool pickers and
+ * similar). Same fetch-and-share pattern as `usePluginEnabled`: the catalog is
+ * host-scoped and cached, the package snapshot lives in the app store so
+ * plugin-library toggles reflect reactively.
  */
-export function usePluginEnabled(pluginId: string): boolean {
+export function usePluginCatalogData(): {
+  catalog: PluginLibraryCatalog | null;
+  packages: PackageSnapshot | null;
+} {
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
   const workspaceServicesReady = workspace?.servicesReady ?? false;
-  // The shared store's snapshot is the single source of truth: plugin-library
-  // toggles flow back through applyPackageMutationResult, so reading it
-  // reactively makes the gate flip the moment a toggle lands (no remount /
-  // reload needed). The local fetch below only seeds the store.
   const storePackages = useAppStore((s) => s.packages);
   const applyPackageSnapshot = useAppStore((s) => s.applyPackageSnapshot);
   const hostId = host?.hostInstanceId ?? null;
@@ -97,5 +94,18 @@ export function usePluginEnabled(pluginId: string): boolean {
     };
   }, [host, workspace, workspaceServicesReady, storePackages, applyPackageSnapshot]);
 
-  return pluginStatus(pluginId, catalog, storePackages) === "enabled";
+  return { catalog, packages: storePackages };
+}
+
+/**
+ * True while the given plugin-library plugin is installed and enabled. Loads
+ * the plugin-library catalog (host-scoped) and the package snapshot
+ * (workspace-scoped, shared through the app store) on demand.
+ *
+ * Used to hide sidebar entries whose backing protocol handlers the Host gates
+ * on the same plugin state (memo, pixie, schedule).
+ */
+export function usePluginEnabled(pluginId: string): boolean {
+  const { catalog, packages } = usePluginCatalogData();
+  return pluginStatus(pluginId, catalog, packages) === "enabled";
 }

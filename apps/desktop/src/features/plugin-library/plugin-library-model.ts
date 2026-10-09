@@ -433,3 +433,69 @@ export function missingRequiredConfig(
     .filter((item) => item.required === true && !(values[item.env] ?? "").trim())
     .map((item) => ({ label: item.label }));
 }
+
+/* ------------------------------------------------------------ */
+/* Tool attribution: map a ToolSnapshot tool to its plugin entry */
+/* ------------------------------------------------------------ */
+
+/** SDK source paths that never belong to a plugin-library plugin:
+ *  built-in tools (`<builtin:read>`) and host custom tools (`<sdk:...>`). */
+function isSyntheticToolSourcePath(sourcePath: string): boolean {
+  return sourcePath.startsWith("<");
+}
+
+function normalizeToolPath(path: string): string {
+  return normalizePath(path).replace(/\/+$/, "").toLowerCase();
+}
+
+/** Index of plugin-library entries keyed by the posix-normalized absolute
+ *  paths of their installed extension resources. Built from the same package
+ *  snapshot the plugin-library pages use, so it reflects what the Host
+ *  actually loaded (including repo-plugin resources inside the registry repo). */
+export type PluginToolIndex = {
+  /** extension file path (normalized, lowercased) → owning plugin entry */
+  byExtensionPath: Map<string, PluginLibraryEntry>;
+};
+
+/** Build the attribution index from the workspace package snapshot. Returns
+ *  null while the snapshot has not loaded yet; callers keep showing the
+ *  unfiltered menu until then instead of flashing an empty picker. */
+export function buildPluginToolIndex(
+  catalog: PluginLibraryCatalog | null,
+  packages: PackageSnapshot | null,
+): PluginToolIndex | null {
+  if (!catalog || !packages) return null;
+  const byExtensionPath = new Map<string, PluginLibraryEntry>();
+  for (const entry of catalog.plugins) {
+    const state = pluginCardState(entry, catalog, packages);
+    for (const resource of state.extensionResources) {
+      byExtensionPath.set(normalizeToolPath(resource.path), entry);
+    }
+  }
+  return { byExtensionPath };
+}
+
+/** Attribute one tool to its plugin-library entry via the tool's extension
+ *  registration path (ToolSnapshot `sourcePath`). Undefined for built-ins,
+ *  host custom tools, and plugins absent from the catalog. */
+export function pluginEntryForTool(
+  index: PluginToolIndex | null,
+  tool: { name: string; sourcePath?: string },
+): PluginLibraryEntry | undefined {
+  if (!index) return undefined;
+  const sourcePath = tool.sourcePath;
+  if (!sourcePath || isSyntheticToolSourcePath(sourcePath)) return undefined;
+  return index.byExtensionPath.get(normalizeToolPath(sourcePath));
+}
+
+/** True when the tool's owning plugin is registry-restricted to global
+ *  toggling (`toggleScopes: ["user"]`). Such tools never appear in the
+ *  per-conversation picker because the workspace cannot change them. */
+export function isGlobalOnlyPluginTool(
+  index: PluginToolIndex | null,
+  tool: { name: string; sourcePath?: string },
+): boolean {
+  const entry = pluginEntryForTool(index, tool);
+  if (!entry) return false;
+  return !pluginToggleScopes(entry).includes("project");
+}

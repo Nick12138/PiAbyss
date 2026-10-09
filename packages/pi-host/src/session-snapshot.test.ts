@@ -29,6 +29,7 @@ function sessionFixture(
     getSteeringMessages: () => [],
     getFollowUpMessages: () => [],
     getAllTools: () => [],
+    getToolDefinition: () => undefined,
     getActiveToolNames: () => [],
     ...overrides,
   } as unknown as AgentSession;
@@ -448,5 +449,57 @@ describe("buildSessionSnapshot entry projection", () => {
       expect.objectContaining({ name: "large-tool", description: toolDescription }),
     ]);
     expect(validateSuccessResult("session.getSnapshot", snapshot)).toMatchObject({ ok: true });
+  });
+});
+
+describe("buildToolSnapshot tool metadata projection", () => {
+  it("exposes the definition label and extension source path per tool", async () => {
+    const { buildToolSnapshot } = await import("./session-snapshot.js");
+    const session = sessionFixture([], {
+      getAllTools: () => [
+        {
+          name: "shelljob",
+          description: "后台 shell 任务",
+          sourceInfo: { path: "C:/ext/pi-shelljob/extensions/pi-shelljob.ts", source: "local" },
+        },
+        {
+          name: "read",
+          description: "Read a file",
+          sourceInfo: { path: "<builtin:read>", source: "builtin" },
+        },
+        { name: "no-meta", description: "mystery tool" },
+      ],
+      getToolDefinition: (name: string) =>
+        name === "shelljob" ? { name, label: "后台 Shell" } : undefined,
+      getActiveToolNames: () => ["shelljob", "read"],
+    });
+
+    const snapshot = buildToolSnapshot({
+      session,
+      workspaceId: WORKSPACE_ID,
+      sessionId: SESSION_ID,
+      sessionRevision: 1,
+      toolRevision: 1,
+    });
+
+    expect(snapshot.tools).toEqual([
+      {
+        name: "shelljob",
+        description: "后台 shell 任务",
+        parameters: undefined,
+        source: undefined,
+        label: "后台 Shell",
+        sourcePath: "C:/ext/pi-shelljob/extensions/pi-shelljob.ts",
+      },
+      {
+        name: "read",
+        description: "Read a file",
+        parameters: undefined,
+        source: undefined,
+        sourcePath: "<builtin:read>",
+      },
+      { name: "no-meta", description: "mystery tool", parameters: undefined, source: undefined },
+    ]);
+    expect(validateSuccessResult("agent.getTools", snapshot)).toMatchObject({ ok: true });
   });
 });

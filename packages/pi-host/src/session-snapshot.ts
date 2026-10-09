@@ -183,14 +183,20 @@ export function buildToolSnapshot(args: {
       parameters?: unknown;
       sourceLabel?: string;
       source?: { kind?: string } | string;
+      sourceInfo?: { path?: string };
     };
     const source =
       anyT.sourceLabel ?? (typeof anyT.source === "string" ? anyT.source : anyT.source?.kind);
+    const sourcePath = anyT.sourceInfo?.path;
+    // getAllTools() omits the human-readable label; the definition registry has it.
+    const label = args.session.getToolDefinition(anyT.name)?.label;
     return {
       name: anyT.name,
       description: anyT.description,
       parameters: anyT.parameters !== undefined ? toJsonValue(anyT.parameters) : undefined,
       source,
+      ...(label ? { label } : {}),
+      ...(sourcePath ? { sourcePath } : {}),
     };
   });
 

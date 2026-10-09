@@ -8,8 +8,10 @@ import type {
 } from "@piabyss/protocol";
 import {
   buildPluginEnvPatch,
+  buildPluginToolIndex,
   buildScopedToggleUpdates,
   initialConfigValues,
+  isGlobalOnlyPluginTool,
   isVisionCapable,
   missingRequiredConfig,
   modelOption,
@@ -20,6 +22,7 @@ import {
   OPTIONS_SOURCE_VISION_MODELS,
   OPTIONS_SOURCE_VISION_FALLBACK_MODELS,
   pluginCardState,
+  pluginEntryForTool,
   pluginWorkspaceCardState,
   repoExtensionPattern,
   wantsModelListOptions,
@@ -629,5 +632,98 @@ describe("buildScopedToggleUpdates", () => {
       true,
     );
     expect(updates).toEqual([{ resourceId: "b", targetScope: "user", preference: "enabled" }]);
+  });
+});
+
+describe("plugin tool attribution", () => {
+  const globalOnlyEntry: PluginLibraryEntry = {
+    ...WEB_ENTRY,
+    id: "piabyss-memo",
+    name: "PiAbyss 备忘录",
+    install: { type: "repo", path: "packages/piabyss-memo" },
+    toggleScopes: ["user"],
+  };
+  const workspaceEntry: PluginLibraryEntry = {
+    ...WEB_ENTRY,
+    id: "pi-shelljob",
+    name: "后台 Shell",
+    install: { type: "repo", path: "packages/pi-shelljob" },
+  };
+  const attributionCatalog: PluginLibraryCatalog = {
+    ...CATALOG,
+    plugins: [globalOnlyEntry, workspaceEntry],
+  };
+  const repoPkg = pkg({
+    id: "pkg-repo",
+    source: "git:github.com/Nick12138/my-pi-plugins",
+    identity: "git:github.com/Nick12138/my-pi-plugins",
+    kind: "git",
+  });
+  const resources = [
+    resource({
+      id: "res-memo",
+      path: "C:/repo/packages/piabyss-memo/extensions/piabyss-memo.ts",
+      packageId: "pkg-repo",
+    }),
+    resource({
+      id: "res-shelljob",
+      path: "C:/repo/packages/pi-shelljob/extensions/pi-shelljob.ts",
+      packageId: "pkg-repo",
+    }),
+  ];
+  const snapshotAll = snapshot([repoPkg], resources);
+  const index = buildPluginToolIndex(attributionCatalog, snapshotAll);
+
+  it("returns null while catalog or snapshot is missing", () => {
+    expect(buildPluginToolIndex(null, snapshotAll)).toBeNull();
+    expect(buildPluginToolIndex(attributionCatalog, null)).toBeNull();
+  });
+
+  it("attributes a tool to its plugin entry by extension path", () => {
+    expect(
+      pluginEntryForTool(index, {
+        name: "shelljob",
+        sourcePath: "C:/repo/packages/pi-shelljob/extensions/pi-shelljob.ts",
+      })?.id,
+    ).toBe("pi-shelljob");
+    // Windows/posix separators and case normalize to the same key.
+    expect(
+      pluginEntryForTool(index, {
+        name: "shelljob",
+        sourcePath: "c:/repo/packages/pi-shelljob/extensions/pi-shelljob.ts",
+      })?.id,
+    ).toBe("pi-shelljob");
+  });
+
+  it("never attributes synthetic source paths (built-ins, sdk custom tools)", () => {
+    expect(
+      pluginEntryForTool(index, { name: "read", sourcePath: "<builtin:read>" }),
+    ).toBeUndefined();
+    expect(
+      pluginEntryForTool(index, { name: "read_attachment", sourcePath: "<sdk:read_attachment>" }),
+    ).toBeUndefined();
+    expect(pluginEntryForTool(index, { name: "read" })).toBeUndefined();
+  });
+
+  it("marks global-only plugin tools and leaves workspace-toggleable ones alone", () => {
+    expect(
+      isGlobalOnlyPluginTool(index, {
+        name: "piabyss_memo",
+        sourcePath: "C:/repo/packages/piabyss-memo/extensions/piabyss-memo.ts",
+      }),
+    ).toBe(true);
+    expect(
+      isGlobalOnlyPluginTool(index, {
+        name: "shelljob",
+        sourcePath: "C:/repo/packages/pi-shelljob/extensions/pi-shelljob.ts",
+      }),
+    ).toBe(false);
+    // Tools without a catalog entry are not "global-only" — they stay visible.
+    expect(isGlobalOnlyPluginTool(index, { name: "mystery", sourcePath: "C:/nowhere/x.ts" })).toBe(
+      false,
+    );
+    expect(isGlobalOnlyPluginTool(null, { name: "read", sourcePath: "<builtin:read>" })).toBe(
+      false,
+    );
   });
 });

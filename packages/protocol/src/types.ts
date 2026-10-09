@@ -1089,6 +1089,14 @@ export type SerializableToolInfo = {
   description?: string;
   parameters?: JsonValue;
   source?: string;
+  /** Human-readable tool label declared by the registering extension
+   *  (ToolDefinition.label); undefined for tools without a label. */
+  label?: string;
+  /** Registration path of the tool's defining extension (SourceInfo.path):
+   *  an absolute extension file path for plugin tools, `<builtin:name>` for
+   *  built-ins, `<sdk:name>` for host custom tools. Lets the UI attribute a
+   *  tool to its plugin-library entry. */
+  sourcePath?: string;
 };
 
 export type ToolSnapshot = {

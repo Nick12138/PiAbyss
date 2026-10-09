@@ -1179,11 +1179,17 @@ function isSerializableAgentSessionEvent(value: unknown): boolean {
 function isToolInfo(value: unknown): boolean {
   return (
     isPlainObject(value) &&
-    hasExactKeys(value, ["name"], ["description", "parameters", "source"]) &&
+    hasExactKeys(
+      value,
+      ["name"],
+      ["description", "parameters", "source", "label", "sourcePath"],
+    ) &&
     isString(value.name) &&
     isOptionalString(value.description) &&
     (value.parameters === undefined || isJsonValue(value.parameters)) &&
-    isOptionalString(value.source)
+    isOptionalString(value.source) &&
+    isOptionalString(value.label) &&
+    isOptionalString(value.sourcePath)
   );
 }
 
