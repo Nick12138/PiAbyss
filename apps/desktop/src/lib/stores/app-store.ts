@@ -467,6 +467,12 @@ export type AppState = EpochState & {
    *  survives reloads; promoted out of Sidebar-local state so the app-level
    *  top bar can both read and toggle it. */
   sidebarCollapsed: boolean;
+  /** True when the CURRENT collapse came from the window-width auto rule
+   *  (lib/sidebar-auto-collapse.ts) rather than a user action. Only an
+   *  auto-collapse may be auto-expanded when the window widens again; every
+   *  manual toggle/set clears this. Persisted beside the collapse pref so
+   *  the collapse reason survives reloads. */
+  sidebarAutoCollapsed: boolean;
   packageProgress: PackageProgressState | null;
   packageRetry: PackageRetryState | null;
   thinkingLevels: string[];
@@ -570,6 +576,13 @@ export type AppState = EpochState & {
   setDockOpen: (open: boolean) => void;
   setSidebarCollapsed: (open: boolean) => void;
   toggleSidebar: () => void;
+  /** Window-width auto rule: collapse the sidebar and remember the collapse
+   *  was automatic (no-op when already collapsed — a manual collapse must
+   *  never be re-labeled as automatic). */
+  autoCollapseSidebar: () => void;
+  /** Window-width auto rule: expand the sidebar, but only if the current
+   *  collapse was automatic (no-op for a manual collapse). */
+  autoExpandSidebar: () => void;
   setExtensionStatus: (key: string | undefined, text: string | null) => void;
   setExtensionMessageRender: (
     entryId: string,
@@ -705,6 +718,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   dockOpen: sidebarPref("piabyss.dock.open"),
   dockRestoreOnPanelClose: null,
   sidebarCollapsed: sidebarPref("piabyss.sidebar.collapsed"),
+  sidebarAutoCollapsed: sidebarPref("piabyss.sidebar.autoCollapsed"),
   packageProgress: null,
   packageRetry: null,
   thinkingLevels: [],
@@ -1297,15 +1311,36 @@ export const useAppStore = create<AppState>((set, get) => ({
       dockRestoreOnPanelClose: null,
     }),
   setSidebarCollapsed: (open) => {
+    // Explicit set (reveal flow, programmatic opens): a user-visible action
+    // always overrides the window-width rule's memory.
     setSidebarPref("piabyss.sidebar.collapsed", open);
-    set({ sidebarCollapsed: open });
+    setSidebarPref("piabyss.sidebar.autoCollapsed", false);
+    set({ sidebarCollapsed: open, sidebarAutoCollapsed: false });
   },
   toggleSidebar: () =>
     set((state) => {
       const next = !state.sidebarCollapsed;
+      // Manual toggle takes over from the auto rule on either direction.
       setSidebarPref("piabyss.sidebar.collapsed", next);
-      return { sidebarCollapsed: next };
+      setSidebarPref("piabyss.sidebar.autoCollapsed", false);
+      return { sidebarCollapsed: next, sidebarAutoCollapsed: false };
     }),
+  autoCollapseSidebar: () => {
+    // Never re-label an existing (manual) collapse as automatic — that flag
+    // is the only thing that authorizes a later auto-expand.
+    if (get().sidebarCollapsed) return;
+    setSidebarPref("piabyss.sidebar.collapsed", true);
+    setSidebarPref("piabyss.sidebar.autoCollapsed", true);
+    set({ sidebarCollapsed: true, sidebarAutoCollapsed: true });
+  },
+  autoExpandSidebar: () => {
+    // Only an auto-collapse auto-expands; a manual collapse is final until
+    // the user (or an explicit reveal/toggle) opens the sidebar again.
+    if (!get().sidebarAutoCollapsed) return;
+    setSidebarPref("piabyss.sidebar.collapsed", false);
+    setSidebarPref("piabyss.sidebar.autoCollapsed", false);
+    set({ sidebarCollapsed: false, sidebarAutoCollapsed: false });
+  },
   setExtensionStatus: (key, text) =>
     set((state) => {
       const statusKey = key || "default";

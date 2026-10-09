@@ -7,7 +7,7 @@ import {
   Settings,
   Sparkles,
 } from "lucide-react";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useAppStore, type NavPage } from "../lib/stores/app-store";
 import { SessionList } from "../features/sessions/SessionList";
 import { useT } from "../lib/i18n/use-t";
@@ -16,6 +16,7 @@ import { TelegramSessionList } from "../features/telegram/TelegramSessionList";
 import { useTelegramWorkspaceActive } from "../features/telegram/telegram-view-store";
 import { PiMark } from "./PiMark";
 import { sidebarPref, setSidebarPref } from "../lib/sidebar-prefs";
+import { evaluateSidebarAutoAction, sidebarFloorWindowWidth } from "../lib/sidebar-auto-collapse";
 import { subscribeSessionReveal } from "../lib/session-reveal";
 import { useSchedulePluginEnabled } from "../features/schedule/schedule-plugin-gate";
 import { usePluginEnabled } from "../features/plugin-library/plugin-gate";
@@ -37,7 +38,7 @@ const MAX_SIDEBAR_WIDTH = 420;
 
 /** Native window minimum height, kept in lockstep with the `minHeight`
  *  declared in tauri.conf.json. The width is driven dynamically by the
- *  conversation-area min width + the live sidebar width (see effect below);
+ *  conversation-area min width (see effect below);
  *  `setSizeConstraints` replaces the whole constraint set, so the height must
  *  be re-asserted on every update to avoid dropping it. */
 const NATIVE_WINDOW_MIN_HEIGHT = 600;
@@ -141,6 +142,7 @@ export function SidebarLayout({
   const pixieEnabled = usePluginEnabled(PIXIE_PLUGIN_ID);
   const hostReady = Boolean(useAppStore((s) => s.host?.hostInstanceId));
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
+  const sidebarAutoCollapsed = useAppStore((s) => s.sidebarAutoCollapsed);
   const telegramViewActive = useTelegramWorkspaceActive();
   const [sessionsCollapsed, setSessionsCollapsed] = useState(() =>
     sidebarPref("piabyss.sidebar.sessionsCollapsed"),
@@ -167,8 +169,28 @@ export function SidebarLayout({
   // Drive the OS-level window minimum width from the conversation-area min
   // width setting, scoped to the conversation column rather than acting as
   // a flat global floor:
-  //   • sidebar collapsed  → minWidth = conversation min width + frame insets
-  //   • sidebar expanded   → minWidth = conversation min width + current sidebar width + frame insets
+  //
+  //   minWidth = conversation min width + frame insets
+  //
+  // The floor deliberately does NOT include the expanded sidebar's width,
+  // for two reasons:
+  //
+  //   1. The auto-collapse watcher below protects the conversation column
+  //      reactively — and instantly, within the same resize event (the
+  //      auto-collapse skips the width animation) — so a raised
+  //      expanded-sidebar floor is no longer needed to keep the column
+  //      readable while shrinking.
+  //   2. Decisive: the OS reads window size constraints once, when a resize
+  //      drag STARTS. A `setSizeConstraints` call issued mid-drag (e.g.
+  //      right after the auto-collapse lowers the floor) does not take
+  //      effect until the user releases the edge and grabs it again. An
+  //      expanded-sidebar floor therefore made the shrink feel
+  //      two-staged: the drag stalled at the old wall exactly where the
+  //      sidebar had just collapsed, and only a re-grab let it continue.
+  //      A sidebar-independent floor means a single continuous drag glides
+  //      all the way down: sidebar open → collapse at the threshold →
+  //      floor already low enough → keep dragging.
+  //
   // The conversation area sits inside `[data-content-frame]`, which carries a
   // left/right design margin (--app-content-gap, per theme). Those insets
   // always get space when the window hugs the minimum — otherwise the chat
@@ -183,7 +205,6 @@ export function SidebarLayout({
   useEffect(() => {
     if (!nativeWindowAvailable) return;
     const conversationMin = resolveConversationMinWidth(conversationMinWidth);
-    const sidebarW = sidebarCollapsed ? 0 : sidebarWidth;
     let cancelled = false;
     void (async () => {
       try {
@@ -194,7 +215,9 @@ export function SidebarLayout({
         const frameMarginH =
           (parseFloat(frameStyle?.marginLeft || "0") || 0) +
           (parseFloat(frameStyle?.marginRight || "0") || 0);
-        const baseMinWidth = conversationMin + sidebarW + frameMarginH;
+        // Sidebar width pinned to 0: the floor stays at the collapsed level
+        // (see the comment above for why it must not track the sidebar).
+        const baseMinWidth = sidebarFloorWindowWidth(conversationMin, 0, frameMarginH);
 
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
         if (cancelled) return;
@@ -228,7 +251,62 @@ export function SidebarLayout({
     return () => {
       cancelled = true;
     };
-  }, [sidebarCollapsed, sidebarWidth, conversationMinWidth, theme, themeFamily]);
+  }, [conversationMinWidth, theme, themeFamily]);
+
+  // Window-width auto collapse/expand (policy: lib/sidebar-auto-collapse.ts).
+  //
+  // The OS floor above deliberately sits at the collapsed level, so a
+  // shrinking window never stalls against an expanded-sidebar wall
+  // mid-drag. This watcher is what protects the conversation column
+  // instead:
+  //
+  //   • shrinking to the expanded floor (conversation min + sidebar +
+  //     insets — the window width at which the column would hit its
+  //     minimum) → the sidebar auto-collapses. The collapse skips the
+  //     width animation (see the aside below) and commits inside the
+  //     same resize event, so the column never visibly dips below its
+  //     minimum and the drag continues into the freed space.
+  //   • widening past the floor + hysteresis → an auto-collapsed sidebar
+  //     springs back open (animated). A manually collapsed sidebar
+  //     never does — the store's `sidebarAutoCollapsed` flag is what
+  //     authorizes the expand, and every manual toggle clears it.
+  //
+  // The first evaluation covers a window restored smaller than the expanded
+  // floor; the effect also re-runs when the floor inputs move without a
+  // window resize (conversation min-width setting, theme-driven insets),
+  // which — with the window width unchanged — can only ever auto-EXPAND
+  // (e.g. lowering the conversation minimum while auto-collapsed).
+  const lastAutoWindowWidthRef = useRef<number | null>(null);
+  const evaluateSidebarAuto = useCallback((): void => {
+    if (typeof window === "undefined") return;
+    const state = useAppStore.getState();
+    const contentFrameEl = document.querySelector("[data-content-frame]");
+    const frameStyle = contentFrameEl ? getComputedStyle(contentFrameEl) : null;
+    const frameMarginH =
+      (parseFloat(frameStyle?.marginLeft || "0") || 0) +
+      (parseFloat(frameStyle?.marginRight || "0") || 0);
+    const expandedFloor = sidebarFloorWindowWidth(
+      resolveConversationMinWidth(state.desktopSettings?.conversationMinWidth),
+      sidebarWidthRef.current,
+      frameMarginH,
+    );
+    const action = evaluateSidebarAutoAction({
+      windowWidth: window.innerWidth,
+      expandedFloorWidth: expandedFloor,
+      sidebarCollapsed: state.sidebarCollapsed,
+      sidebarAutoCollapsed: state.sidebarAutoCollapsed,
+      previousWindowWidth: lastAutoWindowWidthRef.current,
+    });
+    lastAutoWindowWidthRef.current = window.innerWidth;
+    if (action === "collapse") state.autoCollapseSidebar();
+    else if (action === "expand") state.autoExpandSidebar();
+  }, []);
+
+  useEffect(() => {
+    evaluateSidebarAuto();
+    window.addEventListener("resize", evaluateSidebarAuto);
+    return () => window.removeEventListener("resize", evaluateSidebarAuto);
+  }, [conversationMinWidth, theme, themeFamily, evaluateSidebarAuto]);
 
   function finishResize(target: HTMLDivElement, pointerId: number) {
     if (resizeStart.current?.pointerId !== pointerId) return;
@@ -273,6 +351,12 @@ export function SidebarLayout({
 
   return (
     <Fragment>
+      {/* Auto-collapses skip the 200ms width animation: the collapse fires
+          inside the window's resize event and committing it in the same
+          frame keeps the conversation column from ever painting below its
+          minimum mid-drag (and avoids a transient double-layout while the
+          user is still dragging). Manual toggles and auto-expands keep the
+          animation. */}
       <aside
         style={{
           width: sidebarCollapsed ? 0 : sidebarWidth,
@@ -280,7 +364,9 @@ export function SidebarLayout({
         data-sidebar
         data-sidebar-collapsed={sidebarCollapsed ? "true" : "false"}
         className={`sidebar-edge-shadow relative flex shrink-0 flex-col overflow-hidden bg-sidebar ${
-          resizing ? "transition-none" : "transition-[width] duration-200 ease-out"
+          resizing || (sidebarCollapsed && sidebarAutoCollapsed)
+            ? "transition-none"
+            : "transition-[width] duration-200 ease-out"
         }`}
       >
         {!sidebarCollapsed && (
