@@ -3,7 +3,9 @@
  *
  * 独立于主窗口的轻量待办面板：
  *   - 顶部：拖拽区 + 标题 + 置顶开关 + 隐藏按钮；
- *   - 中部：未完成备忘（open / in_progress）列表，可标记完成、可跳回主窗口；
+ *   - 中部：未完成备忘（open / in_progress）列表，可标记完成、点击跳回主
+ *     窗口并预览该记录（主窗口切到备忘录页 + 打开详情）；悬停出现行内操作：
+ *     复制正文、交给 Agent 处理（跳到会话页）；
  *   - 底部：一行速记输入框（Enter 保存，Esc 隐藏窗口）。
  *
  * Host 连接：小窗拥有自己的 HostClient transport（同一 webview 进程内
@@ -12,15 +14,16 @@
  * 小窗收不到响应。备忘数据全部走 memo.* 协议，与主界面完全同源。
  */
 import {
+  Bot,
   Check,
   Circle,
   CircleAlert,
+  Copy,
   Lightbulb,
   ListChecks,
   Loader2,
   Monitor,
   Pin,
-  Plus,
   StickyNote,
   X,
 } from "lucide-react";
@@ -367,11 +370,17 @@ export function MemoWidget(): JSX.Element {
     }
   }, []);
 
-  const openMainMemo = useCallback(async (): Promise<void> => {
+  /**
+   * 点击待办跳回主窗口并预览该记录：memo_widget_show_main 显示主窗口，
+   * Rust 把 { noteId, action } 随 memo-widget-open-memo 事件广播给主窗口——
+   * App.tsx 切到备忘录页，MemoPage 据此打开这条记录的详情（见 memo-reveal.ts）。
+   * action="agent"（机器人按钮）：像备忘录页点「执行」一样注入引用并切到会话页。
+   */
+  const openMainMemo = useCallback(async (noteId: string, action?: "agent"): Promise<void> => {
     try {
       if (!(await isTauriRuntime())) return;
       const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("memo_widget_show_main");
+      await invoke("memo_widget_show_main", { noteId, action: action ?? null });
     } catch {
       // ignore
     }
@@ -426,6 +435,20 @@ export function MemoWidget(): JSX.Element {
     [refresh],
   );
 
+  /** 复制该备忘录的正文；成功后图标短暂换成对勾作为反馈。 */
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copyNote = useCallback(async (note: MemoNote): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(note.contentMd);
+      setCopiedId(note.id);
+      window.setTimeout(() => {
+        setCopiedId((current) => (current === note.id ? null : current));
+      }, 1_200);
+    } catch {
+      // 剪贴板不可用（权限/环境）时静默：不打断小窗的其他操作。
+    }
+  }, []);
+
   const onInputKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>): void => {
       if (event.key === "Escape") {
@@ -461,9 +484,10 @@ export function MemoWidget(): JSX.Element {
         {notes !== null && notes.length > 0 && (
           <span
             data-tauri-drag-region
-            className="shrink-0 rounded-full bg-surface-overlay px-2 py-0.5 text-[11px] leading-none font-medium tabular-nums text-muted"
+            title={t("memoWidgetCountHint", { count: notes.length })}
+            className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-accent/15 px-1.5 text-[11px] font-semibold leading-none tabular-nums text-accent"
           >
-            {t("memoWidgetCount", { count: notes.length })}
+            {notes.length}
           </span>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
@@ -558,7 +582,7 @@ export function MemoWidget(): JSX.Element {
                       </button>
                       <button
                         type="button"
-                        onClick={() => void openMainMemo()}
+                        onClick={() => void openMainMemo(note.id)}
                         title={t("memoWidgetOpenApp")}
                         className="min-w-0 flex-1 text-left"
                       >
@@ -577,6 +601,31 @@ export function MemoWidget(): JSX.Element {
                           )}
                         </div>
                       </button>
+                      {/* 悬停才出现的行内操作：复制正文 / 交给 Agent（跳会话页）。 */}
+                      <div className="flex shrink-0 items-center gap-0.5 self-start pt-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                        <button
+                          type="button"
+                          onClick={() => void copyNote(note)}
+                          title={t("memoWidgetCopy")}
+                          aria-label={t("memoWidgetCopy")}
+                          className="rounded-md p-1 text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
+                        >
+                          {copiedId === note.id ? (
+                            <Check className="size-3.5 text-success" />
+                          ) : (
+                            <Copy className="size-3.5" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void openMainMemo(note.id, "agent")}
+                          title={t("memoWidgetRunAgent")}
+                          aria-label={t("memoWidgetRunAgent")}
+                          className="rounded-md p-1 text-muted transition-colors hover:bg-surface-overlay hover:text-accent"
+                        >
+                          <Bot className="size-3.5" />
+                        </button>
+                      </div>
                     </li>
                   );
                 })}
@@ -591,7 +640,6 @@ export function MemoWidget(): JSX.Element {
               void submitDraft();
             }}
           >
-            <Plus className="size-4 shrink-0 text-accent" />
             {/* 与主界面备忘录「新建记录」一致的纸面化输入框：无底色、
                 虚线描边仅在悬停/聚焦时浮现，光标用强调色。
                 field-sizing-content 随内容自动长高，超过 30% 窗口高度后

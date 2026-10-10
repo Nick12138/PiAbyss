@@ -1966,7 +1966,7 @@ export const zh: Record<MessageKey, string> = {
 
   // 桌面速记小窗（memo-widget）
   memoWidgetTitle: "备忘速记",
-  memoWidgetCount: "{count} 条待处理",
+  memoWidgetCountHint: "{count} 条待处理",
   memoWidgetEmpty: "没有待处理的备忘",
   memoWidgetEmptyHint: "在下方输入框随手记一条，Enter 保存。",
   memoWidgetInputPlaceholder: "记一条待办事项…",
@@ -1975,7 +1975,9 @@ export const zh: Record<MessageKey, string> = {
   memoWidgetLoadFailed: "加载备忘录失败",
   memoWidgetCreateFailed: "保存失败",
   memoWidgetComplete: "标记完成",
-  memoWidgetOpenApp: "在 PiAbyss 中打开备忘录",
+  memoWidgetOpenApp: "在 PiAbyss 中打开并预览",
+  memoWidgetCopy: "复制内容",
+  memoWidgetRunAgent: "交给 Agent 处理（新建会话）",
   memoWidgetModeFloat: "悬浮置顶",
   memoWidgetModeDesktop: "钉在桌面",
   memoWidgetSwitchToDesktop: "切换为钉在桌面（沉到桌面层）",

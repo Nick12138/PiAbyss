@@ -9,6 +9,7 @@
 //!     靠近屏幕右下角的默认位置（估算任务栏高度，用户首次拖动后以
 //!     前端保存的位置为准）。
 
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 pub const MEMO_WIDGET_LABEL: &str = "memo-widget";
@@ -139,13 +140,35 @@ pub fn memo_widget_hide<R: tauri::Runtime>(app: AppHandle<R>) {
     }
 }
 
+/// `memo-widget-open-memo` 事件载荷：主窗口据 `note_id` 预览该记录；
+/// `action == "agent"` 时改为走备忘录页的「执行」流程（注入引用并切到会话页）。
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoWidgetOpenMemoPayload {
+    note_id: Option<String>,
+    action: Option<String>,
+}
+
 /// 从小窗跳回主窗口并打开备忘录页。
+/// `note_id` 非空时表示要定位到某条具体记录：主窗口监听本事件后切到备忘录页，
+/// 并把该记录的详情打开（小窗点击待办 → 主窗口预览这条记录）。
+/// `action = "agent"`：像备忘录页里点「执行」一样直接交给 Agent 处理。
 #[tauri::command]
-pub fn memo_widget_show_main<R: tauri::Runtime>(app: AppHandle<R>) {
+pub fn memo_widget_show_main<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    note_id: Option<String>,
+    action: Option<String>,
+) {
     if let Some(window) = app.get_webview_window(crate::system_tray::MAIN_WINDOW_LABEL) {
         show_focused(&window);
     }
-    let _ = app.emit("memo-widget-open-memo", ());
+    let _ = app.emit(
+        "memo-widget-open-memo",
+        MemoWidgetOpenMemoPayload {
+            note_id,
+            action: action.filter(|value| value == "agent"),
+        },
+    );
 }
 
 /// 小窗存在模式：
@@ -156,18 +179,25 @@ pub fn memo_widget_show_main<R: tauri::Runtime>(app: AppHandle<R>) {
 /// 置底语义由 tao 的 ALWAYS_ON_BOTTOM 实现（WM_WINDOWPOSCHANGING 强制
 /// HWND_BOTTOM），激活/聚焦都不会把它抬上来。
 #[tauri::command]
-pub fn memo_widget_set_mode<R: tauri::Runtime>(app: AppHandle<R>, mode: String) -> Result<(), String> {
+pub fn memo_widget_set_mode<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    mode: String,
+) -> Result<(), String> {
     let window = app
         .get_webview_window(MEMO_WIDGET_LABEL)
         .ok_or_else(|| "memo widget window not found".to_string())?;
     match mode.as_str() {
         WIDGET_MODE_FLOAT => {
-            window.set_always_on_bottom(false).map_err(|e| e.to_string())?;
+            window
+                .set_always_on_bottom(false)
+                .map_err(|e| e.to_string())?;
             window.set_always_on_top(true).map_err(|e| e.to_string())?;
         }
         WIDGET_MODE_DESKTOP => {
             window.set_always_on_top(false).map_err(|e| e.to_string())?;
-            window.set_always_on_bottom(true).map_err(|e| e.to_string())?;
+            window
+                .set_always_on_bottom(true)
+                .map_err(|e| e.to_string())?;
         }
         _ => return Err(format!("unknown memo widget mode: {mode}")),
     }
@@ -180,7 +210,9 @@ mod tests {
     fn shortcut_and_label_are_stable_constants() {
         assert_eq!(super::MEMO_WIDGET_LABEL, "memo-widget");
         assert_eq!(super::MEMO_WIDGET_SHORTCUT, "Alt+Space");
-        assert!(super::MEMO_WIDGET_SHORTCUT.parse::<tauri_plugin_global_shortcut::Shortcut>().is_ok());
+        assert!(super::MEMO_WIDGET_SHORTCUT
+            .parse::<tauri_plugin_global_shortcut::Shortcut>()
+            .is_ok());
     }
 
     #[test]

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HostStatusSnapshot, MemoNote, WorkspaceSnapshot } from "@piabyss/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { MemoPage } from "./MemoPage";
+import { clearPendingMemoRevealForTest, requestMemoReveal } from "./memo-reveal";
 
 const mocks = vi.hoisted(() => ({
   listMemoNotes: vi.fn(),
@@ -171,5 +172,71 @@ describe("MemoPage 详情 Markdown 预览", () => {
     expect(body).not.toBeNull();
     expect(body?.querySelector('[data-streamdown="strong"]')?.textContent).toBe("加粗");
     expect(body?.textContent).not.toContain("**加粗**");
+  });
+});
+
+describe("MemoPage 速记小窗跳转预览（memo-reveal）", () => {
+  beforeEach(() => {
+    clearPendingMemoRevealForTest();
+  });
+
+  // pending 是模块级状态：不清掉会泄漏进后续用例（10s TTL 内被补投）。
+  afterEach(() => {
+    clearPendingMemoRevealForTest();
+  });
+
+  it("opens the note's detail after a reveal request made before mount (page was elsewhere)", async () => {
+    // 小窗点击发生在备忘页未挂载时（App.tsx 先 requestMemoReveal 再切页）：
+    // 请求挂在模块里，MemoPage 挂载后补投并打开详情。
+    requestMemoReveal("memo-1");
+    render(<MemoPage />);
+
+    expect(await screen.findByTestId("memo-detail")).toBeInTheDocument();
+    expect(screen.getByTestId("memo-detail-complete")).toBeInTheDocument();
+    // 列表里该行处于选中态（详情标题同名，从列表行里找）。
+    const row = screen
+      .getAllByTestId("memo-list-item")
+      .find((el) => el.textContent?.includes("手动完成一条"));
+    expect(row?.getAttribute("data-state")).toBe("active");
+  });
+
+  it("reveals a note while the page is already mounted", async () => {
+    render(<MemoPage />);
+    await screen.findByText("手动完成一条");
+    // 挂载后默认是新建表单（详情未开）。
+    expect(screen.queryByTestId("memo-detail")).toBeNull();
+
+    requestMemoReveal("memo-1");
+    expect(await screen.findByTestId("memo-detail")).toBeInTheDocument();
+  });
+
+  it("switches the status tab and clears filters so the revealed note is visible", async () => {
+    // 记录是「已完成」：默认在「待处理」页签看不到——预览要切到 Done 页签。
+    mocks.listMemoNotes.mockResolvedValue([openNote, doneNote]);
+    render(<MemoPage />);
+    await screen.findByText("手动完成一条");
+    // 搜索框先输入内容，验证预览会清掉筛选。
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "不存在的关键词" } });
+
+    requestMemoReveal("memo-3");
+
+    expect(await screen.findByTestId("memo-detail-reopen")).toBeInTheDocument();
+    // 页签切到了该记录的状态，搜索词被清空。
+    expect(screen.getByRole("tab", { name: /^Done/ }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("searchbox")).toHaveValue("");
+  });
+
+  it("keeps the current view when the revealed note no longer exists", async () => {
+    render(<MemoPage />);
+    await screen.findByText("手动完成一条");
+    expect(screen.queryByTestId("memo-detail")).toBeNull();
+
+    requestMemoReveal("memo-gone");
+    // 等一个渲染周期：不硬跳、不打开详情、不报错。
+    await waitFor(() => {
+      expect(mocks.listMemoNotes).toHaveBeenCalled();
+    });
+    expect(screen.queryByTestId("memo-detail")).toBeNull();
+    expect(screen.getByText("手动完成一条")).toBeInTheDocument();
   });
 });

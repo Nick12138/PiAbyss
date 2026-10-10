@@ -152,12 +152,39 @@ describe("tags", () => {
 });
 
 describe("workspace hints", () => {
-  it("matches by basename or substring", () => {
+  it("matches by basename or contiguous path fragment", () => {
     expect(noteMatchesWorkspace(note({ workspaceHint: "PiAbyss" }), "D:/work/PiAbyss")).toBe(true);
     expect(noteMatchesWorkspace(note({ workspaceHint: "piabyss" }), "D:/work/PiAbyss")).toBe(true);
     expect(noteMatchesWorkspace(note({ workspaceHint: "D:/work" }), "D:/work/PiAbyss")).toBe(true);
     expect(noteMatchesWorkspace(note({ workspaceHint: "Other" }), "D:/work/PiAbyss")).toBe(false);
     expect(noteMatchesWorkspace(note({ workspaceHint: null }), "D:/work/PiAbyss")).toBe(false);
+  });
+  it("does not match an ancestor path segment (regression: DefaultProject vs piabyss hint)", () => {
+    // DefaultProject 的路径是 <agentDir>/piabyss/DefaultProject：其中的 piabyss
+    // 只是祖先段，不能因此把 PiAbyss 工作区的记录误判为「就在当前工作区」。
+    const defaultProject = "C:\\Users\\liu\\.pi\\agent\\piabyss\\DefaultProject";
+    expect(noteMatchesWorkspace(note({ workspaceHint: "PiAbyss" }), defaultProject)).toBe(false);
+    expect(noteMatchesWorkspace(note({ workspaceHint: "DefaultProject" }), defaultProject)).toBe(
+      true,
+    );
+    expect(noteMatchesWorkspace(note({ workspaceHint: "PiAbyss" }), "D:\\我的项目\\PiAbyss")).toBe(
+      true,
+    );
+  });
+  it("does not match partial segments (no raw substring)", () => {
+    expect(noteMatchesWorkspace(note({ workspaceHint: "abyss" }), "D:/work/PiAbyss")).toBe(false);
+    expect(noteMatchesWorkspace(note({ workspaceHint: "Pi" }), "D:/work/PiAbyss")).toBe(false);
+  });
+  it("multi-segment hints match contiguous fragments only", () => {
+    expect(noteMatchesWorkspace(note({ workspaceHint: "work/PiAbyss" }), "D:/work/PiAbyss")).toBe(
+      true,
+    );
+    expect(
+      noteMatchesWorkspace(note({ workspaceHint: "work/PiAbyss" }), "D:/work/PiAbyss/packages"),
+    ).toBe(true);
+    expect(noteMatchesWorkspace(note({ workspaceHint: "other/PiAbyss" }), "D:/work/PiAbyss")).toBe(
+      false,
+    );
   });
   it("reports mismatches for the detail view", () => {
     expect(workspaceMismatch(note({ workspaceHint: "Other" }), "D:/work/PiAbyss")).toBe("Other");
@@ -192,6 +219,16 @@ describe("resolveWorkspaceHint", () => {
   });
   it("keeps the first candidate when several match equally", () => {
     expect(resolveWorkspaceHint("shared", ["D:/a/shared", "D:/b/shared"])).toBe("D:/a/shared");
+  });
+  it("does not substring-match an ancestor path segment (regression)", () => {
+    const defaultProject = "C:\\Users\\liu\\.pi\\agent\\piabyss\\DefaultProject";
+    const piabyss = "D:\\我的项目\\PiAbyss";
+    // 末段优先：真正的工作区胜出，不再被 DefaultProject 的祖先段截胡。
+    expect(resolveWorkspaceHint("PiAbyss", [defaultProject, piabyss])).toBe(piabyss);
+    // 候选里只有 DefaultProject 时，"piabyss" 提示不再误领它（回退默认工作区）。
+    expect(resolveWorkspaceHint("PiAbyss", [defaultProject])).toBeNull();
+    // 半截段不匹配。
+    expect(resolveWorkspaceHint("abyss", ["D:/work/PiAbyss"])).toBeNull();
   });
 });
 
@@ -258,9 +295,7 @@ describe("composeMemoPrompt", () => {
     expect(block).toContain('tags="bug,p0"');
     expect(block).toContain('workspace="PiAbyss"');
     expect(block).toContain("# 修复 bug");
-    expect(block).toContain(
-      "- C:\\Users\\liu\\.pi\\agent\\piabyss\\memo\\images\\note-",
-    );
+    expect(block).toContain("- C:\\Users\\liu\\.pi\\agent\\piabyss\\memo\\images\\note-");
     expect(block).toContain("\\a.png");
     expect(block.trim().endsWith("</piabyss-memo>")).toBe(true);
   });

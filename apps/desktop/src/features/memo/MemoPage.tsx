@@ -48,13 +48,7 @@ import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog"
 import { LightboxImage } from "../../components/ImageLightbox";
 import { Select } from "../../components/Select";
 import { useT, type Translate } from "../../lib/i18n/use-t";
-import {
-  draftKeyForTarget,
-  draftTargetFor,
-  type DraftReference,
-  type DraftTarget,
-} from "../../lib/draft-target";
-import { setDraftReferencesPersisted } from "../../lib/draft-persistence";
+import { draftTargetFor } from "../../lib/draft-target";
 import { isDesktopRuntime, readDesktopSmallFile } from "../../lib/desktop-file-access";
 import { useContainerWide } from "../../lib/use-container-wide";
 import {
@@ -65,7 +59,6 @@ import { requestSessionReveal } from "../../lib/session-reveal";
 import { hostClient } from "../../lib/bridge/host-client";
 import { workspaceContext } from "../../lib/bridge/host-context";
 import { waitForWorkspaceServicesReady } from "../workspaces/workspace-switch-policy";
-import { buildInjectedReferenceEnvelope } from "../chat/injected-references";
 import { createNewSession } from "../../lib/commands/actions";
 import { useAppStore } from "../../lib/stores/app-store";
 import {
@@ -79,13 +72,14 @@ import {
   setMemoDraft,
   updateMemoNote,
 } from "./memo-client";
+import { injectMemoReference, openMemoWithAgent, resolveMemoTargetCwd } from "./memo-agent";
 import { MEMO_SYNCED_EVENT } from "./memo-sync-status";
+import { subscribeMemoReveal } from "./memo-reveal";
 import {
   collectTags,
   collectWorkspaces,
   composeMemoPrompt,
   composeMemoResultSection,
-  defaultProjectWorkspacePath,
   deriveTitle,
   extractTags,
   filterNotes,
@@ -165,46 +159,6 @@ const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const IMAGE_INPUT_TYPES = /image\/(png|jpeg|gif|webp|bmp|avif|svg\+xml)/;
 /** 暂存图片的唯一键序号（粘贴的截图文件名可能重复）。 */
 let pendingImageSeq = 0;
-
-type WorkspaceSettingsSnapshot =
-  | {
-      defaultWorkspace?: string | null;
-      lastWorkspace?: string | null;
-      knownWorkspaces?: string[];
-    }
-  | null
-  | undefined;
-
-/**
- * 解析备忘录应落入的工作区路径：提示在「当前工作区 + knownWorkspaces +
- * 内置默认工作区」里匹配（精确路径 > 末段 > 包含，见 resolveWorkspaceHint）；
- * 匹配不上（名称写错 / 工作区从未激活过等）回退默认工作区：用户配置的
- * defaultWorkspace → 内置 DefaultProject（<agentDir>/piabyss/DefaultProject）
- * → lastWorkspace → 当前工作区。提示为空时调用方应直接用当前。
- */
-function resolveMemoTargetCwd(
-  hint: string,
-  currentCwd: string | null,
-  settings: WorkspaceSettingsSnapshot,
-  agentDir: string | null,
-): string | null {
-  const known = settings?.knownWorkspaces ?? [];
-  const defaultProject = defaultProjectWorkspacePath(agentDir);
-  const candidates = [...known];
-  if (currentCwd) candidates.unshift(currentCwd);
-  if (
-    defaultProject &&
-    !candidates.some((entry) => entry.toLowerCase() === defaultProject.toLowerCase())
-  ) {
-    candidates.push(defaultProject);
-  }
-  const resolved = resolveWorkspaceHint(hint, candidates);
-  if (resolved) return resolved;
-  if (settings?.defaultWorkspace) return settings.defaultWorkspace;
-  if (defaultProject) return defaultProject;
-  if (settings?.lastWorkspace) return settings.lastWorkspace;
-  return currentCwd ?? null;
-}
 
 /** 粘贴的截图往往没有有意义的文件名，按 MIME 推断一个。 */
 function imageFileName(file: File): string {
@@ -360,6 +314,30 @@ export function MemoPage() {
       unlisten?.();
     };
   }, [refresh]);
+
+  // 速记小窗「点击待办 → 预览该记录」：App.tsx 收到小窗跳转事件后
+  // requestMemoReveal（本页未挂载时请求会在模块里补投一次）。
+  // 预览前先拉最新列表：记录可能刚被小窗/其他端改动过。
+  // （小窗的机器人按钮不走这里——agent 动作由 App.tsx 直接调 memo-agent，
+  // 不经备忘录页直达会话页。）
+  const revealNote = useCallback(
+    async (noteId: string) => {
+      const loaded = await refresh();
+      const note = loaded.find((entry) => entry.id === noteId);
+      if (!note) return; // 已被删除等：保持当前视图，不硬跳。
+      // 让记录在列表里也可见：切到它所在的状态页签并清掉搜索/筛选。
+      setQuery("");
+      setTagFilter(null);
+      setWorkspaceFilter(null);
+      setStatusFilter(note.status);
+      setConfirmingDelete(false);
+      setEditor(null);
+      setSelectedId(note.id);
+      setPane("detail");
+    },
+    [refresh],
+  );
+  useEffect(() => subscribeMemoReveal(({ noteId }) => void revealNote(noteId)), [revealNote]);
 
   const counts = useMemo(() => statusCounts(notes ?? []), [notes]);
   const tagOptions = useMemo(() => collectTags(notes ?? []), [notes]);
@@ -634,30 +612,6 @@ export function MemoPage() {
     }
   }
 
-  /**
-   * 把一条备忘录引用注入指定草稿：composer 只显示 `@备忘录 · 标题` 胶囊，
-   * 提示词原文（引用块 + 指令）在发送时才展开进消息。
-   */
-  function injectMemoReference(target: DraftTarget, note: MemoNote, payload: string) {
-    const state = useAppStore.getState();
-    const key = draftKeyForTarget(target);
-    const reference: DraftReference = {
-      id: `memo:${note.id}`,
-      kind: "memo",
-      label: note.title,
-      payload: buildInjectedReferenceEnvelope({
-        kind: "memo",
-        title: note.title,
-        body: payload,
-      }),
-    };
-    const existing = state.draftReferences[key] ?? [];
-    setDraftReferencesPersisted(target, [
-      ...existing.filter((item) => item.id !== reference.id),
-      reference,
-    ]);
-  }
-
   /** 清空 Agent 结果总结（弹窗内二次确认后执行）；成功后关闭弹窗并刷新详情。 */
   async function clearResult(note: MemoNote) {
     if (!confirmingClearResult) {
@@ -677,69 +631,6 @@ export function MemoPage() {
         "error",
       );
     }
-  }
-
-  /**
-   * 把记录以引用胶囊注入新会话草稿，并切到对话页（总是新开会话，不影响当前选中的会话）。
-   * 会先跳转到记录关联的工作区（workspaceHint 匹配 knownWorkspaces；匹配不上
-   * 回退默认工作区），再在目标工作区里新建会话。
-   * 注入的是结构化引用（composer 渲染成 `@备忘录` 胶囊），提示词原文只在发送时展开，
-   * 不会显示在输入框里。
-   */
-  async function openWithAgent(note: MemoNote) {
-    const before = useAppStore.getState();
-    if (!before.workspace) {
-      pushNotification(t("memoAgentNoWorkspace"), "warning");
-      return;
-    }
-    const hint = note.workspaceHint?.trim();
-    // 提示就是当前工作区（含不区分大小写的 basename 匹配）时无需切换。
-    const targetCwd =
-      !hint || noteMatchesWorkspace(note, before.workspace.canonicalCwd)
-        ? before.workspace.canonicalCwd
-        : resolveMemoTargetCwd(
-            hint,
-            before.workspace.canonicalCwd,
-            before.desktopSettings,
-            before.host?.agentDir ?? null,
-          );
-    if (!targetCwd) {
-      pushNotification(t("memoAgentNoWorkspace"), "warning");
-      return;
-    }
-    if (targetCwd !== before.workspace.canonicalCwd) {
-      // 切换必须等到构建稳定（optimistic: false），否则 session.create 会撞锁。
-      const activation = await activateWorkspaceAcrossWorkspaces(targetCwd, {
-        optimistic: false,
-      });
-      if (activation.status !== "opened" && activation.status !== "already-active") return;
-    }
-    // 刚提交的乐观切换可能还在后台建图（servicesReady=false），等就绪再建会话，
-    // 避免 session.create 静默失败。
-    if (!(await waitForWorkspaceServicesReady())) {
-      pushNotification(t("memoAgentCreateFailed"), "error");
-      return;
-    }
-    const created = await createNewSession();
-    if (!created) {
-      pushNotification(t("memoAgentCreateFailed"), "error");
-      return;
-    }
-    const state = useAppStore.getState();
-    const target = draftTargetFor(state.workspace, state.session);
-    if (!target) {
-      pushNotification(t("memoAgentCreateFailed"), "error");
-      return;
-    }
-    // 这里只「预约」：注入引用胶囊并跳转聊天。记录置为「进行中」并绑定会话
-    // 推迟到消息真正发出时（见 memo-handoff.ts）——否则用户没发消息就离开、
-    // 或把新会话删掉，记录就会卡在「进行中」并指向一个打不开的会话。
-    injectMemoReference(
-      target,
-      note,
-      withMemoPrompt("", composeMemoPrompt(note, state.host?.agentDir ?? null), t("memoAgentPrompt")),
-    );
-    state.setPage("chat");
   }
 
   /**
@@ -1203,7 +1094,7 @@ export function MemoPage() {
               confirmingDelete={confirmingDelete}
               onBack={backToList}
               onEdit={() => startEdit(selectedNote)}
-              onAgent={() => void openWithAgent(selectedNote)}
+              onAgent={() => void openMemoWithAgent(selectedNote)}
               onOpenSession={() => void openBoundSession(selectedNote)}
               onComplete={() => void setStatus(selectedNote, "done")}
               onReopen={() => void setStatus(selectedNote, "open")}

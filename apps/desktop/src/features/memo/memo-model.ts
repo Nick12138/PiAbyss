@@ -129,13 +129,46 @@ export function tagHue(tag: string): number {
   return hash % 360;
 }
 
-/** 记录是否匹配工作区提示（提示是目录名或路径片段）。 */
+/** 路径/提示按段切分（小写、统一分隔符、去空段）。 */
+function pathSegments(value: string): string[] {
+  return value
+    .trim()
+    .toLowerCase()
+    .split(/[\\/]+/)
+    .filter(Boolean);
+}
+
+/**
+ * 路径是否包含提示所指的目录片段（按路径段对齐，不做裸子串匹配）：
+ * - 单段提示（目录名）：只匹配路径**末段**。裸 `includes` 会把
+ *   `<agentDir>/piabyss/DefaultProject` 误匹配给 "piabyss" 提示
+ *   （piabyss 只是它的祖先段），导致「执行」把 PiAbyss 工作区的记录
+ *   错误地留在 DefaultProject 里处理；
+ * - 多段提示（路径片段）：须为路径的连续片段（头/中/尾皆可），
+ *   不允许段内半截拼接（"abyss" 不匹配 "…/PiAbyss"）。
+ */
+function pathContainsHint(pathValue: string, hintSegments: readonly string[]): boolean {
+  const segments = pathSegments(pathValue);
+  if (segments.length === 0 || hintSegments.length === 0) return false;
+  if (hintSegments.length === 1) {
+    return segments[segments.length - 1] === hintSegments[0];
+  }
+  const path = segments.join("/");
+  const hint = hintSegments.join("/");
+  return (
+    path === hint ||
+    path.startsWith(`${hint}/`) ||
+    path.endsWith(`/${hint}`) ||
+    path.includes(`/${hint}/`)
+  );
+}
+
+/** 记录是否匹配工作区提示（提示是目录名或路径片段；匹配规则见 pathContainsHint）。 */
 export function noteMatchesWorkspace(note: MemoNote, workspaceCwd: string): boolean {
   if (!note.workspaceHint) return false;
-  const hint = note.workspaceHint.toLowerCase();
-  const cwd = workspaceCwd.toLowerCase();
-  if (cwd.includes(hint)) return true;
-  return pathBasename(workspaceCwd).toLowerCase() === hint;
+  const hintSegments = pathSegments(note.workspaceHint);
+  if (hintSegments.length === 0) return false;
+  return pathContainsHint(workspaceCwd, hintSegments);
 }
 
 /** 详情页工作区关联提示：与当前工作区不一致时展示。 */
@@ -148,8 +181,8 @@ export function workspaceMismatch(note: MemoNote, workspaceCwd: string | null): 
 /**
  * 把工作区提示解析成具体的工作区路径（供「执行」跨工作区跳转使用）。
  * 候选来自 knownWorkspaces 等已知路径；匹配优先级：路径完全一致（忽略大小写）
- * > 提示等于路径末段 > 路径包含提示，同级取靠前的候选；全部不匹配返回 null
- * （调用方回退到默认工作区）。
+ * > 提示等于路径末段 > 提示是路径的连续片段（段对齐，见 pathContainsHint），
+ * 同级取靠前的候选；全部不匹配返回 null（调用方回退到默认工作区）。
  */
 export function resolveWorkspaceHint(
   hint: string | null | undefined,
@@ -157,6 +190,8 @@ export function resolveWorkspaceHint(
 ): string | null {
   const trimmed = hint?.trim().toLowerCase() ?? "";
   if (!trimmed) return null;
+  const hintSegments = pathSegments(trimmed);
+  if (hintSegments.length === 0) return null;
   for (const candidate of candidates) {
     if (candidate.toLowerCase() === trimmed) return candidate;
   }
@@ -164,7 +199,7 @@ export function resolveWorkspaceHint(
     if (pathBasename(candidate).toLowerCase() === trimmed) return candidate;
   }
   for (const candidate of candidates) {
-    if (candidate.toLowerCase().includes(trimmed)) return candidate;
+    if (pathContainsHint(candidate, hintSegments)) return candidate;
   }
   return null;
 }

@@ -18,6 +18,8 @@ import { SettingsPage } from "../features/settings/SettingsPage";
 import { SchedulePage } from "../features/schedule/SchedulePage";
 import { ScheduleAgentPage } from "../features/schedule/ScheduleAgentPage";
 import { MemoPage } from "../features/memo/MemoPage";
+import { requestMemoReveal } from "../features/memo/memo-reveal";
+import { openMemoWithAgentById } from "../features/memo/memo-agent";
 import { PixiePage } from "../features/pixie/PixiePage";
 import { usePluginEnabled } from "../features/plugin-library/plugin-gate";
 
@@ -732,7 +734,11 @@ export function App() {
     if (page === "pixie" && !pixieEnabled) setPage("chat");
   }, [page, memoEnabled, pixieEnabled, setPage]);
 
-  // 桌面速记小窗「在 PiAbyss 中打开」→ 显示主窗口并切到备忘录页。
+  // 桌面速记小窗「在 PiAbyss 中打开」→ 显示主窗口。
+  // 事件载荷 { noteId, action }：
+  //   - 预览（点击待办）：登记 memo-reveal 请求并切到备忘录页，MemoPage 打开详情；
+  //   - agent（机器人按钮）：不经备忘录页，直接走「交给 Agent」流程——
+  //     解析工作区 → 新建会话 → 注入引用 → 切到会话页（见 memo-agent.ts）。
   // 备忘页不可用（插件被停用）时回退到聊天页，与上面的护栏一致。
   useEffect(() => {
     if (!nativeWindowAvailable) return;
@@ -741,10 +747,21 @@ export function App() {
     void (async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
-        unlisten = await listen("memo-widget-open-memo", () => {
-          if (cancelled) return;
-          setPage(memoEnabled ? "memo" : "chat");
-        });
+        unlisten = await listen<{ noteId: string | null; action: string | null }>(
+          "memo-widget-open-memo",
+          (event) => {
+            if (cancelled) return;
+            const noteId =
+              typeof event.payload?.noteId === "string" ? event.payload.noteId.trim() : "";
+            if (event.payload?.action === "agent") {
+              // 机器人按钮：直达会话页；失败提示由流程自己发，页面保持原状。
+              if (noteId) void openMemoWithAgentById(noteId);
+              return;
+            }
+            if (noteId) requestMemoReveal(noteId);
+            setPage(memoEnabled ? "memo" : "chat");
+          },
+        );
       } catch {
         // 监听失败只影响小窗跳转，不影响主流程。
       }
