@@ -68,6 +68,9 @@ pub fn ensure_window<R: tauri::Runtime>(
     .skip_taskbar(true)
     .resizable(true)
     .shadow(true)
+    // 透明窗口 + CSS 圆角外壳（见 index.css 的 [data-memo-widget]）：
+    // 让小窗看起来是桌面上的圆角浮层，而不是一个直角矩形窗。
+    .transparent(true)
     .always_on_top(true)
     .visible(false)
     .build()?;

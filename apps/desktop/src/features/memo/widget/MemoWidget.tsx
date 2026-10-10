@@ -11,7 +11,7 @@
  * 每批请求前用 refreshActiveRoute() 同步路由，避免主窗口切换工作区后
  * 小窗收不到响应。备忘数据全部走 memo.* 协议，与主界面完全同源。
  */
-import { Circle, CircleAlert, Lightbulb, ListChecks, Loader2, Monitor, Pin, Plus, StickyNote, X } from "lucide-react";
+import { Check, Circle, CircleAlert, Lightbulb, ListChecks, Loader2, Monitor, Pin, Plus, StickyNote, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -25,6 +25,8 @@ import { hostClient } from "../../../lib/bridge/host-client";
 import { createTauriTransport, refreshActiveRoute } from "../../../lib/bridge/tauri-transport";
 import { useAppStore } from "../../../lib/stores/app-store";
 import { useT } from "../../../lib/i18n/use-t";
+import { applyAppearancePreferences } from "../../../lib/appearance-preferences";
+import { applyTheme } from "../../../lib/theme";
 import { createMemoNote, listMemoNotes, updateMemoNote } from "../memo-client";
 
 /** 窗口几何（位置/大小）的持久化键（localStorage，同源跨窗口共享）。 */
@@ -166,24 +168,45 @@ function useWidgetHost(): "connecting" | "ready" | "fatal" {
   return phase;
 }
 
-/** 读取桌面设置（语言等），让小窗文案跟随主界面语言偏好。 */
+/** 读取桌面设置（语言/主题/强调色等）并应用到小窗，监听后续变更实时联动。
+ *  主窗口改动外观时，Rust 广播 desktop-settings-changed，小窗重新拉取设置，
+ *  明暗、主题家族、强调色与界面密度等外观始终与主界面保持一致。 */
 function useDesktopSettingsBootstrap(): void {
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
+    let unlisten: (() => void) | undefined;
+
+    const apply = (settings: DesktopSettings | null | undefined): void => {
+      if (cancelled || !settings) return;
+      useAppStore.getState().setDesktopSettings(settings);
+      applyTheme(settings.theme, { family: settings.themeFamily, persist: false });
+      applyAppearancePreferences(settings);
+    };
+
+    const load = async (): Promise<void> => {
       try {
         if (!(await isTauriRuntime())) return;
         const { invoke } = await import("@tauri-apps/api/core");
-        const snapshot = await invoke<{ settings: DesktopSettings }>("desktop_settings_get");
-        if (!cancelled && snapshot?.settings) {
-          useAppStore.getState().setDesktopSettings(snapshot.settings);
-        }
+        apply((await invoke<{ settings: DesktopSettings }>("desktop_settings_get"))?.settings);
+        const { listen } = await import("@tauri-apps/api/event");
+        unlisten = await listen("desktop-settings-changed", () => {
+          void (async () => {
+            try {
+              apply((await invoke<{ settings: DesktopSettings }>("desktop_settings_get"))?.settings);
+            } catch {
+              // 拉取失败则保持当前外观
+            }
+          })();
+        });
       } catch {
-        // 语言回退到系统 locale
+        // 回退：使用 bootstrap-theme.ts 启动时应用的主题与系统 locale
       }
-    })();
+    };
+
+    void load();
     return () => {
       cancelled = true;
+      unlisten?.();
     };
   }, []);
 }
@@ -263,6 +286,13 @@ const TYPE_ICONS: Record<MemoNoteType, typeof StickyNote> = {
   memo: StickyNote,
   idea: Lightbulb,
   task: ListChecks,
+};
+
+/** 各备忘类型的小图标配色，让列表一眼能区分类型。 */
+const TYPE_ICON_CLASSES: Record<MemoNoteType, string> = {
+  memo: "text-accent",
+  idea: "text-warning",
+  task: "text-success",
 };
 
 export function MemoWidget(): JSX.Element {
@@ -398,15 +428,25 @@ export function MemoWidget(): JSX.Element {
   );
 
   return (
-    <div className="flex h-full flex-col bg-surface text-foreground">
+    <div data-memo-widget className="flex h-full flex-col text-foreground">
       <div
         data-tauri-drag-region
-        className="flex h-10 shrink-0 select-none items-center gap-2 border-b border-border px-3"
+        className="flex h-10 shrink-0 select-none items-center gap-2 border-b border-border-subtle px-3"
       >
-        <StickyNote className="size-4 shrink-0 text-accent" />
-        <h1 className="truncate text-sm font-semibold">{t("memoWidgetTitle")}</h1>
+        <div
+          data-tauri-drag-region
+          className="flex size-6 shrink-0 items-center justify-center rounded-md bg-accent/15 text-accent"
+        >
+          <StickyNote className="size-3.5" />
+        </div>
+        <h1 data-tauri-drag-region className="truncate text-[13px] font-semibold tracking-wide">
+          {t("memoWidgetTitle")}
+        </h1>
         {notes !== null && notes.length > 0 && (
-          <span className="shrink-0 text-xs text-muted">
+          <span
+            data-tauri-drag-region
+            className="shrink-0 rounded-full bg-surface-overlay px-2 py-0.5 text-[11px] leading-none font-medium tabular-nums text-muted"
+          >
             {t("memoWidgetCount", { count: notes.length })}
           </span>
         )}
@@ -416,7 +456,7 @@ export function MemoWidget(): JSX.Element {
             onClick={() => void toggleMode()}
             title={mode === "float" ? t("memoWidgetSwitchToDesktop") : t("memoWidgetSwitchToFloat")}
             aria-label={mode === "float" ? t("memoWidgetSwitchToDesktop") : t("memoWidgetSwitchToFloat")}
-            className="rounded p-1.5 text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
+            className="rounded-md p-1.5 text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
           >
             {mode === "float" ? <Pin className="size-3.5" /> : <Monitor className="size-3.5" />}
           </button>
@@ -425,7 +465,7 @@ export function MemoWidget(): JSX.Element {
             onClick={() => void hideWindow()}
             title={t("memoWidgetHide")}
             aria-label={t("memoWidgetHide")}
-            className="rounded p-1.5 text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
+            className="rounded-md p-1.5 text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
           >
             <X className="size-3.5" />
           </button>
@@ -435,18 +475,22 @@ export function MemoWidget(): JSX.Element {
       {phase !== "ready" ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
           {phase === "fatal" ? (
-            <CircleAlert className="size-6 text-red-400" />
+            <div className="flex size-10 items-center justify-center rounded-xl bg-danger/15 text-danger">
+              <CircleAlert className="size-5" />
+            </div>
           ) : (
-            <Loader2 className="size-5 animate-spin text-muted" />
+            <div className="flex size-10 items-center justify-center rounded-xl bg-surface-overlay/60 text-muted">
+              <Loader2 className="size-5 animate-spin" />
+            </div>
           )}
-          <p className="text-sm font-medium">{t("memoWidgetHostNotReady")}</p>
+          <p className="text-[13px] font-medium">{t("memoWidgetHostNotReady")}</p>
           <p className="text-xs leading-5 text-muted">{t("memoWidgetHostNotReadyHint")}</p>
         </div>
       ) : (
         <>
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto px-2 pt-1.5 pb-1.5">
             {loadError && (
-              <div className="flex items-start gap-2 border-b border-border px-3 py-2 text-xs text-red-400">
+              <div className="mb-1.5 flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/10 px-2.5 py-2 text-xs text-danger">
                 <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
                 <span className="min-w-0 break-words">
                   {t("memoWidgetLoadFailed")}: {loadError}
@@ -454,36 +498,45 @@ export function MemoWidget(): JSX.Element {
                 <button
                   type="button"
                   onClick={() => void refresh()}
-                  className="ml-auto shrink-0 underline underline-offset-2 hover:text-foreground"
+                  className="ml-auto shrink-0 font-medium underline underline-offset-2 hover:opacity-80"
                 >
                   {t("commonRetry")}
                 </button>
               </div>
             )}
             {notes === null ? (
-              <div className="flex items-center justify-center py-10">
+              <div className="flex items-center justify-center py-12">
                 <Loader2 className="size-5 animate-spin text-muted" />
               </div>
             ) : notes.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-1.5 px-6 py-10 text-center">
-                <StickyNote className="size-6 text-muted" />
-                <p className="text-sm font-medium">{t("memoWidgetEmpty")}</p>
+              <div className="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center">
+                <div className="flex size-10 items-center justify-center rounded-xl bg-surface-overlay/60 text-muted">
+                  <StickyNote className="size-5" />
+                </div>
+                <p className="text-[13px] font-medium">{t("memoWidgetEmpty")}</p>
                 <p className="text-xs leading-5 text-muted">{t("memoWidgetEmptyHint")}</p>
               </div>
             ) : (
-              <ul className="divide-y divide-border-subtle">
+              <ul className="flex flex-col gap-0.5">
                 {notes.map((note) => {
                   const TypeIcon = TYPE_ICONS[note.type] ?? StickyNote;
+                  const typeIconClass = TYPE_ICON_CLASSES[note.type] ?? "text-muted";
                   return (
-                    <li key={note.id} className="group flex items-start gap-2.5 px-3 py-2.5 hover:bg-surface-raised">
+                    <li
+                      key={note.id}
+                      className="group flex items-start gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-surface-raised"
+                    >
                       <button
                         type="button"
                         onClick={() => void completeNote(note.id)}
                         title={t("memoWidgetComplete")}
                         aria-label={t("memoWidgetComplete")}
-                        className="mt-0.5 shrink-0 rounded-full p-0.5 text-muted transition-colors hover:text-accent"
+                        className="mt-0.5 shrink-0 rounded-full p-0.5 transition-colors hover:text-accent"
                       >
-                        <Circle className="size-4" />
+                        <span className="relative block size-4">
+                          <Circle className="absolute inset-0 size-4 text-border-strong transition-opacity group-hover:opacity-0" />
+                          <Check className="absolute inset-0 size-4 opacity-0 transition-opacity group-hover:opacity-100" />
+                        </span>
                       </button>
                       <button
                         type="button"
@@ -491,11 +544,11 @@ export function MemoWidget(): JSX.Element {
                         title={t("memoWidgetOpenApp")}
                         className="min-w-0 flex-1 text-left"
                       >
-                        <div className="truncate text-sm leading-5">{note.title || note.contentMd}</div>
+                        <div className="truncate text-[13px] leading-5">{note.title || note.contentMd}</div>
                         <div className="mt-0.5 flex items-center gap-2 text-xs text-muted">
-                          <TypeIcon className="size-3 shrink-0" />
+                          <TypeIcon className={`size-3 shrink-0 ${typeIconClass}`} />
                           {note.status === "in_progress" && (
-                            <span className="shrink-0 rounded-xs bg-surface-overlay px-1 py-px text-[10px]">
+                            <span className="shrink-0 rounded-sm bg-accent/15 px-1.5 py-px text-[10px] leading-4 font-medium text-accent">
                               {t("memoFilterInProgress")}
                             </span>
                           )}
@@ -512,13 +565,15 @@ export function MemoWidget(): JSX.Element {
           </div>
 
           <form
-            className="flex shrink-0 items-center gap-2 border-t border-border px-3 py-2.5"
+            className="flex shrink-0 items-center gap-2.5 border-t border-border-subtle px-3 py-2"
             onSubmit={(event) => {
               event.preventDefault();
               void submitDraft();
             }}
           >
-            <Plus className="size-4 shrink-0 text-muted" />
+            <Plus className="size-4 shrink-0 text-accent" />
+            {/* 与主界面备忘录「新建记录」一致的纸面化输入框：无底色、
+                虚线描边仅在悬停/聚焦时浮现，光标用强调色。 */}
             <input
               ref={inputRef}
               value={draft}
@@ -527,9 +582,17 @@ export function MemoWidget(): JSX.Element {
               // biome-ignore lint/a11y/noAutofocus: 速记小窗的核心交互就是即开即输。
               autoFocus
               placeholder={t("memoWidgetInputPlaceholder")}
-              className="w-full bg-transparent text-sm leading-5 outline-none placeholder:text-muted"
+              className="memo-editor-input w-full rounded-lg border border-dashed border-transparent bg-transparent px-2 py-1.5 text-[13px] leading-relaxed outline-none caret-focus placeholder:text-muted hover:border-border-subtle focus:border-border-subtle focus:outline-none"
             />
-            {creating && <Loader2 className="size-4 shrink-0 animate-spin text-muted" />}
+            {creating ? (
+              <Loader2 className="size-3.5 shrink-0 animate-spin text-muted" />
+            ) : (
+              draft.trim() !== "" && (
+                <span className="shrink-0 rounded-md bg-surface-overlay px-1.5 py-0.5 text-[10px] leading-none font-medium text-muted">
+                  ⏎
+                </span>
+              )
+            )}
           </form>
         </>
       )}

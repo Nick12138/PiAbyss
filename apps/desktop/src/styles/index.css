@@ -304,6 +304,21 @@ body,
   min-width: 25rem;
 }
 
+/* ===== 备忘速记小窗（memo-widget）=====
+   原生窗口在 Rust 侧以透明 + 无边框创建（见 memo_widget.rs），可见的
+   浮层外壳由这里定义：圆角、半透明面板、细描边与顶部微高光。桌面
+   内容会从半透明处微微透出，与主窗口的 floating 外观保持一致。 */
+[data-memo-widget] {
+  height: 100%;
+  border-radius: var(--window-frame-radius);
+  overflow: hidden;
+  isolation: isolate;
+  /* 面板半透明：桌面内容从底层透出，营造悬浮玻璃感。 */
+  background: color-mix(in srgb, var(--color-surface) 85%, transparent);
+  border: 1px solid var(--color-border-subtle);
+  box-shadow: inset 0 1px 0 0 color-mix(in srgb, white 6%, transparent);
+}
+
 .conversation-content-width {
   width: 100%;
   max-width: var(--conversation-max-width, 600px);
