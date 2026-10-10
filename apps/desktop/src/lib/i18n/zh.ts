@@ -1964,6 +1964,24 @@ export const zh: Record<MessageKey, string> = {
   pixieDispatchEmpty: "暂无委派任务",
   pixieDispatchActiveCount: "进行中的委派：{count} 个",
 
+  // 桌面速记小窗（memo-widget）
+  memoWidgetTitle: "备忘速记",
+  memoWidgetCount: "{count} 条待处理",
+  memoWidgetEmpty: "没有待处理的备忘",
+  memoWidgetEmptyHint: "在下方输入框随手记一条，Enter 保存。",
+  memoWidgetInputPlaceholder: "记一条待办…（Enter 保存 / Esc 隐藏）",
+  memoWidgetHostNotReady: "主机未就绪",
+  memoWidgetHostNotReadyHint: "PiAbyss 主机仍在启动，会自动重试。",
+  memoWidgetLoadFailed: "加载备忘录失败",
+  memoWidgetCreateFailed: "保存失败",
+  memoWidgetComplete: "标记完成",
+  memoWidgetOpenApp: "在 PiAbyss 中打开备忘录",
+  memoWidgetModeFloat: "悬浮置顶",
+  memoWidgetModeDesktop: "钉在桌面",
+  memoWidgetSwitchToDesktop: "切换为钉在桌面（沉到桌面层）",
+  memoWidgetSwitchToFloat: "切换为悬浮置顶",
+  memoWidgetHide: "隐藏小窗",
+
   // 备忘录
   memoTitle: "备忘录",
   memoNew: "新建记录",

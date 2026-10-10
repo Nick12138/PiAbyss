@@ -3,6 +3,7 @@
 mod commands;
 mod desktop_settings;
 mod draft_store;
+mod memo_widget;
 mod pi_host;
 #[cfg(test)]
 mod pi_host_tests;
@@ -18,6 +19,7 @@ use pi_host::{HostTransportFrame, PiHostPool};
 use shell_terminal::ShellTerminalManager;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Emitter, Listener, Manager};
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tokio::sync::Mutex;
 
 pub struct AppState {
@@ -36,10 +38,21 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(memo_widget::shortcut_plugin().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             system_tray::install(app)?;
             system_notification::ensure_toast_aumid_registered(app.handle());
+
+            if let Err(error) = app
+                .global_shortcut()
+                .register(memo_widget::MEMO_WIDGET_SHORTCUT)
+            {
+                eprintln!(
+                    "[piabyss] memo widget global shortcut unavailable ({}): {error}",
+                    memo_widget::MEMO_WIDGET_SHORTCUT
+                );
+            }
 
             let mut settings = DesktopSettingsStore::load(app.handle())?;
             settings.ensure_default_project_workspace()?;
@@ -194,6 +207,11 @@ pub fn run() {
             commands::pi_host_install_telegram_plugin,
             system_notification::system_notify,
             taskbar_flash::taskbar_flash,
+            memo_widget::memo_widget_toggle,
+            memo_widget::memo_widget_show,
+            memo_widget::memo_widget_hide,
+            memo_widget::memo_widget_show_main,
+            memo_widget::memo_widget_set_mode,
             commands::shell_terminal_create,
             commands::shell_terminal_profiles,
             commands::shell_terminal_write,
@@ -203,6 +221,17 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| match event {
+            tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::CloseRequested { api, .. },
+                ..
+            } if label == memo_widget::MEMO_WIDGET_LABEL => {
+                // 小窗的「关闭」永远降级为隐藏，保持 webview 存活以便秒开。
+                api.prevent_close();
+                if let Some(window) = app_handle.get_webview_window(&label) {
+                    let _ = window.hide();
+                }
+            }
             tauri::RunEvent::WindowEvent {
                 label,
                 event: tauri::WindowEvent::CloseRequested { api, .. },

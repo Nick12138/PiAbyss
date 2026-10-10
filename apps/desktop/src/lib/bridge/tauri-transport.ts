@@ -17,6 +17,22 @@ export async function activateWorkspaceHost(cwd: string): Promise<boolean> {
 }
 
 /**
+ * Re-reads the pool's active Host route id. The memo widget window keeps its
+ * own transport alive across main-window workspace switches, so it must
+ * refresh the route before each batch of requests to keep receiving
+ * responses for the currently active Host.
+ */
+export async function refreshActiveRoute(): Promise<void> {
+  const { invoke, isTauri } = await import("@tauri-apps/api/core");
+  if (!isTauri()) return;
+  try {
+    activeRouteId = await invoke<string>("pi_host_active_route");
+  } catch {
+    // Keep the last known route; the main window's bootstrap owns recovery.
+  }
+}
+
+/**
  * Bootstraps the telegram bridge's dedicated Host entirely in the background:
  * activates + starts the telegram workspace Host and runs `/telegram-connect`
  * inside it WITHOUT switching the foreground route. The renderer's active

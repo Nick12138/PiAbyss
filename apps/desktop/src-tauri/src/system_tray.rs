@@ -1,8 +1,10 @@
-const MAIN_WINDOW_LABEL: &str = "main";
+pub const MAIN_WINDOW_LABEL: &str = "main";
 const TRAY_ID: &str = "piabyss-tray";
 
 #[cfg(any(target_os = "windows", test))]
 const OPEN_MENU_ID: &str = "piabyss-tray-open";
+#[cfg(any(target_os = "windows", test))]
+const MEMO_MENU_ID: &str = "piabyss-tray-memo";
 #[cfg(any(target_os = "windows", test))]
 const QUIT_MENU_ID: &str = "piabyss-tray-quit";
 
@@ -10,6 +12,7 @@ const QUIT_MENU_ID: &str = "piabyss-tray-quit";
 #[derive(Debug, PartialEq, Eq)]
 enum TrayMenuAction {
     Open,
+    Memo,
     Quit,
     Ignore,
 }
@@ -18,6 +21,7 @@ enum TrayMenuAction {
 fn menu_action(id: &str) -> TrayMenuAction {
     match id {
         OPEN_MENU_ID => TrayMenuAction::Open,
+        MEMO_MENU_ID => TrayMenuAction::Memo,
         QUIT_MENU_ID => TrayMenuAction::Quit,
         _ => TrayMenuAction::Ignore,
     }
@@ -62,6 +66,10 @@ fn install_windows(app: &mut tauri::App) -> tauri::Result<()> {
 
     let menu = MenuBuilder::new(app)
         .text(OPEN_MENU_ID, "Open PiAbyss")
+        .text(
+            MEMO_MENU_ID,
+            format!("Memo ({})", crate::memo_widget::MEMO_WIDGET_SHORTCUT),
+        )
         .separator()
         .text(QUIT_MENU_ID, "Quit PiAbyss")
         .build()?;
@@ -72,6 +80,7 @@ fn install_windows(app: &mut tauri::App) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match menu_action(event.id().as_ref()) {
             TrayMenuAction::Open => show_main_window(app),
+            TrayMenuAction::Memo => crate::memo_widget::toggle(app),
             TrayMenuAction::Quit => app.exit(0),
             TrayMenuAction::Ignore => {}
         })
@@ -115,6 +124,7 @@ mod tests {
     #[test]
     fn maps_only_known_menu_items() {
         assert_eq!(menu_action(OPEN_MENU_ID), TrayMenuAction::Open);
+        assert_eq!(menu_action(MEMO_MENU_ID), TrayMenuAction::Memo);
         assert_eq!(menu_action(QUIT_MENU_ID), TrayMenuAction::Quit);
         assert_eq!(menu_action("other-menu"), TrayMenuAction::Ignore);
     }

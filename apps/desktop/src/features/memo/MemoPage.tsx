@@ -339,6 +339,28 @@ export function MemoPage() {
     void refresh();
   }, [refresh]);
 
+  // 桌面速记小窗改动备忘后广播 memo-notes-changed，本页保持同步。
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { isTauri } = await import("@tauri-apps/api/core");
+        if (!isTauri()) return;
+        const { listen } = await import("@tauri-apps/api/event");
+        unlisten = await listen("memo-notes-changed", () => {
+          if (!cancelled) void refresh();
+        });
+      } catch {
+        // 非关键路径：小窗不存在时无事件，主窗口自身操作后本来就会刷新。
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [refresh]);
+
   const counts = useMemo(() => statusCounts(notes ?? []), [notes]);
   const tagOptions = useMemo(() => collectTags(notes ?? []), [notes]);
   const workspaceOptions = useMemo(() => collectWorkspaces(notes ?? []), [notes]);

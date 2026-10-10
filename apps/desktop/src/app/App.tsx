@@ -731,6 +731,29 @@ export function App() {
     if (page === "memo" && !memoEnabled) setPage("chat");
     if (page === "pixie" && !pixieEnabled) setPage("chat");
   }, [page, memoEnabled, pixieEnabled, setPage]);
+
+  // 桌面速记小窗「在 PiAbyss 中打开」→ 显示主窗口并切到备忘录页。
+  // 备忘页不可用（插件被停用）时回退到聊天页，与上面的护栏一致。
+  useEffect(() => {
+    if (!nativeWindowAvailable) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        unlisten = await listen("memo-widget-open-memo", () => {
+          if (cancelled) return;
+          setPage(memoEnabled ? "memo" : "chat");
+        });
+      } catch {
+        // 监听失败只影响小窗跳转，不影响主流程。
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [memoEnabled, nativeWindowAvailable, setPage]);
   const settingsSection = useAppStore((s) => s.settingsSection);
   const hostFatal = useAppStore((s) => s.hostFatal);
   const connecting = useAppStore((s) => s.connecting);
