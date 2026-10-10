@@ -519,26 +519,6 @@ function isMemoImageInput(value: unknown): boolean {
   return /^[A-Za-z0-9+/]*={0,2}$/.test(value.dataBase64);
 }
 
-/** memo.setSyncConfig / memo.testSync 共用的 R2 配置字段级校验。 */
-function isMemoSyncConfigInput(value: unknown): boolean {
-  if (
-    !exactObject(value, [], ["accountId", "accessKeyId", "secretAccessKey", "bucket", "autoSync"])
-  ) {
-    return false;
-  }
-  return (
-    isNonEmptyString(value.accountId) &&
-    value.accountId.length <= 128 &&
-    isNonEmptyString(value.accessKeyId) &&
-    value.accessKeyId.length <= 256 &&
-    isNonEmptyString(value.secretAccessKey) &&
-    value.secretAccessKey.length <= 256 &&
-    isNonEmptyString(value.bucket) &&
-    value.bucket.length <= 63 &&
-    typeof value.autoSync === "boolean"
-  );
-}
-
 /** memo.update / memo.create 共用的字段级校验。 */
 function isMemoNoteFields(value: Record<string, unknown>): boolean {
   return (
@@ -1626,12 +1606,8 @@ export function validateRequestParams<M extends HostMethod>(
         ? ok(params)
         : fail("invalid memo.setDraft params", { method });
     case "memo.getSyncConfig":
-      return params === null ? ok(null) : fail("params must be null", { method });
-    case "memo.setSyncConfig":
     case "memo.testSync":
-      return exactObject(params, ["settings"]) && isMemoSyncConfigInput(params.settings)
-        ? ok(params)
-        : fail("invalid memo sync settings params", { method });
+      return params === null ? ok(null) : fail("params must be null", { method });
     case "memo.syncNow":
       return params === null ? ok(null) : fail("params must be null", { method });
     case "pixie.state":

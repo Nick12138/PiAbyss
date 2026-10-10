@@ -2,17 +2,25 @@
  * 备忘录协议 handler（memo.* 方法）。
  *
  * v1 纯本地：所有操作直接落在 MemoStore（`<agentDir>/piabyss/memo/`）。
- * v2 云同步：新增 memo.getSyncConfig / memo.setSyncConfig / memo.testSync /
- * memo.syncToCloud 四个方法（Cloudflare R2 上传），autoSync 开启时在每次
- * 变更后防抖触发后台上传。
+ * v2 云同步：由 piabyss-memo 插件自持的 R2 同步引擎处理，本文件只做两件事：
+ *   - memo.getSyncConfig / memo.testSync / memo.syncNow 代理到插件进程内的
+ *     环回控制面（memo-sync-api.ts，端口 127.0.0.1:18768）；密钥不进协议层；
+ *   - memo.create / update / delete 落盘后经 /api/auto-sync 通知插件引擎
+ *     防抖同步（autoSync 开启时生效）。
  * 参数校验在这里做一层，保证桌面端传入的载荷形状可信后再进存储层。
  */
 import type { MethodHandler } from "./server.js";
-import { createHostError, type MemoSyncConfig } from "@piabyss/protocol";
+import { createHostError, type HostError, type MemoSyncSettings } from "@piabyss/protocol";
 import { completeSimple, type Context, type Model } from "@earendil-works/pi-ai/compat";
 import { ModelRegistry, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { getMemoStore, type MemoCreateInput, type MemoUpdatePatch } from "./memo-store.js";
-import { getMemoSync, scheduleMemoAutoSync, type MemoSyncStats } from "./memo-sync.js";
+import {
+  fetchMemoSyncStatus,
+  pokeMemoAutoSync,
+  runMemoSyncNow,
+  testMemoSyncConnection,
+  type MemoSyncApiOutcome,
+} from "./memo-sync-api.js";
 import { isRepoPluginEnabled, MEMO_PLUGIN_ENTRY_FILE } from "./plugin-gate.js";
 
 /** Error returned for every memo.* call while the piabyss-memo plugin is off. */
@@ -21,6 +29,38 @@ function memoPluginDisabledError() {
     "RESOURCE_NOT_FOUND",
     "The memo plugin (piabyss-memo) is disabled. Enable it in the plugin library to use the memo page.",
   );
+}
+
+/** 控制面不可达（插件未加载/控制面未启动）时的可读错误。 */
+function mapMemoSyncHttpError(outcome: { status: number | null; error: string }): HostError {
+  if (outcome.status === null) {
+    return createHostError(
+      "CATALOG_UNAVAILABLE",
+      `备忘录同步插件不可用（piabyss-memo 控制面未启动或端口被占用）：${outcome.error}`,
+      { retryable: true },
+    );
+  }
+  switch (outcome.status) {
+    case 400:
+      return createHostError("INVALID_REQUEST", outcome.error);
+    case 401:
+      return createHostError("AUTH_REQUIRED", `备忘录同步控制面鉴权失败：${outcome.error}`);
+    case 404:
+      return createHostError("RESOURCE_NOT_FOUND", outcome.error);
+    case 409:
+      // 未配置 / 已有同步在进行中：可读的冲突语义。
+      return createHostError("INVALID_REQUEST", outcome.error, { retryable: true });
+    default:
+      return createHostError(
+        "INTERNAL_ERROR",
+        `备忘录同步控制面错误（HTTP ${outcome.status}）：${outcome.error}`,
+      );
+  }
+}
+
+function expectMemoSyncOk<T>(outcome: MemoSyncApiOutcome<T>): { result: T } | { error: HostError } {
+  if (outcome.ok) return { result: outcome.data };
+  return { error: mapMemoSyncHttpError(outcome) };
 }
 
 function asString(value: unknown): string {
@@ -114,8 +154,8 @@ export function createMemoHandlers(
   modelRegistry?: ModelRegistry,
 ): Partial<Record<string, MethodHandler>> {
   const store = getMemoStore(agentDir);
-  // Host 启动：autoSync 开启时在后台先同步一次（多设备拉齐 / 补传积压变更）。
-  getMemoSync(agentDir).startupSync();
+  // 启动后的首次同步由插件引擎自己做（autoSync 开启且已配置时）；
+  // Host 侧不再持有同步引擎。
 
   // The memo page's backend lives in the Host (memo.* handlers), but the
   // feature is owned by the piabyss-memo plugin: gate every method on the
@@ -247,7 +287,8 @@ export function createMemoHandlers(
         images: asImageInputs(params.images),
       };
       const note = store.create(input);
-      scheduleMemoAutoSync(agentDir);
+      // 通知插件内同步引擎：autoSync 开启时防抖同步（控制面不可达时静默）。
+      pokeMemoAutoSync(agentDir);
       return { result: { note } };
     },
     "memo.update": async (ctx) => {
@@ -278,7 +319,7 @@ export function createMemoHandlers(
       }
       if (rawPatch.clearResult !== undefined) patch.clearResult = rawPatch.clearResult === true;
       const note = store.update(id, patch);
-      scheduleMemoAutoSync(agentDir);
+      pokeMemoAutoSync(agentDir);
       return { result: { note } };
     },
 
@@ -286,7 +327,7 @@ export function createMemoHandlers(
       if (!gate()) return { error: memoPluginDisabledError() };
       const params = ctx.params as Record<string, unknown>;
       store.remove(asString(params.id));
-      scheduleMemoAutoSync(agentDir);
+      pokeMemoAutoSync(agentDir);
       return { result: { ok: true } };
     },
 
@@ -326,27 +367,45 @@ export function createMemoHandlers(
       return { result: { ok: true } };
     },
 
+    // v2 云同步：引擎由 piabyss-memo 插件自持，下面三个方法代理到插件的
+    // 环回控制面；密钥与 autoSync 配置在「设置 → 插件 → PiAbyss 备忘录」。
     "memo.getSyncConfig": async () => {
       if (!gate()) return { error: memoPluginDisabledError() };
-      return { result: { settings: getMemoSync(agentDir).getSettings() } };
+      const outcome = await fetchMemoSyncStatus(agentDir);
+      const mapped = expectMemoSyncOk(outcome);
+      if ("error" in mapped) return mapped;
+      const settings: MemoSyncSettings = {
+        accountId: typeof mapped.result.accountId === "string" ? mapped.result.accountId : "",
+        bucket: typeof mapped.result.bucket === "string" ? mapped.result.bucket : "",
+        configured: mapped.result.configured === true,
+        autoSync: mapped.result.autoSync === true,
+        lastSyncAt: typeof mapped.result.lastSyncAt === "number" ? mapped.result.lastSyncAt : null,
+        lastSyncOk: typeof mapped.result.lastSyncOk === "boolean" ? mapped.result.lastSyncOk : null,
+        lastSyncError:
+          typeof mapped.result.lastSyncError === "string" ? mapped.result.lastSyncError : null,
+      };
+      return { result: { settings } };
     },
 
-    "memo.setSyncConfig": async (ctx) => {
+    "memo.testSync": async () => {
       if (!gate()) return { error: memoPluginDisabledError() };
-      const params = ctx.params as { settings: MemoSyncConfig };
-      return { result: { settings: getMemoSync(agentDir).setConfig(params.settings) } };
-    },
-
-    "memo.testSync": async (ctx) => {
-      if (!gate()) return { error: memoPluginDisabledError() };
-      const params = ctx.params as { settings: MemoSyncConfig };
-      return { result: await getMemoSync(agentDir).test(params.settings) };
+      const outcome = await testMemoSyncConnection(agentDir);
+      const mapped = expectMemoSyncOk(outcome);
+      if ("error" in mapped) return mapped;
+      return {
+        result: {
+          ok: mapped.result.ok === true,
+          error: typeof mapped.result.error === "string" ? mapped.result.error : null,
+        },
+      };
     },
 
     "memo.syncNow": async () => {
       if (!gate()) return { error: memoPluginDisabledError() };
-      const stats: MemoSyncStats = await getMemoSync(agentDir).syncNow();
-      return { result: stats };
+      const outcome = await runMemoSyncNow(agentDir);
+      const mapped = expectMemoSyncOk(outcome);
+      if ("error" in mapped) return mapped;
+      return { result: mapped.result };
     },
   };
 }

@@ -1179,11 +1179,7 @@ function isSerializableAgentSessionEvent(value: unknown): boolean {
 function isToolInfo(value: unknown): boolean {
   return (
     isPlainObject(value) &&
-    hasExactKeys(
-      value,
-      ["name"],
-      ["description", "parameters", "source", "label", "sourcePath"],
-    ) &&
+    hasExactKeys(value, ["name"], ["description", "parameters", "source", "label", "sourcePath"]) &&
     isString(value.name) &&
     isOptionalString(value.description) &&
     (value.parameters === undefined || isJsonValue(value.parameters)) &&
@@ -3624,24 +3620,22 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         ? null
         : "invalid memo.clearDraft result";
     case "memo.getSyncConfig":
-    case "memo.setSyncConfig":
+      // 密钥不进协议层：只有非敏感展示字段 + configured 标志 + lastSync 状态。
       return isPlainObject(result) &&
         hasExactKeys(result, ["settings"]) &&
         isPlainObject(result.settings) &&
         hasExactKeys(result.settings, [
           "accountId",
-          "accessKeyId",
-          "secretAccessKey",
           "bucket",
+          "configured",
           "autoSync",
           "lastSyncAt",
           "lastSyncOk",
           "lastSyncError",
         ]) &&
         isString(result.settings.accountId) &&
-        isString(result.settings.accessKeyId) &&
-        isString(result.settings.secretAccessKey) &&
         isString(result.settings.bucket) &&
+        typeof result.settings.configured === "boolean" &&
         typeof result.settings.autoSync === "boolean" &&
         (result.settings.lastSyncAt === null ||
           (typeof result.settings.lastSyncAt === "number" &&

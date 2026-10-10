@@ -119,7 +119,6 @@ import type {
   MemoImageInput,
   MemoDraft,
   MemoDraftInput,
-  MemoSyncConfig,
   MemoSyncSettings,
 } from "./types.js";
 
@@ -290,7 +289,6 @@ export type HostContextMap = {
   "memo.setDraft": HostContext;
   "memo.clearDraft": HostContext;
   "memo.getSyncConfig": HostContext;
-  "memo.setSyncConfig": HostContext;
   "memo.testSync": HostContext;
   "memo.syncNow": HostContext;
   "pixie.state": HostContext;
@@ -571,8 +569,7 @@ export type HostRequestParams = {
   "memo.setDraft": { draft: MemoDraftInput };
   "memo.clearDraft": null;
   "memo.getSyncConfig": null;
-  "memo.setSyncConfig": { settings: MemoSyncConfig };
-  "memo.testSync": { settings: MemoSyncConfig };
+  "memo.testSync": null;
   "memo.syncNow": null;
   "pixie.state": null;
   "pixie.send": { text: string };
@@ -822,7 +819,6 @@ export type HostResultMap = {
   "memo.setDraft": { draft: MemoDraft };
   "memo.clearDraft": { ok: boolean };
   "memo.getSyncConfig": { settings: MemoSyncSettings };
-  "memo.setSyncConfig": { settings: MemoSyncSettings };
   "memo.testSync": { ok: boolean; error: string | null };
   "memo.syncNow": {
     uploadedNotes: number;

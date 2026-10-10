@@ -74,12 +74,8 @@ export function refreshMemoSyncStatus(): void {
 /** 状态点本体：灰=未配置/未同步，绿=最近同步成功，红=最近同步失败。 */
 export function MemoSyncStatusDot() {
   const status = useMemoSyncStatus();
-  const configured =
-    status !== null &&
-    status.accountId !== "" &&
-    status.bucket !== "" &&
-    status.accessKeyId !== "" &&
-    status.secretAccessKey !== "";
+  // 密钥不进协议层：由插件控制面回报的 configured 判断是否已配齐。
+  const configured = status?.configured === true;
   const dotClass =
     !configured || status?.lastSyncOk === null
       ? "bg-muted"

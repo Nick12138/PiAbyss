@@ -1,6 +1,8 @@
 /**
  * 备忘录协议客户端：桌面端 → pi-host 的 memo.* 请求封装。
  * Host 上下文取自 app store（备忘录是全局数据，不走会话/工作区上下文）。
+ * 云同步由 piabyss-memo 插件自持：这里只保留状态读取 / 连接测试 / 立即同步，
+ * R2 密钥在「设置 → 插件 → PiAbyss 备忘录」里配置，不再走协议层。
  */
 import type {
   MemoDraft,
@@ -9,7 +11,6 @@ import type {
   MemoNote,
   MemoNoteStatus,
   MemoNoteType,
-  MemoSyncConfig,
   MemoSyncSettings,
 } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
@@ -151,6 +152,7 @@ export async function readMemoImageDataUrl(noteId: string, imageId: string): Pro
 /** 云同步操作可能携带大量图片，走更长的超时。 */
 const SYNC_TIMEOUT_MS = 300_000;
 
+/** 同步状态（密钥不回传：只报 configured 与 lastSync*）。 */
 export async function getMemoSyncSettings(): Promise<MemoSyncSettings> {
   const response = await hostClient.request(
     "memo.getSyncConfig",
@@ -162,26 +164,9 @@ export async function getMemoSyncSettings(): Promise<MemoSyncSettings> {
   return response.result.settings;
 }
 
-export async function setMemoSyncConfig(config: MemoSyncConfig): Promise<MemoSyncSettings> {
-  const response = await hostClient.request(
-    "memo.setSyncConfig",
-    requireHost(),
-    { settings: config },
-    DEFAULT_TIMEOUT_MS,
-  );
-  if (!response.ok) throw new Error(response.error?.message ?? "memo.setSyncConfig failed");
-  return response.result.settings;
-}
-
-export async function testMemoSync(
-  config: MemoSyncConfig,
-): Promise<{ ok: boolean; error: string | null }> {
-  const response = await hostClient.request(
-    "memo.testSync",
-    requireHost(),
-    { settings: config },
-    30_000,
-  );
+/** 用插件当前保存的配置测一次 R2 连通性（配置在设置的插件配置里管理）。 */
+export async function testMemoSync(): Promise<{ ok: boolean; error: string | null }> {
+  const response = await hostClient.request("memo.testSync", requireHost(), null, 30_000);
   if (!response.ok) throw new Error(response.error?.message ?? "memo.testSync failed");
   return response.result;
 }

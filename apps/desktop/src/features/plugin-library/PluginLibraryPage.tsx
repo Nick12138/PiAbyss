@@ -68,6 +68,7 @@ import {
   type PluginToggleScope,
   type PluginWorkspaceCardState,
 } from "./plugin-library-model";
+import { takePluginConfigDeepLink } from "./plugin-config-deeplink";
 import { useTelegramViewStore } from "../telegram/telegram-view-store";
 import {
   notifyDesktopSettingsSaveFailure,
@@ -850,6 +851,23 @@ export function PluginLibraryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host?.hostInstanceId]);
 
+  // Deep-link handoff (e.g. the memo sync dialog's「配置密钥」button): once the
+  // catalog and the managed snapshot are available, open the requested
+  // plugin's config dialog directly. Consumed exactly once per request; a
+  // missing/not-installed entry still lands on the plugin list, where the
+  // card itself is the next best target.
+  const deepLinkConsumed = useRef(false);
+  useEffect(() => {
+    if (deepLinkConsumed.current || !catalog || !managedPackages) return;
+    const pluginId = takePluginConfigDeepLink();
+    if (pluginId === null) return;
+    deepLinkConsumed.current = true;
+    const entry = catalog.plugins.find((candidate) => candidate.id === pluginId);
+    if (!entry || (entry.config?.length ?? 0) === 0) return;
+    const state = pluginWorkspaceCardState(entry, catalog, managedPackages);
+    if (state.installed) setConfigFor(entry);
+  }, [catalog, managedPackages]);
+
   useEffect(() => {
     void ensurePackages();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1119,8 +1137,12 @@ export function PluginLibraryPage() {
               >
                 <div className="flex items-center justify-between gap-2 px-1 pb-1.5">
                   <span className="flex min-w-0 items-center gap-1 truncate text-xs font-medium">
-                    {updatesBusy && <Loader2 size={12} className="shrink-0 animate-spin text-warning" />}
-                    <span className="truncate">{t("pluginsUpdateTitle", { count: updateRows.length })}</span>
+                    {updatesBusy && (
+                      <Loader2 size={12} className="shrink-0 animate-spin text-warning" />
+                    )}
+                    <span className="truncate">
+                      {t("pluginsUpdateTitle", { count: updateRows.length })}
+                    </span>
                   </span>
                   <button
                     type="button"
@@ -1215,9 +1237,7 @@ export function PluginLibraryPage() {
                 {chip.isGlobal ? (
                   <User size={12} className="shrink-0 text-muted" aria-hidden />
                 ) : (
-                  chip.isTelegram && (
-                    <Send size={12} className="shrink-0 text-muted" aria-hidden />
-                  )
+                  chip.isTelegram && <Send size={12} className="shrink-0 text-muted" aria-hidden />
                 )}
                 <span className="max-w-48 truncate">{chip.basename}</span>
                 {chip.isActive && !chip.isGlobal && (

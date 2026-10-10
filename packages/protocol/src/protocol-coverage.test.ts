@@ -354,24 +354,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   },
   "memo.clearDraft": null,
   "memo.getSyncConfig": null,
-  "memo.setSyncConfig": {
-    settings: {
-      accountId: "abc123",
-      accessKeyId: "AKID",
-      secretAccessKey: "secret",
-      bucket: "memos",
-      autoSync: true,
-    },
-  },
-  "memo.testSync": {
-    settings: {
-      accountId: "abc123",
-      accessKeyId: "AKID",
-      secretAccessKey: "secret",
-      bucket: "memos",
-      autoSync: false,
-    },
-  },
+  "memo.testSync": null,
   "memo.syncNow": null,
   "pixie.state": null,
   "pixie.send": { text: "今天有什么工作需要做？" },
@@ -684,6 +667,7 @@ function invalidParams(method: HostMethod): unknown {
     case "memo.setDraft":
       return { draft: { type: "nope", contentMd: 42 } };
     case "memo.getSyncConfig":
+    case "memo.testSync":
     case "memo.syncNow":
     case "pixie.state":
     case "pixie.abort":
@@ -697,9 +681,6 @@ function invalidParams(method: HostMethod): unknown {
       return { sessionPath: "" };
     case "pixie.dispatches":
       return { limit: 0 };
-    case "memo.setSyncConfig":
-    case "memo.testSync":
-      return { settings: { accountId: "", bucket: 42 } };
     case "schedule.agentTranscript":
       return { sessionPath: "" };
     default:

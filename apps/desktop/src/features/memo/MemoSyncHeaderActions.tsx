@@ -4,25 +4,31 @@
  *
  * 状态点含义：灰 = 未配置/尚未同步；绿 = 最近同步成功；红 = 最近同步失败。
  * 同步成功后广播 MEMO_SYNCED_EVENT，备忘录页据此刷新列表。
+ *
+ * v2：同步引擎与 R2 密钥配置都由 piabyss-memo 插件自持——本弹窗只保留
+ * 状态展示、测试连接与立即同步；密钥/自动同步改到「设置 → 插件 →
+ * PiAbyss 备忘录」的配置表单里，弹窗内提供跳转按钮（深链直达配置弹窗）。
  */
-import { Check, CheckCircle2, CircleAlert, CloudUpload, Loader2, RefreshCw } from "lucide-react";
+import {
+  CheckCircle2,
+  CircleAlert,
+  CloudUpload,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
 import { useState } from "react";
-import type { MemoSyncConfig, MemoSyncSettings } from "@piabyss/protocol";
+import type { MemoSyncSettings } from "@piabyss/protocol";
 import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
-import { Switch } from "../../components/Switch";
+import { requestPluginConfigDeepLink } from "../plugin-library/plugin-config-deeplink";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
-import { getMemoSyncSettings, setMemoSyncConfig, syncMemoNow, testMemoSync } from "./memo-client";
+import { getMemoSyncSettings, syncMemoNow, testMemoSync } from "./memo-client";
 import { formatMemoDateTime } from "./memo-model";
 import { MEMO_SYNCED_EVENT, refreshMemoSyncStatus, useMemoSyncStatus } from "./memo-sync-status";
 
-const EMPTY_FORM: MemoSyncConfig = {
-  accountId: "",
-  accessKeyId: "",
-  secretAccessKey: "",
-  bucket: "",
-  autoSync: false,
-};
+/** 承载备忘录云同步的插件库条目（配置表单在这个插件的卡片上）。 */
+const MEMO_PLUGIN_ID = "piabyss-memo";
 
 type SyncFeedback = { tone: "success" | "error"; text: string };
 
@@ -32,34 +38,20 @@ export function MemoSyncHeaderActions() {
 
   const [syncModalOpen, setSyncModalOpen] = useState(false);
   const [syncSettings, setSyncSettings] = useState<MemoSyncSettings | null>(null);
-  const [syncForm, setSyncForm] = useState<MemoSyncConfig>(EMPTY_FORM);
-  const [syncBusy, setSyncBusy] = useState<"test" | "sync" | "save" | null>(null);
+  const [syncBusy, setSyncBusy] = useState<"test" | "sync" | null>(null);
   const [syncMessage, setSyncMessage] = useState<SyncFeedback | null>(null);
   // 状态点/配置判断用共享订阅（标题旁的点与本按钮共用一个 30s 轮询）。
   const syncStatus = useMemoSyncStatus();
   const [toolbarSyncing, setToolbarSyncing] = useState(false);
 
-  const syncConfigured =
-    syncStatus !== null &&
-    syncStatus.accountId !== "" &&
-    syncStatus.bucket !== "" &&
-    syncStatus.accessKeyId !== "" &&
-    syncStatus.secretAccessKey !== "";
+  const syncConfigured = syncStatus?.configured === true;
 
-  /** 打开云同步配置弹窗：加载 Host 端已保存的配置与同步状态。 */
+  /** 打开云同步弹窗：读取插件控制面回报的同步状态（密钥不回传）。 */
   async function openSyncModal() {
     setSyncMessage(null);
     setSyncModalOpen(true);
     try {
-      const settings = await getMemoSyncSettings();
-      setSyncSettings(settings);
-      setSyncForm({
-        accountId: settings.accountId,
-        accessKeyId: settings.accessKeyId,
-        secretAccessKey: settings.secretAccessKey,
-        bucket: settings.bucket,
-        autoSync: settings.autoSync,
-      });
+      setSyncSettings(await getMemoSyncSettings());
     } catch (error) {
       setSyncSettings(null);
       pushNotification(
@@ -67,6 +59,13 @@ export function MemoSyncHeaderActions() {
         "error",
       );
     }
+  }
+
+  /** 跳转到「设置 → 插件 → PiAbyss 备忘录」的配置表单（深链直达配置弹窗）。 */
+  function openPluginConfig() {
+    requestPluginConfigDeepLink(MEMO_PLUGIN_ID);
+    useAppStore.getState().openSettingsSection("plugins");
+    setSyncModalOpen(false);
   }
 
   /** 顶栏刷新按钮：立即双向同步一次（成功不弹全局通知，失败才提示）。 */
@@ -92,12 +91,13 @@ export function MemoSyncHeaderActions() {
     }
   }
 
+  /** 用插件当前保存的配置测一次 R2 连通性（配置在设置的插件配置里）。 */
   async function handleSyncTest() {
     if (syncBusy) return;
     setSyncBusy("test");
     setSyncMessage(null);
     try {
-      const outcome = await testMemoSync(syncForm);
+      const outcome = await testMemoSync();
       setSyncMessage(
         outcome.ok
           ? { tone: "success", text: t("memoSyncTestOk") }
@@ -113,49 +113,11 @@ export function MemoSyncHeaderActions() {
     }
   }
 
-  async function handleSyncSave() {
-    if (syncBusy) return;
-    setSyncBusy("save");
-    setSyncMessage(null);
-    try {
-      const settings = await setMemoSyncConfig(syncForm);
-      setSyncSettings(settings);
-      // 打开自动同步后保存 → 立即同步一次（拉齐云端 / 补传积压变更）。
-      if (syncForm.autoSync) {
-        const stats = await syncMemoNow();
-        setSyncSettings(await getMemoSyncSettings());
-        refreshMemoSyncStatus();
-        setSyncMessage({
-          tone: "success",
-          text: t("memoSyncSuccess", {
-            uploadedNotes: stats.uploadedNotes,
-            downloadedNotes: stats.downloadedNotes,
-            uploadedImages: stats.uploadedImages,
-            downloadedImages: stats.downloadedImages,
-          }),
-        });
-        window.dispatchEvent(new Event(MEMO_SYNCED_EVENT));
-      } else {
-        setSyncMessage({ tone: "success", text: t("memoSyncSaved") });
-      }
-    } catch (error) {
-      setSyncMessage({
-        tone: "error",
-        text: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      setSyncBusy(null);
-    }
-  }
-
   async function handleSyncNow() {
     if (syncBusy) return;
     setSyncBusy("sync");
     setSyncMessage(null);
     try {
-      // 未保存过的新配置先落盘再同步，保证 autoSync/状态一致。
-      const settings = await setMemoSyncConfig(syncForm);
-      setSyncSettings(settings);
       const stats = await syncMemoNow();
       setSyncSettings(await getMemoSyncSettings());
       refreshMemoSyncStatus();
@@ -207,60 +169,31 @@ export function MemoSyncHeaderActions() {
         <CloudUpload size={15} className="shrink-0" />
       </button>
 
-      {/* 云同步配置弹窗（轻量临时浮层）：R2 密钥配置 + 立即同步。 */}
+      {/* 云同步弹窗（轻量临时浮层）：状态 + 测试/立即同步 + 跳转插件配置。 */}
       {syncModalOpen && (
         <Dialog
           title={t("memoSyncTitle")}
           icon={CloudUpload}
           showCloseIcon
           hideActions
-          confirmLabel={t("memoSyncSave")}
+          confirmLabel={t("memoSyncNow")}
           maxWidthClass="max-w-xl"
           onCancel={() => setSyncModalOpen(false)}
           onConfirm={() => undefined}
         >
           <div className="flex flex-col gap-3 text-left">
             <p className="text-[12px] text-muted">{t("memoSyncDesc")}</p>
-            <div className="grid grid-cols-2 gap-3">
-              <SyncField
-                label={t("memoSyncAccountId")}
-                value={syncForm.accountId}
-                placeholder="xxxxxxxxxxxxxxxx"
-                onChange={(value) => setSyncForm((form) => ({ ...form, accountId: value.trim() }))}
-              />
-              <SyncField
-                label={t("memoSyncBucket")}
-                value={syncForm.bucket}
-                placeholder="my-memos"
-                onChange={(value) => setSyncForm((form) => ({ ...form, bucket: value.trim() }))}
-              />
-              <SyncField
-                label={t("memoSyncAccessKeyId")}
-                value={syncForm.accessKeyId}
-                onChange={(value) =>
-                  setSyncForm((form) => ({ ...form, accessKeyId: value.trim() }))
-                }
-              />
-              <SyncField
-                label={t("memoSyncSecret")}
-                value={syncForm.secretAccessKey}
-                password
-                onChange={(value) =>
-                  setSyncForm((form) => ({ ...form, secretAccessKey: value.trim() }))
-                }
-              />
-            </div>
-            <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
-              <span className="text-[12px] text-foreground">{t("memoSyncAuto")}</span>
-              <Switch
-                checked={syncForm.autoSync}
-                onChange={(next) => setSyncForm((form) => ({ ...form, autoSync: next }))}
-                label={t("memoSyncAuto")}
-              />
-            </div>
+
+            {!syncConfigured && (
+              <div className="flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-[12px] text-warning">
+                <CircleAlert size={13} className="mt-0.5 shrink-0" aria-hidden />
+                <span className="min-w-0 break-words">{t("memoSyncNotConfigured")}</span>
+              </div>
+            )}
 
             {syncSettings && (
               <div className="text-[11px] text-muted">
+                {syncSettings.autoSync ? `${t("memoSyncAutoOn")} · ` : ""}
                 {syncSettings.lastSyncAt === null
                   ? t("memoSyncNever")
                   : syncSettings.lastSyncOk === true
@@ -286,11 +219,21 @@ export function MemoSyncHeaderActions() {
               </div>
             )}
 
-            <div className="flex items-center justify-end gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={openPluginConfig}
+                data-testid="memo-sync-open-config"
+                className={`${secondaryButton} text-[12px]`}
+              >
+                <ExternalLink size={13} />
+                <span>{t("memoSyncOpenConfig")}</span>
+              </button>
               <button
                 type="button"
                 onClick={() => void handleSyncTest()}
-                disabled={syncBusy !== null}
+                disabled={syncBusy !== null || !syncConfigured}
+                title={syncConfigured ? undefined : t("memoSyncNotConfigured")}
                 className={`${secondaryButton} text-[12px]`}
               >
                 {syncBusy === "test" ? <Loader2 size={13} className="animate-spin" /> : null}
@@ -298,21 +241,9 @@ export function MemoSyncHeaderActions() {
               </button>
               <button
                 type="button"
-                onClick={() => void handleSyncSave()}
-                disabled={syncBusy !== null}
-                className={`${secondaryButton} text-[12px]`}
-              >
-                {syncBusy === "save" ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : (
-                  <Check size={14} />
-                )}
-                <span>{t("memoSyncSave")}</span>
-              </button>
-              <button
-                type="button"
                 onClick={() => void handleSyncNow()}
-                disabled={syncBusy !== null || !syncForm.accountId || !syncForm.bucket}
+                disabled={syncBusy !== null || !syncConfigured}
+                title={syncConfigured ? undefined : t("memoSyncNotConfigured")}
                 className={`${primaryButton} text-[12px]`}
               >
                 {syncBusy === "sync" ? (
@@ -327,35 +258,5 @@ export function MemoSyncHeaderActions() {
         </Dialog>
       )}
     </>
-  );
-}
-
-/** 弹窗内的配置字段行：label + 输入框。 */
-function SyncField({
-  label,
-  value,
-  onChange,
-  placeholder,
-  password = false,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  password?: boolean;
-}) {
-  return (
-    <label className="flex min-w-0 flex-col gap-1">
-      <span className="text-[11px] text-muted">{label}</span>
-      <input
-        type={password ? "password" : "text"}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        autoComplete="off"
-        spellCheck={false}
-        className="h-8 w-full rounded-md border border-border bg-transparent px-2.5 text-[12px] outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-focus"
-      />
-    </label>
   );
 }

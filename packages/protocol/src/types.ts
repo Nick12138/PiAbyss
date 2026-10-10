@@ -2180,20 +2180,19 @@ export type MemoDraftInput = {
   workspaceHint?: string | null;
 };
 
-/** 备忘录云同步（Cloudflare R2，S3 兼容 API）的连接配置。 */
-export type MemoSyncConfig = {
-  /** R2 账户 ID（端点为 https://<accountId>.r2.cloudflarestorage.com）。 */
+/**
+ * 备忘录云同步状态（引擎由 piabyss-memo 插件自持，Host 只代理）。
+ * R2 密钥不进协议层：只回报非敏感的 accountId / 桶名与「是否已配置齐」。
+ */
+export type MemoSyncSettings = {
+  /** R2 账户 ID（非敏感，展示用；未配置为空串）。 */
   accountId: string;
-  accessKeyId: string;
-  secretAccessKey: string;
-  /** R2 桶名。 */
+  /** R2 桶名（非敏感，展示用；未配置为空串）。 */
   bucket: string;
-  /** 备忘录变更后自动上传。 */
+  /** 四项 R2 连接信息（accountId/accessKeyId/secretAccessKey/bucket）是否齐备。 */
+  configured: boolean;
+  /** 备忘录变更后自动同步（在设置的插件配置里管理）。 */
   autoSync: boolean;
-};
-
-/** 备忘录云同步配置 + 最近一次同步状态（Host 持久化）。 */
-export type MemoSyncSettings = MemoSyncConfig & {
   /** 最近一次同步（含手动与自动）时间；从未同步为 null。 */
   lastSyncAt: number | null;
   lastSyncOk: boolean | null;
