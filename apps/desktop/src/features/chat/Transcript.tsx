@@ -233,6 +233,16 @@ export function Transcript() {
     }
     return undefined;
   }, [shownRows]);
+  // A cancelled run whose aborted assistant row already shows the stop banner
+  // must not repeat itself in the tail marker below; only runs cancelled before
+  // any assistant message produced a row need the tail marker.
+  const lastAssistantAborted = useMemo(() => {
+    for (let index = shownRows.length - 1; index >= 0; index -= 1) {
+      const row = shownRows[index];
+      if (row.role === "assistant") return row.outcome?.status === "aborted";
+    }
+    return false;
+  }, [shownRows]);
 
   // Inline branch navigators: sibling alternatives for the rows on the
   // current leaf path, derived from the shared session tree. User rows look
@@ -811,6 +821,18 @@ export function Transcript() {
               <div className="flex items-center gap-3">
                 <AssistantAvatar />
                 <WorkingStatusLabel label={workingLabel} className="text-[12px] font-medium" />
+              </div>
+            )}
+          {session &&
+            session.isIdle &&
+            session.lastRunAborted === true &&
+            !lastAssistantAborted && (
+              <div className="flex items-center gap-3">
+                <AssistantAvatar />
+                <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-warning">
+                  <Ban size={13} />
+                  {t("transcriptResponseStopped")}
+                </span>
               </div>
             )}
           <div ref={tailAnchorRef} className="h-1" aria-hidden="true" />

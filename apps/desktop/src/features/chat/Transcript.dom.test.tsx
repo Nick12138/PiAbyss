@@ -166,6 +166,36 @@ describe("Transcript Session-open scrolling", () => {
     useAppStore.setState({ session: null, desktopSettings: null });
   });
 
+  it("marks a run cancelled before any assistant message in the transcript tail", () => {
+    useAppStore.setState({
+      session: { ...session(SESSION_A, "First Session"), lastRunAborted: true },
+    });
+    render(<Transcript />);
+    expect(screen.getByText("Response stopped")).toBeVisible();
+  });
+
+  it("shows no stop marker for an idle session whose last run completed", () => {
+    useAppStore.setState({ session: session(SESSION_A, "First Session") });
+    render(<Transcript />);
+    expect(screen.queryByText("Response stopped")).toBeNull();
+  });
+
+  it("does not repeat the stop banner when the aborted assistant row already shows it", () => {
+    useAppStore.setState({
+      session: {
+        ...session(SESSION_A, "First Session"),
+        messages: [
+          { role: "user", content: "seed" },
+          { role: "assistant", content: "partial", stopReason: "aborted" },
+        ],
+        lastRunAborted: true,
+      },
+    });
+    render(<Transcript />);
+    // The aborted assistant row renders the banner once; the tail marker stays silent.
+    expect(screen.getAllByText("Response stopped")).toHaveLength(1);
+  });
+
   it("keeps a newly opened Session at the bottom through late content growth", () => {
     const { container } = render(<Transcript />);
     const scroll = container.querySelector<HTMLElement>("[data-transcript-scroll]")!;

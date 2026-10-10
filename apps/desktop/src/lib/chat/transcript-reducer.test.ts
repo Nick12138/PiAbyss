@@ -180,6 +180,32 @@ describe("applyAgentEvent", () => {
     expect(s.isStreaming).toBe(false);
   });
 
+  it("marks lastRunAborted from agent_settled and clears it when the next run starts", () => {
+    let s = applyAgentEvent(baseSession(), {
+      runId: "r1",
+      event: { type: "agent_start" },
+    })!;
+    expect(s.lastRunAborted).toBe(false);
+
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: { type: "agent_settled", aborted: true },
+    })!;
+    expect(s.lastRunAborted).toBe(true);
+
+    s = applyAgentEvent(s, {
+      runId: "r2",
+      event: { type: "agent_start" },
+    })!;
+    expect(s.lastRunAborted).toBe(false);
+
+    s = applyAgentEvent(s, {
+      runId: "r2",
+      event: { type: "agent_settled", aborted: false },
+    })!;
+    expect(s.lastRunAborted).toBe(false);
+  });
+
   it("keeps assistant content dense when streaming events arrive at a later index first", () => {
     let s = applyAgentEvent(baseSession(), {
       runId: "r1",
