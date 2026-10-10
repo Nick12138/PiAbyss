@@ -1299,7 +1299,7 @@ export function PluginLibraryPage() {
         </div>
       ) : (
         <div
-          className="scrollbar-subtle grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-2 overflow-y-auto px-6 pb-6 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
+          className="scrollbar-subtle grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-2 overflow-y-auto px-6 pb-6 @min-[36rem]:grid-cols-2 @min-[64rem]:grid-cols-3 @min-[96rem]:grid-cols-4"
           data-settings-scroll
         >
           {catalog.plugins.map((entry) => (

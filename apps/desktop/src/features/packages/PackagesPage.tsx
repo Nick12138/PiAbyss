@@ -362,7 +362,7 @@ function MarketCatalogGrid({
 }) {
   return (
     <div
-      className="scrollbar-subtle grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto p-4 lg:grid-cols-2 2xl:grid-cols-3"
+      className="scrollbar-subtle grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto p-4 @min-[36rem]:grid-cols-2 @min-[64rem]:grid-cols-3"
       data-settings-scroll
     >
       {items.map((item) => (
