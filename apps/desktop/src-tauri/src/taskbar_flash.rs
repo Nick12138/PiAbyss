@@ -12,7 +12,9 @@
 //! This command calls `FlashWindowEx` directly, without that guard. All
 //! flashing semantics come from the OS: `FLASHW_ALL | FLASHW_TIMERNOFG`
 //! flashes the caption and tray button until the window comes to the
-//! foreground; `stop: true` cancels a pending flash.
+//! foreground; `stop: true` cancels a pending flash. Only the taskbar
+//! button flashes (FLASHW_TRAY, no caption bit) so the window itself never
+//! pulses.
 
 use serde::Deserialize;
 
@@ -58,7 +60,7 @@ pub async fn taskbar_flash(
 #[cfg(windows)]
 fn flash_window(window: &tauri::WebviewWindow, stop: bool) -> Result<(), String> {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        FlashWindowEx, FLASHWINFO, FLASHW_ALL, FLASHW_STOP, FLASHW_TRAY,
+        FlashWindowEx, FLASHWINFO, FLASHW_STOP, FLASHW_TRAY,
     };
 
     let hwnd = window
@@ -73,17 +75,16 @@ fn flash_window(window: &tauri::WebviewWindow, stop: bool) -> Result<(), String>
         // both caption and tray states are cleared.
         (FLASHW_STOP | FLASHW_TRAY, 0)
     } else {
-        // Caption + tray button. Empirically on Windows 11, a minimized
-        // window rejects FLASHW_ALL|FLASHW_TIMERNOFG when uCount=u32::MAX
-        // unless FLASHW_TRAY is spelled out (FlashWindowEx returns FALSE
-        // and nothing flashes): 0xF+MAX fails, 0xB+MAX and 0xF+10 both
-        // work. Spell out the TRAY bit AND keep a finite count — the
-        // 0xB|MAX combination also flashes and is kept as fallback, but
-        // the finite count is what tao's Informational path uses and it
-        // never gets rejected. A bounded count still restores itself if
-        // the user focuses and leaves again (a new notification restarts
-        // the flash).
-        (FLASHW_ALL | FLASHW_TRAY, 10)
+        // Taskbar button only — no FLASHW_CAPTION bit, so the window itself
+        // (title bar / border) never flashes. Empirically on Windows 11, a
+        // minimized window rejects FLASHW_TIMERNOFG-style combos with
+        // uCount=u32::MAX unless FLASHW_TRAY is spelled out and the count is
+        // finite: 0xF+MAX fails, 0xB+MAX and 0x3+10 both worked. A finite
+        // FLASHW_TRAY count (10) is what tao's Informational path uses and
+        // is never rejected. A bounded count still restores itself if the
+        // user focuses and leaves again (a new notification restarts the
+        // flash).
+        (FLASHW_TRAY, 10)
     };
     let flash = FLASHWINFO {
         cbSize: std::mem::size_of::<FLASHWINFO>() as u32,

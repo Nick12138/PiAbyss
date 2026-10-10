@@ -17,9 +17,9 @@ type WindowModule = {
  * `requestUserAttention` path is broken for borderless windows whose
  * minimize goes through `ShowWindow(SW_MINIMIZE)` instead of
  * `WM_SYSCOMMAND`: tao's internal MINIMIZED flag never flips and its
- * "skip when active" guard swallows the request. `FLASHW_ALL |
- * FLASHW_TIMERNOFG` flashes the caption and taskbar button until the
- * window comes to the foreground.
+ * "skip when active" guard swallows the request. Only the taskbar
+ * button flashes (FLASHW_TRAY, no caption bit) so the window itself
+ * never pulses.
  *
  * Other platforms: Tauri's `requestUserAttention(Critical)` — macOS Dock
  * bounce (one second, coalesced by the OS). The in-app toast flow stays
