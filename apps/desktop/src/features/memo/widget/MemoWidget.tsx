@@ -11,15 +11,20 @@
  * 每批请求前用 refreshActiveRoute() 同步路由，避免主窗口切换工作区后
  * 小窗收不到响应。备忘数据全部走 memo.* 协议，与主界面完全同源。
  */
-import { Check, Circle, CircleAlert, Lightbulb, ListChecks, Loader2, Monitor, Pin, Plus, StickyNote, X } from "lucide-react";
 import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type JSX,
-  type KeyboardEvent,
-} from "react";
+  Check,
+  Circle,
+  CircleAlert,
+  Lightbulb,
+  ListChecks,
+  Loader2,
+  Monitor,
+  Pin,
+  Plus,
+  StickyNote,
+  X,
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type JSX, type KeyboardEvent } from "react";
 import type { DesktopSettings, MemoNote, MemoNoteType } from "@piabyss/protocol";
 import { hostClient } from "../../../lib/bridge/host-client";
 import { createTauriTransport, refreshActiveRoute } from "../../../lib/bridge/tauri-transport";
@@ -192,7 +197,9 @@ function useDesktopSettingsBootstrap(): void {
         unlisten = await listen("desktop-settings-changed", () => {
           void (async () => {
             try {
-              apply((await invoke<{ settings: DesktopSettings }>("desktop_settings_get"))?.settings);
+              apply(
+                (await invoke<{ settings: DesktopSettings }>("desktop_settings_get"))?.settings,
+              );
             } catch {
               // 拉取失败则保持当前外观
             }
@@ -306,7 +313,7 @@ export function MemoWidget(): JSX.Element {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
@@ -395,7 +402,9 @@ export function MemoWidget(): JSX.Element {
       void emitNotesChanged();
       await refresh();
     } catch (error) {
-      setLoadError(`${t("memoWidgetCreateFailed")}: ${error instanceof Error ? error.message : String(error)}`);
+      setLoadError(
+        `${t("memoWidgetCreateFailed")}: ${error instanceof Error ? error.message : String(error)}`,
+      );
     } finally {
       setCreating(false);
       inputRef.current?.focus();
@@ -418,13 +427,20 @@ export function MemoWidget(): JSX.Element {
   );
 
   const onInputKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLInputElement>): void => {
+    (event: KeyboardEvent<HTMLTextAreaElement>): void => {
       if (event.key === "Escape") {
         event.preventDefault();
         void hideWindow();
+        return;
+      }
+      // Enter 直接保存（保持单行速记的肌肉记忆）；Shift+Enter 换行。
+      // 输入法组合期间（isComposing）不触发，避免中文打到一半被提交。
+      if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+        event.preventDefault();
+        void submitDraft();
       }
     },
-    [hideWindow],
+    [hideWindow, submitDraft],
   );
 
   return (
@@ -455,7 +471,9 @@ export function MemoWidget(): JSX.Element {
             type="button"
             onClick={() => void toggleMode()}
             title={mode === "float" ? t("memoWidgetSwitchToDesktop") : t("memoWidgetSwitchToFloat")}
-            aria-label={mode === "float" ? t("memoWidgetSwitchToDesktop") : t("memoWidgetSwitchToFloat")}
+            aria-label={
+              mode === "float" ? t("memoWidgetSwitchToDesktop") : t("memoWidgetSwitchToFloat")
+            }
             className="rounded-md p-1.5 text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
           >
             {mode === "float" ? <Pin className="size-3.5" /> : <Monitor className="size-3.5" />}
@@ -544,7 +562,9 @@ export function MemoWidget(): JSX.Element {
                         title={t("memoWidgetOpenApp")}
                         className="min-w-0 flex-1 text-left"
                       >
-                        <div className="truncate text-[13px] leading-5">{note.title || note.contentMd}</div>
+                        <div className="truncate text-[13px] leading-5">
+                          {note.title || note.contentMd}
+                        </div>
                         <div className="mt-0.5 flex items-center gap-2 text-xs text-muted">
                           <TypeIcon className={`size-3 shrink-0 ${typeIconClass}`} />
                           {note.status === "in_progress" && (
@@ -573,26 +593,23 @@ export function MemoWidget(): JSX.Element {
           >
             <Plus className="size-4 shrink-0 text-accent" />
             {/* 与主界面备忘录「新建记录」一致的纸面化输入框：无底色、
-                虚线描边仅在悬停/聚焦时浮现，光标用强调色。 */}
-            <input
+                虚线描边仅在悬停/聚焦时浮现，光标用强调色。
+                field-sizing-content 随内容自动长高，超过 30% 窗口高度后
+                转为内部滚动（Scrollbar 走 scrollbar-subtle 细样式）。 */}
+            <textarea
               ref={inputRef}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={onInputKeyDown}
+              rows={1}
               // biome-ignore lint/a11y/noAutofocus: 速记小窗的核心交互就是即开即输。
               autoFocus
               placeholder={t("memoWidgetInputPlaceholder")}
-              className="memo-editor-input w-full rounded-lg border border-dashed border-transparent bg-transparent px-2 py-1.5 text-[13px] leading-relaxed outline-none caret-focus placeholder:text-muted hover:border-border-subtle focus:border-border-subtle focus:outline-none"
+              className="memo-editor-input scrollbar-subtle field-sizing-content max-h-[30vh] w-full resize-none rounded-lg border border-dashed border-transparent bg-transparent px-2 py-1.5 text-[13px] leading-relaxed outline-none caret-focus placeholder:text-muted hover:border-border-subtle focus:border-border-subtle focus:outline-none"
             />
-            {creating ? (
-              <Loader2 className="size-3.5 shrink-0 animate-spin text-muted" />
-            ) : (
-              draft.trim() !== "" && (
-                <span className="shrink-0 rounded-md bg-surface-overlay px-1.5 py-0.5 text-[10px] leading-none font-medium text-muted">
-                  ⏎
-                </span>
-              )
-            )}
+            {/* 保存中才显示转圈；不放入任何回车提示图标——
+                速记的习惯就是输完直接回车。 */}
+            {creating && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted" />}
           </form>
         </>
       )}
