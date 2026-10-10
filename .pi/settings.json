@@ -1,0 +1,13 @@
+{
+  "packages": [
+    {
+      "source": "git:github.com/Nick12138/my-pi-plugins",
+      "autoload": false,
+      "extensions": [
+        "+packages/pi-todo/extensions/pi-todo.ts",
+        "-packages/piabyss-present-files/extensions/piabyss-present-files.ts",
+        "+packages/pi-ask-user-question/extensions/pi-ask-user-question.ts"
+      ]
+    }
+  ]
+}
