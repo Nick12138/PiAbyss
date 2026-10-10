@@ -12,7 +12,7 @@
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 pub const MEMO_WIDGET_LABEL: &str = "memo-widget";
-pub const MEMO_WIDGET_SHORTCUT: &str = "Ctrl+Alt+M";
+pub const MEMO_WIDGET_SHORTCUT: &str = "Alt+Space";
 const WIDGET_MODE_FLOAT: &str = "float";
 const WIDGET_MODE_DESKTOP: &str = "desktop";
 const MEMO_WIDGET_URL: &str = "widget.html";
@@ -97,8 +97,10 @@ fn place_default<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
     ));
 }
 
-/// 全局快捷键插件：Ctrl+Alt+M 唤出/隐藏小窗。注册失败（如被其他程序
+/// 全局快捷键插件：Alt+Space 唤出/隐藏小窗。注册失败（如被其他程序
 /// 占用）只打日志，托盘入口仍可用。
+/// 注意：这会全局接管 Alt+Space（各应用原本的窗口菜单快捷键）；
+/// 底层 RegisterHotKey 的 MOD_ALT 不区分左/右 Alt。
 pub fn shortcut_plugin<R: tauri::Runtime>() -> tauri_plugin_global_shortcut::Builder<R> {
     use tauri_plugin_global_shortcut::{Builder, Shortcut, ShortcutState};
 
@@ -174,7 +176,7 @@ mod tests {
     #[test]
     fn shortcut_and_label_are_stable_constants() {
         assert_eq!(super::MEMO_WIDGET_LABEL, "memo-widget");
-        assert_eq!(super::MEMO_WIDGET_SHORTCUT, "Ctrl+Alt+M");
+        assert_eq!(super::MEMO_WIDGET_SHORTCUT, "Alt+Space");
         assert!(super::MEMO_WIDGET_SHORTCUT.parse::<tauri_plugin_global_shortcut::Shortcut>().is_ok());
     }
 
