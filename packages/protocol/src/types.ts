@@ -1035,7 +1035,8 @@ export type TelegramBoundUser = {
 };
 
 /** Bridge transport state from `telegram.status` (best-effort read of the
- *  plugin's `tmp/telegram/owners.json`). */
+ *  plugin's owners.json — the 0.52.0+ `tmp/pi-telegram` layout first, then the
+ *  legacy `tmp/telegram` file for older plugin releases). */
 export type TelegramBridgeStatus = {
   /** Whether a Pi instance currently owns polling transport for a profile. */
   connected: boolean;

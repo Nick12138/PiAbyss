@@ -37,7 +37,16 @@ import { workspaceStorageKey } from "./piabyss-data.js";
 
 const TELEGRAM_CONFIG_FILE = "telegram.json";
 const TELEGRAM_SESSIONS_DIR = "sessions";
+/** Pre-0.52.0 plugin temp dir (owners.json, inbox journals). Kept read-only as
+ *  the legacy fallback for installs still running an older plugin. */
 const TELEGRAM_TMP_DIR = "tmp/telegram";
+/** Plugin temp dir since @llblab/pi-telegram 0.52.0: the lock runtime state
+ *  (state.json, the storage the shipped extension actually uses) and the
+ *  locks-path owners.json moved here, and inbox journals live under
+ *  `sessions/<id>/inbox[.<profile>].json.segments`. The legacy `tmp/telegram`
+ *  remains only as a read-only ownership hint for the plugin itself, so every
+ *  host-side read must try this dir first. */
+const TELEGRAM_PLUGIN_TMP_DIR = "tmp/pi-telegram";
 const TELEGRAM_WORKSPACE_SEGMENT = "workspace/telegram";
 /** Where PiAbyss installs the @llblab/pi-telegram plugin (project scope). */
 const TELEGRAM_PLUGIN_SOURCE = "npm:@llblab/pi-telegram";
@@ -153,45 +162,68 @@ function maskedToken(config: Record<string, unknown>): string | undefined {
  */
 function boundUser(
   config: Record<string, unknown>,
-  inboxDir: string,
+  segmentDirs: string[],
 ): TelegramBoundUser | null | undefined {
   const profiles = isRecord(config.profiles) ? config.profiles : undefined;
   const profile = isRecord(profiles?.default) ? profiles.default : undefined;
   const userId = typeof profile?.allowedUserId === "number" ? profile.allowedUserId : undefined;
   if (userId === undefined) return undefined; // profile not configured yet
-  return { userId, ...findBoundName(userId, inboxDir) };
+  return { userId, ...findBoundName(userId, segmentDirs) };
 }
 
-function findBoundName(userId: number, inboxDir: string): { username?: string; name?: string } {
-  const segmentsDir = join(inboxDir, "inbox.json.segments");
-  let names: string[] = [];
+/** Inbox segment dirs across both plugin temp layouts: the legacy
+ *  `tmp/telegram/inbox.json.segments` and the 0.52.0+ per-session journals
+ *  `tmp/pi-telegram/sessions/<id>/inbox.json.segments`. */
+function boundNameSegmentDirs(agentDir: string): string[] {
+  const dirs = [join(agentDir, TELEGRAM_TMP_DIR, "inbox.json.segments")];
+  const sessionsRoot = join(agentDir, TELEGRAM_PLUGIN_TMP_DIR, "sessions");
   try {
-    names = readdirSync(segmentsDir).filter((name) => name.endsWith(".json"));
+    for (const entry of readdirSync(sessionsRoot, { withFileTypes: true })) {
+      if (entry.isDirectory()) dirs.push(join(sessionsRoot, entry.name, "inbox.json.segments"));
+    }
   } catch {
-    return {};
+    /* no modern sessions dir — pre-0.52 plugin or nothing journaled yet */
   }
-  for (const name of names) {
-    let parsed: unknown;
+  return dirs;
+}
+
+function findBoundName(
+  userId: number,
+  segmentDirs: string[],
+): {
+  username?: string;
+  name?: string;
+} {
+  for (const segmentsDir of segmentDirs) {
+    let names: string[] = [];
     try {
-      parsed = JSON.parse(readFileSync(join(segmentsDir, name), "utf8"));
+      names = readdirSync(segmentsDir).filter((name) => name.endsWith(".json"));
     } catch {
       continue;
     }
-    if (!isRecord(parsed) || !Array.isArray(parsed.upsertedEntries)) continue;
-    for (const entry of parsed.upsertedEntries) {
-      const update = isRecord(entry) && isRecord(entry.update) ? entry.update : undefined;
-      const message = update && isRecord(update.message) ? update.message : undefined;
-      const callback =
-        update && isRecord(update.callback_query) ? update.callback_query : undefined;
-      const from = (message?.from ?? (callback ? callback.from : undefined)) as
-        Record<string, unknown> | undefined;
-      if (isRecord(from) && from.id === userId) {
-        const username = typeof from.username === "string" ? from.username : undefined;
-        const firstName = typeof from.first_name === "string" ? from.first_name : undefined;
-        const lastName = typeof from.last_name === "string" ? from.last_name : undefined;
-        const name = [firstName, lastName].join(" ").trim() || undefined;
-        if (username || name) {
-          return { ...(username ? { username } : {}), ...(name ? { name } : {}) };
+    for (const name of names) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(readFileSync(join(segmentsDir, name), "utf8"));
+      } catch {
+        continue;
+      }
+      if (!isRecord(parsed) || !Array.isArray(parsed.upsertedEntries)) continue;
+      for (const entry of parsed.upsertedEntries) {
+        const update = isRecord(entry) && isRecord(entry.update) ? entry.update : undefined;
+        const message = update && isRecord(update.message) ? update.message : undefined;
+        const callback =
+          update && isRecord(update.callback_query) ? update.callback_query : undefined;
+        const from = (message?.from ?? (callback ? callback.from : undefined)) as
+          Record<string, unknown> | undefined;
+        if (isRecord(from) && from.id === userId) {
+          const username = typeof from.username === "string" ? from.username : undefined;
+          const firstName = typeof from.first_name === "string" ? from.first_name : undefined;
+          const lastName = typeof from.last_name === "string" ? from.last_name : undefined;
+          const name = [firstName, lastName].join(" ").trim() || undefined;
+          if (username || name) {
+            return { ...(username ? { username } : {}), ...(name ? { name } : {}) };
+          }
         }
       }
     }
@@ -351,11 +383,47 @@ export function createTelegramSessionHandlers(
   const configPath = join(agentDir, TELEGRAM_CONFIG_FILE);
   const inboxDir = join(agentDir, TELEGRAM_TMP_DIR);
   const ownersPath = join(inboxDir, TELEGRAM_OWNERS_FILE);
+  /** 0.52.0+ plugin temp dir (runtime state, per-session journals). */
+  const pluginTmpDir = join(agentDir, TELEGRAM_PLUGIN_TMP_DIR);
+  const pluginStatePath = join(pluginTmpDir, "state.json");
+  const pluginOwnersPath = join(pluginTmpDir, TELEGRAM_OWNERS_FILE);
   const sessionsRoot = join(agentDir, TELEGRAM_SESSIONS_DIR);
   const sessionsRootResolved = `${resolve(sessionsRoot)}${process.platform === "win32" ? "\\" : "/"}`;
   const workspacePath = join(agentDir, TELEGRAM_WORKSPACE_SEGMENT);
   /** Sessions dir of the dedicated telegram workspace (scoped scan target). */
   const telegramSessionsDir = join(sessionsRoot, workspaceStorageKey(workspacePath));
+
+  /** Default-profile bridge owner pid across every plugin storage layout,
+   *  newest first:
+   *  - 0.52.0+ state.json mode (what the shipped extension runs): the live
+   *    poller identity is `profiles.default.transport.pid`. A profile without
+   *    a `transport` (or a released lock keeping only `journalPath`) means
+   *    no live poller.
+   *  - 0.52.0+ locks-path mode: `{ version: 2, profiles: { default: { pid } } }`
+   *    in `tmp/pi-telegram/owners.json`.
+   *  - pre-0.52 legacy: `{ default: { pid } }` in `tmp/telegram/owners.json`
+   *    (never written by 0.52.0+ releases). */
+  const readBridgeOwnerPid = async (): Promise<number | null> => {
+    const state = await readJson(pluginStatePath);
+    if (isRecord(state)) {
+      const profiles = isRecord(state.profiles) ? state.profiles : null;
+      const profile = profiles ? profiles[TELEGRAM_DEFAULT_OWNERS_KEY] : null;
+      if (isRecord(profile)) {
+        return isRecord(profile.transport) && typeof profile.transport.pid === "number"
+          ? profile.transport.pid
+          : null;
+      }
+    }
+    const modern = await readJson(pluginOwnersPath);
+    if (isRecord(modern)) {
+      const profiles = isRecord(modern.profiles) ? modern.profiles : null;
+      const entry = profiles ? profiles[TELEGRAM_DEFAULT_OWNERS_KEY] : null;
+      return isRecord(entry) && typeof entry.pid === "number" ? entry.pid : null;
+    }
+    const legacy = await readJson(ownersPath);
+    const entry = isRecord(legacy) ? legacy[TELEGRAM_DEFAULT_OWNERS_KEY] : null;
+    return isRecord(entry) && typeof entry.pid === "number" ? entry.pid : null;
+  };
 
   /** Ensures the telegram workspace dir exists (open-folder target). */
   const ensureTelegramWorkspace = async (): Promise<string> => {
@@ -428,24 +496,21 @@ export function createTelegramSessionHandlers(
     },
 
     /**
-     * Bridge transport state: best-effort read of the plugin's owners.json.
-     * The default profile locks key `default`; an entry whose process is alive
-     * means some Pi instance currently owns polling for the bridge.
+     * Bridge transport state: best-effort read of the plugin's owners.json
+     * (0.52.0+ layout first, legacy layout as fallback). The default profile
+     * locks key `default`; an entry whose process is alive means some Pi
+     * instance currently owns polling for the bridge.
      */
     "telegram.status": async (): Promise<{ result: TelegramBridgeStatus }> => {
-      const raw = await readJson(ownersPath);
-      if (!isRecord(raw)) return { result: { connected: false } };
-      const entry = raw[TELEGRAM_DEFAULT_OWNERS_KEY];
-      if (!isRecord(entry) || typeof entry.pid !== "number") {
-        return { result: { connected: false } };
-      }
+      const ownerPid = await readBridgeOwnerPid();
+      if (ownerPid === null) return { result: { connected: false } };
       const profile = await readDefaultProfile();
       return {
         result: {
-          connected: isProcessAlive(entry.pid),
+          connected: isProcessAlive(ownerPid),
           profile: TELEGRAM_DEFAULT_OWNERS_KEY,
           ...(profile?.botId !== undefined ? { botId: profile.botId } : {}),
-          ownerPid: entry.pid,
+          ownerPid,
         },
       };
     },
@@ -504,7 +569,7 @@ export function createTelegramSessionHandlers(
       const assistant = sanitizeAssistantConfig(config.assistant);
       const voice = sanitizeVoiceConfig(config.voice);
       const threads = sanitizeThreadsConfig(config.threads);
-      const bound = boundUser(config, inboxDir);
+      const bound = boundUser(config, boundNameSegmentDirs(agentDir));
       const workspaceDir = await ensureTelegramWorkspace();
       const pluginScope = await readTelegramPluginScope(agentDir, workspaceDir);
       return {
@@ -562,7 +627,10 @@ export function createTelegramSessionHandlers(
       // entry AND its npm store live inside the workspace's `.pi` dir, so
       // that directory is moved aside across the wipe and restored after.
       await rm(configPath, { force: true });
+      // Both temp layouts: pre-0.52.0 `tmp/telegram` and 0.52.0+
+      // `tmp/pi-telegram` (owners, runtime state, per-session journals).
       await rm(join(agentDir, TELEGRAM_TMP_DIR), { recursive: true, force: true });
+      await rm(join(agentDir, TELEGRAM_PLUGIN_TMP_DIR), { recursive: true, force: true });
       const workspacePiDir = join(workspacePath, ".pi");
       const workspacePiBackup = join(agentDir, "tmp", "telegram-reset-pi-backup");
       await rm(workspacePiBackup, { recursive: true, force: true });

@@ -268,6 +268,47 @@ describe("telegram sessions controller", () => {
       expect(result.threads).toEqual({ automaticCleanup: true });
     });
 
+    it("reads the bound user's display name from the 0.52.0+ per-session journals", async () => {
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
+      writeFileSync(
+        join(agentDir, "telegram.json"),
+        JSON.stringify({
+          profiles: { default: { botToken: "1:A", botId: 7, allowedUserId: 5454570668 } },
+        }),
+        "utf8",
+      );
+      const segmentsDir = join(
+        agentDir,
+        "tmp",
+        "pi-telegram",
+        "sessions",
+        "01a12513-e2a8-7a27-80db-ec79d2a25a7f",
+        "inbox.json.segments",
+      );
+      mkdirSync(segmentsDir, { recursive: true });
+      writeFileSync(
+        join(segmentsDir, "0000000000000001.json"),
+        JSON.stringify({
+          upsertedEntries: [
+            {
+              update: {
+                message: {
+                  from: { id: 5454570668, username: "liu_nick", first_name: "Liu" },
+                },
+              },
+            },
+          ],
+        }),
+        "utf8",
+      );
+      const response = await handlers(agentDir)["telegram.getConfig"]!({} as never);
+      if (!("result" in response)) throw new Error("expected result");
+      const result = response.result as {
+        bound?: { userId: number; username?: string; name?: string };
+      };
+      expect(result.bound).toEqual({ userId: 5454570668, username: "liu_nick", name: "Liu" });
+    });
+
     it("reports the plugin as not installed when no settings configure it", async () => {
       agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
       const response = await handlers(agentDir)["telegram.getConfig"]!({} as never);
@@ -376,6 +417,9 @@ describe("telegram sessions controller", () => {
         "{}",
         "utf8",
       );
+      mkdirSync(join(agentDir, "tmp", "pi-telegram", "sessions", "s1"), { recursive: true });
+      writeFileSync(join(agentDir, "tmp", "pi-telegram", "owners.json"), "{}", "utf8");
+      writeFileSync(join(agentDir, "tmp", "pi-telegram", "state.json"), "{}", "utf8");
       mkdirSync(join(agentDir, "workspace", "telegram"), { recursive: true });
       writeFileSync(join(agentDir, "workspace", "telegram", "note.txt"), "x", "utf8");
       const tgSession = writeSession(
@@ -395,6 +439,7 @@ describe("telegram sessions controller", () => {
       if (!("result" in response)) throw new Error("expected result");
       expect(existsSync(join(agentDir, "telegram.json"))).toBe(false);
       expect(existsSync(join(agentDir, "tmp", "telegram"))).toBe(false);
+      expect(existsSync(join(agentDir, "tmp", "pi-telegram"))).toBe(false);
       expect(existsSync(join(agentDir, "workspace", "telegram"))).toBe(false);
       expect(existsSync(tgSession)).toBe(false);
       expect(existsSync(plainSession)).toBe(true);
@@ -593,6 +638,116 @@ describe("telegram sessions controller", () => {
         botId: 7,
         ownerPid: process.pid,
       });
+    });
+
+    it("reports connected from the 0.52.0+ owners layout (tmp/pi-telegram)", async () => {
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
+      writeFileSync(
+        join(agentDir, "telegram.json"),
+        JSON.stringify({
+          profiles: { default: { botToken: "1:A", botId: 7, botUsername: "bot" } },
+        }),
+        "utf8",
+      );
+      mkdirSync(join(agentDir, "tmp", "pi-telegram"), { recursive: true });
+      writeFileSync(
+        join(agentDir, "tmp", "pi-telegram", "owners.json"),
+        JSON.stringify({
+          version: 2,
+          profiles: {
+            default: { pid: process.pid, cwd: agentDir, instanceId: `${process.pid}:1` },
+          },
+        }),
+        "utf8",
+      );
+      expect(await call(agentDir, "telegram.status")).toEqual({
+        connected: true,
+        profile: "default",
+        botId: 7,
+        ownerPid: process.pid,
+      });
+    });
+
+    it("reports connected from the 0.52.0+ state.json transport (what the extension runs)", async () => {
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
+      writeFileSync(
+        join(agentDir, "telegram.json"),
+        JSON.stringify({
+          profiles: { default: { botToken: "1:A", botId: 7, botUsername: "bot" } },
+        }),
+        "utf8",
+      );
+      mkdirSync(join(agentDir, "tmp", "pi-telegram"), { recursive: true });
+      writeFileSync(
+        join(agentDir, "tmp", "pi-telegram", "state.json"),
+        JSON.stringify({
+          version: 2,
+          profiles: {
+            default: {
+              transport: {
+                pid: process.pid,
+                cwd: agentDir,
+                instanceId: `${process.pid}:1`,
+                heartbeatMs: Date.now(),
+              },
+            },
+          },
+        }),
+        "utf8",
+      );
+      expect(await call(agentDir, "telegram.status")).toEqual({
+        connected: true,
+        profile: "default",
+        botId: 7,
+        ownerPid: process.pid,
+      });
+    });
+
+    it("treats a state.json profile without transport (released lock) as disconnected", async () => {
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
+      mkdirSync(join(agentDir, "tmp", "pi-telegram"), { recursive: true });
+      writeFileSync(
+        join(agentDir, "tmp", "pi-telegram", "state.json"),
+        JSON.stringify({ version: 2, profiles: { default: { workspace: {} } } }),
+        "utf8",
+      );
+      expect(await call(agentDir, "telegram.status")).toEqual({ connected: false });
+    });
+
+    it("prefers the 0.52.0+ owners file over a stale legacy owners file", async () => {
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
+      mkdirSync(join(agentDir, "tmp", "telegram"), { recursive: true });
+      writeFileSync(
+        join(agentDir, "tmp", "telegram", "owners.json"),
+        JSON.stringify({ default: { pid: process.pid } }),
+        "utf8",
+      );
+      // Modern file parses but names no live poller for the default profile.
+      mkdirSync(join(agentDir, "tmp", "pi-telegram"), { recursive: true });
+      writeFileSync(
+        join(agentDir, "tmp", "pi-telegram", "owners.json"),
+        JSON.stringify({ version: 2, profiles: {} }),
+        "utf8",
+      );
+      expect(await call(agentDir, "telegram.status")).toEqual({ connected: false });
+    });
+
+    it("treats a journal-only modern lock entry (no pid) as disconnected", async () => {
+      agentDir = mkdtempSync(join(tmpdir(), "piabyss-tg-sess-"));
+      mkdirSync(join(agentDir, "tmp", "pi-telegram"), { recursive: true });
+      writeFileSync(
+        join(agentDir, "tmp", "pi-telegram", "owners.json"),
+        JSON.stringify({
+          version: 2,
+          profiles: {
+            default: {
+              journalPath: join(agentDir, "tmp", "pi-telegram", "sessions", "s1", "inbox.json"),
+            },
+          },
+        }),
+        "utf8",
+      );
+      expect(await call(agentDir, "telegram.status")).toEqual({ connected: false });
     });
   });
 });
