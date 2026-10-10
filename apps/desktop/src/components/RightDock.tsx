@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import type { TerminalProfileId } from "@piabyss/protocol";
 import { useAppStore } from "../lib/stores/app-store";
-import { setSidebarPref } from "../lib/sidebar-prefs";
 import { PiMark } from "./PiMark";
 import {
   ExtensionTerminal,
@@ -199,7 +198,6 @@ export function RightDock() {
     });
     if (closesLastTab) {
       setDockOpen(false);
-      setSidebarPref("piabyss.dock.open", false);
     }
   };
 
@@ -335,7 +333,6 @@ export function RightDock() {
         if (request.kind === "toggle") {
           const open = !useAppStore.getState().dockOpen;
           setDockOpen(open);
-          setSidebarPref("piabyss.dock.open", open);
           return;
         }
         const tabId = visibleTabIdsRef.current[request.index];
@@ -343,7 +340,6 @@ export function RightDock() {
         setActiveTab(tabId);
         if (!useAppStore.getState().dockOpen) {
           setDockOpen(true);
-          setSidebarPref("piabyss.dock.open", true);
         }
       }),
     [setDockOpen],
@@ -366,7 +362,6 @@ export function RightDock() {
         createChanges();
         if (!useAppStore.getState().dockOpen) {
           setDockOpen(true);
-          setSidebarPref("piabyss.dock.open", true);
         }
         return true;
       }),
@@ -383,7 +378,6 @@ export function RightDock() {
         setActiveTab(tabId);
         if (!useAppStore.getState().dockOpen) {
           setDockOpen(true);
-          setSidebarPref("piabyss.dock.open", true);
         }
         return true;
       }),
@@ -781,21 +775,21 @@ export function RightDock() {
                   <button
                     type="button"
                     role="menuitem"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay"
-                    onClick={createFiles}
-                  >
-                    <FolderTree size={14} />
-                    {t("dockFiles")}
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
                     disabled={!workspaceCwd}
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay disabled:opacity-40"
                     onClick={createChanges}
                   >
                     <GitCompareArrows size={14} />
                     {t("gitChanges")}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay"
+                    onClick={createFiles}
+                  >
+                    <FolderTree size={14} />
+                    {t("dockFiles")}
                   </button>
                   <button
                     type="button"
@@ -875,15 +869,6 @@ export function RightDock() {
               <div className="flex w-full flex-col gap-1">
                 <button
                   type="button"
-                  aria-label={t("dockOpenNamed", { label: t("dockFiles") })}
-                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
-                  onClick={createFiles}
-                >
-                  <FolderTree size={17} className="shrink-0" />
-                  <span>{t("dockFiles")}</span>
-                </button>
-                <button
-                  type="button"
                   aria-label={t("dockOpenNamed", { label: t("gitChanges") })}
                   title={workspaceCwd ? undefined : t("dockWorkspaceForChanges")}
                   disabled={!workspaceCwd}
@@ -892,6 +877,15 @@ export function RightDock() {
                 >
                   <GitCompareArrows size={17} className="shrink-0" />
                   <span>{t("gitChanges")}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={t("dockOpenNamed", { label: t("dockFiles") })}
+                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
+                  onClick={createFiles}
+                >
+                  <FolderTree size={17} className="shrink-0" />
+                  <span>{t("dockFiles")}</span>
                 </button>
                 <button
                   type="button"

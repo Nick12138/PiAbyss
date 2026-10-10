@@ -460,7 +460,8 @@ export type AppState = EpochState & {
   /** Subagent run currently shown in the chat area instead of the main
    * session (top-bar "主会话 / 子代理" view). Null = main session view. */
   activeSubagentNodeId: string | null;
-  /** Right dock visibility. Auto-opens for extension panels; manual toggles persist. */
+  /** Right dock visibility. Auto-opens for extension panels; always starts
+   * collapsed when the app launches. */
   dockOpen: boolean;
   /** Dock state to restore when the auto-opened panel closes (null = user took over). */
   dockRestoreOnPanelClose: boolean | null;
@@ -733,7 +734,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeSubagentNodeId: null,
   subagentsStatus: EMPTY_SUBAGENTS_STATUS,
   shellJobs: [],
-  dockOpen: sidebarPref("piabyss.dock.open"),
+  dockOpen: false,
   dockRestoreOnPanelClose: null,
   sidebarCollapsed: sidebarPref("piabyss.sidebar.collapsed"),
   sidebarAutoCollapsed: sidebarPref("piabyss.sidebar.autoCollapsed"),

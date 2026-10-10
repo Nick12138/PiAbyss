@@ -290,9 +290,9 @@ describe("RightDock pages", () => {
     render(<RightDock />);
 
     await openAddMenu(user);
-    await waitFor(() => expect(screen.getByRole("menuitem", { name: "Files" })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole("menuitem", { name: "Changes" })).toHaveFocus());
     await user.keyboard("{ArrowDown}");
-    expect(screen.getByRole("menuitem", { name: "Changes" })).toHaveFocus();
+    expect(screen.getByRole("menuitem", { name: "Files" })).toHaveFocus();
     await user.keyboard("{ArrowDown}");
     expect(screen.getByRole("menuitem", { name: "Terminal" })).toHaveFocus();
     await user.keyboard("{Escape}");
