@@ -1033,11 +1033,12 @@ export function MemoPage() {
       data-testid="memo-page"
       data-memo-page
     >
-      {/* 工具栏：归类页签 | 搜索与筛选。窄屏分两行（页签行 + 筛选行），宽屏合为一行。
-          页面标题由 AppTopBar 承载。 */}
-      <div className="flex shrink-0 flex-col gap-2 border-b border-border px-4 py-2 @2xl:h-12 @2xl:flex-row @2xl:items-center @2xl:gap-3 @2xl:py-0">
+      {/* 工具栏：归类页签 | 搜索与筛选。窄屏分两行（页签行 + 筛选行），@min-[813px] 起
+          合为一行；页签行保持 overflow-x-auto，即使一行内放不下也只会在页签区内
+          滚动，不会压到筛选框上。页面标题由 AppTopBar 承载。 */}
+      <div className="flex shrink-0 flex-col gap-2 border-b border-border px-4 py-2 @min-[813px]:h-12 @min-[813px]:flex-row @min-[813px]:items-center @min-[813px]:gap-3 @min-[813px]:py-0">
         <div
-          className="flex min-w-0 items-center gap-1 overflow-x-auto @2xl:overflow-visible"
+          className="flex min-w-0 items-center gap-1 overflow-x-auto scrollbar-subtle"
           role="tablist"
           aria-label={t("memoTitle")}
         >
@@ -1062,14 +1063,14 @@ export function MemoPage() {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2 @2xl:ml-auto">
+        <div className="flex items-center gap-2 @min-[813px]:ml-auto">
           <input
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t("memoSearchPlaceholder")}
             aria-label={t("memoSearchPlaceholder")}
-            className="h-8 min-w-0 flex-1 rounded-md border border-border bg-transparent px-2.5 text-[12px] outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-focus @2xl:w-44 @2xl:flex-none"
+            className="h-8 min-w-0 flex-1 rounded-md border border-border bg-transparent px-2.5 text-[12px] outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-focus @min-[813px]:w-44 @min-[813px]:flex-none"
           />
           <SelectFilter
             value={tagFilter ?? ""}
@@ -2030,7 +2031,7 @@ function WorkspaceCombobox({
   );
 }
 
-/** 工具栏的可清空下拉筛选（值为空 = 不过滤）。窄屏允许收缩，宽屏固定宽度。 */
+/** 工具栏的可清空下拉筛选（值为空 = 不过滤）。窄屏允许收缩，@min-[813px] 单行时固定宽度。 */
 function SelectFilter({
   value,
   options,
@@ -2050,7 +2051,7 @@ function SelectFilter({
       value={value}
       onChange={onChange}
       ariaLabel={ariaLabel}
-      className="w-28 min-w-0 @2xl:w-36 @2xl:shrink-0"
+      className="w-28 min-w-0 @min-[813px]:w-36 @min-[813px]:shrink-0"
       options={[{ value: "", label: `${placeholder}: ${t("memoFilterAll")}` }, ...options]}
     />
   );

@@ -75,6 +75,12 @@
     "PiAbyss HarmonyOS Sans SC", "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono:
     "JetBrains Mono Variable", "PiAbyss HarmonyOS Sans SC", ui-monospace, "Cascadia Code", monospace;
+  /* 容器查询断点（px，不受 :root 的 14px 根字号影响）。
+     默认 --container-2xl: 42rem 在 14px 根字号下只有 588px，比
+     use-container-wide.ts 的 672px 阈值提前生效：备忘录/周期计划在
+     588–672px 之间 CSS 已切换宽屏双栏、JS 仍按窄屏处理，工具栏页签
+     也会与筛选框重叠。这里覆盖为 672px，让 CSS 与 JS 严格同断点。 */
+  --container-2xl: 672px;
 }
 
 :root {
