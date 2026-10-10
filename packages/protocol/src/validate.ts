@@ -1192,6 +1192,7 @@ export function validateRequestParams<M extends HostMethod>(
           "steeringMode",
           "followUpMode",
           "defaultTools",
+          "httpProxy",
         ],
       ) &&
         (params.defaultProvider === undefined || isNonEmptyString(params.defaultProvider)) &&
@@ -1213,7 +1214,8 @@ export function validateRequestParams<M extends HostMethod>(
           ["all", "one-at-a-time"].includes(String(params.followUpMode))) &&
         (params.defaultTools === undefined ||
           (Array.isArray(params.defaultTools) &&
-            params.defaultTools.every((name) => typeof name === "string")))
+            params.defaultTools.every((name) => typeof name === "string"))) &&
+        (params.httpProxy === undefined || typeof params.httpProxy === "string")
         ? ok(params)
         : fail("invalid piSettings.patch params", { method });
     case "model.setThinkingLevel":

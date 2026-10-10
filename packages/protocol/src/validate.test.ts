@@ -1419,6 +1419,8 @@ describe("ModelConfigHealth degraded state", () => {
       { defaultProjectTrust: "never" },
       { steeringMode: "all" },
       { followUpMode: "one-at-a-time" },
+      { httpProxy: "http://127.0.0.1:7890" },
+      { httpProxy: "" },
     ]) {
       expect(validateRequestParams("piSettings.patch", params)).toMatchObject({ ok: true });
     }
@@ -1431,6 +1433,7 @@ describe("ModelConfigHealth degraded state", () => {
       { retryMaxRetries: -1 },
       { retryMaxRetries: 21 },
       { steeringMode: "sometimes" },
+      { httpProxy: 7890 },
       { unknownField: true },
     ]) {
       expect(validateRequestParams("piSettings.patch", params)).toMatchObject({ ok: false });
