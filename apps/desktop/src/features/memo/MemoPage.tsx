@@ -1439,11 +1439,11 @@ function MemoDetail({
             type="button"
             onClick={onComplete}
             title={t("memoActionDone")}
+            aria-label={t("memoActionDone")}
             data-testid="memo-detail-complete"
-            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-foreground transition-colors hover:bg-surface-overlay"
+            className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-foreground transition-colors hover:bg-surface-overlay"
           >
             <CheckCircle2 size={14} className="shrink-0" />
-            <span>{t("memoActionDone")}</span>
           </button>
         )}
         <button
