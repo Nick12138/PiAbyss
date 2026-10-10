@@ -132,7 +132,7 @@ fn sanitize_accent_color(value: &str) -> Option<String> {
         return Some(value.to_string());
     }
     let lowered = value.trim().to_ascii_lowercase();
-    is_canonical_accent_color(&lowered).then(|| lowered)
+    is_canonical_accent_color(&lowered).then_some(lowered)
 }
 
 fn default_conversation_line_height() -> f32 {
