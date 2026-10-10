@@ -49,6 +49,7 @@ import {
   type SessionTerminalStates,
 } from "../session-terminal-states";
 import { setSidebarPref, sidebarPref } from "../sidebar-prefs";
+import { suppressLayoutMotion } from "../layout-motion";
 import type { AppUpdate } from "../updater";
 import {
   draftKeyForTarget,
@@ -473,6 +474,16 @@ export type AppState = EpochState & {
    *  manual toggle/set clears this. Persisted beside the collapse pref so
    *  the collapse reason survives reloads. */
   sidebarAutoCollapsed: boolean;
+  /** Ephemeral (never persisted): true when the LATEST window-width auto
+   *  action (collapse or expand, whichever direction) must commit WITHOUT
+   *  the sidebar's width animation. The auto rule fires both during a
+   *  live window-edge drag (animated: the squeeze/spring-back is feedback
+   *  for the user's own pull) and at moments never experienced as a resize
+   *  — window open, tray re-show, snap, restore, mount — where an animated
+   *  commit read as the sidebar moving on its own ("growing from half
+   *  width on every open"). Every auto action sets this to `!animated`;
+   *  every manual action clears it (manual toggles always animate). */
+  sidebarAutoInstant: boolean;
   packageProgress: PackageProgressState | null;
   packageRetry: PackageRetryState | null;
   thinkingLevels: string[];
@@ -578,11 +589,18 @@ export type AppState = EpochState & {
   toggleSidebar: () => void;
   /** Window-width auto rule: collapse the sidebar and remember the collapse
    *  was automatic (no-op when already collapsed — a manual collapse must
-   *  never be re-labeled as automatic). */
-  autoCollapseSidebar: () => void;
+   *  never be re-labeled as automatic). `animated` keeps the 200ms width
+   *  animation for the squeeze — default false so non-drag triggers (window
+   *  open, tray re-show, snap, mount) collapse instantly; the Sidebar
+   *  watcher passes true only for collapses decided mid-drag. */
+  autoCollapseSidebar: (options?: { animated?: boolean }) => void;
   /** Window-width auto rule: expand the sidebar, but only if the current
-   *  collapse was automatic (no-op for a manual collapse). */
-  autoExpandSidebar: () => void;
+   *  collapse was automatic (no-op for a manual collapse). `animated`
+   *  restores the 200ms width animation for the expand — default false so
+   *  call sites that fire outside an interactive resize (window open, tray
+   *  re-show) render instantly and never read as the sidebar "growing";
+   *  the Sidebar watcher passes true only for expands decided mid-drag. */
+  autoExpandSidebar: (options?: { animated?: boolean }) => void;
   setExtensionStatus: (key: string | undefined, text: string | null) => void;
   setExtensionMessageRender: (
     entryId: string,
@@ -719,6 +737,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   dockRestoreOnPanelClose: null,
   sidebarCollapsed: sidebarPref("piabyss.sidebar.collapsed"),
   sidebarAutoCollapsed: sidebarPref("piabyss.sidebar.autoCollapsed"),
+  sidebarAutoInstant: false,
   packageProgress: null,
   packageRetry: null,
   thinkingLevels: [],
@@ -1315,7 +1334,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // always overrides the window-width rule's memory.
     setSidebarPref("piabyss.sidebar.collapsed", open);
     setSidebarPref("piabyss.sidebar.autoCollapsed", false);
-    set({ sidebarCollapsed: open, sidebarAutoCollapsed: false });
+    set({ sidebarCollapsed: open, sidebarAutoCollapsed: false, sidebarAutoInstant: false });
   },
   toggleSidebar: () =>
     set((state) => {
@@ -1323,23 +1342,36 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Manual toggle takes over from the auto rule on either direction.
       setSidebarPref("piabyss.sidebar.collapsed", next);
       setSidebarPref("piabyss.sidebar.autoCollapsed", false);
-      return { sidebarCollapsed: next, sidebarAutoCollapsed: false };
+      return { sidebarCollapsed: next, sidebarAutoCollapsed: false, sidebarAutoInstant: false };
     }),
-  autoCollapseSidebar: () => {
+  autoCollapseSidebar: (options) => {
     // Never re-label an existing (manual) collapse as automatic — that flag
     // is the only thing that authorizes a later auto-expand.
     if (get().sidebarCollapsed) return;
+    const animated = options?.animated ?? false;
     setSidebarPref("piabyss.sidebar.collapsed", true);
     setSidebarPref("piabyss.sidebar.autoCollapsed", true);
-    set({ sidebarCollapsed: true, sidebarAutoCollapsed: true });
+    // Instant unless decided mid-drag: same animation gating as the expand.
+    // An instant commit also suppresses transition-animated layout sharing
+    // the freed width (the settings nav) so it settles in the same frame
+    // instead of sliding after the sidebar.
+    if (!animated) suppressLayoutMotion();
+    set({ sidebarCollapsed: true, sidebarAutoCollapsed: true, sidebarAutoInstant: !animated });
   },
-  autoExpandSidebar: () => {
+  autoExpandSidebar: (options) => {
     // Only an auto-collapse auto-expands; a manual collapse is final until
     // the user (or an explicit reveal/toggle) opens the sidebar again.
     if (!get().sidebarAutoCollapsed) return;
+    const animated = options?.animated ?? false;
     setSidebarPref("piabyss.sidebar.collapsed", false);
     setSidebarPref("piabyss.sidebar.autoCollapsed", false);
-    set({ sidebarCollapsed: false, sidebarAutoCollapsed: false });
+    // The animation-skip marker: set (instant) unless the caller explicitly
+    // asked for the animated spring-back. Instant commits also suppress
+    // transition-animated layout sharing the freed width (the settings
+    // nav) so it settles in the same frame instead of sliding after the
+    // sidebar.
+    if (!animated) suppressLayoutMotion();
+    set({ sidebarCollapsed: false, sidebarAutoCollapsed: false, sidebarAutoInstant: !animated });
   },
   setExtensionStatus: (key, text) =>
     set((state) => {

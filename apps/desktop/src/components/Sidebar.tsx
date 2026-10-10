@@ -7,7 +7,7 @@ import {
   Settings,
   Sparkles,
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAppStore, type NavPage } from "../lib/stores/app-store";
 import { SessionList } from "../features/sessions/SessionList";
 import { useT } from "../lib/i18n/use-t";
@@ -17,6 +17,7 @@ import { useTelegramWorkspaceActive } from "../features/telegram/telegram-view-s
 import { PiMark } from "./PiMark";
 import { sidebarPref, setSidebarPref } from "../lib/sidebar-prefs";
 import { evaluateSidebarAutoAction, sidebarFloorWindowWidth } from "../lib/sidebar-auto-collapse";
+import { classifyDragResize } from "../lib/layout-motion";
 import { subscribeSessionReveal } from "../lib/session-reveal";
 import { useSchedulePluginEnabled } from "../features/schedule/schedule-plugin-gate";
 import { usePluginEnabled } from "../features/plugin-library/plugin-gate";
@@ -42,6 +43,17 @@ const MAX_SIDEBAR_WIDTH = 420;
  *  `setSizeConstraints` replaces the whole constraint set, so the height must
  *  be re-asserted on every update to avoid dropping it. */
 const NATIVE_WINDOW_MIN_HEIGHT = 600;
+
+/** The auto-collapse/expand rule must settle BEFORE the first paint: a
+ *  window that opens with a persisted auto-collapse (last session ended
+ *  narrow) but is now wide auto-expands, and a paint-then-expand cycle shows
+ *  the sidebar sliding open from 0 on every launch. useLayoutEffect commits
+ *  the store update into the very first painted frame, so the sidebar just
+ *  appears in its settled state. Under SSR (vitest node env renders this
+ *  component with renderToStaticMarkup) `window` is undefined and React
+ *  warns about useLayoutEffect during server rendering — fall back to a
+ *  plain effect there; the SSR tests never exercise the rule anyway. */
+const useAutoRuleEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 /** True when running inside the Tauri desktop shell (so the native window
  *  constraint APIs are available). Mirrors the check used in App.tsx. */
@@ -142,7 +154,7 @@ export function SidebarLayout({
   const pixieEnabled = usePluginEnabled(PIXIE_PLUGIN_ID);
   const hostReady = Boolean(useAppStore((s) => s.host?.hostInstanceId));
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
-  const sidebarAutoCollapsed = useAppStore((s) => s.sidebarAutoCollapsed);
+  const sidebarAutoInstant = useAppStore((s) => s.sidebarAutoInstant);
   const telegramViewActive = useTelegramWorkspaceActive();
   const [sessionsCollapsed, setSessionsCollapsed] = useState(() =>
     sidebarPref("piabyss.sidebar.sessionsCollapsed"),
@@ -262,23 +274,45 @@ export function SidebarLayout({
   //
   //   • shrinking to the expanded floor (conversation min + sidebar +
   //     insets — the window width at which the column would hit its
-  //     minimum) → the sidebar auto-collapses. The collapse skips the
-  //     width animation (see the aside below) and commits inside the
-  //     same resize event, so the column never visibly dips below its
-  //     minimum and the drag continues into the freed space.
+  //     minimum) → the sidebar auto-collapses, committed inside the same
+  //     resize event so the drag continues into the freed space.
   //   • widening past the floor + hysteresis → an auto-collapsed sidebar
-  //     springs back open (animated). A manually collapsed sidebar
-  //     never does — the store's `sidebarAutoCollapsed` flag is what
-  //     authorizes the expand, and every manual toggle clears it.
+  //     springs back open.
+  //
+  //   Both directions animate ONLY when decided mid-drag (resize-burst
+  //   classification below): the squeeze and the spring-back are feedback
+  //   for the user's own pull. Everywhere else — window open, tray
+  //   re-show, snap, restore, mount — they commit instantly, because an
+  //   animated commit there read as the sidebar "growing" from half
+  //   width on every open. A manually collapsed sidebar never expands
+  //   — the store's `sidebarAutoCollapsed` flag is what authorizes the
+  //   expand, and every manual toggle clears it.
   //
   // The first evaluation covers a window restored smaller than the expanded
   // floor; the effect also re-runs when the floor inputs move without a
   // window resize (conversation min-width setting, theme-driven insets),
   // which — with the window width unchanged — can only ever auto-EXPAND
   // (e.g. lowering the conversation minimum while auto-collapsed).
+  //
+  // The effect runs in useAutoRuleEffect (a layout effect in the shell): the
+  // mount evaluation must settle the sidebar BEFORE the first paint. The
+  // window geometry is not persisted across launches (the app always
+  // reopens at its default size), while the sidebar's auto-collapsed flag
+  // IS persisted — so a session that ended narrow reopens wide and the
+  // mount evaluation auto-expands. Doing that after paint animated the
+  // sidebar open from 0 on every launch; pre-paint it simply renders
+  // expanded, no flash, no slide.
+  const lastResizeEventAtRef = useRef(0);
+  const resizeBurstCountRef = useRef(0);
+
   const lastAutoWindowWidthRef = useRef<number | null>(null);
-  const evaluateSidebarAuto = useCallback((): void => {
+  const evaluateSidebarAuto = useCallback((options?: { animated?: boolean }): void => {
     if (typeof window === "undefined") return;
+    // A zero/absurd viewport is never a real window width — it can only be a
+    // transient report while the window is being torn down or its surface
+    // has not been sized yet. Never fold the sidebar over it (and never
+    // record it as the previous width for edge-trigger purposes).
+    if (window.innerWidth <= 0) return;
     const state = useAppStore.getState();
     const contentFrameEl = document.querySelector("[data-content-frame]");
     const frameStyle = contentFrameEl ? getComputedStyle(contentFrameEl) : null;
@@ -298,14 +332,38 @@ export function SidebarLayout({
       previousWindowWidth: lastAutoWindowWidthRef.current,
     });
     lastAutoWindowWidthRef.current = window.innerWidth;
-    if (action === "collapse") state.autoCollapseSidebar();
-    else if (action === "expand") state.autoExpandSidebar();
+    // Both directions share the same animation gating: only an action
+    // decided mid-drag keeps the 200ms width transition (the squeeze /
+    // spring-back is feedback for the user's own pull); everything the
+    // user experiences as "the window just appeared" (launch, tray
+    // re-show, snap, restore, mount) commits instantly so the sidebar
+    // never reads as moving on its own.
+    if (action === "collapse") state.autoCollapseSidebar({ animated: options?.animated ?? false });
+    else if (action === "expand") state.autoExpandSidebar({ animated: options?.animated ?? false });
   }, []);
 
-  useEffect(() => {
+  useAutoRuleEffect(() => {
+    // Mount / floor-input evaluations settle instantly, before paint.
     evaluateSidebarAuto();
-    window.addEventListener("resize", evaluateSidebarAuto);
-    return () => window.removeEventListener("resize", evaluateSidebarAuto);
+    const onWindowResize = (): void => {
+      // A live drag delivers a stream of resize events (one per frame);
+      // one-off programmatic resizes — window shown from tray, snap,
+      // restore, DPI change — arrive as at most a couple of lone events.
+      // classifyDragResize (lib/layout-motion.ts) tells the two apart: only
+      // a burst counts as a drag, so the animated squeeze / spring-back
+      // survives for real pulls while every "window just opened" path
+      // stays instant.
+      const { at, count, isDrag } = classifyDragResize(
+        lastResizeEventAtRef.current,
+        resizeBurstCountRef.current,
+        performance.now(),
+      );
+      lastResizeEventAtRef.current = at;
+      resizeBurstCountRef.current = count;
+      evaluateSidebarAuto({ animated: isDrag });
+    };
+    window.addEventListener("resize", onWindowResize);
+    return () => window.removeEventListener("resize", onWindowResize);
   }, [conversationMinWidth, theme, themeFamily, evaluateSidebarAuto]);
 
   function finishResize(target: HTMLDivElement, pointerId: number) {
@@ -351,12 +409,15 @@ export function SidebarLayout({
 
   return (
     <Fragment>
-      {/* Auto-collapses skip the 200ms width animation: the collapse fires
-          inside the window's resize event and committing it in the same
-          frame keeps the conversation column from ever painting below its
-          minimum mid-drag (and avoids a transient double-layout while the
-          user is still dragging). Manual toggles and auto-expands keep the
-          animation. */}
+      {/* Width-animation gating for the window-width auto rule: the
+          `sidebarAutoInstant` marker (set by every auto action, see
+          app-store) makes non-drag triggers — window open, tray re-show,
+          snap, restore, mount — commit instantly so the sidebar simply
+          appears at its settled width; an animated commit there read as
+          the sidebar "growing" from half width every time the window was
+          opened. Auto actions decided mid-drag (the squeeze and the
+          spring-back are feedback for the user's own pull) and all manual
+          toggles keep the 200ms animation. */}
       <aside
         style={{
           width: sidebarCollapsed ? 0 : sidebarWidth,
@@ -364,9 +425,7 @@ export function SidebarLayout({
         data-sidebar
         data-sidebar-collapsed={sidebarCollapsed ? "true" : "false"}
         className={`sidebar-edge-shadow relative flex shrink-0 flex-col overflow-hidden bg-sidebar ${
-          resizing || (sidebarCollapsed && sidebarAutoCollapsed)
-            ? "transition-none"
-            : "transition-[width] duration-200 ease-out"
+          resizing || sidebarAutoInstant ? "transition-none" : "transition-[width] duration-200 ease-out"
         }`}
       >
         {!sidebarCollapsed && (

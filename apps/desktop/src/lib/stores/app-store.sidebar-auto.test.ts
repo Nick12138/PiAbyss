@@ -37,6 +37,37 @@ describe("app-store sidebar auto-collapse bookkeeping", () => {
     const state = useAppStore.getState();
     expect(state.sidebarCollapsed).toBe(true);
     expect(state.sidebarAutoCollapsed).toBe(true);
+    // Default (no options) flags the commit as instant — used by every
+    // non-drag trigger path (window open, tray re-show, snap, mount).
+    expect(state.sidebarAutoInstant).toBe(true);
+    expect(storage.get(COLLAPSED_KEY)).toBe("1");
+    expect(storage.get(AUTO_KEY)).toBe("1");
+  });
+
+  it("autoCollapseSidebar clears a stale animation-skip marker", () => {
+    // After an instant auto action the marker sits stale in the store; the
+    // next auto-collapse with animated: true must reset it so the squeeze
+    // keeps its animation.
+    arrange(false, false);
+    useAppStore.setState({ sidebarAutoInstant: true });
+
+    useAppStore.getState().autoCollapseSidebar({ animated: true });
+
+    expect(useAppStore.getState().sidebarCollapsed).toBe(true);
+    expect(useAppStore.getState().sidebarAutoInstant).toBe(false);
+  });
+
+  it("autoCollapseSidebar({ animated: true }) keeps the squeeze width animation (mid-drag path)", () => {
+    arrange(false, false);
+
+    useAppStore.getState().autoCollapseSidebar({ animated: true });
+
+    const state = useAppStore.getState();
+    expect(state.sidebarCollapsed).toBe(true);
+    expect(state.sidebarAutoCollapsed).toBe(true);
+    // No animation-skip marker: the Sidebar watcher only passes animated:
+    // true for collapses decided during a live window-edge drag.
+    expect(state.sidebarAutoInstant).toBe(false);
     expect(storage.get(COLLAPSED_KEY)).toBe("1");
     expect(storage.get(AUTO_KEY)).toBe("1");
   });
@@ -62,6 +93,25 @@ describe("app-store sidebar auto-collapse bookkeeping", () => {
     const state = useAppStore.getState();
     expect(state.sidebarCollapsed).toBe(false);
     expect(state.sidebarAutoCollapsed).toBe(false);
+    // Default (no options) flags the expand commit so the sidebar skips
+    // the width animation — used by every non-drag trigger path (window
+    // open, tray re-show, mount).
+    expect(state.sidebarAutoInstant).toBe(true);
+    expect(storage.get(COLLAPSED_KEY)).toBe("0");
+    expect(storage.get(AUTO_KEY)).toBe("0");
+  });
+
+  it("autoExpandSidebar({ animated: true }) keeps the width animation (mid-drag path)", () => {
+    arrange(true, true);
+
+    useAppStore.getState().autoExpandSidebar({ animated: true });
+
+    const state = useAppStore.getState();
+    expect(state.sidebarCollapsed).toBe(false);
+    expect(state.sidebarAutoCollapsed).toBe(false);
+    // No animation-skip marker: the Sidebar watcher only passes animated:
+    // true for expands decided during a live window-edge drag.
+    expect(state.sidebarAutoInstant).toBe(false);
     expect(storage.get(COLLAPSED_KEY)).toBe("0");
     expect(storage.get(AUTO_KEY)).toBe("0");
   });
@@ -83,6 +133,9 @@ describe("app-store sidebar auto-collapse bookkeeping", () => {
     useAppStore.getState().toggleSidebar();
     expect(useAppStore.getState().sidebarCollapsed).toBe(false);
     expect(useAppStore.getState().sidebarAutoCollapsed).toBe(false);
+    // Manual actions keep the width animation: the animation-skip marker
+    // is cleared with the auto flag.
+    expect(useAppStore.getState().sidebarAutoInstant).toBe(false);
     expect(storage.get(AUTO_KEY)).toBe("0");
 
     // Manual collapse: also a user decision, never auto-expandable.
@@ -90,6 +143,7 @@ describe("app-store sidebar auto-collapse bookkeeping", () => {
     useAppStore.getState().toggleSidebar();
     expect(useAppStore.getState().sidebarCollapsed).toBe(true);
     expect(useAppStore.getState().sidebarAutoCollapsed).toBe(false);
+    expect(useAppStore.getState().sidebarAutoInstant).toBe(false);
     expect(storage.get(AUTO_KEY)).toBe("0");
   });
 
