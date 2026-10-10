@@ -93,7 +93,7 @@ async function emitEveryEvent(runner: ExtensionRunner): Promise<void> {
   await runner.emitContext([]);
   await runner.emitBeforeProviderRequest({ model: "test" });
   await runner.emitBeforeProviderHeaders({} as never);
-  await runner.emitBeforeAgentStart("prompt", undefined, "system", { cwd: "/workspace" });
+  await runner.emitBeforeAgentStart("prompt", undefined, { cwd: "/workspace" });
   await runner.emitResourcesDiscover("/workspace", "startup");
   await runner.emitInput("hello", undefined, "interactive");
 }

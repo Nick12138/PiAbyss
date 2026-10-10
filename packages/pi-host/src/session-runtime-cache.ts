@@ -20,11 +20,12 @@ import {
   finishQueueTransaction,
   observeQueueUpdate,
 } from "./queue-state.js";
-import { buildSessionSnapshot, buildToolSnapshot } from "./session-snapshot.js";
 import {
-  buildSessionTreeCacheEntry,
-  invalidateSessionTreeCache,
-} from "./session-tree-cache.js";
+  buildSessionSnapshot,
+  buildToolSnapshot,
+  noteAgentRunOutcome,
+} from "./session-snapshot.js";
+import { buildSessionTreeCacheEntry, invalidateSessionTreeCache } from "./session-tree-cache.js";
 import type { PiHostServer } from "./server.js";
 import { toolResultNeedsToolsRefresh } from "./tools-refresh.js";
 import type { BackgroundSessionRuntime, WorkspaceGraph } from "./workspace-graph-types.js";
@@ -809,6 +810,7 @@ export class SessionRuntimeCache {
     const runId = this.resolveEventRunId(sourceSession, eventType);
     const serialized = normalizeAgentEvent(event);
     this.observeRuntimeOutcome(sourceSession, eventType, serialized);
+    noteAgentRunOutcome(sourceSession, eventType, serialized);
     this.observeMessageTiming(sourceSession, eventType, event, sessionManager);
     if (isGraphActive && active) {
       server.emitForIdentity(eventIdentity, "agent.event", { runId, event: serialized });

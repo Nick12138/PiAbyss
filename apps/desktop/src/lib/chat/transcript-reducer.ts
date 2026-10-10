@@ -175,6 +175,7 @@ function applyAgentEventToDraft(
       // A new run starts before its first message. Close any prior runtime tail
       // so the previous assistant row cannot be mistaken for the new stream.
       next.messages = settleOpenRuntime(next.messages, eventTime);
+      next.lastRunAborted = false;
       next.isStreaming = true;
       next.isIdle = false;
       break;
@@ -356,6 +357,7 @@ function applyAgentEventToDraft(
 
     case "agent_settled":
       next.messages = settleOpenRuntime(next.messages, eventTime);
+      next.lastRunAborted = ev.aborted === true;
       next.isStreaming = false;
       next.isIdle = true;
       next.isCompacting = false;

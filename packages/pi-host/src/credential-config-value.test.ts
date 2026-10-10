@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, beforeAll } from "vitest";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import {
   clearCredentialCommandCache,
@@ -68,6 +68,16 @@ describe("environment templates", () => {
 });
 
 describe("command values", () => {
+  // On Windows the only discoverable bash may be a WSL VM whose cold boot
+  // exceeds the 10s command timeout under full-suite load. Warm it once with
+  // throwaway cache keys so the stdout assertion below measures echo, not VM boot.
+  beforeAll(() => {
+    if (process.platform !== "win32") return;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (resolveCredentialConfigValue(`!echo warmup-${attempt}`) !== undefined) return;
+    }
+  }, 120_000);
+
   it("classifies a leading bang as a command", () => {
     expect(isCommandConfigValue("!echo hi")).toBe(true);
     expect(isCommandConfigValue("$PIABYSS_CV_A")).toBe(false);

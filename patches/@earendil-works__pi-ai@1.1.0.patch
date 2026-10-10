@@ -1,9 +1,9 @@
 diff --git a/dist/utils/retry.js b/dist/utils/retry.js
-index 65c7c9efd7667445b711fcd43549062ee3eb5ecf..e9d247803ed1c2f2c02c8d292201fe0eee0964be 100644
+index 738a6f0db0ed42d257eefa7a7eb2d355ae784f65..220a43883d2d8d46edbf9d5b184f0f95a94f7f68 100644
 --- a/dist/utils/retry.js
 +++ b/dist/utils/retry.js
-@@ -29,6 +29,11 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
-     "504",
+@@ -37,6 +37,11 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+     "520",
      "524",
      "service.?unavailable",
 +    // Gateway wording like "Service temporarily unavailable. Please try again

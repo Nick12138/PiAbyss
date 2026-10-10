@@ -12,7 +12,7 @@ const reviewedFields = {
   tool_execution_start: ["toolCallId", "toolName", "args"],
   tool_execution_update: ["toolCallId", "toolName", "args", "partialResult"],
   tool_execution_end: ["toolCallId", "toolName", "result", "isError"],
-  agent_settled: [],
+  agent_settled: ["aborted"],
   queue_update: ["steering", "followUp"],
   compaction_start: ["reason"],
   entry_appended: ["entry"],

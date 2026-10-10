@@ -1179,6 +1179,9 @@ export type SessionSnapshot = {
   isIdle: boolean;
   isCompacting: boolean;
   isRetrying: boolean;
+  /** True when the most recent run settled because the user cancelled it
+   *  (SDK `agent_settled.aborted`); cleared when the next run starts. */
+  lastRunAborted?: boolean;
   model?: ModelSummary;
   thinkingLevel: string;
   autoCompactionEnabled: boolean;

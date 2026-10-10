@@ -14,6 +14,32 @@ import { getQueueSnapshot } from "./queue-state.js";
 import { logger } from "./logger.js";
 import type { WorkspaceGraph } from "./workspace-graph-types.js";
 
+/**
+ * PiAbyss addition: remember whether a session's most recent run settled
+ * because it was cancelled, so snapshots can expose the outcome to the
+ * desktop. Backed by the SDK's `agent_settled` `aborted` field
+ * (pi-coding-agent 1.1.0); cleared when the next run starts.
+ */
+const lastRunAbortedBySession = new WeakMap<AgentSession, boolean>();
+
+export function noteAgentRunOutcome(
+  session: AgentSession,
+  eventType: string,
+  event: unknown,
+): void {
+  if (eventType === "agent_start") {
+    lastRunAbortedBySession.delete(session);
+    return;
+  }
+  if (eventType !== "agent_settled") return;
+  const aborted =
+    typeof event === "object" &&
+    event !== null &&
+    (event as { aborted?: unknown }).aborted === true;
+  if (aborted) lastRunAbortedBySession.set(session, true);
+  else lastRunAbortedBySession.delete(session);
+}
+
 const MAX_SESSION_SNAPSHOT_BYTES = 12 * 1024 * 1024;
 const OMITTED_IMAGE_TEXT = "[Image omitted from desktop snapshot: size limit]";
 
@@ -64,18 +90,12 @@ function snapshotBaseByteLength(snapshot: SessionSnapshot): number {
   return jsonByteLength({ ...snapshot, messages: [] });
 }
 
-function snapshotByteLengthFromMemo(
-  baseBytes: number,
-  messageBytes: readonly number[],
-): number {
+function snapshotByteLengthFromMemo(baseBytes: number, messageBytes: readonly number[]): number {
   // The base includes the empty `[]` placeholder; replace it with real items.
   return baseBytes - 2 + jsonArrayByteLengthFromMemo(messageBytes);
 }
 
-function entriesByteLengthFromMemo(
-  entryBytes: readonly number[],
-  leafId: string | null,
-): number {
+function entriesByteLengthFromMemo(entryBytes: readonly number[], leafId: string | null): number {
   return (
     Buffer.byteLength(',"entries":', "utf8") +
     jsonArrayByteLengthFromMemo(entryBytes) +
@@ -147,6 +167,7 @@ function minimalSessionSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
     isIdle: snapshot.isIdle,
     isCompacting: snapshot.isCompacting,
     isRetrying: snapshot.isRetrying,
+    ...(snapshot.lastRunAborted ? { lastRunAborted: true } : {}),
     thinkingLevel: snapshot.thinkingLevel,
     autoCompactionEnabled: snapshot.autoCompactionEnabled,
     autoRetryEnabled: snapshot.autoRetryEnabled,
@@ -260,6 +281,7 @@ export function buildSessionSnapshot(args: {
     isIdle: session.isIdle,
     isCompacting: session.isCompacting,
     isRetrying: session.isRetrying,
+    ...(lastRunAbortedBySession.get(session) ? { lastRunAborted: true } : {}),
     model: modelSummary,
     thinkingLevel: String(session.thinkingLevel),
     autoCompactionEnabled: session.autoCompactionEnabled,

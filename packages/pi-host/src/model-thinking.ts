@@ -32,6 +32,8 @@ const OPENAI_REASONING_FALLBACK_MAP = {
 } as const;
 
 function applyToModel(model: RegisteredModel | RuntimeModel, providerApi?: string) {
+  // Image/classifier entries in models.json carry no reasoning controls.
+  if (!("reasoning" in model)) return model;
   if (!model.reasoning || model.thinkingLevelMap !== undefined) return model;
   const detected = detectModelThinking(model.id);
   if (detected.source === "profile" && detected.thinkingLevelMap) {

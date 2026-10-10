@@ -1281,6 +1281,7 @@ export function isSessionSnapshot(value: unknown): boolean {
         "entries",
         "leafId",
         "extensionMessageRenders",
+        "lastRunAborted",
       ],
     )
   ) {
@@ -1295,6 +1296,7 @@ export function isSessionSnapshot(value: unknown): boolean {
     isString(value.cwd) &&
     isSafeRevision(value.revision) &&
     [value.isStreaming, value.isIdle, value.isCompacting, value.isRetrying].every(isBoolean) &&
+    (value.lastRunAborted === undefined || isBoolean(value.lastRunAborted)) &&
     (value.model === undefined || isModelSummary(value.model)) &&
     (value.contextUsage === undefined ||
       (isPlainObject(value.contextUsage) &&

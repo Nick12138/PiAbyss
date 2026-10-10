@@ -21,7 +21,9 @@
  */
 import { execSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { ProviderEnv } from "@earendil-works/pi-ai";
+import { BUNDLED_BASH_ENV, BUNDLED_GIT_ENV } from "./internal-runtime.js";
 
 const ENV_VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const ENV_VAR_NAME_PREFIX = /^[A-Za-z_][A-Za-z0-9_]*/;
@@ -33,8 +35,7 @@ const commandCache = new Map<string, string | undefined>();
 type TemplatePart = { type: "literal"; value: string } | { type: "env"; name: string };
 
 type ConfigReference =
-  | { type: "command"; config: string }
-  | { type: "template"; parts: TemplatePart[] };
+  { type: "command"; config: string } | { type: "template"; parts: TemplatePart[] };
 
 function appendLiteral(parts: TemplatePart[], value: string): void {
   if (!value) return;
@@ -123,7 +124,8 @@ function bashShellConfig(shell: string): ShellConfig {
     : { shell, args: ["-c"], commandViaStdin: false };
 }
 
-/** Windows-only bash discovery, mirroring the SDK's resolution order. */
+/** Windows-only bash discovery, mirroring the patched SDK's resolution order:
+ *  Git Bash known locations, then bash on PATH, then the bundled fallback. */
 function findWindowsBash(): ShellConfig | undefined {
   const candidates: string[] = [];
   const programFiles = process.env.ProgramFiles;
@@ -150,18 +152,37 @@ function findWindowsBash(): ShellConfig | undefined {
 }
 
 /** `executed` distinguishes "shell ran and failed" from "no shell available". */
+/** Bundled bash advertised by the desktop launcher, mirroring the patched
+ * SDK's shell resolution: PIABYSS_BUNDLED_BASH, or the bash.exe shipped inside
+ * bundled Portable Git. Keeps credential commands off a slow WSL cold start in
+ * the packaged app. */
+function bundledBash(): ShellConfig | undefined {
+  const explicit = process.env[BUNDLED_BASH_ENV];
+  if (explicit && existsSync(explicit)) return bashShellConfig(explicit);
+  const git = process.env[BUNDLED_GIT_ENV];
+  if (!git) return undefined;
+  const cmdDir = dirname(git);
+  if (cmdDir.split(/[\\/]/).pop()?.toLowerCase() !== "cmd") return undefined;
+  const candidate = join(dirname(cmdDir), "bin", "bash.exe");
+  return existsSync(candidate) ? bashShellConfig(candidate) : undefined;
+}
+
 function executeWithBash(command: string): { executed: boolean; value: string | undefined } {
-  const config = findWindowsBash();
+  const config = findWindowsBash() ?? bundledBash();
   if (!config) return { executed: false, value: undefined };
   try {
-    const result = spawnSync(config.shell, config.commandViaStdin ? config.args : [...config.args, command], {
-      encoding: "utf-8",
-      input: config.commandViaStdin ? command : undefined,
-      timeout: COMMAND_TIMEOUT_MS,
-      stdio: [config.commandViaStdin ? "pipe" : "ignore", "pipe", "ignore"],
-      shell: false,
-      windowsHide: true,
-    });
+    const result = spawnSync(
+      config.shell,
+      config.commandViaStdin ? config.args : [...config.args, command],
+      {
+        encoding: "utf-8",
+        input: config.commandViaStdin ? command : undefined,
+        timeout: COMMAND_TIMEOUT_MS,
+        stdio: [config.commandViaStdin ? "pipe" : "ignore", "pipe", "ignore"],
+        shell: false,
+        windowsHide: true,
+      },
+    );
     if (result.error) {
       const code = (result.error as NodeJS.ErrnoException).code;
       return { executed: code !== "ENOENT", value: undefined };

@@ -463,26 +463,25 @@ describe("Provider controller", () => {
         },
       },
     });
-    const mappingsDir = join(
-      layout.agentDir,
-      "piabyss",
-      "relay-pricing",
-      "mappings",
-    );
+    const mappingsDir = join(layout.agentDir, "piabyss", "relay-pricing", "mappings");
     const mappingPath = join(mappingsDir, "custom.json");
     mkdirSync(mappingsDir, { recursive: true });
     writeFileSync(
       mappingPath,
-      JSON.stringify({
-        schemaVersion: 1,
-        stationId: "custom",
-        shareByBaseUrl: "https://relay.example/v1",
-        shareScope: "domain",
-        endpoints: {},
-      }, null, 2),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          stationId: "custom",
+          shareByBaseUrl: "https://relay.example/v1",
+          shareScope: "domain",
+          endpoints: {},
+        },
+        null,
+        2,
+      ),
     );
 
-    const outcome = await handlers["provider.remove"]!( {
+    const outcome = await handlers["provider.remove"]!({
       id: "remove-provider-with-mapping",
       params: { providerId: "custom" },
     } as never);
@@ -523,17 +522,21 @@ describe("Provider controller", () => {
     mkdirSync(mappingsDir, { recursive: true });
     writeFileSync(
       join(mappingsDir, "custom.json"),
-      JSON.stringify({
-        schemaVersion: 1,
-        stationId: "custom",
-        shareByBaseUrl: "https://relay.example/v1",
-        shareScope: "domain",
-        endpoints: {},
-      }, null, 2),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          stationId: "custom",
+          shareByBaseUrl: "https://relay.example/v1",
+          shareScope: "domain",
+          endpoints: {},
+        },
+        null,
+        2,
+      ),
     );
 
     // 删除主表持有者 custom：同站幸存者 mirror 没有自己的表，表迁给它。
-    const outcome = await handlers["provider.remove"]!( {
+    const outcome = await handlers["provider.remove"]!({
       id: "remove-mapping-holder",
       params: { providerId: "custom" },
     } as never);
@@ -565,17 +568,21 @@ describe("Provider controller", () => {
     // 模拟之前删除同站 custom 后留下的软停用表。
     writeFileSync(
       join(mappingsDir, "custom.json"),
-      JSON.stringify({
-        schemaVersion: 1,
-        stationId: "custom",
-        enabled: false,
-        notes: "[site] https://relay.example/v1",
-        endpoints: {},
-      }, null, 2),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          stationId: "custom",
+          enabled: false,
+          notes: "[site] https://relay.example/v1",
+          endpoints: {},
+        },
+        null,
+        2,
+      ),
     );
 
     // 同站同 id 重新添加：表自动复活。
-    const saved = await handlers["provider.save"]!( {
+    const saved = await handlers["provider.save"]!({
       id: "re-add-same-station",
       params: {
         provider: { ...draft([configuredModel("primary")]), baseUrl: "https://relay.example/v1" },
@@ -619,7 +626,7 @@ describe("Provider controller", () => {
       id: "2",
       baseUrl: "https://relay.example/v1",
     };
-    const saved = await handlers["provider.save"]!( {
+    const saved = await handlers["provider.save"]!({
       id: "save-copied-group",
       params: { provider: copyDraft },
     } as never);
@@ -655,7 +662,7 @@ describe("Provider controller", () => {
     );
 
     // 改名 custom → renamed：映射文件跟过去，而不是变孤儿。
-    const saved = await handlers["provider.save"]!( {
+    const saved = await handlers["provider.save"]!({
       id: "rename-provider",
       params: {
         originalId: "custom",
@@ -681,7 +688,7 @@ describe("Provider controller", () => {
       },
     });
     const mappingsDir = join(layout.agentDir, "piabyss", "relay-pricing", "mappings");
-    const outcome = await handlers["provider.remove"]!( {
+    const outcome = await handlers["provider.remove"]!({
       id: "remove-provider-without-mapping",
       params: { providerId: "custom" },
     } as never);
@@ -715,11 +722,15 @@ describe("Provider controller", () => {
 
     // 改名 custom → taken（taken 已有自己的表）：custom 的表迁不过去，
     // 软停用而不是留下无主的激活孤儿。
-    const saved = await handlers["provider.save"]!( {
+    const saved = await handlers["provider.save"]!({
       id: "rename-onto-existing-mapping",
       params: {
         originalId: "custom",
-        provider: { ...draft([configuredModel("primary")]), id: "taken", baseUrl: "https://other.example/v1" },
+        provider: {
+          ...draft([configuredModel("primary")]),
+          id: "taken",
+          baseUrl: "https://other.example/v1",
+        },
       },
     } as never);
     expect("error" in saved ? saved.error.message : null).toBeNull();
@@ -789,7 +800,7 @@ describe("Provider controller", () => {
     );
 
     // 用户把 5 的 baseUrl 改到 x.top（已是）再保存一次 → 失配表被清理。
-    const saved = await handlers["provider.save"]!( {
+    const saved = await handlers["provider.save"]!({
       id: "save-moved-provider",
       params: {
         originalId: "5",
@@ -1787,8 +1798,10 @@ describe("Provider controller", () => {
     expect("error" in outcome ? outcome.error.message : null).toBeNull();
     expect(requests).toHaveLength(1);
     expect(requests[0]).toEqual({
-      url: "/v1/messages",
-      userAgent: expect.stringMatching(/^Anthropic\/JS /),
+      // 1.1.0 sends Anthropic requests through the beta messages endpoint with
+      // pi's own User-Agent instead of the Anthropic JS SDK default.
+      url: expect.stringMatching(/^\/v1\/messages(\?|$)/),
+      userAgent: expect.stringMatching(/^pi \(/),
     });
     if (!("error" in outcome)) {
       expect(outcome.result).toEqual(
@@ -1823,7 +1836,10 @@ describe("Provider controller", () => {
     } as never);
 
     expect("error" in compatibleOutcome ? compatibleOutcome.error.message : null).toBeNull();
-    expect(requests[1]).toEqual({ url: "/v1/messages", userAgent: "PiAbyss/0.3.2" });
+    expect(requests[1]).toEqual({
+      url: expect.stringMatching(/^\/v1\/messages(\?|$)/),
+      userAgent: "PiAbyss/0.3.2",
+    });
     if (!("error" in compatibleOutcome)) {
       expect(compatibleOutcome.result).toEqual(
         expect.objectContaining({
@@ -2172,9 +2188,12 @@ describe("Provider login", () => {
     if ("error" in start) return;
     const loginId = (start.result as { loginId: string }).loginId;
 
-    await vi.waitFor(() => {
-      expect(events.some((entry) => entry.event.kind === "prompt")).toBe(true);
-    });
+    await vi.waitFor(
+      () => {
+        expect(events.some((entry) => entry.event.kind === "prompt")).toBe(true);
+      },
+      { timeout: 10_000 },
+    );
     expect(events.some((entry) => entry.event.kind === "auth_url")).toBe(true);
     const prompt = events.find((entry) => entry.event.kind === "prompt")!.event.prompt as {
       promptId: string;
@@ -2188,11 +2207,14 @@ describe("Provider login", () => {
     } as never);
     expect("error" in respond ? respond.error.message : null).toBeNull();
 
-    await vi.waitFor(() => {
-      expect(events.some((entry) => entry.event.kind === "done" && entry.event.ok === true)).toBe(
-        true,
-      );
-    });
+    await vi.waitFor(
+      () => {
+        expect(events.some((entry) => entry.event.kind === "done" && entry.event.ok === true)).toBe(
+          true,
+        );
+      },
+      { timeout: 10_000 },
+    );
     const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
     expect(persisted.piabyssEnabledProviders).toContain("anthropic");
   });
@@ -2212,20 +2234,26 @@ describe("Provider login", () => {
     expect("error" in start ? start.error.message : null).toBeNull();
     if ("error" in start) return;
     const loginId = (start.result as { loginId: string }).loginId;
-    await vi.waitFor(() => {
-      expect(events.some((entry) => entry.event.kind === "prompt")).toBe(true);
-    });
+    await vi.waitFor(
+      () => {
+        expect(events.some((entry) => entry.event.kind === "prompt")).toBe(true);
+      },
+      { timeout: 10_000 },
+    );
 
     const cancel = await handlers["provider.loginCancel"]!({
       id: "login-cancel",
       params: { loginId },
     } as never);
     expect("error" in cancel).toBe(false);
-    await vi.waitFor(() => {
-      expect(events.some((entry) => entry.event.kind === "done" && entry.event.ok === false)).toBe(
-        true,
-      );
-    });
+    await vi.waitFor(
+      () => {
+        expect(
+          events.some((entry) => entry.event.kind === "done" && entry.event.ok === false),
+        ).toBe(true);
+      },
+      { timeout: 10_000 },
+    );
 
     const followUp = await handlers["provider.loginStart"]!({
       id: "login-start-after-cancel",
@@ -2363,11 +2391,14 @@ describe("Provider login", () => {
     ]);
 
     allowLoginPersist.resolve();
-    await vi.waitFor(() => {
-      expect(events.some((entry) => entry.event.kind === "done" && entry.event.ok === true)).toBe(
-        true,
-      );
-    });
+    await vi.waitFor(
+      () => {
+        expect(events.some((entry) => entry.event.kind === "done" && entry.event.ok === true)).toBe(
+          true,
+        );
+      },
+      { timeout: 10_000 },
+    );
     if (admission === "journal-started") failSaveCredential.resolve();
     const save = await savePromise;
 

@@ -11,7 +11,7 @@
  * real xterm.js instance, whose replies come back through the same input
  * path — no synthesized responses needed.
  */
-import type { Terminal } from "@earendil-works/pi-tui";
+import type { ProgramStatus, Terminal } from "@earendil-works/pi-tui";
 
 const VIRTUAL_TERMINAL_DEFAULT_COLS = 100;
 const VIRTUAL_TERMINAL_DEFAULT_ROWS = 32;
@@ -95,6 +95,10 @@ export class VirtualTerminal implements Terminal {
   }
 
   setProgress(_active: boolean): void {}
+
+  /** OSC 7501 targets external terminal dashboards; the desktop renders its own
+   *  run state, so the virtual terminal never forwards program status. */
+  setProgramStatus(_status: ProgramStatus): void {}
 
   /** Inject keyboard/paste data (or terminal query replies) from the frontend. */
   input(data: string): void {
