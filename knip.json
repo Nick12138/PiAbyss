@@ -14,7 +14,7 @@
       "project": ["scripts/**/*.mjs"]
     },
     "apps/desktop": {
-      "entry": ["src/**/*.test.{ts,tsx}"],
+      "entry": ["src/**/*.test.{ts,tsx}", "src/widget.tsx"],
       "project": ["src/**/*.{css,ts,tsx}", "*.config.ts"]
     },
     "packages/protocol": {

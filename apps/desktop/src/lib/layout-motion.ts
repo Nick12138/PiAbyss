@@ -24,7 +24,7 @@ import { create } from "zustand";
 /** How long a programmatic layout change suppresses transition animations.
  *  Long enough for the change to commit and paint at its settled size;
  *  interactive changes afterwards animate again immediately. */
-export const LAYOUT_MOTION_SUPPRESS_MS = 400;
+const LAYOUT_MOTION_SUPPRESS_MS = 400;
 
 /** Resize-burst classification: a live window-edge drag delivers resize
  *  events back-to-back (one per frame), while programmatic resizes arrive

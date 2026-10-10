@@ -10,7 +10,7 @@
  * memo-agent 的 openMemoWithAgentById，不经备忘录页直达会话页。）
  */
 
-export type MemoRevealRequest = {
+type MemoRevealRequest = {
   noteId: string;
 };
 
