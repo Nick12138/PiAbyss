@@ -163,6 +163,8 @@ export const en = {
   appearanceAccentOption: "Accent color {value}",
   appearanceAccentPickerTitle: "Custom accent color",
   appearanceAccentPaletteLabel: "Color palette",
+  appearanceAccentHueLabel: "Hue",
+  appearanceAccentToneLabel: "Saturation and brightness",
   appearanceAccentHexLabel: "Hex color",
   appearanceAccentApply: "Apply",
   appearanceAccentInvalidHex: "Enter a hex color as #RRGGBB.",

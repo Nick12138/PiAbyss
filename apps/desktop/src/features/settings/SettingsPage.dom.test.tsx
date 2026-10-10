@@ -328,13 +328,19 @@ describe("SettingsPage navigation guard", () => {
       expect(useAppStore.getState().desktopSettings?.accentColor).toBe("#123456"),
     );
     expect(custom.getAttribute("data-state")).toBe("active");
+    // Applying via Enter (or the Apply button) closes the popover and returns
+    // focus to the trigger.
+    expect(screen.queryByRole("dialog", { name: "Custom accent color" })).toBeNull();
+    expect(custom).toHaveFocus();
 
     // Swatches inside the popover apply immediately and keep it open.
-    await user.click(within(picker).getByRole("button", { name: "Accent color #0EA5E9" }));
+    await user.click(custom);
+    const reopened = await screen.findByRole("dialog", { name: "Custom accent color" });
+    await user.click(within(reopened).getByRole("button", { name: "Accent color #0EA5E9" }));
     await waitFor(() =>
       expect(useAppStore.getState().desktopSettings?.accentColor).toBe("#0ea5e9"),
     );
-    expect(within(picker).getByLabelText("Hex color")).toHaveValue("#0ea5e9");
+    expect(within(reopened).getByLabelText("Hex color")).toHaveValue("#0ea5e9");
 
     // Escape closes the popover and returns focus to the trigger.
     await user.keyboard("{Escape}");
@@ -348,6 +354,42 @@ describe("SettingsPage navigation guard", () => {
     );
     expect(document.documentElement.style.getPropertyValue("--color-accent")).toBe("");
     expect(themeDefault).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("persists accent colors picked with the circular wheel", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage initialSection="appearance" />);
+
+    await user.click(screen.getByRole("button", { name: "Custom" }));
+    const picker = await screen.findByRole("dialog", { name: "Custom accent color" });
+
+    const hue = within(picker).getByRole("slider", { name: "Hue" });
+    const tone = within(picker).getByRole("slider", { name: "Saturation and brightness" });
+    const initialHue = Number(hue.getAttribute("aria-valuenow"));
+    expect(initialHue).toBeGreaterThanOrEqual(0);
+
+    // Arrow keys nudge hue and commit immediately.
+    await user.type(hue, "{ArrowRight}");
+    await waitFor(() =>
+      expect(useAppStore.getState().desktopSettings?.accentColor).toMatch(/^#[0-9a-f]{6}$/),
+    );
+    expect(Number(hue.getAttribute("aria-valuenow"))).toBe(initialHue + 2);
+
+    // Shift multiplies the step size.
+    await user.type(hue, "{Shift>}{ArrowRight}{/Shift}");
+    await waitFor(() =>
+      expect(Number(hue.getAttribute("aria-valuenow"))).toBe(initialHue + 2 + 15),
+    );
+
+    // The tone handle adjusts saturation/brightness in fine steps.
+    const initialTone = Number(tone.getAttribute("aria-valuenow"));
+    await user.type(tone, "{ArrowUp}");
+    await waitFor(() => expect(Number(tone.getAttribute("aria-valuenow"))).toBe(initialTone + 2));
+
+    // The committed choice is applied to the accent CSS variables right away.
+    expect(document.documentElement.style.getPropertyValue("--color-accent")).toBe(
+      useAppStore.getState().desktopSettings?.accentColor,
+    );
   });
 
   it("switches sections directly when the Providers form is clean", async () => {

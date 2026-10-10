@@ -4,9 +4,11 @@ import { createPortal } from "react-dom";
 import type {
   DesktopInterfaceDensity,
   DesktopInterfaceFont,
+  DesktopSettings,
   DesktopThemeFamily,
 } from "@piabyss/protocol";
 import { Minus, Pipette, Plus } from "lucide-react";
+import { AccentColorWheel } from "./AccentColorWheel";
 import { Select } from "../../components/Select";
 import {
   ACCENT_COLOR_PICKER_PALETTE,
@@ -119,38 +121,79 @@ function ColorModePreview({ mode }: { mode: "light" | "dark" | "system" }) {
   );
 }
 
-const ACCENT_PICKER_PANEL_WIDTH = 240;
+const ACCENT_PICKER_PANEL_WIDTH = 192;
 const ACCENT_PICKER_VIEWPORT_MARGIN = 8;
 const ACCENT_PICKER_TRIGGER_GAP = 6;
+const ACCENT_PICKER_PANEL_HEIGHT_FALLBACK = 320;
 
 /** Custom accent color entry: a pipette swatch that opens an in-app popover
- *  (rounded floating surface) with an extended palette and a hex input. The
- *  native <input type="color"> dialog is intentionally not used — its OS
- *  chrome cannot follow the app's rounded design language. */
+ *  (rounded floating surface) with a circular color wheel, an extended
+ *  palette, and a hex input. The native <input type="color"> dialog is
+ *  intentionally not used — its OS chrome cannot follow the app's rounded
+ *  design language. */
 function AccentCustomColorPicker({
   value,
   active,
+  fallback,
   onApply,
 }: {
   /** Current canonical accent, or null when the theme default applies. */
   value: string | null;
   /** True when the current accent is a non-preset (custom) color. */
   active: boolean;
+  /** Color the wheel starts from when the theme default is active. */
+  fallback: string;
   onApply: (hex: string) => void;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const [previewHex, setPreviewHexState] = useState<string | null>(null);
   const [hexDraft, setHexDraft] = useState(value ?? "");
   const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const previewHexRef = useRef<string | null>(null);
+  // Color shown while a wheel drag is in flight — falls back to the applied
+  // value, then to the theme default so the wheel starts somewhere sensible.
+  const effectiveHex = previewHex ?? value ?? fallback;
   const resolvedDraft = resolveAccentColor(hexDraft);
   const panelId = "accent-color-picker-panel";
 
-  // Keep the draft in sync with the applied value (palette clicks, resets).
+  function setPreview(hex: string | null) {
+    previewHexRef.current = hex;
+    setPreviewHexState(hex);
+  }
+
+  // Keep the draft in sync with the shown color (palette clicks, resets,
+  // and live wheel drags).
   useEffect(() => {
-    setHexDraft(value ?? "");
-  }, [value]);
+    setHexDraft(effectiveHex);
+  }, [effectiveHex]);
+
+  function closePopover() {
+    // A wheel drag that was never committed (Escape, outside click, scroll)
+    // is rolled back by re-applying the persisted settings.
+    if (previewHexRef.current !== null) {
+      setPreview(null);
+      applyAppearancePreferences(useAppStore.getState().desktopSettings);
+    }
+    setOpen(false);
+  }
+
+  function handleWheelChange(hex: string, phase: "drag" | "commit") {
+    if (phase === "drag") {
+      // Live preview only: the accent CSS variables update in place and the
+      // choice is persisted once the pointer is released.
+      setPreview(hex);
+      const settings = useAppStore.getState().desktopSettings;
+      applyAppearancePreferences(
+        settings ? { ...settings, accentColor: hex } : ({ accentColor: hex } as DesktopSettings),
+      );
+      return;
+    }
+    setPreview(null);
+    onApply(hex);
+  }
 
   // Dismiss like the app's other popovers: outside pointer-down, Escape
   // (returning focus to the trigger), and any scroll or resize.
@@ -159,14 +202,14 @@ function AccentCustomColorPicker({
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node;
       if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) return;
-      setOpen(false);
+      closePopover();
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      setOpen(false);
+      closePopover();
       triggerRef.current?.focus();
     };
-    const close = () => setOpen(false);
+    const close = () => closePopover();
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
     window.addEventListener("scroll", close, true);
@@ -177,6 +220,7 @@ function AccentCustomColorPicker({
       window.removeEventListener("scroll", close, true);
       window.removeEventListener("resize", close);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- closePopover reads live state via refs
   }, [open]);
 
   // Float the rounded popover below the trigger, or above it when the space
@@ -199,7 +243,7 @@ function AccentCustomColorPicker({
         ),
       );
       const below = rect.bottom + ACCENT_PICKER_TRIGGER_GAP;
-      const panelHeight = panelRef.current?.offsetHeight ?? 224;
+      const panelHeight = panelRef.current?.offsetHeight ?? ACCENT_PICKER_PANEL_HEIGHT_FALLBACK;
       if (window.innerHeight - below >= panelHeight + ACCENT_PICKER_VIEWPORT_MARGIN) {
         setPanelStyle({ left, top: below, width });
       } else {
@@ -227,7 +271,7 @@ function AccentCustomColorPicker({
       ref={triggerRef}
       type="button"
       data-ui="accent-color-custom"
-      data-state={active ? "active" : "inactive"}
+      data-state={active || previewHex !== null ? "active" : "inactive"}
       title={t("appearanceAccentCustom")}
       aria-label={t("appearanceAccentCustom")}
       aria-haspopup="dialog"
@@ -242,12 +286,15 @@ function AccentCustomColorPicker({
     >
       <span
         className="absolute inset-0"
-        style={{ backgroundColor: active && value ? value : "var(--color-surface-overlay)" }}
+        style={{
+          backgroundColor:
+            previewHex ?? (active && value ? value : "var(--color-surface-overlay)"),
+        }}
         aria-hidden="true"
       />
       <Pipette
         size={11}
-        className={`relative ${active ? "text-accent-foreground" : "text-muted"}`}
+        className={`relative ${active || previewHex ? "text-accent-foreground" : "text-muted"}`}
         aria-hidden="true"
       />
     </button>
@@ -264,17 +311,27 @@ function AccentCustomColorPicker({
         className="theme-floating-surface fixed z-50 overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl"
         style={panelStyle}
       >
-        <div className="flex min-h-9 items-center gap-2 border-b border-border px-3 py-2">
+        <div className="flex min-h-8 items-center gap-2 border-b border-border px-3 py-1.5">
           <Pipette size={13} className="shrink-0 text-muted" aria-hidden="true" />
           <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
             {t("appearanceAccentPickerTitle")}
           </span>
-          {value && (
-            <span className="shrink-0 font-mono text-[10px] uppercase text-muted">{value}</span>
+          {effectiveHex && (
+            <span className="shrink-0 font-mono text-[10px] uppercase text-muted">
+              {effectiveHex}
+            </span>
           )}
         </div>
+        <div className="px-3 pt-3 pb-2">
+          <AccentColorWheel
+            value={effectiveHex}
+            hueLabel={t("appearanceAccentHueLabel")}
+            toneLabel={t("appearanceAccentToneLabel")}
+            onChange={handleWheelChange}
+          />
+        </div>
         <div
-          className="grid grid-cols-8 gap-1.5 p-3"
+          className="grid grid-cols-8 gap-1 px-3 pb-2"
           role="group"
           aria-label={t("appearanceAccentPaletteLabel")}
         >
@@ -282,13 +339,13 @@ function AccentCustomColorPicker({
             <button
               key={color}
               type="button"
-              aria-pressed={value === color}
+              aria-pressed={effectiveHex === color}
               title={t("appearanceAccentOption", { value: color.toUpperCase() })}
               aria-label={t("appearanceAccentOption", { value: color.toUpperCase() })}
               data-ui="accent-color-picker-swatch"
-              data-state={value === color ? "active" : "inactive"}
-              className={`h-5 w-5 rounded-md border transition-[border-color,box-shadow,outline-color] hover:border-border-strong ${
-                value === color
+              data-state={effectiveHex === color ? "active" : "inactive"}
+              className={`h-4 w-4 rounded-md border transition-[border-color,box-shadow,outline-color] hover:border-border-strong ${
+                effectiveHex === color
                   ? "border-focus outline outline-2 outline-offset-1 outline-focus"
                   : "border-border"
               }`}
@@ -297,9 +354,9 @@ function AccentCustomColorPicker({
             />
           ))}
         </div>
-        <div className="flex items-center gap-2 border-t border-border px-3 py-2.5">
+        <div className="flex items-center gap-2 border-t border-border px-3 py-2">
           <span
-            className="h-5 w-5 shrink-0 rounded-md border border-border"
+            className="h-4 w-4 shrink-0 rounded-md border border-border"
             style={{ backgroundColor: resolvedDraft ?? "var(--color-surface-overlay)" }}
             aria-hidden="true"
           />
@@ -308,27 +365,35 @@ function AccentCustomColorPicker({
             spellCheck={false}
             maxLength={7}
             value={hexDraft}
+            data-interface-height-auto="true"
             aria-label={t("appearanceAccentHexLabel")}
             placeholder="#RRGGBB"
-            className="h-7 min-w-0 flex-1 rounded-md border border-border bg-surface px-2 font-mono text-xs text-foreground outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-focus"
+            className="h-6 min-w-0 flex-1 rounded-md border border-border bg-surface px-2 font-mono text-xs text-foreground outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-focus"
             onChange={(event) => setHexDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.key !== "Enter" || !resolvedDraft) return;
               event.preventDefault();
               onApply(resolvedDraft);
+              closePopover();
+              triggerRef.current?.focus();
             }}
           />
           <button
             type="button"
             disabled={!resolvedDraft}
-            className="h-7 shrink-0 rounded-md border border-border px-2 text-xs text-foreground transition-colors hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
-            onClick={() => resolvedDraft && onApply(resolvedDraft)}
+            className="h-6 shrink-0 rounded-md border border-border px-1.5 text-xs text-foreground transition-colors hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={() => {
+              if (!resolvedDraft) return;
+              onApply(resolvedDraft);
+              closePopover();
+              triggerRef.current?.focus();
+            }}
           >
             {t("appearanceAccentApply")}
           </button>
         </div>
         {hexDraft !== "" && !resolvedDraft && (
-          <p className="border-t border-border px-3 py-2 text-[10px] leading-relaxed text-danger">
+          <p className="border-t border-border px-3 py-1.5 text-[10px] leading-relaxed text-danger">
             {t("appearanceAccentInvalidHex")}
           </p>
         )}
@@ -585,6 +650,7 @@ export function AppearanceSettings() {
                   <AccentCustomColorPicker
                     value={accentColor}
                     active={isCustomAccent}
+                    fallback={defaultAccentPreview}
                     onApply={(hex) => void patchDesktop({ accentColor: hex })}
                   />
                 </div>

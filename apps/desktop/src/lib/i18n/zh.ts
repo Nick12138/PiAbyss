@@ -155,6 +155,8 @@ export const zh: Record<MessageKey, string> = {
   appearanceAccentOption: "强调色 {value}",
   appearanceAccentPickerTitle: "自定义强调色",
   appearanceAccentPaletteLabel: "调色板",
+  appearanceAccentHueLabel: "色相",
+  appearanceAccentToneLabel: "饱和度与明度",
   appearanceAccentHexLabel: "十六进制颜色",
   appearanceAccentApply: "应用",
   appearanceAccentInvalidHex: "请输入 #RRGGBB 格式的颜色值。",
