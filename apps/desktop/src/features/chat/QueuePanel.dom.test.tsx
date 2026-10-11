@@ -254,7 +254,8 @@ describe("QueuePanel Run Now", () => {
 
     expect(screen.getByText("review this")).toBeVisible();
     expect(screen.queryByText(/piabyss-attachments/)).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Edit" }));
+    // Steering renders first, so the follow-up's Edit button is the second.
+    await user.click(screen.getAllByRole("button", { name: "Edit" })[1]!);
     const editor = screen.getByRole("textbox", { name: "Edit queued message" });
     await user.clear(editor);
     await user.type(editor, "review carefully");
@@ -266,30 +267,29 @@ describe("QueuePanel Run Now", () => {
     expect(queued.followUp[0]).toContain("brief.pdf");
   });
 
-  it("offers Send Now on steering items only while the session is idle", async () => {
+  it("offers Send Now on steering items even while the session is running", async () => {
     const request = vi.spyOn(hostClient, "request").mockResolvedValue({
       ok: true,
-      result: { queue: { revision: 8, steering: ["steer"], followUp: ["later"] } },
+      result: {
+        started: true,
+        runId: RUN_ID,
+        settled: true,
+        queueRestored: true,
+        partialFailure: false,
+        queue: { revision: 8, steering: [], followUp: ["later"] },
+      },
     } as never);
     const user = userEvent.setup();
     render(<QueuePanel />);
 
-    // Busy session (default fixture): steering items have no Send Now button.
-    expect(screen.queryByRole("button", { name: "Send this message now" })).toBeNull();
+    // Busy session (default fixture): the steering item still offers Send Now
+    // with the interrupting label — the Host settles the run before sending.
+    const sendButton = screen.getByRole("button", {
+      name: "Interrupt the current run and send this message",
+    });
+    expect(sendButton).toBeInTheDocument();
 
-    cleanup();
-    const idle = session(SESSION_A, ["later"]);
-    idle.isIdle = true;
-    useAppStore.getState().applySessionSnapshot(idle);
-    render(<QueuePanel />);
-
-    // Idle session: steering item gains Send Now, follow-up keeps Run Now.
-    expect(screen.getByRole("button", { name: "Send this message now" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Interrupt current run and run this now" }),
-    ).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Send this message now" }));
+    await user.click(sendButton);
     await waitFor(() => expect(request).toHaveBeenCalledOnce());
     expect(request).toHaveBeenCalledWith(
       "agent.runNow",
@@ -301,6 +301,48 @@ describe("QueuePanel Run Now", () => {
         expectedSessionRevision: 3,
       },
       { expectedRevision: 7, steeringIndex: 0 },
+    );
+
+    // Idle session: same button, idle-flavoured label.
+    cleanup();
+    const idle = session(SESSION_A, ["later"]);
+    idle.isIdle = true;
+    useAppStore.getState().applySessionSnapshot(idle);
+    render(<QueuePanel />);
+
+    expect(screen.getByRole("button", { name: "Send this message now" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Interrupt current run and run this now" }),
+    ).toBeInTheDocument();
+  });
+
+  it("edits a steering item through a revisioned setQueue transaction", async () => {
+    const request = vi.spyOn(hostClient, "request").mockResolvedValue({
+      ok: true,
+      result: { queue: { revision: 8, steering: ["steer edited"], followUp: ["later"] } },
+    } as never);
+    const user = userEvent.setup();
+    render(<QueuePanel />);
+
+    // Edit buttons render in queue order: index 0 is the steering item.
+    const editButtons = screen.getAllByRole("button", { name: "Edit" });
+    await user.click(editButtons[0]!);
+    const editor = screen.getByRole("textbox", { name: "Edit queued message" });
+    await user.clear(editor);
+    await user.type(editor, "steer edited");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledOnce());
+    expect(request).toHaveBeenCalledWith(
+      "agent.setQueue",
+      {
+        expectedHostInstanceId: HOST_ID,
+        expectedWorkspaceId: WORKSPACE_ID,
+        expectedWorkspaceRevision: 1,
+        expectedSessionId: SESSION_A,
+        expectedSessionRevision: 3,
+      },
+      { expectedRevision: 7, steering: ["steer edited"], followUp: ["run this", "later"] },
     );
   });
 });

@@ -20,7 +20,9 @@ import {
 /**
  * Waiting queue above the composer. Backed by the SDK queue (visible to the
  * CLI too); reorder/edit/delete use revisioned agent.setQueue transactions.
- * "Run now" is one Host-owned interrupt/start/restore transaction.
+ * "Run now" is one Host-owned interrupt/start/restore transaction — for both
+ * queue kinds the Host settles the active run first, then sends the item as a
+ * fresh turn, so Run Now is offered even while the session is running.
  */
 
 /** Transient conditions worth a short retry — e.g. the operation lock of an
@@ -67,6 +69,7 @@ export function QueuePanel() {
   const [collapsed, setCollapsed] = useState(false);
   const [busyOp, setBusyOp] = useState(false);
   const [editing, setEditing] = useState<{
+    kind: "steering" | "followUp";
     index: number;
     text: string;
     original: string;
@@ -144,6 +147,74 @@ export function QueuePanel() {
   const itemButton =
     "flex size-6 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-30";
 
+  /** Persist the in-flight edit with a revisioned agent.setQueue transaction,
+   * preserving managed attachment reference blocks. An emptied text keeps the
+   * original item (same contract the follow-up editor always had). */
+  function commitEdit() {
+    if (!editing) return;
+    const next = [...(editing.kind === "steering" ? steering : followUp)];
+    if (editing.text.trim()) {
+      next[editing.index] = preserveAttachmentReferenceBlocks(editing.original, editing.text);
+    }
+    void applyQueue(
+      editing.kind === "steering" ? next : [...steering],
+      editing.kind === "followUp" ? next : [...followUp],
+    );
+    setEditing(null);
+  }
+
+  /** Shared inline editor row for one queued item (steering or follow-up). */
+  const editRow = (kind: "steering" | "followUp", index: number) => {
+    if (!editing || editing.kind !== kind || editing.index !== index) return null;
+    return (
+      <li key={`edit:${kind}:${index}`} className="flex items-start gap-1.5 rounded px-1.5 py-1">
+        <textarea
+          autoFocus
+          aria-label={t("queueEditMessage")}
+          className="min-h-[52px] flex-1 rounded border border-accent bg-surface px-2 py-1 text-xs outline-none"
+          value={editing.text}
+          onChange={(event) => setEditing({ ...editing, text: event.target.value })}
+          onCompositionStart={ime.onCompositionStart}
+          onCompositionEnd={ime.onCompositionEnd}
+          onKeyDown={(event) => {
+            if (ime.isImeKey(event)) return;
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              commitEdit();
+            }
+            if (event.key === "Escape") setEditing(null);
+          }}
+        />
+        <button
+          type="button"
+          title={t("queueSave")}
+          aria-label={t("queueSave")}
+          className={itemButton}
+          onClick={() => commitEdit()}
+        >
+          <Check size={13} />
+        </button>
+        <button
+          type="button"
+          title={t("queueCancel")}
+          aria-label={t("queueCancel")}
+          className={itemButton}
+          onClick={() => setEditing(null)}
+        >
+          <X size={13} />
+        </button>
+      </li>
+    );
+  };
+
+  const startEdit = (kind: "steering" | "followUp", index: number, text: string) =>
+    setEditing({
+      kind,
+      index,
+      text: stripAttachmentReferenceBlocks(text).trim(),
+      original: text,
+    });
+
   return (
     <div className="conversation-content-width mx-auto mb-1.5 w-full rounded-lg border border-border bg-surface-raised/80">
       <button
@@ -160,104 +231,66 @@ export function QueuePanel() {
       </button>
       {!collapsed && (
         <ul className="border-t border-border px-1.5 py-1">
-          {steering.map((text, index) => (
-            <li
-              key={`steer:${index}`}
-              className="group flex items-start gap-2 rounded px-1.5 py-1 hover:bg-surface-overlay/50"
-            >
-              <span className="mt-0.5 shrink-0 rounded bg-warning/15 px-1 text-[10px] font-medium leading-none text-warning">
-                {t("queueSteering")}
-              </span>
-              <QueueText raw={text} />
-              <span className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
-                {session.isIdle && (
+          {steering.map((text, index) =>
+            editRow("steering", index) ?? (
+              <li
+                key={`steer:${index}`}
+                className="group flex items-start gap-2 rounded px-1.5 py-1 hover:bg-surface-overlay/50"
+              >
+                <span className="mt-0.5 shrink-0 rounded bg-warning/15 px-1 text-[10px] font-medium leading-none text-warning">
+                  {t("queueSteering")}
+                </span>
+                <QueueText raw={text} />
+                <span className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
                   <button
                     type="button"
-                    title={t("queueRunNowSteering")}
-                    aria-label={t("queueRunNowSteering")}
+                    title={t("queueEdit")}
+                    aria-label={t("queueEdit")}
+                    className={itemButton}
+                    disabled={busyOp}
+                    onClick={() => startEdit("steering", index, text)}
+                  >
+                    <Pencil size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    // The Host's runNow transaction settles the active run
+                    // first, so this is offered even while the session runs —
+                    // clicking then aborts the run and sends the steering
+                    // text as a fresh turn.
+                    title={
+                      session.isIdle ? t("queueRunNowSteeringIdle") : t("queueRunNowSteeringBusy")
+                    }
+                    aria-label={
+                      session.isIdle ? t("queueRunNowSteeringIdle") : t("queueRunNowSteeringBusy")
+                    }
                     className={itemButton}
                     disabled={busyOp}
                     onClick={() => void runNow("steering", index)}
                   >
                     <Play size={12} />
                   </button>
-                )}
-                <button
-                  type="button"
-                  title={t("queueRemove")}
-                  aria-label={t("queueRemove")}
-                  className={itemButton}
-                  disabled={busyOp}
-                  onClick={() =>
-                    void applyQueue(
-                      steering.filter((_, i) => i !== index),
-                      [...followUp],
-                    )
-                  }
-                >
-                  <Trash2 size={12} />
-                </button>
-              </span>
-            </li>
-          ))}
-          {followUp.map((text, index) =>
-            editing?.index === index ? (
-              <li key={`edit:${index}`} className="flex items-start gap-1.5 rounded px-1.5 py-1">
-                <textarea
-                  autoFocus
-                  aria-label={t("queueEditMessage")}
-                  className="min-h-[52px] flex-1 rounded border border-accent bg-surface px-2 py-1 text-xs outline-none"
-                  value={editing.text}
-                  onChange={(event) => setEditing({ ...editing, text: event.target.value })}
-                  onCompositionStart={ime.onCompositionStart}
-                  onCompositionEnd={ime.onCompositionEnd}
-                  onKeyDown={(event) => {
-                    if (ime.isImeKey(event)) return;
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      const next = [...followUp];
-                      if (editing.text.trim()) {
-                        next[index] = preserveAttachmentReferenceBlocks(
-                          editing.original,
-                          editing.text,
-                        );
-                      }
-                      void applyQueue([...steering], next);
-                      setEditing(null);
+                  <button
+                    type="button"
+                    title={t("queueRemove")}
+                    aria-label={t("queueRemove")}
+                    className={itemButton}
+                    disabled={busyOp}
+                    onClick={() =>
+                      void applyQueue(
+                        steering.filter((_, i) => i !== index),
+                        [...followUp],
+                      )
                     }
-                    if (event.key === "Escape") setEditing(null);
-                  }}
-                />
-                <button
-                  type="button"
-                  title={t("queueSave")}
-                  aria-label={t("queueSave")}
-                  className={itemButton}
-                  onClick={() => {
-                    const next = [...followUp];
-                    if (editing.text.trim()) {
-                      next[index] = preserveAttachmentReferenceBlocks(
-                        editing.original,
-                        editing.text,
-                      );
-                    }
-                    void applyQueue([...steering], next);
-                    setEditing(null);
-                  }}
-                >
-                  <Check size={13} />
-                </button>
-                <button
-                  type="button"
-                  title={t("queueCancel")}
-                  aria-label={t("queueCancel")}
-                  className={itemButton}
-                  onClick={() => setEditing(null)}
-                >
-                  <X size={13} />
-                </button>
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </span>
               </li>
-            ) : (
+            ),
+          )}
+          {followUp.map((text, index) =>
+            editRow("followUp", index) ?? (
               <li
                 key={`fu:${index}`}
                 className="group flex items-start gap-2 rounded px-1.5 py-1 hover:bg-surface-overlay/50"
@@ -285,13 +318,7 @@ export function QueuePanel() {
                     aria-label={t("queueEdit")}
                     className={itemButton}
                     disabled={busyOp}
-                    onClick={() =>
-                      setEditing({
-                        index,
-                        text: stripAttachmentReferenceBlocks(text).trim(),
-                        original: text,
-                      })
-                    }
+                    onClick={() => startEdit("followUp", index, text)}
                   >
                     <Pencil size={12} />
                   </button>

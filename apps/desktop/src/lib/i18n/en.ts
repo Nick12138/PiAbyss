@@ -1428,7 +1428,8 @@ export const en = {
   queueEdit: "Edit",
   queueEditMessage: "Edit queued message",
   queueRunNow: "Interrupt current run and run this now",
-  queueRunNowSteering: "Send this message now",
+  queueRunNowSteeringIdle: "Send this message now",
+  queueRunNowSteeringBusy: "Interrupt the current run and send this message",
   queueAttachmentOnly: "Document attachment",
 
   // Right Dock

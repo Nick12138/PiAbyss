@@ -100,9 +100,12 @@ with reason `fork`. Forking before the first message is not supported.
   rendered revision. A stale request is rejected without clearing the live queue.
 - The Host suppresses the SDK's intermediate clear/re-add events and publishes one
   final `agent.queueChanged` snapshot for each logical transaction.
-- Run Now is one `agent.runNow` RPC pinned to the originating Session. The Host parks
+- Run Now is one `agent.runNow` RPC pinned to the originating Session, offered on
+  both queue kinds. The Host parks
   the queue, aborts and settles the active run when necessary, starts the selected
-  follow-up, then restores the remaining queue before responding.
+  item as a fresh turn, then restores the remaining queue before responding. Steering
+  items therefore expose Run Now even while the session is running — clicking it
+  aborts the current run and sends the steering text immediately.
 - Queue text and queued image attachments are restored together. If an SDK enqueue
   fails, the response exposes the final queue and explicit restoration/partial-failure
   flags; the desktop never assumes the pre-request queue still exists.

@@ -1355,7 +1355,8 @@ export const zh: Record<MessageKey, string> = {
   queueEdit: "编辑",
   queueEditMessage: "编辑排队消息",
   queueRunNow: "中断当前任务并立即运行这条消息",
-  queueRunNowSteering: "立即发送这条消息",
+  queueRunNowSteeringIdle: "立即发送这条消息",
+  queueRunNowSteeringBusy: "中断当前任务并发送这条消息",
   queueAttachmentOnly: "文档附件",
 
   // Right Dock
