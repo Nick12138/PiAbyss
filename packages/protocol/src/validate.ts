@@ -497,11 +497,6 @@ function base64DecodedByteLength(data: string): number | null {
   return Math.floor((contentLength * 3) / 4);
 }
 
-/** 备忘录记录类型白名单。 */
-function isMemoNoteType(value: unknown): boolean {
-  return value === "memo" || value === "idea" || value === "task";
-}
-
 /** 备忘录状态白名单。 */
 function isMemoNoteStatus(value: unknown): boolean {
   return value === "open" || value === "in_progress" || value === "done" || value === "archived";
@@ -522,7 +517,6 @@ function isMemoImageInput(value: unknown): boolean {
 /** memo.update / memo.create 共用的字段级校验。 */
 function isMemoNoteFields(value: Record<string, unknown>): boolean {
   return (
-    (value.type === undefined || isMemoNoteType(value.type)) &&
     (value.title === undefined || (isNonEmptyString(value.title) && value.title.length <= 300)) &&
     (value.contentMd === undefined ||
       (isString(value.contentMd) && value.contentMd.length <= 200_000)) &&
@@ -1506,10 +1500,9 @@ export function validateRequestParams<M extends HostMethod>(
     case "memo.list":
       return params === null ? ok(null) : fail("params must be null", { method });
     case "memo.optimize":
-      return exactObject(params, ["contentMd", "type", "workspaceHint", "workspaces"]) &&
+      return exactObject(params, ["contentMd", "workspaceHint", "workspaces"]) &&
         isString(params.contentMd) &&
         params.contentMd.length <= 200_000 &&
-        isMemoNoteType(params.type) &&
         (params.workspaceHint === null ||
           (isString(params.workspaceHint) && params.workspaceHint.length <= 300)) &&
         Array.isArray(params.workspaces) &&
@@ -1527,10 +1520,9 @@ export function validateRequestParams<M extends HostMethod>(
     case "memo.create":
       return exactObject(
         params,
-        ["type", "title", "contentMd"],
+        ["title", "contentMd"],
         ["tags", "workspaceHint", "images"],
       ) &&
-        isMemoNoteType(params.type) &&
         isNonEmptyString(params.title) &&
         params.title.length <= 300 &&
         isString(params.contentMd) &&
@@ -1556,7 +1548,6 @@ export function validateRequestParams<M extends HostMethod>(
           params.patch,
           [],
           [
-            "type",
             "title",
             "contentMd",
             "status",
@@ -1596,8 +1587,7 @@ export function validateRequestParams<M extends HostMethod>(
       return params === null ? ok(null) : fail("params must be null", { method });
     case "memo.setDraft":
       return exactObject(params, ["draft"]) &&
-        exactObject(params.draft, ["type", "contentMd"], ["workspaceHint"]) &&
-        isMemoNoteType(params.draft.type) &&
+        exactObject(params.draft, ["contentMd"], ["workspaceHint"]) &&
         isString(params.draft.contentMd) &&
         params.draft.contentMd.length <= 200_000 &&
         (params.draft.workspaceHint === undefined ||

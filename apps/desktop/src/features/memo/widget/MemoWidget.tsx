@@ -19,8 +19,6 @@ import {
   Circle,
   CircleAlert,
   Copy,
-  Lightbulb,
-  ListChecks,
   Loader2,
   Monitor,
   Pin,
@@ -28,7 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type JSX, type KeyboardEvent } from "react";
-import type { DesktopSettings, MemoNote, MemoNoteType } from "@piabyss/protocol";
+import type { DesktopSettings, MemoNote } from "@piabyss/protocol";
 import { hostClient } from "../../../lib/bridge/host-client";
 import { createTauriTransport, refreshActiveRoute } from "../../../lib/bridge/tauri-transport";
 import { useAppStore } from "../../../lib/stores/app-store";
@@ -292,19 +290,6 @@ function useWindowBounds(onModeRestored: (mode: WidgetMode) => void): boolean {
   return restored;
 }
 
-const TYPE_ICONS: Record<MemoNoteType, typeof StickyNote> = {
-  memo: StickyNote,
-  idea: Lightbulb,
-  task: ListChecks,
-};
-
-/** 各备忘类型的小图标配色，让列表一眼能区分类型。 */
-const TYPE_ICON_CLASSES: Record<MemoNoteType, string> = {
-  memo: "text-accent",
-  idea: "text-warning",
-  task: "text-success",
-};
-
 export function MemoWidget(): JSX.Element {
   const t = useT();
   const [mode, setMode] = useState<WidgetMode>(DEFAULT_MODE);
@@ -406,7 +391,7 @@ export function MemoWidget(): JSX.Element {
     setCreating(true);
     try {
       await refreshActiveRoute();
-      await createMemoNote({ type: "memo", title: text, contentMd: text });
+      await createMemoNote({ title: text, contentMd: text });
       setDraft("");
       void emitNotesChanged();
       await refresh();
@@ -561,8 +546,6 @@ export function MemoWidget(): JSX.Element {
             ) : (
               <ul className="flex flex-col gap-0.5">
                 {notes.map((note) => {
-                  const TypeIcon = TYPE_ICONS[note.type] ?? StickyNote;
-                  const typeIconClass = TYPE_ICON_CLASSES[note.type] ?? "text-muted";
                   return (
                     <li
                       key={note.id}
@@ -590,7 +573,6 @@ export function MemoWidget(): JSX.Element {
                           {note.title || note.contentMd}
                         </div>
                         <div className="mt-0.5 flex items-center gap-2 text-xs text-muted">
-                          <TypeIcon className={`size-3 shrink-0 ${typeIconClass}`} />
                           {note.status === "in_progress" && (
                             <span className="shrink-0 rounded-sm bg-accent/15 px-1.5 py-px text-[10px] leading-4 font-medium text-accent">
                               {t("memoFilterInProgress")}

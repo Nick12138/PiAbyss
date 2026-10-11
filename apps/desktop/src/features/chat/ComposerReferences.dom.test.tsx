@@ -112,7 +112,7 @@ describe("Composer injected references", () => {
 
   it("renders the reference as an @ chip instead of the raw prompt", () => {
     render(<Composer />);
-    expect(screen.getByText("@Memo · 修复登录按钮")).toBeVisible();
+    expect(screen.getByText("@Nook · 修复登录按钮")).toBeVisible();
     expect(screen.queryByText(/piabyss-memo id/)).toBeNull();
     expect(screen.queryByText(/请处理上面引用的备忘录记录/)).toBeNull();
   });
@@ -134,7 +134,7 @@ describe("Composer injected references", () => {
     expect(prompt?.[2]).toEqual({
       text: `${memoPayload}\n\n先看登录页`,
     });
-    await waitFor(() => expect(screen.queryByText("@Memo · 修复登录按钮")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("@Nook · 修复登录按钮")).toBeNull());
     expect(useAppStore.getState().draftReferences[DRAFT_KEY]).toBeUndefined();
   });
 
@@ -187,7 +187,7 @@ describe("Composer injected references", () => {
     render(<Composer />);
 
     await user.click(screen.getByRole("button", { name: "Remove reference “修复登录按钮”" }));
-    expect(screen.queryByText("@Memo · 修复登录按钮")).toBeNull();
+    expect(screen.queryByText("@Nook · 修复登录按钮")).toBeNull();
     expect(useAppStore.getState().draftReferences[DRAFT_KEY]).toBeUndefined();
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
   });

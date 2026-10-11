@@ -23,7 +23,7 @@ describe("InjectedReferenceChip", () => {
     const user = userEvent.setup();
     render(<InjectedReferenceChip reference={reference()} />);
 
-    const chip = screen.getByRole("button", { name: /@Memo · 修复登录按钮/ });
+    const chip = screen.getByRole("button", { name: /@Nook · 修复登录按钮/ });
     expect(chip).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText(/点击没反应。/)).toBeNull();
 
@@ -49,6 +49,6 @@ describe("InjectedReferenceChip", () => {
         reference={reference({ kind: "memo-result", title: "", body: "做完了" })}
       />,
     );
-    expect(screen.getByRole("button", { name: /@Memo summary/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /@Nook summary/ })).toBeVisible();
   });
 });

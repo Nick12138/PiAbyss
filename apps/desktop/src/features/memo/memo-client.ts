@@ -10,7 +10,6 @@ import type {
   MemoImageInput,
   MemoNote,
   MemoNoteStatus,
-  MemoNoteType,
   MemoSyncSettings,
 } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
@@ -29,14 +28,12 @@ function requireHost() {
 
 export type MemoOptimizeRequest = {
   contentMd: string;
-  type: MemoNoteType;
   workspaceHint: string | null;
   workspaces: Array<{ id: string; name: string }>;
 };
 
 export type MemoOptimizeResult = {
   contentMd: string;
-  type: MemoNoteType;
   workspaceId: string | null;
 };
 
@@ -47,7 +44,6 @@ export async function optimizeMemo(input: MemoOptimizeRequest): Promise<MemoOpti
 }
 
 export type MemoCreateRequest = {
-  type: MemoNoteType;
   title: string;
   contentMd: string;
   tags?: string[];
@@ -56,7 +52,6 @@ export type MemoCreateRequest = {
 };
 
 export type MemoUpdateRequest = {
-  type?: MemoNoteType;
   title?: string;
   contentMd?: string;
   status?: MemoNoteStatus;

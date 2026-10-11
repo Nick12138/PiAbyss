@@ -88,8 +88,6 @@ function asImageInputs(value: unknown): MemoCreateInput["images"] {
   return images;
 }
 
-const VALID_MEMO_TYPES = new Set(["memo", "idea", "task"]);
-
 /** 截断文本用于日志，避免刷屏。 */
 function truncateForLog(text: string, max = 200): string {
   return text.length > max ? `${text.slice(0, max)}…(共 ${text.length} 字符)` : text;
@@ -123,29 +121,21 @@ function parseJsonLoose(text: string): Record<string, unknown> | null {
  */
 function parseOptimizeResult(
   text: string,
-  fallbackType: string,
-): { contentMd: string; type: string; workspaceId: string | null } | null {
+): { contentMd: string; workspaceId: string | null } | null {
   const body = text.trim();
   if (!body) return null;
   const parsed = parseJsonLoose(body);
-  if (
-    parsed &&
-    typeof parsed.contentMd === "string" &&
-    parsed.contentMd.trim() &&
-    VALID_MEMO_TYPES.has(String(parsed.type))
-  ) {
+  if (parsed && typeof parsed.contentMd === "string" && parsed.contentMd.trim()) {
     return {
       contentMd: parsed.contentMd,
-      type: String(parsed.type),
       workspaceId:
         typeof parsed.workspaceId === "string" && parsed.workspaceId ? parsed.workspaceId : null,
     };
   }
   // 降级：模型输出不是合法 JSON（如纯散文/Markdown），将其视为整理后的正文，
-  // 类别沿用请求中的原值，工作区保持不变。正文长度上限与正常路径一致。
+  // 工作区保持不变。正文长度上限与正常路径一致。
   if (body.length > 200_000) return null;
-  const type = VALID_MEMO_TYPES.has(fallbackType) ? fallbackType : "memo";
-  return { contentMd: body, type, workspaceId: null };
+  return { contentMd: body, workspaceId: null };
 }
 
 export function createMemoHandlers(
@@ -178,7 +168,6 @@ export function createMemoHandlers(
       try {
         const input = ctx.params as {
           contentMd: string;
-          type: string;
           workspaceHint: string | null;
           workspaces: Array<{ id: string; name: string }>;
         };
@@ -197,9 +186,8 @@ export function createMemoHandlers(
           systemPrompt: [
             "你是 PiAbyss 的开发备忘录整理助手。",
             "你不是普通的文字润色器，也不是客服提示语生成器。你的首要任务是识别用户真正想记录、解决或推进的问题，并将零散内容整理成准确、清晰、可执行、便于后续继续处理的开发备忘录。",
-            "输入数据包含 contentMd（当前正文）、type（当前类别）、workspaceHint（当前工作区提示）和 workspaces（可选工作区列表）。请在内部完成判断，不要输出分析过程。",
+            "输入数据包含 contentMd（当前正文）、workspaceHint（当前工作区提示）和 workspaces（可选工作区列表）。请在内部完成判断，不要输出分析过程。",
             "如果正文包含失败、报错、异常、崩溃、无法、不工作、bug、修复等词，或包含错误信息、日志、堆栈、接口错误、运行时状态，并且表达了现有功能不符合预期，应将其识别为 Bug 或待修复问题。",
-            "Bug、错误和需要修复的现有问题优先选择 type=task；明确的功能建议但尚未决定实施优先选择 type=idea；纯记录、说明或参考信息选择 type=memo。当前 type 只是参考，不是必须保留的值。",
             "对于错误信息、日志、异常和技术标识，不要默认改写成用户界面提示语。除非正文明确要求生成用户提示语或面向用户的文案，否则必须保留原始错误文本、错误码、方法名、变量名、接口名和其他关键技术信息。",
             "原始错误文本应尽量原样保留，可以放在 Markdown 的 text 代码块中。可以调整上下文、标题和结构，但不能删除导致问题定位所需的技术信息。",
             "不要凭空断言根因、修复方案、复现步骤、影响范围或修复已经完成。信息不足时，将未知内容标记为待确认，而不是编造事实。可以提出少量有助于推进问题的待确认事项，但不要为了增加内容而填充无关问题。",
@@ -207,9 +195,9 @@ export function createMemoHandlers(
             "备忘录没有独立标题字段，正文的第一个非空行就是标题。优化后的 contentMd 必须以一行简洁明确的标题开头，标题后空一行，再开始正文。Bug 标题应描述需要解决的问题，例如“修复备忘录加载失败：Host 未就绪”，不要写成“备忘录加载失败，请稍后重试”这类客服提示语。",
             "保留正文中已有的有效 #标签。只有在内容意图非常明确时，才添加少量有帮助的标签；Bug 可以考虑添加 #bug，功能需求可以考虑添加 #feature，不要添加无法从正文判断的标签。标签必须写在正文中，不能通过额外字段返回。",
             "工作区只能从 workspaces 列表中选择，不能编造工作区 id 或名称。如果当前 workspaceHint 已对应某个候选工作区，且没有明确理由更换，应保持当前工作区。只有在正文内容明显与某个候选工作区相关且可以可靠判断时，才返回新的 workspaceId；无法判断时 workspaceId 必须返回 null，表示保持当前工作区不变。",
-            "可以自由调整正文结构、措辞、标题、类别和标签，但必须保留用户原本的事实、问题意图和重要技术信息。不要把待修复的问题误写成已经解决的问题，不要把技术 Bug 自动改写成面向最终用户的说明文案。",
+            "可以自由调整正文结构、措辞、标题和标签，但必须保留用户原本的事实、问题意图和重要技术信息。不要把待修复的问题误写成已经解决的问题，不要把技术 Bug 自动改写成面向最终用户的说明文案。",
             "不要解释你做了哪些修改，不要输出 Markdown 代码围栏，不要输出 JSON 之外的任何文字。",
-            '最终只返回一个合法 JSON 对象，字段必须且只能是 {"contentMd":"优化后的 Markdown 正文","type":"memo"|"idea"|"task","workspaceId":"候选工作区 id"|null}。',
+            '最终只返回一个合法 JSON 对象，字段必须且只能是 {"contentMd":"优化后的 Markdown 正文","workspaceId":"候选工作区 id"|null}。',
           ].join(" "),
           messages: [
             {
@@ -243,7 +231,7 @@ export function createMemoHandlers(
           .map((part) => part.text)
           .join("\n")
           .trim();
-        const parsedResult = parseOptimizeResult(text, input.type);
+        const parsedResult = parseOptimizeResult(text);
         if (!parsedResult) {
           console.error(`[memo.optimize] AI returned unusable output: ${truncateForLog(text)}`);
           return { error: createHostError("INVALID_REQUEST", "AI returned unusable output") };
@@ -260,7 +248,6 @@ export function createMemoHandlers(
         return {
           result: {
             contentMd: parsedResult.contentMd,
-            type: parsedResult.type,
             workspaceId,
           },
         };
@@ -278,7 +265,6 @@ export function createMemoHandlers(
       if (!gate()) return { error: memoPluginDisabledError() };
       const params = ctx.params as Record<string, unknown>;
       const input: MemoCreateInput = {
-        type: asString(params.type) as MemoCreateInput["type"],
         title: asString(params.title),
         contentMd: asString(params.contentMd),
         tags: asStringArray(params.tags),
@@ -297,8 +283,6 @@ export function createMemoHandlers(
       const id = asString(params.id);
       const rawPatch = (params.patch ?? {}) as Record<string, unknown>;
       const patch: MemoUpdatePatch = {};
-      if (rawPatch.type !== undefined)
-        patch.type = asString(rawPatch.type) as MemoUpdatePatch["type"];
       if (rawPatch.title !== undefined) patch.title = asString(rawPatch.title);
       if (rawPatch.contentMd !== undefined) patch.contentMd = asString(rawPatch.contentMd);
       if (rawPatch.status !== undefined) {
@@ -348,10 +332,9 @@ export function createMemoHandlers(
     "memo.setDraft": async (ctx) => {
       if (!gate()) return { error: memoPluginDisabledError() };
       const params = ctx.params as {
-        draft: { type: unknown; contentMd: unknown; workspaceHint?: unknown };
+        draft: { contentMd: unknown; workspaceHint?: unknown };
       };
       const draft = store.saveDraft({
-        type: asString(params.draft.type) as MemoCreateInput["type"],
         contentMd: asString(params.draft.contentMd),
         workspaceHint:
           params.draft.workspaceHint === undefined

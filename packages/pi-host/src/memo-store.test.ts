@@ -26,7 +26,7 @@ describe("MemoStore", () => {
     const { agentDir, store } = await tempLayout();
     expect(store.list()).toEqual([]);
 
-    const note = store.create({ type: "memo", title: "第一条", contentMd: "内容" });
+    const note = store.create({ title: "第一条", contentMd: "内容" });
     expect(store.list()).toHaveLength(1);
 
     // 新实例读同一份数据（磁盘权威，无内存缓存）。
@@ -37,7 +37,6 @@ describe("MemoStore", () => {
   it("creates notes with normalized tags and defaults", async () => {
     const { store } = await tempLayout();
     const note = store.create({
-      type: "task",
       title: "  带标签  ",
       contentMd: "正文",
       tags: ["#A", "a", "b ", ""],
@@ -54,11 +53,9 @@ describe("MemoStore", () => {
 
   it("rejects invalid create input", async () => {
     const { store } = await tempLayout();
-    expect(() => store.create({ type: "memo", title: "  ", contentMd: "x" })).toThrow();
-    expect(() => store.create({ type: "bogus" as "memo", title: "t", contentMd: "x" })).toThrow();
+    expect(() => store.create({ title: "  ", contentMd: "x" })).toThrow();
     expect(() =>
       store.create({
-        type: "memo",
         title: "t",
         contentMd: "x",
         images: [{ fileName: "a.png", mediaType: "text/plain", dataBase64: PNG_BASE64 }],
@@ -68,7 +65,7 @@ describe("MemoStore", () => {
 
   it("updates fields and manages completion timestamps", async () => {
     const { store } = await tempLayout();
-    const note = store.create({ type: "idea", title: "t", contentMd: "c" });
+    const note = store.create({ title: "t", contentMd: "c" });
 
     const running = store.update(note.id, { status: "in_progress", sessionId: "session-1" });
     expect(running.status).toBe("in_progress");
@@ -89,7 +86,7 @@ describe("MemoStore", () => {
 
   it("add and remove images on update, cleaning up files", async () => {
     const { store } = await tempLayout();
-    const note = store.create({ type: "memo", title: "t", contentMd: "c" });
+    const note = store.create({ title: "t", contentMd: "c" });
 
     const withImage = store.update(note.id, {
       addImages: [{ fileName: "shot.png", mediaType: "image/png", dataBase64: PNG_BASE64 }],
@@ -113,7 +110,6 @@ describe("MemoStore", () => {
   it("remove marks a tombstone (kept for sync), purge physically deletes", async () => {
     const { agentDir, store } = await tempLayout();
     const note = store.create({
-      type: "memo",
       title: "t",
       contentMd: "c",
       images: [{ fileName: "a.png", mediaType: "image/png", dataBase64: PNG_BASE64 }],
@@ -141,7 +137,7 @@ describe("MemoStore", () => {
 
   it("replaceAll replaces the whole note set without touching image files", async () => {
     const { store } = await tempLayout();
-    const note = store.create({ type: "memo", title: "a", contentMd: "x" });
+    const note = store.create({ title: "a", contentMd: "x" });
     store.replaceAll([note]);
     expect(store.list().map((entry) => entry.id)).toEqual([note.id]);
     store.replaceAll([]);
@@ -169,7 +165,7 @@ describe("MemoStore", () => {
 
   it("completeWithResult marks done and records the summary with session info", async () => {
     const { store } = await tempLayout();
-    const note = store.create({ type: "task", title: "t", contentMd: "c" });
+    const note = store.create({ title: "t", contentMd: "c" });
 
     const done = store.completeWithResult(note.id, {
       resultMd: "  已修复，测试通过。  ",
@@ -203,7 +199,7 @@ describe("MemoStore", () => {
 
   it("completeWithResult rejects empty summaries and missing session info", async () => {
     const { store } = await tempLayout();
-    const note = store.create({ type: "memo", title: "t", contentMd: "c" });
+    const note = store.create({ title: "t", contentMd: "c" });
     expect(() =>
       store.completeWithResult(note.id, {
         resultMd: "   ",
@@ -226,7 +222,7 @@ describe("MemoStore", () => {
 
   it("reads legacy notes without a result field as result: null", async () => {
     const { agentDir, store } = await tempLayout();
-    const note = store.create({ type: "memo", title: "t", contentMd: "c" });
+    const note = store.create({ title: "t", contentMd: "c" });
 
     // 模拟 v1 旧数据：手工抹去 result 字段后重新读取。
     const { readFileSync, writeFileSync } = await import("node:fs");

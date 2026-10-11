@@ -51,7 +51,7 @@ pub async fn desktop_settings_patch(
     // Propagate agentDir / autoRestart to host manager
     let hosts = state.hosts.lock().await;
     hosts.update_settings(&store).await;
-    // 设置已落盘：广播给所有窗口（如备忘速记小窗），让主题、强调色等
+    // 设置已落盘：广播给所有窗口（如方寸之间小窗），让主题、强调色等
     // 外观偏好实时联动，无需重开窗口。
     let _ = app.emit("desktop-settings-changed", ());
     Ok(next)

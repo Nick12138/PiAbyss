@@ -1,4 +1,4 @@
-//! 备忘速记小窗（memo-widget）：全局快捷键 / 托盘可唤出的桌面速记面板。
+//! 方寸之间速记小窗（memo-widget）：全局快捷键 / 托盘可唤出的桌面速记面板。
 //!
 //! 设计取舍：
 //!   - 窗口懒创建：首次唤出才创建无边框小窗；之后显隐复用，关闭请求被
@@ -62,7 +62,7 @@ pub fn ensure_window<R: tauri::Runtime>(
         MEMO_WIDGET_LABEL,
         WebviewUrl::App(MEMO_WIDGET_URL.into()),
     )
-    .title("PiAbyss Memo")
+    .title("PiAbyss 方寸之间")
     .inner_size(DEFAULT_WIDTH, DEFAULT_HEIGHT)
     .min_inner_size(MIN_WIDTH, MIN_HEIGHT)
     .decorations(false)

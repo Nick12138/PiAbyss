@@ -28,7 +28,6 @@ function note(overrides: Partial<MemoNote> = {}): MemoNote {
   seq += 1;
   return {
     id: `note-${seq}`,
-    type: "memo",
     title: `记录 ${seq}`,
     contentMd: "正文",
     status: "open",
@@ -280,7 +279,6 @@ describe("composeMemoPrompt", () => {
   it("renders a structured reference block with absolute image paths", () => {
     const block = composeMemoPrompt(
       note({
-        type: "task",
         status: "open",
         title: "修复 bug",
         contentMd: "步骤：\n1. 复现\n2. 修复",
@@ -291,7 +289,7 @@ describe("composeMemoPrompt", () => {
       "C:\\Users\\liu\\.pi\\agent",
     );
     expect(block).toContain('<piabyss-memo id="note-');
-    expect(block).toContain('type="task" status="open"');
+    expect(block).toContain('status="open"');
     expect(block).toContain('tags="bug,p0"');
     expect(block).toContain('workspace="PiAbyss"');
     expect(block).toContain("# 修复 bug");

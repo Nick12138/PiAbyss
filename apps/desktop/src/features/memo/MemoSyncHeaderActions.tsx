@@ -7,7 +7,7 @@
  *
  * v2：同步引擎与 R2 密钥配置都由 piabyss-memo 插件自持——本弹窗只保留
  * 状态展示、测试连接与立即同步；密钥/自动同步改到「设置 → 插件 →
- * PiAbyss 备忘录」的配置表单里，弹窗内提供跳转按钮（深链直达配置弹窗）。
+ * PiAbyss 方寸间」的配置表单里，弹窗内提供跳转按钮（深链直达配置弹窗）。
  */
 import {
   CheckCircle2,
@@ -61,7 +61,7 @@ export function MemoSyncHeaderActions() {
     }
   }
 
-  /** 跳转到「设置 → 插件 → PiAbyss 备忘录」的配置表单（深链直达配置弹窗）。 */
+  /** 跳转到「设置 → 插件 → PiAbyss 方寸间」的配置表单（深链直达配置弹窗）。 */
   function openPluginConfig() {
     requestPluginConfigDeepLink(MEMO_PLUGIN_ID);
     useAppStore.getState().openSettingsSection("plugins");

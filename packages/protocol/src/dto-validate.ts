@@ -2730,7 +2730,6 @@ function isMemoNote(value: unknown): boolean {
       value,
       [
         "id",
-        "type",
         "title",
         "contentMd",
         "status",
@@ -2746,7 +2745,6 @@ function isMemoNote(value: unknown): boolean {
       ["sessionId"],
     ) &&
     isString(value.id) &&
-    (value.type === "memo" || value.type === "idea" || value.type === "task") &&
     isString(value.title) &&
     isString(value.contentMd) &&
     (value.status === "open" ||
@@ -2774,8 +2772,7 @@ function isMemoNote(value: unknown): boolean {
 function isMemoDraft(value: unknown): boolean {
   return (
     isPlainObject(value) &&
-    hasExactKeys(value, ["type", "contentMd", "workspaceHint", "updatedAt"]) &&
-    (value.type === "memo" || value.type === "idea" || value.type === "task") &&
+    hasExactKeys(value, ["contentMd", "workspaceHint", "updatedAt"]) &&
     isString(value.contentMd) &&
     (value.workspaceHint === null || isString(value.workspaceHint)) &&
     typeof value.updatedAt === "number" &&
@@ -3584,10 +3581,9 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         : "invalid memo.list result";
     case "memo.optimize":
       return isPlainObject(result) &&
-        hasExactKeys(result, ["contentMd", "type", "workspaceId"]) &&
+        hasExactKeys(result, ["contentMd", "workspaceId"]) &&
         isString(result.contentMd) &&
         result.contentMd.length <= 200_000 &&
-        ["memo", "idea", "task"].includes(String(result.type)) &&
         (result.workspaceId === null || isNonEmptyString(result.workspaceId))
         ? null
         : "invalid memo.optimize result";

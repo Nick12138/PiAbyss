@@ -68,7 +68,7 @@ fn install_windows(app: &mut tauri::App) -> tauri::Result<()> {
         .text(OPEN_MENU_ID, "Open PiAbyss")
         .text(
             MEMO_MENU_ID,
-            format!("Memo ({})", crate::memo_widget::MEMO_WIDGET_SHORTCUT),
+            format!("Nook ({})", crate::memo_widget::MEMO_WIDGET_SHORTCUT),
         )
         .separator()
         .text(QUIT_MENU_ID, "Quit PiAbyss")

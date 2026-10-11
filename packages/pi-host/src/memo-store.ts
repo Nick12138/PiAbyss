@@ -26,7 +26,6 @@ import type {
   MemoImageInput,
   MemoNote,
   MemoNoteStatus,
-  MemoNoteType,
 } from "@piabyss/protocol";
 import { createHostError, type HostError } from "@piabyss/protocol";
 
@@ -42,7 +41,6 @@ const MAX_TITLE_LENGTH = 300;
 const MAX_TAG_LENGTH = 60;
 const MAX_TAGS_PER_NOTE = 20;
 
-const NOTE_TYPES: readonly MemoNoteType[] = ["memo", "idea", "task"];
 const NOTE_STATUSES: readonly MemoNoteStatus[] = ["open", "in_progress", "done", "archived"];
 
 /** mediaType → 扩展名（用于图片落盘命名）。 */
@@ -77,7 +75,6 @@ function base64Bytes(value: string): number {
 }
 
 export type MemoCreateInput = {
-  type: MemoNoteType;
   title: string;
   contentMd: string;
   tags?: string[];
@@ -86,7 +83,6 @@ export type MemoCreateInput = {
 };
 
 export type MemoUpdatePatch = {
-  type?: MemoNoteType;
   title?: string;
   contentMd?: string;
   status?: MemoNoteStatus;
@@ -168,7 +164,6 @@ export class MemoStore {
     const now = Date.now();
     const note: MemoNote = {
       id: randomUUID(),
-      type: this.requireType(input.type),
       title,
       contentMd,
       status: "open",
@@ -194,7 +189,6 @@ export class MemoStore {
     const note = file.notes.find((entry) => entry.id === id);
     if (!note) throw memoError("RESOURCE_NOT_FOUND", `备忘录记录不存在：${id}`);
 
-    if (patch.type !== undefined) note.type = this.requireType(patch.type);
     if (patch.title !== undefined) note.title = this.requireTitle(patch.title);
     if (patch.contentMd !== undefined) note.contentMd = this.requireContent(patch.contentMd);
     if (patch.tags !== undefined) note.tags = normalizeTags(patch.tags);
@@ -299,6 +293,8 @@ export class MemoStore {
 
   /** 用给定记录集整体替换 notes.json（同步引擎合并结果落盘用；图片文件不动）。 */
   replaceAll(notes: MemoNote[]): void {
+    // v0.3.0 起不再落盘类别字段：合并结果里云端旧数据可能仍带 type，这里统一剔除。
+    for (const note of notes) delete (note as { type?: unknown }).type;
     this.writeFile({ schemaVersion: 1, notes });
   }
 
@@ -349,7 +345,6 @@ export class MemoStore {
       const raw = JSON.parse(readFileSync(this.draftPath, "utf8")) as MemoDraft;
       if (
         raw &&
-        NOTE_TYPES.includes(raw.type) &&
         typeof raw.contentMd === "string" &&
         raw.contentMd.length <= MAX_CONTENT_LENGTH
       ) {
@@ -364,7 +359,6 @@ export class MemoStore {
   /** 保存草稿（整体覆盖，原子写入；contentMd 复用记录正文长度限制）。 */
   saveDraft(input: MemoDraftInput): MemoDraft {
     const draft: MemoDraft = {
-      type: this.requireType(input.type),
       contentMd: this.requireContent(input.contentMd),
       workspaceHint: this.normalizeHint(input.workspaceHint),
       updatedAt: Date.now(),
@@ -391,6 +385,8 @@ export class MemoStore {
           if (note.result === undefined) note.result = null;
           if (note.deletedAt === undefined) note.deletedAt = null;
           if (note.sessionId === undefined) note.sessionId = null;
+          // v0.3.0 起取消类别（type）字段：读盘时丢弃旧记录遗留的类别，下次写盘不再落盘。
+          delete (note as { type?: unknown }).type;
         }
         return raw;
       }
@@ -460,13 +456,6 @@ export class MemoStore {
     const image = note.images.find((entry) => entry.id === imageId);
     if (!image) return;
     rmSync(join(this.imagesRoot, note.id, image.fileName), { force: true });
-  }
-
-  private requireType(value: MemoNoteType): MemoNoteType {
-    if (!NOTE_TYPES.includes(value)) {
-      throw memoError("INVALID_REQUEST", `无效的记录类型：${String(value)}`);
-    }
-    return value;
   }
 
   private requireStatus(value: MemoNoteStatus): MemoNoteStatus {

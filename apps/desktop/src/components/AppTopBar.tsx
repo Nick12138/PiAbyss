@@ -190,7 +190,13 @@ export function AppTopBar({
               className="pointer-events-none shrink-0 text-muted"
               aria-hidden="true"
             />
-            <h1 className="min-w-0 truncate text-base font-semibold leading-5">{t("memoTitle")}</h1>
+            <h1 className="min-w-0 shrink-0 truncate text-base font-semibold leading-5">{t("memoTitle")}</h1>
+            <span
+              data-tauri-drag-region
+              className="pointer-events-none hidden shrink-0 truncate text-xs leading-5 text-muted @2xl:block"
+            >
+              {t("memoTagline")}
+            </span>
             <MemoSyncStatusDot />
           </div>
         ) : page === "settings" || page === "packages" ? (

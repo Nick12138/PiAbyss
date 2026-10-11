@@ -22,7 +22,6 @@ const host: HostStatusSnapshot = {
 function note(overrides: Partial<MemoNote> = {}): MemoNote {
   return {
     id: "memo-1",
-    type: "memo",
     title: "交给 Agent",
     contentMd: "交给 Agent\n正文",
     status: "open",

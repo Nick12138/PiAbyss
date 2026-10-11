@@ -48,7 +48,6 @@ const workspace: WorkspaceSnapshot = {
 function note(overrides: Partial<MemoNote> = {}): MemoNote {
   return {
     id: "memo-1",
-    type: "memo",
     title: "手动完成一条",
     contentMd: "手动完成一条\n正文",
     status: "open",
@@ -82,7 +81,7 @@ beforeEach(() => {
   mocks.clearMemoDraft.mockResolvedValue(undefined);
   mocks.createMemoNote.mockImplementation(async () => openNote);
   mocks.deleteMemoNote.mockResolvedValue(undefined);
-  mocks.optimizeMemo.mockResolvedValue({ contentMd: "", type: "memo", workspaceId: null });
+  mocks.optimizeMemo.mockResolvedValue({ contentMd: "", workspaceId: null });
   mocks.readMemoImageDataUrl.mockResolvedValue("");
   mocks.updateMemoNote.mockImplementation(async (id: string, patch: Partial<MemoNote>) => {
     const source =

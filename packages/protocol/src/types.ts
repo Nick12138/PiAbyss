@@ -2108,9 +2108,6 @@ export type PixieUsageStats = {
   days: Record<string, { interactions: number; dispatches: number }>;
 };
 
-/** 备忘录记录类型。 */
-export type MemoNoteType = "memo" | "idea" | "task";
-
 /** 备忘录状态：待处理 / 进行中 / 已完成 / 已归档。 */
 export type MemoNoteStatus = "open" | "in_progress" | "done" | "archived";
 
@@ -2142,7 +2139,6 @@ export type MemoAgentResult = {
 /** 备忘录记录（全局共享，不随工作区隔离；workspaceHint 仅作关联标签）。 */
 export type MemoNote = {
   id: string;
-  type: MemoNoteType;
   title: string;
   contentMd: string;
   status: MemoNoteStatus;
@@ -2167,7 +2163,6 @@ export type MemoNote = {
 
 /** 备忘录「新建」草稿（仅本机持久化，不参与云同步；不含图片附件）。 */
 export type MemoDraft = {
-  type: MemoNoteType;
   contentMd: string;
   workspaceHint: string | null;
   updatedAt: number;
@@ -2175,7 +2170,6 @@ export type MemoDraft = {
 
 /** memo.setDraft 的输入：草稿不参与云同步，字段与 MemoDraft 对应（缺 updatedAt）。 */
 export type MemoDraftInput = {
-  type: MemoNoteType;
   contentMd: string;
   workspaceHint?: string | null;
 };

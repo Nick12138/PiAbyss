@@ -16,8 +16,6 @@ import {
   ChevronDown,
   CircleAlert,
   Eraser,
-  Lightbulb,
-  ListChecks,
   Loader2,
   Pencil,
   Plus,
@@ -27,7 +25,6 @@ import {
   StickyNote,
   Trash2,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import {
   lazy,
@@ -40,10 +37,9 @@ import {
   useState,
   type ClipboardEvent,
   type KeyboardEvent,
-  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import type { MemoNote, MemoNoteStatus, MemoNoteType } from "@piabyss/protocol";
+import type { MemoNote, MemoNoteStatus } from "@piabyss/protocol";
 import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
 import { LightboxImage } from "../../components/ImageLightbox";
 import { Select } from "../../components/Select";
@@ -97,14 +93,6 @@ import {
 
 const STATUS_TABS: readonly MemoStatusFilter[] = ["open", "in_progress", "done", "archived"];
 
-const TYPE_OPTIONS: readonly MemoNoteType[] = ["memo", "idea", "task"];
-
-const TYPE_ICONS: Record<MemoNoteType, LucideIcon> = {
-  memo: StickyNote,
-  idea: Lightbulb,
-  task: ListChecks,
-};
-
 /**
  * 查看态的 Markdown 渲染器（Streamdown + shiki/mermaid，体积可观）。
  * 与文件标签的「预览」模式同源，按需加载以免拖慢备忘录首屏；
@@ -123,17 +111,6 @@ function MarkdownPending() {
   );
 }
 
-/** 下拉选项/触发器共用：图标 + 文本。 */
-function typeOptionLabel(type: MemoNoteType, t: Translate): ReactNode {
-  const Icon = TYPE_ICONS[type];
-  return (
-    <span className="flex items-center gap-1.5">
-      <Icon size={13} className="shrink-0 text-muted" aria-hidden />
-      <span className="truncate">{memoTypeLabel(type, t)}</span>
-    </span>
-  );
-}
-
 /** 编辑器内图片：新上传的（保存时随请求上传）或已有图片的回显（existingId 非空）。 */
 type PendingImage = {
   key: string;
@@ -147,7 +124,6 @@ type PendingImage = {
 
 type EditorState = {
   id: string | null;
-  type: MemoNoteType;
   contentMd: string;
   workspaceHint: string;
   pendingImages: PendingImage[];
@@ -218,7 +194,6 @@ export function MemoPage() {
           if (current.contentMd.trim().length > 0) return current;
           return {
             ...current,
-            type: draft.type,
             contentMd: draft.contentMd,
             workspaceHint: draft.workspaceHint ?? current.workspaceHint,
           };
@@ -236,7 +211,6 @@ export function MemoPage() {
   useEffect(() => {
     if (!editor || editor.id !== null) return;
     const payload = JSON.stringify({
-      type: editor.type,
       contentMd: editor.contentMd,
       workspaceHint: editor.workspaceHint,
     });
@@ -410,7 +384,6 @@ export function MemoPage() {
   function newEditorState(cwd: string | null | undefined): EditorState {
     return {
       id: null,
-      type: "memo",
       contentMd: "",
       workspaceHint: cwd ? pathBasename(cwd) : "",
       pendingImages: [],
@@ -438,7 +411,6 @@ export function MemoPage() {
         : `${note.title}\n\n${note.contentMd}`;
     setEditor({
       id: note.id,
-      type: note.type,
       contentMd: seeded,
       workspaceHint: note.workspaceHint ?? "",
       pendingImages: note.images.map((image) => ({
@@ -490,7 +462,7 @@ export function MemoPage() {
     });
   }
 
-  /** 清空新建表单：清正文与图片（保留类型/工作区），并删除本地草稿文件。 */
+  /** 清空新建表单：清正文与图片（保留工作区），并删除本地草稿文件。 */
   function clearNewDraft() {
     if (!editor || editor.id !== null) return;
     pendingDraftRef.current = null;
@@ -509,7 +481,6 @@ export function MemoPage() {
       const hint = editor.workspaceHint.trim() || null;
       if (editor.id === null) {
         await createMemoNote({
-          type: editor.type,
           title,
           contentMd: editor.contentMd,
           tags,
@@ -522,7 +493,6 @@ export function MemoPage() {
         });
       } else {
         await updateMemoNote(editor.id, {
-          type: editor.type,
           title,
           contentMd: editor.contentMd,
           tags,
@@ -1240,7 +1210,6 @@ function MemoListItem({
   onUnarchive: (note: MemoNote) => void;
 }) {
   const t = useT();
-  const Icon = TYPE_ICONS[note.type];
   return (
     <li>
       <div
@@ -1262,7 +1231,6 @@ function MemoListItem({
         }`}
       >
         <span className="flex w-full items-center gap-2">
-          <Icon size={14} className="shrink-0 text-muted" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
             {note.title}
           </span>
@@ -1376,7 +1344,6 @@ function MemoDetail({
   onDelete: () => void;
 }) {
   const t = useT();
-  const TypeIcon = TYPE_ICONS[note.type];
   // 只有 Agent 主动提交总结后才展示「Agent完成总结」；
   // 待处理/进行中或手动完成 → 保持「用 Agent 处理」。
   const showResult = note.status === "done" && note.result !== null;
@@ -1385,7 +1352,7 @@ function MemoDetail({
       {/* 标题行：返回（窄屏）+ 图标 + 单行标题（溢出省略），右侧常驻 Agent/编辑/删除。 */}
       <div className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border px-4 py-2">
         <BackToListButton onClick={onBack} />
-        <TypeIcon size={18} className="shrink-0 text-muted" aria-hidden />
+        <StickyNote size={18} className="shrink-0 text-muted" aria-hidden />
         <h2 className="min-w-0 flex-1 truncate text-[16px] font-semibold text-foreground">
           {note.title}
         </h2>
@@ -1587,7 +1554,6 @@ function MemoEditor({
     try {
       const result = await optimizeMemo({
         contentMd: editor.contentMd,
-        type: editor.type,
         workspaceHint: editor.workspaceHint ? pathBasename(editor.workspaceHint) : null,
         workspaces: availableWorkspaces,
       });
@@ -1601,7 +1567,6 @@ function MemoEditor({
       onChange({
         ...editor,
         contentMd: result.contentMd,
-        type: result.type,
         ...(chosen ? { workspaceHint: chosen } : {}),
       });
     } catch (error) {
@@ -1632,17 +1597,6 @@ function MemoEditor({
     >
       <div className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border px-4 py-2">
         <BackToListButton onClick={onBack} />
-        <Select
-          value={editor.type}
-          onChange={(value) => patch({ type: value as MemoNoteType })}
-          options={TYPE_OPTIONS.map((type) => ({
-            value: type,
-            label: typeOptionLabel(type, t),
-          }))}
-          selectedLabel={typeOptionLabel(editor.type, t)}
-          ariaLabel={t("memoFieldType")}
-          className="w-28 shrink-0"
-        />
         <WorkspaceCombobox
           value={editor.workspaceHint}
           onChange={(value) => patch({ workspaceHint: value })}
@@ -1948,7 +1902,3 @@ function SelectFilter({
   );
 }
 
-function memoTypeLabel(type: MemoNoteType, t: Translate): string {
-  const key = type === "memo" ? "memoTypeMemo" : type === "idea" ? "memoTypeIdea" : "memoTypeTask";
-  return t(key);
-}

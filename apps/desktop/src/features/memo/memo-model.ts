@@ -286,7 +286,6 @@ export function formatMemoDateTime(timestamp: number): string {
 export function composeMemoPrompt(note: MemoNote, agentDir?: string | null): string {
   const attributes = [
     `id="${note.id}"`,
-    `type="${note.type}"`,
     `status="${note.status}"`,
     ...(note.tags.length ? [`tags="${note.tags.join(",")}"`] : []),
     ...(note.workspaceHint ? [`workspace="${note.workspaceHint}"`] : []),

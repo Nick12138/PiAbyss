@@ -1116,9 +1116,9 @@ export const zh: Record<MessageKey, string> = {
   transcriptThinkingJumpLatest: "⬇️ 跳到最新顿悟",
   transcriptAttachmentAlt: "附件",
   transcriptToolResultAlt: "工具结果",
-  injectedRefMemo: "备忘录",
+  injectedRefMemo: "方寸间",
   injectedRefQuote: "引用",
-  injectedRefMemoResult: "备忘录总结",
+  injectedRefMemoResult: "方寸间总结",
   injectedRefSchedulePreamble: "周期计划提示词",
   injectedRefScheduleJob: "周期计划",
   injectedRefRelayMapping: "字段映射",
@@ -1941,14 +1941,14 @@ export const zh: Record<MessageKey, string> = {
   pixieDispatchActiveCount: "进行中的委派：{count} 个",
 
   // 桌面速记小窗（memo-widget）
-  memoWidgetTitle: "备忘速记",
+  memoWidgetTitle: "方寸之间",
   memoWidgetCountHint: "{count} 条待处理",
   memoWidgetEmpty: "没有待处理的备忘",
   memoWidgetEmptyHint: "在下方输入框随手记一条，Enter 保存。",
   memoWidgetInputPlaceholder: "记一条待办事项…",
   memoWidgetHostNotReady: "主机未就绪",
   memoWidgetHostNotReadyHint: "PiAbyss 主机仍在启动，会自动重试。",
-  memoWidgetLoadFailed: "加载备忘录失败",
+  memoWidgetLoadFailed: "加载记录失败",
   memoWidgetCreateFailed: "保存失败",
   memoWidgetComplete: "标记完成",
   memoWidgetOpenApp: "在 PiAbyss 中打开并预览",
@@ -1960,32 +1960,30 @@ export const zh: Record<MessageKey, string> = {
   memoWidgetSwitchToFloat: "切换为悬浮置顶",
   memoWidgetHide: "隐藏小窗",
 
-  // 备忘录
-  memoTitle: "备忘录",
+  // 方寸间（原「备忘录」）：待办 · 速记 · 备忘 · 收集
+  memoTitle: "方寸间",
+  memoTagline: "待办 · 速记 · 备忘 · 收集",
   memoNew: "新建记录",
-  memoSearchPlaceholder: "搜索备忘录…",
+  memoSearchPlaceholder: "搜索记录…",
   memoFilterAll: "全部",
   memoFilterTodo: "待处理",
   memoFilterInProgress: "进行中",
   memoFilterDone: "已完成",
   memoFilterArchived: "已归档",
-  memoTypeMemo: "备忘",
-  memoTypeIdea: "想法",
-  memoTypeTask: "任务",
   memoEmptyList: "这里还没有记录",
   memoEmptyListHint: "点击「新建记录」，随时记下想法。",
   memoNoSelection: "选择一条记录",
   memoNoSelectionHint: "从左侧列表选择一条记录查看详情。",
   memoBackToList: "返回列表",
-  memoLoadFailed: "加载备忘录失败",
+  memoLoadFailed: "加载记录失败",
   memoSaveFailed: "保存失败",
   memoDeleteFailed: "删除失败",
   memoActionEdit: "编辑",
   memoActionSave: "保存",
   memoActionSaveHint: "保存（Ctrl+S）",
-  memoOptimize: "整理备忘录",
+  memoOptimize: "整理记录",
   memoUndoOptimize: "撤销整理",
-  memoOptimizeFailed: "备忘录整理失败",
+  memoOptimizeFailed: "记录整理失败",
   memoActionClear: "清空",
   memoActionClearHint: "清空未保存的新建内容（正文与图片）",
   memoActionDelete: "删除",
@@ -1999,7 +1997,7 @@ export const zh: Record<MessageKey, string> = {
   memoActionAgent: "执行",
   memoActionCreate: "写一条新的",
   memoAgentPrompt:
-    "请处理上面引用的备忘录记录。规则：\n" +
+    "请处理上面引用的方寸间记录。规则：\n" +
     "1. 用户在会话中手动发送的指令优先级最高；若与本提示词冲突（例如要求先不要标记完成），以用户指令为准。\n" +
     "2. 只有在任务已产出最终结果、不再等待用户任何输入时，才调用 piabyss_memo 的 complete 动作，并在 result 参数中提交结果总结（做了什么、结论或产出、遗留事项）。\n" +
     "3. 若需要用户决策（如让用户在多个方案中选择）或任务尚未完成，不要标记完成；先回复等待用户输入，待有结论后再 complete。",
@@ -2018,15 +2016,15 @@ export const zh: Record<MessageKey, string> = {
   memoResultClearHint: "删除这条记录的 Agent 完成总结",
   memoResultClearFail: "清空总结失败",
   memoFollowupPrompt:
-    "上面引用的是一条备忘录记录及其最近一次 Agent 处理的结果总结。请在此基础上继续讨论或继续处理。规则：\n" +
+    "上面引用的是一条方寸间记录及其最近一次 Agent 处理的结果总结。请在此基础上继续讨论或继续处理。规则：\n" +
     "1. 用户在会话中手动发送的指令优先级最高；若与本提示词冲突（例如要求先不要标记完成），以用户指令为准。\n" +
     "2. 只有在得出最终结论且不再等待用户输入时，才调用 piabyss_memo 的 complete 动作，并在 result 中提交更新后的总结（会覆盖旧总结）。\n" +
     "3. 若需要用户决策或讨论尚未收敛，不要标记完成，先回复等待用户输入。",
   memoContinueFailed: "继续讨论失败：无法打开或创建会话",
-  memoAgentCreateFailed: "打开新会话失败，未能注入备忘录提示词",
+  memoAgentCreateFailed: "打开新会话失败，未能注入方寸间提示词",
   memoSyncTitle: "云同步（Cloudflare R2）",
   memoSyncDesc:
-    "通过 Cloudflare R2（S3 兼容）在多台设备间同步备忘录：每次同步 = 拉取云端 → 逐条合并（较新者胜）→ 推送合并结果；删除也会通过墓碑同步。同步由 piabyss-memo 插件处理，密钥仅保存在本机。",
+    "通过 Cloudflare R2（S3 兼容）在多台设备间同步方寸间记录：每次同步 = 拉取云端 → 逐条合并（较新者胜）→ 推送合并结果；删除也会通过墓碑同步。同步由 piabyss-memo 插件处理，密钥仅保存在本机。",
   memoSyncNotConfigured:
     "尚未配置 R2 连接信息：点击「插件配置」填写 Account ID / Access Key ID / Secret Access Key / 桶名，也可在那里开启自动同步。",
   memoSyncOpenConfig: "插件配置",
@@ -2052,7 +2050,6 @@ export const zh: Record<MessageKey, string> = {
   memoFieldWorkspace: "工作区",
   memoFieldWorkspacePlaceholder: "工作区名称（可选）",
   memoWorkspaceCurrent: "当前",
-  memoFieldType: "类型",
   memoDropIgnored: "已忽略非图片文件 {name}",
   memoImageTooLarge: "图片超过 8 MiB 上限",
   memoWorkspaceUnresolved: "未找到与 {workspace} 匹配的工作区，执行时将使用默认工作区。",

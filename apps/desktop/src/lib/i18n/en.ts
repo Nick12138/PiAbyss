@@ -1183,9 +1183,9 @@ export const en = {
   transcriptThinkingJumpLatest: "Jump to latest thought",
   transcriptAttachmentAlt: "Attachment",
   transcriptToolResultAlt: "Tool result",
-  injectedRefMemo: "Memo",
+  injectedRefMemo: "Nook",
   injectedRefQuote: "Quote",
-  injectedRefMemoResult: "Memo summary",
+  injectedRefMemoResult: "Nook summary",
   injectedRefSchedulePreamble: "Schedule prompt",
   injectedRefScheduleJob: "Schedule plan",
   injectedRefRelayMapping: "Field mapping",
@@ -2014,7 +2014,7 @@ export const en = {
   scheduleFormTimeoutInvalid: "Timeout must be 1–360 minutes",
   scheduleFormMaxRunsInvalid: "Max runs must be a positive integer",
 
-  // Memo (备忘录)
+  // Nook (方寸间， formerly Memo)
 
   // Pixie
   pixieTitle: "Pixie",
@@ -2029,16 +2029,17 @@ export const en = {
   pixieDispatchEmpty: "No delegated tasks yet",
   pixieDispatchActiveCount: "{count} in progress",
 
-  memoTitle: "Memos",
+  memoTitle: "Nook",
+  memoTagline: "To-dos · quick notes · memos · collecting",
   // Desktop quick-capture widget (memo-widget)
-  memoWidgetTitle: "Memo Quick Capture",
+  memoWidgetTitle: "Nook",
   memoWidgetCountHint: "{count} open",
-  memoWidgetEmpty: "No open memos",
+  memoWidgetEmpty: "No open notes",
   memoWidgetEmptyHint: "Type below and press Enter to capture a note.",
   memoWidgetInputPlaceholder: "Capture a note…",
   memoWidgetHostNotReady: "Host not ready",
   memoWidgetHostNotReadyHint: "The PiAbyss host is still starting; retrying automatically.",
-  memoWidgetLoadFailed: "Failed to load memos",
+  memoWidgetLoadFailed: "Failed to load notes",
   memoWidgetCreateFailed: "Failed to save",
   memoWidgetComplete: "Mark done",
   memoWidgetOpenApp: "Open and preview in PiAbyss",
@@ -2050,29 +2051,26 @@ export const en = {
   memoWidgetSwitchToFloat: "Switch to floating on top",
   memoWidgetHide: "Hide",
   memoNew: "New note",
-  memoSearchPlaceholder: "Search memos…",
+  memoSearchPlaceholder: "Search notes…",
   memoFilterAll: "All",
   memoFilterTodo: "Pending",
   memoFilterInProgress: "In progress",
   memoFilterDone: "Done",
   memoFilterArchived: "Archived",
-  memoTypeMemo: "Memo",
-  memoTypeIdea: "Idea",
-  memoTypeTask: "Task",
   memoEmptyList: "No notes here yet",
   memoEmptyListHint: "Click “New note” to capture an idea at any time.",
   memoNoSelection: "Select a note",
   memoNoSelectionHint: "Pick a note from the list to view and edit it.",
   memoBackToList: "Back to list",
-  memoLoadFailed: "Failed to load memos",
+  memoLoadFailed: "Failed to load notes",
   memoSaveFailed: "Failed to save the note",
   memoDeleteFailed: "Failed to delete the note",
   memoActionEdit: "Edit",
   memoActionSave: "Save",
   memoActionSaveHint: "Save (Ctrl+S)",
-  memoOptimize: "Organize memo",
+  memoOptimize: "Organize note",
   memoUndoOptimize: "Undo organization",
-  memoOptimizeFailed: "Memo organization failed",
+  memoOptimizeFailed: "Note organization failed",
   memoActionClear: "Clear",
   memoActionClearHint: "Clear the unsaved new-note draft (text and images)",
   memoActionDelete: "Delete",
@@ -2086,7 +2084,7 @@ export const en = {
   memoActionAgent: "Handle with Agent",
   memoActionCreate: "New note",
   memoAgentPrompt:
-    "Please handle the memo note referenced above. Rules:\n" +
+    "Please handle the Nook note referenced above. Rules:\n" +
     "1. Instructions the user sends manually in the session have the highest priority; if they conflict with this prompt (e.g. do not mark it done yet), follow the user.\n" +
     "2. Only call the complete action of the piabyss_memo tool once the task has produced a final result and nothing is awaited from the user, always passing a `result` parameter containing a summary of what was done, the outcome, and any remaining follow-ups.\n" +
     "3. If you need the user to decide (e.g. choose between options) or the task is not finished, do NOT mark it complete — reply and wait for the user's input, then complete once there is a conclusion.",
@@ -2107,15 +2105,15 @@ export const en = {
   memoResultClearHint: "Delete the Agent completion summary of this note",
   memoResultClearFail: "Failed to clear summary",
   memoFollowupPrompt:
-    "Referenced above is a memo note together with the latest Agent completion summary. Please continue the discussion or the work based on it. Rules:\n" +
+    "Referenced above is a Nook note together with the latest Agent completion summary. Please continue the discussion or the work based on it. Rules:\n" +
     "1. Instructions the user sends manually in the session have the highest priority; if they conflict with this prompt (e.g. do not mark it done yet), follow the user.\n" +
     "2. Only call the complete action of piabyss_memo again once a final conclusion is reached and nothing is awaited from the user, passing an updated summary in `result` (it overwrites the previous one).\n" +
     "3. If the user's decision is needed or the discussion has not converged, do NOT mark it complete — reply and wait for the user's input.",
   memoContinueFailed: "Failed to continue: could not open or create a session",
-  memoAgentCreateFailed: "Failed to open a new session — memo prompt was not injected",
+  memoAgentCreateFailed: "Failed to open a new session — Nook prompt was not injected",
   memoSyncTitle: "Cloud sync (Cloudflare R2)",
   memoSyncDesc:
-    "Sync memos across devices via Cloudflare R2 (S3-compatible): each sync downloads the cloud copy, merges note-by-note (newest wins) and pushes the result; deletions propagate via tombstones. The sync engine is owned by the piabyss-memo plugin; keys stay on this device.",
+    "Sync Nook notes across devices via Cloudflare R2 (S3-compatible): each sync downloads the cloud copy, merges note-by-note (newest wins) and pushes the result; deletions propagate via tombstones. The sync engine is owned by the piabyss-memo plugin; keys stay on this device.",
   memoSyncNotConfigured:
     "R2 connection is not configured yet: click “Plugin config” to fill in Account ID / Access Key ID / Secret Access Key / bucket — auto sync can be enabled there too.",
   memoSyncOpenConfig: "Plugin config",
@@ -2141,7 +2139,6 @@ export const en = {
   memoFieldWorkspace: "Workspace",
   memoFieldWorkspacePlaceholder: "Workspace name (optional)",
   memoWorkspaceCurrent: "Current",
-  memoFieldType: "Type",
   memoDropIgnored: "Skipped non-image file {name}",
   memoImageTooLarge: "Image exceeds the 8 MiB limit",
   memoWorkspaceUnresolved:

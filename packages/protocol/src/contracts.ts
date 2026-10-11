@@ -115,7 +115,6 @@ import type {
   ScheduleAgentTranscript,
   MemoNote,
   MemoNoteStatus,
-  MemoNoteType,
   MemoImageInput,
   MemoDraft,
   MemoDraftInput,
@@ -536,12 +535,10 @@ export type HostRequestParams = {
   "memo.list": null;
   "memo.optimize": {
     contentMd: string;
-    type: MemoNoteType;
     workspaceHint: string | null;
     workspaces: Array<{ id: string; name: string }>;
   };
   "memo.create": {
-    type: MemoNoteType;
     title: string;
     contentMd: string;
     tags?: string[];
@@ -551,7 +548,6 @@ export type HostRequestParams = {
   "memo.update": {
     id: string;
     patch: {
-      type?: MemoNoteType;
       title?: string;
       contentMd?: string;
       status?: MemoNoteStatus;
@@ -808,7 +804,6 @@ export type HostResultMap = {
   "memo.list": { notes: MemoNote[] };
   "memo.optimize": {
     contentMd: string;
-    type: MemoNoteType;
     workspaceId: string | null;
   };
   "memo.create": { note: MemoNote };

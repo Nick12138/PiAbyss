@@ -328,14 +328,12 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "memo.list": null,
   "memo.optimize": {
     contentMd: "正文",
-    type: "memo",
     workspaceHint: null,
     workspaces: [],
   },
   "memo.create": {
-    type: "task",
     title: "重构 memo 模块",
-    contentMd: "给 memo 页面补充分类筛选",
+    contentMd: "给 memo 页面补充工作区筛选",
     tags: ["#refactor"],
     workspaceHint: "PiAbyss",
   },
@@ -350,7 +348,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   },
   "memo.getDraft": null,
   "memo.setDraft": {
-    draft: { type: "memo", contentMd: "未保存的草稿", workspaceHint: "PiAbyss" },
+    draft: { contentMd: "未保存的草稿", workspaceHint: "PiAbyss" },
   },
   "memo.clearDraft": null,
   "memo.getSyncConfig": null,
@@ -652,9 +650,9 @@ function invalidParams(method: HostMethod): unknown {
     case "memo.list":
       return {}; // must be null
     case "memo.optimize":
-      return { contentMd: 42, type: "bad", workspaceHint: false, workspaces: [] };
+      return { contentMd: 42, workspaceHint: false, workspaces: [] };
     case "memo.create":
-      return { type: "nope", title: "", contentMd: 42 };
+      return { title: "", contentMd: 42 };
     case "memo.update":
       return { id: "", patch: { status: "bogus" } };
     case "memo.delete":
@@ -665,7 +663,7 @@ function invalidParams(method: HostMethod): unknown {
     case "memo.clearDraft":
       return { unexpected: true };
     case "memo.setDraft":
-      return { draft: { type: "nope", contentMd: 42 } };
+      return { draft: { contentMd: 42 } };
     case "memo.getSyncConfig":
     case "memo.testSync":
     case "memo.syncNow":
