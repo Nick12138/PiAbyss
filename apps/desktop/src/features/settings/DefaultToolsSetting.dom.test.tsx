@@ -103,11 +103,11 @@ describe("DefaultToolsSetting", () => {
       expect(request).toHaveBeenLastCalledWith(
         "piSettings.patch",
         { expectedHostInstanceId: CONNECTED_HOST.hostInstanceId },
-        { defaultTools: ["read", "bash", "grep", "ls"] },
+        { defaultTools: ["read", "bash", "grep", "powershell", "ls"] },
       ),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /^Configure/ })).toHaveAccessibleName(/4/);
+    expect(await screen.findByRole("button", { name: /^Configure/ })).toHaveAccessibleName(/5/);
   });
 
   it("keeps the dialog selection pending until Save and discards it on Cancel", async () => {
@@ -131,7 +131,7 @@ describe("DefaultToolsSetting", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
     const entry = screen.getByRole("button", { name: /^Configure/ });
-    expect(entry).toHaveAccessibleName(/2/);
+    expect(entry).toHaveAccessibleName(/3/);
     const request = vi.mocked(hostClient.request);
     expect(request.mock.calls.filter(([method]) => method === "piSettings.patch")).toHaveLength(0);
   });
@@ -156,6 +156,6 @@ describe("DefaultToolsSetting", () => {
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
     const entry = await screen.findByRole("button", { name: /^Configure/ });
-    expect(entry).toHaveAccessibleName(/2/);
+    expect(entry).toHaveAccessibleName(/3/);
   });
 });

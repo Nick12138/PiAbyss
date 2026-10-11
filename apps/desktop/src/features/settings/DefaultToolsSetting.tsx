@@ -10,12 +10,36 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { notifyOperationFailure } from "../../lib/notify-operation-error";
 
 /** Built-in tools pi ships; mirrors the SDK's `allToolNames` registry. */
-export const BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
+export const BUILTIN_TOOLS = [
+  "read",
+  "bash",
+  "edit",
+  "write",
+  "grep",
+  "find",
+  "ls",
+  "powershell",
+] as const;
 
 export type BuiltinTool = (typeof BUILTIN_TOOLS)[number];
 
-/** The SDK default when `defaultTools` is absent from settings.json. */
-export const DEFAULT_TOOLS: readonly string[] = ["read", "bash", "edit", "write"];
+/**
+ * The SDK default when `defaultTools` is absent from settings.json. On native
+ * Windows the SDK also enables `powershell`; we keep it always on.
+ */
+export const DEFAULT_TOOLS: readonly string[] = [
+  "read",
+  "bash",
+  "edit",
+  "write",
+  "powershell",
+];
+
+/**
+ * `powershell` is forced on and hidden from the UI: it only widens the model's
+ * fallback path on Windows, and there is no reason for users to toggle it.
+ */
+const HIDDEN_ALWAYS_ON_TOOLS: readonly BuiltinTool[] = ["powershell"];
 
 const TOOL_LABELS: Record<BuiltinTool, MessageKey> = {
   read: "toolRead",
@@ -25,6 +49,7 @@ const TOOL_LABELS: Record<BuiltinTool, MessageKey> = {
   grep: "toolGrep",
   find: "toolFind",
   ls: "toolLs",
+  powershell: "toolPowershell",
 };
 
 const TOOL_DESCRIPTIONS: Record<BuiltinTool, MessageKey> = {
@@ -35,7 +60,13 @@ const TOOL_DESCRIPTIONS: Record<BuiltinTool, MessageKey> = {
   grep: "generalDefaultToolsGrepDesc",
   find: "generalDefaultToolsFindDesc",
   ls: "generalDefaultToolsLsDesc",
+  powershell: "generalDefaultToolsPowershellDesc",
 };
+
+/** Tools shown in the dialog; always-on hidden tools are not user-selectable. */
+const VISIBLE_TOOLS: readonly BuiltinTool[] = BUILTIN_TOOLS.filter(
+  (tool) => !HIDDEN_ALWAYS_ON_TOOLS.includes(tool),
+);
 
 /**
  * Normalize a stored `defaultTools` array for the checkbox UI: unknown names are
@@ -43,15 +74,15 @@ const TOOL_DESCRIPTIONS: Record<BuiltinTool, MessageKey> = {
  * restored to BUILTIN_TOOLS so the list never reshuffles between saves.
  */
 export function normalizeSelectedTools(stored: readonly string[] | undefined): BuiltinTool[] {
-  const set = new Set(stored ?? DEFAULT_TOOLS);
+  const set = new Set([...(stored ?? DEFAULT_TOOLS), ...HIDDEN_ALWAYS_ON_TOOLS]);
   return BUILTIN_TOOLS.filter((tool) => set.has(tool));
 }
 
 export function DefaultToolsSetting() {
   const t = useT();
   const host = useAppStore((state) => state.host);
-  const [selected, setSelected] = useState<BuiltinTool[]>(() => normalizeSelectedTools(undefined));
-  const [draft, setDraft] = useState<BuiltinTool[]>(() => normalizeSelectedTools(undefined));
+  const [selected, setSelected] = useState<BuiltinTool[]>(() => normalizeSelectedTools(DEFAULT_TOOLS));
+  const [draft, setDraft] = useState<BuiltinTool[]>(() => normalizeSelectedTools(DEFAULT_TOOLS));
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -146,7 +177,7 @@ export function DefaultToolsSetting() {
               role="group"
               aria-label={t("generalDefaultTools")}
             >
-              {BUILTIN_TOOLS.map((tool) => {
+              {VISIBLE_TOOLS.map((tool) => {
                 const checked = draft.includes(tool);
                 return (
                   <label
