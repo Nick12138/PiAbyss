@@ -163,11 +163,6 @@ describe("SettingsPage navigation guard", () => {
 
     await user.click(screen.getByRole("button", { name: "Appearance" }));
 
-    expect(
-      screen.getByRole("heading", {
-        name: "Theme, density, language, and conversation typography",
-      }),
-    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Appearance" })).toHaveAttribute(
       "aria-current",
       "page",
@@ -293,7 +288,7 @@ describe("SettingsPage navigation guard", () => {
     const user = userEvent.setup();
     render(<SettingsPage initialSection="appearance" />);
 
-    const accent = screen.getByRole("group", { name: "Accent color" });
+    const accent = screen.getByRole("group", { name: "Theme color" });
     const themeDefault = within(accent).getByRole("button", { name: "Theme default" });
     const violet = within(accent).getByRole("button", { name: "Accent color #8B5CF6" });
     const custom = within(accent).getByRole("button", { name: "Custom" });
@@ -398,9 +393,7 @@ describe("SettingsPage navigation guard", () => {
     expect(screen.getByText("No Providers configured yet.")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "General" }));
-    expect(
-      screen.getByRole("heading", { name: "Startup behavior and Pi Host configuration" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Launch at startup")).toBeInTheDocument();
   });
 
   it("offers the Host section with process controls and runtime info", async () => {
@@ -412,9 +405,10 @@ describe("SettingsPage navigation guard", () => {
     expect(screen.queryByText("Capabilities")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Host" }));
-    expect(
-      screen.getByRole("heading", { name: "Pi Host runtime and app info" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Host" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
     expect(screen.getByText("Auto-restart Pi Host")).toBeInTheDocument();
   });
 
@@ -424,11 +418,10 @@ describe("SettingsPage navigation guard", () => {
 
     await user.click(screen.getByRole("button", { name: "Shortcuts" }));
 
-    expect(
-      screen.getByRole("heading", {
-        name: "Customize commands active while PiAbyss is focused",
-      }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Shortcuts" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
     expect(screen.getByText("New session")).toBeInTheDocument();
     expect(screen.getByText("Ctrl+N")).toBeInTheDocument();
     expect(screen.getByText("Show keyboard shortcuts")).toBeInTheDocument();
@@ -454,20 +447,14 @@ describe("SettingsPage navigation guard", () => {
 
     await user.click(screen.getByRole("button", { name: "General" }));
     await user.click(screen.getByRole("button", { name: "Discard changes" }));
-    expect(
-      screen.getByRole("heading", { name: "Startup behavior and Pi Host configuration" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Launch at startup")).toBeInTheDocument();
   });
 
   it("switches the interface to Chinese from the Appearance language select", async () => {
     const user = userEvent.setup();
     render(<SettingsPage initialSection="appearance" />);
 
-    expect(
-      screen.getByRole("heading", {
-        name: "Theme, density, language, and conversation typography",
-      }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Theme style" })).toBeInTheDocument();
 
     await user.click(screen.getByLabelText(/Language/));
     await user.click(await screen.findByRole("option", { name: "中文" }));

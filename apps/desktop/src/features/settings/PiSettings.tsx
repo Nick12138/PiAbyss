@@ -33,8 +33,11 @@ const DEFAULT_SETTINGS: PiSettingsSnapshot = {
   defaultThinkingLevel: "medium",
   retryMaxRetries: 3,
   defaultProjectTrust: "ask",
-  steeringMode: "one-at-a-time",
-  followUpMode: "one-at-a-time",
+  // Fixed behavior: queued messages are always sent as a whole. The Host
+  // forces every session to "all" (agent-session-factory) and the modes are
+  // no longer configurable from this page.
+  steeringMode: "all",
+  followUpMode: "all",
   models: [],
 };
 
@@ -119,11 +122,10 @@ export function PiSettings() {
       <div className="flex flex-col gap-4 rounded-lg border border-border p-4">
         <SettingRow
           label={t("generalDefaultModel")}
-          description={t("generalDefaultModelDesc")}
           saving={saving === "defaultModel" || saving === "defaultThinkingLevel"}
         >
           <Select
-            className="w-56 max-w-full"
+            className="w-fit max-w-full"
             ariaLabel={t("generalDefaultModel")}
             value={selectedModelKey}
             disabled={loading || settings.models.length === 0}
@@ -154,11 +156,7 @@ export function PiSettings() {
           />
         </SettingRow>
 
-        <SettingRow
-          label={t("generalRetryCount")}
-          description={t("generalRetryCountDesc")}
-          saving={saving === "retryMaxRetries"}
-        >
+        <SettingRow label={t("generalRetryCount")} saving={saving === "retryMaxRetries"}>
           <input
             className="h-8 w-20 rounded-md border border-border bg-surface px-2 text-right text-xs text-foreground outline-none focus:border-focus"
             type="number"
@@ -194,46 +192,6 @@ export function PiSettings() {
               { value: "ask", label: t("generalProjectTrustAsk") },
               { value: "always", label: t("generalProjectTrustAlways") },
               { value: "never", label: t("generalProjectTrustNever") },
-            ]}
-          />
-        </SettingRow>
-
-        <SettingRow
-          label={t("generalSteeringMode")}
-          description={t("generalSteeringModeDesc")}
-          saving={saving === "steeringMode"}
-        >
-          <Select
-            className="min-w-40"
-            ariaLabel={t("generalSteeringMode")}
-            value={settings.steeringMode}
-            disabled={loading}
-            onChange={(value) =>
-              void patch("steeringMode", { steeringMode: value as PiSettingsPatch["steeringMode"] })
-            }
-            options={[
-              { value: "one-at-a-time", label: t("generalSteeringOneAtATime") },
-              { value: "all", label: t("generalSteeringAll") },
-            ]}
-          />
-        </SettingRow>
-
-        <SettingRow
-          label={t("generalFollowUpMode")}
-          description={t("generalFollowUpModeDesc")}
-          saving={saving === "followUpMode"}
-        >
-          <Select
-            className="min-w-40"
-            ariaLabel={t("generalFollowUpMode")}
-            value={settings.followUpMode}
-            disabled={loading}
-            onChange={(value) =>
-              void patch("followUpMode", { followUpMode: value as PiSettingsPatch["followUpMode"] })
-            }
-            options={[
-              { value: "one-at-a-time", label: t("generalFollowUpOneAtATime") },
-              { value: "all", label: t("generalFollowUpAll") },
             ]}
           />
         </SettingRow>
@@ -320,7 +278,7 @@ function SettingRow({
   children,
 }: {
   label: string;
-  description: string;
+  description?: string;
   saving: boolean;
   children: ReactNode;
 }) {
@@ -330,7 +288,9 @@ function SettingRow({
     <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
       <span className="min-w-0">
         <span className="block text-sm">{label}</span>
-        <span className="mt-1 block text-xs leading-relaxed text-muted">{description}</span>
+        {description && (
+          <span className="mt-1 block text-xs leading-relaxed text-muted">{description}</span>
+        )}
       </span>
       <div className={`min-w-0 max-w-full ${saving ? "opacity-60" : ""}`}>{children}</div>
     </div>

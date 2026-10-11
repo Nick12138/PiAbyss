@@ -1,42 +1,6 @@
 import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import {
-  ChartColumn,
-  Keyboard,
-  KeyRound,
-  Package,
-  Palette,
-  Puzzle,
-  ServerCog,
-  Settings2,
-  Wand2,
-  type LucideIcon,
-} from "lucide-react";
-import type { SettingsSection } from "../../lib/stores/app-store";
-import type { MessageKey } from "../../lib/i18n";
-
-/** Per-section title/subtitle shown in the app-level top bar while the Settings
- *  page is active. Kept here (not in SettingsPage) so the app-level AppTopBar
- *  can read it without importing SettingsPage.
- *
- *  Each section shows only its副标题 line as the visible title (the separate
- *  主标题 like "外观/General" was dropped) and pairs a lucide icon with the
- *  title so the header reads the same way the nav entry does. */
-export const SETTINGS_SECTION_META: Record<
-  SettingsSection,
-  { title: MessageKey; subtitle?: MessageKey; icon: LucideIcon }
-> = {
-  general: { title: "generalSubtitle", icon: Settings2 },
-  appearance: { title: "appearanceSubtitle", icon: Palette },
-  providers: { title: "providersSubtitle", icon: KeyRound },
-  skills: { title: "skillsSubtitle", icon: Wand2 },
-  packages: { title: "packagesSubtitle", icon: Package },
-  plugins: { title: "pluginsSubtitle", icon: Puzzle },
-  usage: { title: "usageSubtitle", icon: ChartColumn },
-  host: { title: "hostSubtitle", icon: ServerCog },
-  shortcuts: { title: "shortcutsSubtitle", icon: Keyboard },
-};
 
 /** Portal target for the active section's action buttons. AppTopBar owns the
  *  real slot (the right side of its center segment); SettingsPage (and other

@@ -42,7 +42,7 @@ import { ProxySetting } from "./ProxySetting";
 import { RestartHostButton } from "./restart-host";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
-import { SettingsTopBarActionsContext, SETTINGS_SECTION_META } from "./settings-top-bar";
+import { SettingsTopBarActionsContext } from "./settings-top-bar";
 import {
   cachedPluginLibraryUpdates,
   checkPluginLibraryUpdates,
@@ -181,26 +181,16 @@ function GeneralSettings() {
           <section>
             <h2 className="mb-2 text-[13px] font-medium text-muted">{t("generalStartupGroup")}</h2>
             <div className="flex flex-col gap-4 rounded-lg border border-border p-4">
-              <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
-                <span className="min-w-0">
-                  <span className="block text-sm">{t("generalAutoStartOnBoot")}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted">
-                    {t("generalAutoStartOnBootDesc")}
-                  </span>
-                </span>
+              <div className="flex items-center justify-between">
+                <span className="text-sm">{t("generalAutoStartOnBoot")}</span>
                 <Switch
                   checked={desktopSettings?.autoStartOnBoot ?? false}
                   label={t("generalAutoStartOnBoot")}
                   onChange={(next) => void patchDesktop({ autoStartOnBoot: next })}
                 />
               </div>
-              <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
-                <span className="min-w-0">
-                  <span className="block text-sm">{t("generalSystemNotifications")}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted">
-                    {t("generalSystemNotificationsDesc")}
-                  </span>
-                </span>
+              <div className="flex items-center justify-between">
+                <span className="text-sm">{t("generalSystemNotifications")}</span>
                 <Switch
                   checked={desktopSettings?.systemNotificationsEnabled ?? true}
                   label={t("generalSystemNotifications")}
@@ -308,7 +298,16 @@ function GeneralSettings() {
               <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
                 <label htmlFor="default-shell" className="min-w-0 text-sm">
                   <span className="block">{t("generalDefaultShell")}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted">{t("generalDefaultShellDesc")}</span>
+                  {shellCatalog && (
+                    <span className="mt-1 block truncate font-mono text-[11px] text-muted">
+                      {desktopSettings?.terminalProfile === "auto" ||
+                      !desktopSettings?.terminalProfile
+                        ? shellCatalog.automaticProfile.path
+                        : shellCatalog.profiles.find(
+                            (profile) => profile.id === desktopSettings.terminalProfile,
+                          )?.path}
+                    </span>
+                  )}
                 </label>
                 <div className="flex min-w-0 items-center gap-1.5">
                   <Select
@@ -363,22 +362,12 @@ function GeneralSettings() {
                   {shellCatalogError}
                 </p>
               )}
-              {shellCatalog && (
-                <p className="truncate text-right font-mono text-[11px] text-muted">
-                  {desktopSettings?.terminalProfile === "auto" || !desktopSettings?.terminalProfile
-                    ? shellCatalog.automaticProfile.path
-                    : shellCatalog.profiles.find(
-                        (profile) => profile.id === desktopSettings.terminalProfile,
-                      )?.path}
-                </p>
-              )}
             </div>
           </section>
 
           <section>
             <h2 className="mb-2 text-[13px] font-medium text-muted">{t("generalAdvancedGroup")}</h2>
             <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-              <p className="text-sm text-muted">{t("generalAdvancedDesc")}</p>
               <ProxySetting />
               <DefaultToolsSetting />
               <div className="flex flex-wrap items-center gap-2">
@@ -430,10 +419,11 @@ export function SettingsPage({
   const setSettingsSection = useAppStore((s) => s.setSettingsSection);
   const outerTarget = useContext(SettingsTopBarActionsContext);
   const hasTopBar = outerTarget !== null;
-  // When AppTopBar is absent (standalone render), a fallback header below renders
-  // the title and an actions slot. inlineSlot is that slot once mounted, fed
-  // back via the inner Provider so section components portal their action
-  // buttons into it instead of rendering a duplicate inline header.
+  // When AppTopBar is absent (standalone render), a fallback strip below
+  // renders an actions slot (plus the drag region). inlineSlot is that slot
+  // once mounted, fed back via the inner Provider so section components
+  // portal their action buttons into it instead of rendering a duplicate
+  // inline header.
   const [inlineSlot, setInlineSlot] = useState<HTMLElement | null>(null);
   const innerTarget = hasTopBar ? outerTarget : inlineSlot;
   const [localSection, setLocalSection] = useState<SettingsSection>(initialSection);
@@ -587,22 +577,6 @@ export function SettingsPage({
             data-settings-section-header
             data-tauri-drag-region
           >
-            <div className="flex min-w-0 items-center gap-2">
-              {(() => {
-                const Icon = SETTINGS_SECTION_META[localSection].icon;
-                return <Icon size={16} className="shrink-0 text-muted" aria-hidden />;
-              })()}
-              <div className="min-w-0">
-                <h1 className="truncate text-base font-semibold">
-                  {t(SETTINGS_SECTION_META[localSection].title)}
-                </h1>
-                {SETTINGS_SECTION_META[localSection].subtitle && (
-                  <p className="mt-0.5 truncate text-xs text-muted">
-                    {t(SETTINGS_SECTION_META[localSection].subtitle)}
-                  </p>
-                )}
-              </div>
-            </div>
             <div
               className="ml-auto flex shrink-0 items-center gap-2"
               data-settings-header-actions

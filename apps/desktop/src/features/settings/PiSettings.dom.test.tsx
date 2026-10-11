@@ -82,7 +82,9 @@ describe("PiSettings", () => {
   it("loads and patches the default model", async () => {
     const user = userEvent.setup();
     render(<PiSettings />);
-    const modelButton = await screen.findByRole("button", { name: "Default model" });
+    const modelButton = await screen.findByRole("button", {
+      name: "Default model & thinking depth",
+    });
     await waitFor(() => expect(modelButton).toBeEnabled());
     await user.click(modelButton);
     await user.click(
@@ -97,20 +99,18 @@ describe("PiSettings", () => {
     );
   });
 
-  it("patches thinking via the model menu footer, retry, trust, and queue modes", async () => {
+  it("patches thinking via the model menu footer, retry, and trust", async () => {
     const user = userEvent.setup();
     render(<PiSettings />);
-    await screen.findByRole("button", { name: "Default model" });
+    await screen.findByRole("button", { name: "Default model & thinking depth" });
 
-    await user.click(screen.getByRole("button", { name: "Default model" }));
+    await user.click(screen.getByRole("button", { name: "Default model & thinking depth" }));
     await user.click(screen.getByRole("button", { name: /Thinking depth/ }));
     await user.click(screen.getByRole("option", { name: "High" }));
     await user.click(screen.getByRole("button", { name: "Project trust" }));
     await user.click(
       within(screen.getByRole("listbox")).getByRole("option", { name: "Always trust" }),
     );
-    await user.click(screen.getByRole("button", { name: "Steering messages" }));
-    await user.click(within(screen.getByRole("listbox")).getByRole("option", { name: "All" }));
 
     expect(hostClient.request).toHaveBeenCalledWith(
       "piSettings.patch",
@@ -121,11 +121,6 @@ describe("PiSettings", () => {
       "piSettings.patch",
       { expectedHostInstanceId: host.hostInstanceId },
       { defaultProjectTrust: "always" },
-    );
-    expect(hostClient.request).toHaveBeenCalledWith(
-      "piSettings.patch",
-      { expectedHostInstanceId: host.hostInstanceId },
-      { steeringMode: "all" },
     );
   });
 });

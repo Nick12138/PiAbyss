@@ -513,12 +513,7 @@ export function AppearanceSettings() {
             <h2 className="mb-2 text-sm font-medium text-muted">{t("appearanceInterfaceGroup")}</h2>
             <div className="interface-density-card flex flex-col gap-4 rounded-lg border border-border p-4">
               <div className="flex flex-col gap-3">
-                <span className="min-w-0">
-                  <span className="block text-sm">{t("appearanceThemeFamily")}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted">
-                    {t("appearanceThemeFamilyDesc")}
-                  </span>
-                </span>
+                <span className="block text-sm">{t("appearanceThemeFamily")}</span>
                 <div
                   data-ui="theme-family-selector"
                   className="grid grid-cols-2 gap-2 @min-[32rem]:grid-cols-4"
@@ -561,12 +556,7 @@ export function AppearanceSettings() {
               </div>
 
               <div className="flex flex-col gap-3">
-                <span className="min-w-0">
-                  <span className="block text-sm">{t("appearanceColorMode")}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted">
-                    {t("appearanceColorModeDesc")}
-                  </span>
-                </span>
+                <span className="block text-sm">{t("appearanceColorMode")}</span>
                 <div
                   data-ui="color-mode-selector"
                   className="grid grid-cols-3 gap-2"
@@ -595,12 +585,7 @@ export function AppearanceSettings() {
               </div>
 
               <div className="flex flex-col gap-3">
-                <span className="min-w-0">
-                  <span className="block text-sm">{t("appearanceAccentColor")}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted">
-                    {t("appearanceAccentColorDesc")}
-                  </span>
-                </span>
+                <span className="block text-sm">{t("appearanceAccentColor")}</span>
                 <div
                   data-ui="accent-color-selector"
                   className="flex flex-wrap items-center gap-2"
@@ -657,12 +642,7 @@ export function AppearanceSettings() {
               </div>
 
               <div className="flex items-center justify-between gap-4">
-                <span className="min-w-0">
-                  <span className="block text-sm">{t("generalLanguage")}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted">
-                    {t("generalLanguageDesc")}
-                  </span>
-                </span>
+                <span className="min-w-0 text-sm">{t("generalLanguage")}</span>
                 <Select
                   className="w-24"
                   ariaLabel={t("generalLanguage")}
@@ -679,12 +659,7 @@ export function AppearanceSettings() {
               </div>
 
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                <span className="min-w-0">
-                  <span className="block text-sm">{t("appearanceDensity")}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted">
-                    {t("appearanceDensityDesc")}
-                  </span>
-                </span>
+                <span className="min-w-0 text-sm">{t("appearanceDensity")}</span>
                 <div
                   data-ui="segmented"
                   className="interface-density-control grid shrink-0 grid-cols-3 overflow-hidden rounded-md border border-border bg-surface"
@@ -714,12 +689,7 @@ export function AppearanceSettings() {
               </div>
 
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                <span className="min-w-0">
-                  <span className="block text-sm">{t("appearanceFont")}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted">
-                    {t("appearanceFontDesc")}
-                  </span>
-                </span>
+                <span className="min-w-0 text-sm">{t("appearanceFont")}</span>
                 <Select
                   className="w-32"
                   ariaLabel={t("appearanceFont")}

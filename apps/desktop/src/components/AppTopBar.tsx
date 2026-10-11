@@ -9,7 +9,6 @@ import { WindowControls, resolveWindowControlsPlatform } from "./WindowControls"
 import { SidebarBrandToggle } from "./Sidebar";
 import { MemoSyncHeaderActions } from "../features/memo/MemoSyncHeaderActions";
 import { MemoSyncStatusDot } from "../features/memo/memo-sync-status";
-import { SETTINGS_SECTION_META } from "../features/settings/settings-top-bar";
 import { SubagentTitleMenu } from "../features/subagents/SubagentTitleMenu";
 import { clampSessionTitleForDisplay } from "../lib/session-title-display";
 
@@ -17,8 +16,8 @@ import { clampSessionTitleForDisplay } from "../lib/session-title-display";
  *  strips (sidebar brand / chat title / dock header).
  *
  *  Left: brand toggle + global search + notifications, with macOS traffic
- *  lights slotting in front. Center: chat session title, or the active settings
- *  section title. Right: right-panel toggle (chat only) + native window controls.
+ *  lights slotting in front. Center: chat session title. Right: right-panel
+ *  toggle (chat only) + native window controls.
  *
  *  Height follows --theme-toolbar-height so each theme gets the same bar height
  *  it used per-strip; the whole row is a Tauri drag region. All children sit on
@@ -30,7 +29,6 @@ export function AppTopBar({
 }) {
   const t = useT();
   const page = useAppStore((s) => s.page);
-  const settingsSection = useAppStore((s) => s.settingsSection);
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const session = useAppStore((s) => s.session);
@@ -40,10 +38,6 @@ export function AppTopBar({
   const activeSubagentNodeId = useAppStore((s) => s.activeSubagentNodeId);
   const setActiveSubagent = useAppStore((s) => s.setActiveSubagent);
   const platform = resolveWindowControlsPlatform();
-
-  const section = settingsSection ?? "general";
-  const meta = SETTINGS_SECTION_META[section];
-  const SettingsHeaderIcon = meta.icon;
 
   const isNewConversation = Boolean(
     session && session.messages.length === 0 && session.isIdle && !sessionTreeNavigated,
@@ -101,13 +95,14 @@ export function AppTopBar({
         </div>
       </div>
 
-      {/* Center segment: chat session title, or active settings section title.
-          Left-aligned to the content-area start: its left edge lies at the
-          sidebar-right edge (via the left segment's --sidebar-width min-width)
-          plus the app shell gap, so the title begins where the content card
-          below begins instead of floating centered apart from the search
-          button on its left. The same base is shared by chat and settings pages
-          so the section nav offset is intentionally not added here. */}
+      {/* Center segment: chat session title (settings/pages keep an empty
+          drag-region spacer). Left-aligned to the content-area start: its left
+          edge lies at the sidebar-right edge (via the left segment's
+          --sidebar-width min-width) plus the app shell gap, so the title
+          begins where the content card below begins instead of floating
+          centered apart from the search button on its left. The same base is
+          shared by chat and settings pages so the section nav offset is
+          intentionally not added here. */}
       <div
         className="flex min-w-0 flex-1 items-center justify-start gap-3 pr-2"
         style={{
@@ -200,20 +195,10 @@ export function AppTopBar({
           </div>
         ) : page === "settings" || page === "packages" ? (
           <div
-            className="pointer-events-none flex min-w-0 flex-1 items-center gap-2"
+            className="pointer-events-none flex min-w-0 flex-1"
             data-settings-section-header
             data-tauri-drag-region
-          >
-            <SettingsHeaderIcon
-              size={16}
-              className="pointer-events-none shrink-0 text-muted"
-              aria-hidden="true"
-            />
-            <div className="min-w-0 flex-1 truncate">
-              <h1 className="truncate text-base font-semibold leading-5">{t(meta.title)}</h1>
-              {meta.subtitle && <p className="truncate text-xs text-muted">{t(meta.subtitle)}</p>}
-            </div>
-          </div>
+          />
         ) : null}
       </div>
 

@@ -94,8 +94,15 @@ export async function createHostAgentSession(
     initialModel = await resolveInitialModelOption(options);
   }
   // SDK accepts `model?: Model<any>` but not `null`; coerce null → omit.
-  return createAgentSession({
+  const created = await createAgentSession({
     ...options,
     ...(initialModel.model !== null ? { model: initialModel.model as Model<any> } : {}),
   });
+  // PiAbyss fixed behavior: queued messages (steered while running + sent
+  // after settle) always go out as the whole queue. The per-session mode is
+  // forced here — over whatever settings.json says — because the desktop
+  // settings page no longer exposes a one-at-a-time/all toggle.
+  created.session.setSteeringMode("all");
+  created.session.setFollowUpMode("all");
+  return created;
 }

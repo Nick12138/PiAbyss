@@ -126,7 +126,6 @@ export const en = {
 
   // Settings shell
   settingsTitle: "Settings",
-  settingsSubtitle: "Configure PiAbyss and its runtime",
   settingsBack: "Back to conversation",
   navGeneral: "General",
   navAppearance: "Appearance",
@@ -145,19 +144,14 @@ export const en = {
     "The Provider form has edits that were not saved. Closing Settings will discard them.",
 
   // Appearance
-  appearanceSubtitle: "Theme, density, language, and conversation typography",
   appearanceInterfaceGroup: "Interface",
   appearanceThemeFamily: "Theme style",
-  appearanceThemeFamilyDesc: "Choose the visual language used across PiAbyss.",
   appearanceThemePiAbyss: "PiAbyss",
   appearanceThemeVercel: "Vercel",
   appearanceThemeApple: "Apple",
   appearanceThemeTransparent: "Transparent",
   appearanceColorMode: "Color mode",
-  appearanceColorModeDesc: "Follow the system appearance or use a fixed mode.",
-  appearanceAccentColor: "Accent color",
-  appearanceAccentColorDesc:
-    "Sets the highlight color used by buttons, links, and selections; the default follows the theme.",
+  appearanceAccentColor: "Theme color",
   appearanceAccentDefault: "Theme default",
   appearanceAccentCustom: "Custom",
   appearanceAccentOption: "Accent color {value}",
@@ -169,14 +163,11 @@ export const en = {
   appearanceAccentApply: "Apply",
   appearanceAccentInvalidHex: "Enter a hex color as #RRGGBB.",
   appearanceDensity: "Interface density",
-  appearanceDensityDesc: "Adjust row, control, and list spacing across PiAbyss.",
   appearanceDensityCompact: "Compact",
   appearanceDensityStandard: "Standard",
   appearanceDensityComfortable: "Comfortable",
   appearanceFont: "Interface font",
-  appearanceFontDesc:
-    "Default uses bundled HarmonyOS Sans SC; System follows the Windows/macOS UI font.",
-  appearanceFontDefault: "Default",
+  appearanceFontDefault: "Default Sans SC",
   appearanceFontSystem: "System",
   appearanceConversationGroup: "Conversation",
   appearanceConversationFontSize: "Conversation font size",
@@ -196,7 +187,6 @@ export const en = {
   generalThemeLight: "Light",
   generalThemeDark: "Dark",
   generalLanguage: "Language",
-  generalLanguageDesc: "Language of the PiAbyss interface.",
   generalConversationMaxWidth: "Conversation max width",
   generalConversationMaxWidthDesc:
     "The conversation widens to fill the window up to this maximum. At most {max}px.",
@@ -205,32 +195,19 @@ export const en = {
     "The conversation never narrows below this minimum. At least {min}px.",
 
   // General
-  generalSubtitle: "Startup behavior and Pi Host configuration",
   generalStartupGroup: "Startup",
   generalPiSettingsGroup: "Pi defaults",
-  generalDefaultModel: "Default model",
-  generalDefaultModelDesc: "Choose the default provider and model for new sessions.",
+  generalDefaultModel: "Default model & thinking depth",
   generalDefaultProvider: "Default provider",
   generalDefaultThinkingLevel: "Default thinking level",
   generalDefaultThinkingLevelDesc: "Thinking depth used when a new session starts.",
-  generalRetryCount: "Retry count",
-  generalRetryCountDesc: "Maximum automatic retries for transient model errors.",
+  generalRetryCount: "Automatic error retries",
   generalProjectTrust: "Project trust",
   generalProjectTrustDesc:
     "Decide whether project settings and resources are trusted automatically.",
   generalProjectTrustAsk: "Ask",
   generalProjectTrustAlways: "Always trust",
   generalProjectTrustNever: "Never trust",
-  generalSteeringMode: "Steering messages",
-  generalSteeringModeDesc:
-    "Messages sent while the agent is working: deliver one at a time or the whole queue.",
-  generalSteeringOneAtATime: "One at a time",
-  generalSteeringAll: "All",
-  generalFollowUpMode: "Follow-up messages",
-  generalFollowUpModeDesc:
-    "Queued messages handled after the task finishes: deliver one at a time or the whole queue.",
-  generalFollowUpOneAtATime: "One at a time",
-  generalFollowUpAll: "All",
   thinkingLevelOff: "Off",
   thinkingLevelMinimal: "Minimal",
   thinkingLevelLow: "Low",
@@ -239,9 +216,7 @@ export const en = {
   thinkingLevelXhigh: "Extra high",
   thinkingLevelMax: "Maximum",
   generalAutoStartOnBoot: "Launch at startup",
-  generalAutoStartOnBootDesc: "Launch PiAbyss automatically and keep it minimized.",
   generalSystemNotifications: "System notifications",
-  generalSystemNotificationsDesc: "Get notified via system notifications.",
   generalBusySendGroup: "While the agent is running",
   generalBusySend: "Send while running",
   generalBusySendDesc: "How a message sent while a turn is still running is handled.",
@@ -261,15 +236,12 @@ export const en = {
   generalExtensionDecisionInlineFirstDesc:
     "Prefer the conversation except for safety and lifecycle decisions.",
   generalExtensionDecisionSaving: "Updating Extension prompt presentation.",
-  generalTerminalGroup: "Terminal",
+  generalTerminalGroup: "Right-panel terminal",
   generalDefaultShell: "Default shell",
-  generalDefaultShellDesc: "Shell used by terminals in the right dock.",
   generalShellAutomatic: "Automatic",
   generalShellUnavailable: "{id} (unavailable)",
   generalDetectShells: "Detect shells again",
   generalAdvancedGroup: "More settings",
-  generalAdvancedDesc:
-    "Advanced options live in settings.json in the agent directory. Open the file to edit them by hand.",
   generalAdvancedOpenFile: "Open settings.json",
   generalAdvancedRestartHint: "Changes take effect after restarting the Host.",
   generalProxy: "Network proxy",
@@ -291,7 +263,6 @@ export const en = {
   notifSettingsFileOpenFailed: "Couldn't open the settings file",
 
   // Host section
-  hostSubtitle: "Pi Host runtime and app info",
   hostProcessGroup: "Process",
   hostAutoRestart: "Auto-restart Pi Host",
   hostAutoRestartDesc:
@@ -420,7 +391,6 @@ export const en = {
   usageArchived: "Archived",
 
   // Providers
-  providersSubtitle: "Model endpoints, credentials, and the chat model list",
   providersSearch: "Search Providers",
   providersAdd: "Add Provider",
   providersLoading: "Loading Providers...",
@@ -625,7 +595,6 @@ export const en = {
   packagesViewGroup: "Packages view",
 
   // Skills
-  skillsSubtitle: "Inspect and manage skills discovered by Pi",
   skillsRefresh: "Refresh",
   skillsLoadedBadge: "{loaded} skills loaded",
   skillsConfiguredBadge: "{configured} configured paths",
