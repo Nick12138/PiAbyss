@@ -1160,6 +1160,7 @@ export const zh: Record<MessageKey, string> = {
   transcriptConversationCompacted: "✅ 打包完成",
   transcriptTokensBefore: "📦 打包前 {count} tokens",
   transcriptSummaryDetails: "摘要详情",
+  transcriptSystemPrompt: "系统提示词",
   transcriptRawMessage: "💬 原话",
   transcriptOperationAborted: "🛑 半路叫停了",
   transcriptAssistantIncomplete: "😶 助手走神了...",

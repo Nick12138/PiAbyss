@@ -1227,6 +1227,7 @@ export const en = {
   transcriptConversationCompacted: "Conversation compacted",
   transcriptTokensBefore: "{count} tokens before",
   transcriptSummaryDetails: "Summary details",
+  transcriptSystemPrompt: "System prompt",
   transcriptRawMessage: "Raw message",
   transcriptOperationAborted: "Operation aborted",
   transcriptAssistantIncomplete: "The assistant could not complete this response.",

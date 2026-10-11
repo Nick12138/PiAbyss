@@ -90,7 +90,7 @@ type TranscriptSummary = {
 };
 
 type TranscriptEvent = {
-  kind: "model" | "thinkingLevel" | "unknown";
+  kind: "model" | "thinkingLevel" | "unknown" | "systemPrompt";
   label: string;
   details?: unknown;
 };
@@ -928,6 +928,23 @@ function projectNonAssistantRow(
     };
   }
   if (role === "tool" || role === "toolResult" || role === "assistant") return null;
+  // Persisted system prompt messages (session v3): render as a centered
+  // collapsible row instead of a diagnostic divider or assistant prose.
+  if (role === "system") {
+    return {
+      key: `event:${sourceKey}`,
+      role: "event",
+      blocks: [],
+      copyText: "",
+      event: {
+        kind: "systemPrompt",
+        label: "System prompt",
+        details: asRecord(message),
+      },
+      ...(sourceId ? { sourceId } : {}),
+      ...(timestamp !== undefined ? { timestamp } : {}),
+    };
+  }
   // Preserve unknown roles as a visible diagnostic row instead of silently
   // presenting them as assistant prose.
   const details = asRecord(message);

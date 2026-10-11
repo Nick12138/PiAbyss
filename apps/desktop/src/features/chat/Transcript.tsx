@@ -2238,6 +2238,31 @@ function SummaryRow({ row }: { row: TranscriptRow }) {
   );
 }
 
+function SystemPromptRow({ details }: { details?: unknown }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <div className="flex justify-center py-1 text-[11px] text-muted">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+          className="flex min-w-0 max-w-[80%] cursor-pointer items-center gap-1.5 text-center hover:text-foreground"
+        >
+          <Terminal size={13} />
+          <span className="min-w-0 break-words">{t("transcriptSystemPrompt")}</span>
+        </button>
+      </div>
+      {open && details !== undefined && (
+        <pre className="mx-auto mt-1 max-h-48 max-w-[90%] overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-overlay/50 px-2 py-1.5 font-mono text-[11px] leading-5 text-foreground/70">
+          {formatJson(details, t("transcriptDetailsTruncated"))}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 function SessionEventRow({ row }: { row: TranscriptRow }) {
   const t = useT();
   const event = row.event;
@@ -2248,6 +2273,11 @@ function SessionEventRow({ row }: { row: TranscriptRow }) {
   // row for each change is noise. Keep the data (export/tree still reference
   // these entries) and only suppress the transcript row.
   if (event.kind === "model" || event.kind === "thinkingLevel") return null;
+  // Persisted session-v3 system prompt: the centered divider itself toggles
+  // the raw-message viewer, instead of the "unknown role" diagnostic path.
+  if (event.kind === "systemPrompt") {
+    return <SystemPromptRow details={event.details} />;
+  }
   const Icon = CircleAlert;
   const eventDetails =
     event.details && typeof event.details === "object"

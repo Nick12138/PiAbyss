@@ -2262,3 +2262,25 @@ describe("tail alignment with state/entry gaps (pi removed retried messages)", (
     expect(rows.some((row) => row.role === "user")).toBe(false);
   });
 });
+
+describe("persisted system prompt messages", () => {
+  it("projects a session-v3 system message as a centered systemPrompt event row", () => {
+    const rows = buildTranscriptRows([
+      {
+        role: "system",
+        content: "",
+        sections: { preamble: "You are an expert coding assistant." },
+      } as unknown as SerializableAgentMessage,
+      { role: "user", content: "hi" },
+    ]);
+
+    const eventRow = rows.find((row) => row.role === "event");
+    expect(eventRow?.event?.kind).toBe("systemPrompt");
+    const details = eventRow?.event?.details as Record<string, unknown>;
+    expect(details?.role).toBe("system");
+    // The user message still renders as a normal row.
+    expect(rows.some((row) => row.role === "user")).toBe(true);
+    // The system message must not fall into the "unknown role" diagnostic path.
+    expect(rows.some((row) => row.event?.kind === "unknown")).toBe(false);
+  });
+});
