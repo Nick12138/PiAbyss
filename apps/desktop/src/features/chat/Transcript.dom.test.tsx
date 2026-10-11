@@ -432,7 +432,7 @@ describe("Transcript Session-open scrolling", () => {
       </>,
     );
 
-    expect(await screen.findByText("@Memo · 修复登录按钮")).toBeVisible();
+    expect(await screen.findByText("@Nook · 修复登录按钮")).toBeVisible();
     expect(screen.queryByText(/piabyss-memo id/)).toBeNull();
     expect(screen.queryByText(/请处理上面引用的备忘录记录/)).toBeNull();
     expect(screen.getByText("先看登录页")).toBeVisible();

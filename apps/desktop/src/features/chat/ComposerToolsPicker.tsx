@@ -63,10 +63,7 @@ export function ComposerToolsPicker() {
   /** Attribution index from the plugin catalog + package snapshot. Null while
    *  either is loading; the menu then shows every non-builtin tool rather
    *  than an empty (and wrong) list. */
-  const pluginIndex = useMemo(
-    () => buildPluginToolIndex(catalog, packages),
-    [catalog, packages],
-  );
+  const pluginIndex = useMemo(() => buildPluginToolIndex(catalog, packages), [catalog, packages]);
 
   const menuTools = useMemo(() => {
     const all = tools?.tools ?? [];
@@ -81,8 +78,7 @@ export function ComposerToolsPicker() {
   const activeSet = useMemo(() => new Set(tools?.active ?? []), [tools]);
   /** Hidden tools that must ride along on every mutation untouched. */
   const hiddenActiveNames = useMemo(
-    () =>
-      (tools?.active ?? []).filter((name) => !menuTools.some((tool) => tool.name === name)),
+    () => (tools?.active ?? []).filter((name) => !menuTools.some((tool) => tool.name === name)),
     [tools, menuTools],
   );
 
