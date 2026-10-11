@@ -194,8 +194,6 @@ pub fn run() {
             commands::desktop_read_small_file,
             commands::desktop_file_info,
             commands::pi_host_send,
-            commands::pi_host_activate,
-            commands::pi_host_prepare_switch,
             commands::pi_host_rebind_active,
             commands::pi_host_active_route,
             commands::pi_host_replay_ready,

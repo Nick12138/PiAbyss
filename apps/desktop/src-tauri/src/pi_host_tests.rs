@@ -892,9 +892,9 @@ rl.on('line', (line) => {
     #[test]
     fn shared_mode_activation_reuses_the_active_entry_and_never_spawns() {
         let book = book_for_workspace("c:\\ws\\a");
-        // Unbound workspace under shared mode → reuse the ACTIVE entry, so the
-        // pool never grows a second Host.
-        match book.activation_target("c:\\ws\\b", true) {
+        // Unbound workspace → reuse the ACTIVE entry, so the pool never
+        // grows a second foreground Host.
+        match book.activation_target("c:\\ws\\b", false) {
             ActivationTarget::Reuse(key) => assert_eq!(key, "c:\\ws\\a"),
             ActivationTarget::Spawn => {
                 panic!("shared mode must never spawn for an unbound workspace")
@@ -906,13 +906,14 @@ rl.on('line', (line) => {
         let mut cold = book_for_workspace("c:\\ws\\a");
         cold.entries.remove("c:\\ws\\a");
         assert!(matches!(
-            cold.activation_target("c:\\ws\\b", true),
+            cold.activation_target("c:\\ws\\b", false),
             ActivationTarget::Spawn
         ));
 
-        // Dedicated mode keeps the 1:1 key match semantics.
+        // A dedicated (Telegram bootstrap) activation keeps 1:1 key match
+        // semantics: reuse only the entry that workspace owns.
         assert!(matches!(
-            book.activation_target("c:\\ws\\b", false),
+            book.activation_target("c:\\ws\\b", true),
             ActivationTarget::Spawn
         ));
         assert!(matches!(
@@ -959,18 +960,6 @@ rl.on('line', (line) => {
         assert_eq!(
             bootstrap.entries[&bootstrap.active_key].workspaces,
             vec!["", "c:\\ws\\z"]
-        );
-
-        // Dedicated-mode rebind still re-keys 1:1: same route, new key, and
-        // the workspaces list collapses back to the single bound workspace.
-        let route = book.rekey_active("c:\\ws\\c".to_string(), PathBuf::from("C:\\ws\\c"));
-        assert_eq!(route, "route-1", "route id must not change on rebind");
-        assert_eq!(book.active_key, "c:\\ws\\c");
-        assert_eq!(book.entries["c:\\ws\\c"].workspaces, vec!["c:\\ws\\c"]);
-        assert!(!book.entries.contains_key("c:\\ws\\a"));
-        assert_eq!(
-            book.route_to_key.get("route-1").map(String::as_str),
-            Some("c:\\ws\\c")
         );
     }
 

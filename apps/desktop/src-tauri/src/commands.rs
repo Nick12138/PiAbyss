@@ -298,77 +298,17 @@ pub async fn pi_host_send(state: State<'_, AppState>, line: String) -> Result<()
 }
 
 #[tauri::command]
-pub async fn pi_host_activate(state: State<'_, AppState>, cwd: String) -> Result<String, String> {
-    let settings = state.settings.lock().await;
-    let (route_id, manager, created) = {
-        let mut hosts = state.hosts.lock().await;
-        hosts.activate_workspace(Path::new(&cwd), &settings, false)?
-    };
-    drop(settings);
-    let running = if created {
-        false
-    } else {
-        manager.lock().await.is_running()
-    };
-    if !running {
-        crate::pi_host::start_unlocked(&manager, crate::pi_host::StartKind::Fresh).await?;
-    }
-    state.hosts.lock().await.set_active_route(&route_id)?;
-    Ok(route_id)
-}
-
-#[tauri::command]
-pub async fn pi_host_prepare_switch(
-    state: State<'_, AppState>,
-    cwd: String,
-    active_busy: bool,
-) -> Result<Option<String>, String> {
-    let settings = state.settings.lock().await;
-    let activation = {
-        let mut hosts = state.hosts.lock().await;
-        hosts.prepare_workspace_switch(Path::new(&cwd), active_busy, &settings)?
-    };
-    drop(settings);
-    let Some(activation) = activation else {
-        return Ok(None);
-    };
-    let running = if activation.created {
-        false
-    } else {
-        activation.manager.lock().await.is_running()
-    };
-    if !running {
-        crate::pi_host::start_unlocked(&activation.manager, crate::pi_host::StartKind::Fresh)
-            .await?;
-    }
-    state
+pub async fn pi_host_rebind_active(state: State<'_, AppState>, cwd: String) -> Result<(), String> {
+    let rebind = state
         .hosts
         .lock()
         .await
-        .set_active_route(&activation.route_id)?;
-    Ok(Some(activation.route_id))
-}
-
-#[tauri::command]
-pub async fn pi_host_rebind_active(state: State<'_, AppState>, cwd: String) -> Result<(), String> {
-    // Lock order matches the other commands: settings first, then hosts.
-    let rebind = {
-        let settings = state.settings.lock().await;
-        let shared_host_mode = settings.settings.shared_host_mode;
-        state
-            .hosts
-            .lock()
-            .await
-            .rebind_active_workspace(Path::new(&cwd), shared_host_mode)?
-    };
+        .rebind_active_workspace(Path::new(&cwd))?;
     rebind
         .manager
         .lock()
         .await
         .set_initial_workspace_path(rebind.canonical_workspace);
-    for manager in rebind.retired {
-        manager.lock().await.shutdown().await;
-    }
     Ok(())
 }
 

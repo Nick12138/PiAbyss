@@ -1835,10 +1835,6 @@ export type DesktopSettings = {
   conversationLineHeight?: number;
   /** Font size for inline and fenced conversation code, in CSS pixels. */
   codeFontSize?: number;
-  /** All workspaces share one Host process (opt-in). Switching rebinds the
-   *  single active Host in place instead of spawning a dedicated one, which
-   *  saves memory but weakens isolation from unstable extensions. */
-  sharedHostMode?: boolean;
   /** Persistent list of workspace folders shown in the sidebar. */
   knownWorkspaces?: string[];
   /** Per-command shortcut overrides. null explicitly disables a command binding. */

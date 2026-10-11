@@ -153,25 +153,6 @@ describe("HostClient response settlement", () => {
     client.detach("test cleanup");
   });
 
-  it("resets the active epoch before routing to another workspace Host", async () => {
-    const client = new HostClient();
-    const transport = attachTestTransport(client);
-    const pending = client.request(
-      "system.shutdown",
-      { expectedHostInstanceId: HOST_ID },
-      null,
-      null,
-    );
-
-    client.prepareForHostSwitch();
-
-    await expect(pending).rejects.toThrow("workspace Host switched");
-    expect(client.getHostInstanceId()).toBeNull();
-    expect(client.getLastSequence()).toBe(0);
-    expect(transport.sent).toHaveLength(1);
-    client.detach("test cleanup");
-  });
-
   it("rejects a no-timeout request when its response fails protocol validation", async () => {
     const client = new HostClient();
     const transport = attachTestTransport(client);

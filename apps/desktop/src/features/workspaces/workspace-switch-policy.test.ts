@@ -1,84 +1,47 @@
 import { describe, expect, it } from "vitest";
-import type { AppState } from "../../lib/stores/app-store";
-import { emptySessionCatalog } from "../../lib/stores/session-catalog";
-import {
-  isWorkspaceSwitchBusyError,
-  workspaceActivationReady,
-  workspaceHasActiveAgent,
-} from "./workspace-switch-policy";
-
-function runtime(overrides: Partial<Pick<AppState, "session" | "sessionCatalog">> = {}) {
-  return {
-    session: null,
-    sessionCatalog: emptySessionCatalog(),
-    ...overrides,
-  } as Pick<AppState, "session" | "sessionCatalog">;
-}
+import { useAppStore } from "../../lib/stores/app-store";
+import { waitForWorkspaceServicesReady } from "./workspace-switch-policy";
 
 describe("workspace switch policy", () => {
-  it("reuses the active Host when no Agent is running", () => {
-    expect(workspaceHasActiveAgent(runtime())).toBe(false);
+  it("resolves once the active workspace's service graph is ready", async () => {
+    useAppStore.getState().setHostFatal(null);
+    useAppStore.getState().setWorkspace(null);
+    const pending = waitForWorkspaceServicesReady();
+    useAppStore.getState().setWorkspace({
+      id: "workspace-a",
+      cwd: "C:/workspace",
+      canonicalCwd: "C:/workspace",
+      revision: 1,
+      servicesReady: false,
+    });
+    useAppStore.getState().setWorkspace({
+      id: "workspace-a",
+      cwd: "C:/workspace",
+      canonicalCwd: "C:/workspace",
+      revision: 2,
+      servicesReady: true,
+    });
+    await expect(pending).resolves.toBe(true);
   });
 
-  it.each(["starting", "running", "queued"] as const)(
-    "requests an isolated Host for a %s background Session",
-    (runtimeState) => {
-      const sessionCatalog = emptySessionCatalog();
-      sessionCatalog.entries.s1 = {
-        sessionId: "s1",
-        sessionPath: "s1.jsonl",
-        cwd: "C:/workspace",
-        updatedAt: 1,
-        messageCount: 1,
-        runtimeState,
-      };
-      expect(workspaceHasActiveAgent(runtime({ sessionCatalog }))).toBe(true);
-    },
-  );
-
-  it("recognizes Host busy races that require forced isolation", () => {
-    expect(isWorkspaceSwitchBusyError({ code: "AGENT_BUSY" })).toBe(true);
-    expect(isWorkspaceSwitchBusyError({ code: "SERVICE_GRAPH_BUSY" })).toBe(true);
-    expect(isWorkspaceSwitchBusyError({ code: "INVALID_PARAMS" })).toBe(false);
+  it("resolves false on a host-fatal error", async () => {
+    useAppStore.getState().setHostFatal(null);
+    useAppStore.getState().setWorkspace(null);
+    const pending = waitForWorkspaceServicesReady();
+    useAppStore.getState().setHostFatal("host down");
+    await expect(pending).resolves.toBe(false);
+    useAppStore.getState().setHostFatal(null);
   });
 
-  it("settles activation only after the new Host session snapshot is applied", () => {
-    const state = {
-      host: {
-        hostInstanceId: "host-b",
-        workspaceId: "workspace-b",
-        workspaceRevision: 2,
-        sessionId: "session-b",
-        sessionRevision: 3,
-      },
-      workspace: {
-        id: "workspace-b",
-        revision: 2,
-        servicesReady: true,
-      },
-      session: {
-        sessionId: "session-b",
-        revision: 2,
-      },
-      connecting: false,
-      rehydrating: false,
-      desynchronized: false,
-      hostFatal: null,
-    } as Pick<
-      AppState,
-      | "host"
-      | "workspace"
-      | "session"
-      | "connecting"
-      | "rehydrating"
-      | "desynchronized"
-      | "hostFatal"
-    >;
-
-    expect(workspaceActivationReady(state, "host-a")).toBe(false);
-    expect(
-      workspaceActivationReady({ ...state, session: { ...state.session!, revision: 3 } }, "host-a"),
-    ).toBe(true);
-    expect(workspaceActivationReady({ ...state, rehydrating: true }, "host-a")).toBe(false);
+  it("is already settled when the graph is ready before the wait starts", async () => {
+    useAppStore.getState().setHostFatal(null);
+    useAppStore.getState().setWorkspace({
+      id: "workspace-a",
+      cwd: "C:/workspace",
+      canonicalCwd: "C:/workspace",
+      revision: 1,
+      servicesReady: true,
+    });
+    await expect(waitForWorkspaceServicesReady()).resolves.toBe(true);
   });
 });

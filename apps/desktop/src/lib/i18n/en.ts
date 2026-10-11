@@ -285,6 +285,7 @@ export const en = {
   generalDefaultToolsGrepDesc: "Search file contents with ripgrep",
   generalDefaultToolsFindDesc: "Find files by name with fd",
   generalDefaultToolsLsDesc: "List directory entries",
+  generalDefaultToolsPowershellDesc: "Run PowerShell commands (Windows, always on)",
   generalDefaultToolsConfigure: "Configure ({count})",
   generalDefaultToolsConfigureEmpty: "Configure",
   notifSettingsFileOpenFailed: "Couldn't open the settings file",
@@ -295,9 +296,6 @@ export const en = {
   hostAutoRestart: "Auto-restart Pi Host",
   hostAutoRestartDesc:
     "If the host process crashes, restart it once automatically before showing an error.",
-  hostSharedHostMode: "Shared Host process",
-  hostSharedHostModeDesc:
-    "All workspaces share one Host process, so switching uses less memory — but isolation from unstable extensions is weaker. Takes effect after restarting the app.",
   hostRuntimeGroup: "Runtime",
   hostPhase: "Phase",
   hostAgentDir: "Agent dir",
@@ -1300,6 +1298,7 @@ export const en = {
   toolGrep: "Grep",
   toolFind: "Find",
   toolLs: "List",
+  toolPowershell: "PowerShell",
   toolPreviewLines: "Preview limited to {count} lines",
   toolRunningOutput: "Running...",
   toolNoOutput: "(no output)",

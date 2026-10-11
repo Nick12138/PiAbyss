@@ -122,17 +122,6 @@ export class HostClient {
     return this.sequence;
   }
 
-  /** Begin routing this client to another workspace Host process. */
-  prepareForHostSwitch(): void {
-    this.rejectAllPending("workspace Host switched");
-    this.hostInstanceId = null;
-    this.sequence = 0;
-    this.latestHostReadyTimestamp = 0;
-    // A previously active Host can become active again; retirement is scoped
-    // to one transport route, not to the lifetime of this renderer.
-    this.retiredHostInstanceIds.clear();
-  }
-
   private rejectPendingForInvalidResponse(message: unknown, diagnostic: string): boolean {
     if (typeof message !== "object" || message === null || Array.isArray(message)) return false;
     const id = (message as Record<string, unknown>).id;

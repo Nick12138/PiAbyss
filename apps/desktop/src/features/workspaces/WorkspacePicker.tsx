@@ -17,12 +17,9 @@ import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import {
-  activateWorkspaceHost,
   fetchHostActivity,
   hostActivityCwds,
-  prepareWorkspaceHost,
   rebindActiveWorkspaceHost,
-  replayActiveHostReady,
   subscribeHostActivity,
   type HostActivitySummary,
 } from "../../lib/bridge/tauri-transport";
@@ -40,11 +37,6 @@ import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import { useT } from "../../lib/i18n/use-t";
 import { workspaceContext } from "../../lib/bridge/host-context";
-import {
-  isWorkspaceSwitchBusyError,
-  waitForWorkspaceActivation,
-  workspaceHasActiveAgent,
-} from "./workspace-switch-policy";
 import { TelegramAddDialog } from "../bot/TelegramAddDialog";
 import { loadBotGateways, removeGateway, type BotGateway } from "../bot/gateway-store";
 import { TelegramInstallDialog } from "../telegram/TelegramInstallDialog";
@@ -297,27 +289,10 @@ export function WorkspacePicker() {
     const currentPage = useAppStore.getState().page;
     if (currentPage !== "chat") useAppStore.getState().setPage("chat");
     try {
-      // Shared-host mode: one Host serves every workspace, so there is no
-      // dedicated Host to prepare — always take the in-place
-      // `workspace.setCurrent` path (the same connection; no
-      // prepareForHostSwitch/replay needed) and register the workspace via
-      // rebindActiveWorkspaceHost below. Enabled by default, including
-      // while settings are still loading.
-      const sharedHostMode = useAppStore.getState().desktopSettings?.sharedHostMode !== false;
-      const connectDedicatedHost = async (force: boolean): Promise<boolean> => {
-        const activated = force
-          ? await activateWorkspaceHost(cwd)
-          : await prepareWorkspaceHost(cwd, workspaceHasActiveAgent(useAppStore.getState()));
-        if (!activated) return false;
-        hostClient.prepareForHostSwitch();
-        useAppStore.getState().setConnecting(true);
-        await replayActiveHostReady();
-        await waitForWorkspaceActivation(host.hostInstanceId);
-        return true;
-      };
-      if (!sharedHostMode && (await connectDedicatedHost(false))) {
-        return;
-      }
+      // One shared Host serves every workspace, so there is no dedicated
+      // Host to prepare — take the in-place `workspace.setCurrent` path (the
+      // same connection; no prepareForHostSwitch/replay needed) and register
+      // the workspace via rebindActiveWorkspaceHost below.
 
       // Transient SERVICE_GRAPH_BUSY collisions (an in-flight read holding the
       // serviceGraphLock) are retryable by design; give the switch a short
@@ -345,14 +320,8 @@ export function WorkspacePicker() {
 
       if (request !== requestRef.current) return;
       if (!res.ok) {
-        // In shared mode a busy rejection cannot be resolved by a dedicated
-        // Host (there is none) — surface it instead of retrying.
-        if (
-          !sharedHostMode &&
-          isWorkspaceSwitchBusyError(res.error) &&
-          (await connectDedicatedHost(true))
-        )
-          return;
+        // A busy rejection cannot be resolved by another Host (there is
+        // none) — surface it instead of retrying.
         pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
         return;
       }

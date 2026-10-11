@@ -216,17 +216,6 @@ export function HostSettings() {
                   onChange={(next) => void patchDesktop({ autoRestartHostOnce: next })}
                 />
               </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="min-w-0">
-                  <span className="block text-sm">{t("hostSharedHostMode")}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted">{t("hostSharedHostModeDesc")}</span>
-                </span>
-                <Switch
-                  checked={desktopSettings?.sharedHostMode ?? true}
-                  label={t("hostSharedHostMode")}
-                  onChange={(next) => void patchDesktop({ sharedHostMode: next })}
-                />
-              </div>
             </div>
           </section>
 

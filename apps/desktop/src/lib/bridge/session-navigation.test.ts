@@ -1,12 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
-  DesktopSettings,
   HostResponseEnvelope,
   SessionSnapshot,
   WorkspaceSnapshot,
 } from "@piabyss/protocol";
-import { activateWorkspaceHost, prepareWorkspaceHost } from "./tauri-transport";
-import { waitForWorkspaceActivation } from "../../features/workspaces/workspace-switch-policy";
 import { hostClient } from "./host-client";
 import { useAppStore } from "../stores/app-store";
 import { openSessionAcrossWorkspaces } from "./session-navigation";
@@ -18,19 +15,8 @@ const SESSION_ID = "33333333-3333-4333-8333-333333333333";
 const TARGET_SESSION_ID = "44444444-4444-4444-8444-444444444444";
 
 vi.mock("./tauri-transport", () => ({
-  activateWorkspaceHost: vi.fn(async () => false),
-  prepareWorkspaceHost: vi.fn(async () => false),
   rebindActiveWorkspaceHost: vi.fn(async () => false),
-  replayActiveHostReady: vi.fn(async () => false),
   acknowledgeSessionTerminal: vi.fn(async () => {}),
-}));
-vi.mock("../../features/workspaces/workspace-switch-policy", () => ({
-  workspaceHasActiveAgent: vi.fn(() => false),
-  isWorkspaceSwitchBusyError: vi.fn(
-    (error: { code?: string }) =>
-      error.code === "AGENT_BUSY" || error.code === "SERVICE_GRAPH_BUSY",
-  ),
-  waitForWorkspaceActivation: vi.fn(async () => {}),
 }));
 vi.mock("./host-context", () => ({
   mergeHostIdentity: vi.fn((host: object) => host),
@@ -157,12 +143,6 @@ describe("openSessionAcrossWorkspaces", () => {
     useAppStore.getState().setConnecting(false);
     useAppStore.getState().setDesktopSettings(null);
   });
-
-  function dedicatedHostMode(): void {
-    // These tests pin the dedicated-Host flow: shared-host mode is the
-    // default, so opt out explicitly.
-    useAppStore.getState().setDesktopSettings({ sharedHostMode: false } as DesktopSettings);
-  }
 
   it("blocks when no Host is attached", async () => {
     const outcome = await openSessionAcrossWorkspaces({
@@ -346,8 +326,7 @@ describe("openSessionAcrossWorkspaces", () => {
     ).toBe(true);
   });
 
-  it("falls back to workspace.setCurrent when dedicated activation is unavailable", async () => {
-    dedicatedHostMode();
+  it("switches workspace in place via workspace.setCurrent", async () => {
     useAppStore.getState().setHost(host());
     useAppStore.getState().setWorkspace(workspace());
     useAppStore.getState().applySessionSnapshot(session());
@@ -375,48 +354,6 @@ describe("openSessionAcrossWorkspaces", () => {
     });
 
     expect(outcome.status).toBe("opened");
-    expect(request).toHaveBeenCalledWith(
-      "workspace.setCurrent",
-      expect.objectContaining({ hostInstanceId: HOST_ID }),
-      { cwd: "/proj/other", optimistic: true },
-      60_000,
-    );
-    expect(useAppStore.getState().workspace?.id).toBe(OTHER_WORKSPACE_ID);
-    expect(useAppStore.getState().session?.sessionId).toBe(TARGET_SESSION_ID);
-  });
-
-  it("switches workspace in place in shared-host mode without preparing a dedicated host", async () => {
-    // Settings unset → shared-host mode is the default. The in-place setCurrent
-    // path must run without any dedicated-Host activation.
-    useAppStore.getState().setHost(host());
-    useAppStore.getState().setWorkspace(workspace());
-    useAppStore.getState().applySessionSnapshot(session());
-
-    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
-      if (method === "workspace.setCurrent") {
-        return {
-          ...envelope("workspace.setCurrent", {
-            workspace: otherWorkspaceSnapshot(),
-            session: openedSession({ cwd: "/proj/other" }),
-          }),
-          workspaceId: OTHER_WORKSPACE_ID,
-          workspaceRevision: 4,
-          sessionId: TARGET_SESSION_ID,
-          sessionRevision: 1,
-          packageRevision: 1,
-        } as never;
-      }
-      return envelope("session.open", openedSession({ cwd: "/proj/other" })) as never;
-    });
-
-    const outcome = await openSessionAcrossWorkspaces({
-      cwd: "/proj/other",
-      sessionPath: "/sessions/other/target.jsonl",
-    });
-
-    expect(outcome.status).toBe("opened");
-    expect(prepareWorkspaceHost).not.toHaveBeenCalled();
-    expect(activateWorkspaceHost).not.toHaveBeenCalled();
     expect(request).toHaveBeenCalledWith(
       "workspace.setCurrent",
       expect.objectContaining({ hostInstanceId: HOST_ID }),
@@ -489,39 +426,33 @@ describe("openSessionAcrossWorkspaces", () => {
     expect(useAppStore.getState().notifications.length).toBeGreaterThan(0);
   });
 
-  it("force-activates a dedicated Host after a busy switch error", async () => {
-    dedicatedHostMode();
+  it("surfaces a non-retryable AGENT_BUSY switch error as a failure", async () => {
+    // A busy rejection cannot be resolved by another Host (there is none) —
+    // the switch must surface the failure instead of force-activating one.
     useAppStore.getState().setHost(host());
     useAppStore.getState().setWorkspace(workspace());
     useAppStore.getState().applySessionSnapshot(session());
-    // First (non-forced) prepare is refused; the busy setCurrent error then
-    // triggers the forced activateWorkspaceHost(true) isolation path.
-    vi.mocked(prepareWorkspaceHost).mockResolvedValueOnce(false);
-    vi.mocked(activateWorkspaceHost).mockResolvedValueOnce(true);
-    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+    vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
       if (method === "workspace.setCurrent") {
-        return errorEnvelope("workspace.setCurrent", "AGENT_BUSY") as never;
+        return {
+          ...envelope("workspace.setCurrent", null),
+          ok: false,
+          error: {
+            code: "AGENT_BUSY",
+            message: "Agent is busy",
+            retryable: false,
+          },
+        } as never;
       }
       return envelope("session.open", openedSession({ cwd: "/proj/other" })) as never;
     });
 
-    const outcome = await openSessionAcrossWorkspaces(
-      { cwd: "/proj/other", sessionId: TARGET_SESSION_ID },
-      {
-        resolveSessionPath: vi.fn(async () => ({
-          sessionPath: "/sessions/other/target.jsonl",
-        })),
-      },
-    );
+    const outcome = await openSessionAcrossWorkspaces({
+      cwd: "/proj/other",
+      sessionPath: "/sessions/other/target.jsonl",
+    });
 
-    expect(outcome.status).toBe("opened");
-    expect(request).toHaveBeenCalledWith(
-      "workspace.setCurrent",
-      expect.objectContaining({ hostInstanceId: HOST_ID }),
-      { cwd: "/proj/other", optimistic: true },
-      60_000,
-    );
-    expect(waitForWorkspaceActivation).toHaveBeenCalled();
-    expect(useAppStore.getState().session?.sessionId).toBe(TARGET_SESSION_ID);
+    expect(outcome.status).toBe("failed");
+    expect(useAppStore.getState().notifications.length).toBeGreaterThan(0);
   });
 });

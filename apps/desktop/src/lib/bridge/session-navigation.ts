@@ -1,27 +1,17 @@
 import { hostClient } from "./host-client";
-import {
-  activateWorkspaceHost,
-  prepareWorkspaceHost,
-  rebindActiveWorkspaceHost,
-  replayActiveHostReady,
-} from "./tauri-transport";
+import { rebindActiveWorkspaceHost } from "./tauri-transport";
 import { mergeHostIdentity, workspaceContext } from "./host-context";
 import { requestSessionOpenWithRetry, SESSION_OPEN_TIMEOUT_MS } from "./session-open-request";
 import { hostErrorLevel, localizeHostError } from "./localize-host-error";
 import { requestWithRetry } from "./request-retry";
 import { tCurrent } from "../i18n/use-t";
 import { useAppStore } from "../stores/app-store";
-import {
-  isWorkspaceSwitchBusyError,
-  waitForWorkspaceActivation,
-  workspaceHasActiveAgent,
-} from "../../features/workspaces/workspace-switch-policy";
 
 /**
  * A cross-workspace "jump to this session" request shared by the global search
- * modal and the system-notification click router. Owns the full dedicated-Host
- * activation (or in-place `workspace.setCurrent` fallback) plus the guarded
- * `session.open` handshake, without any component-local UI state.
+ * modal and the system-notification click router. Owns the in-place
+ * `workspace.setCurrent` switch plus the guarded `session.open` handshake,
+ * without any component-local UI state.
  */
 export type SessionNavigationTarget = {
   cwd: string;
@@ -76,10 +66,11 @@ export type WorkspaceActivationOutcome = Extract<
 
 /**
  * Cross-workspace "make this cwd the active workspace" request shared by the
- * session jump navigation and the memo agent handoff. Owns the full
- * dedicated-Host activation (or in-place `workspace.setCurrent` fallback).
- * Pass `optimistic: false` when graph operations (e.g. session.create) must
- * run right after the switch so the call blocks until the build settles.
+ * session jump navigation and the memo agent handoff. One shared Host serves
+ * every workspace, so this always switches in place via `workspace.setCurrent`
+ * on the same connection. Pass `optimistic: false` when graph operations
+ * (e.g. session.create) must run right after the switch so the call blocks
+ * until the build settles.
  */
 export async function activateWorkspaceAcrossWorkspaces(
   cwd: string,
@@ -99,107 +90,80 @@ export async function activateWorkspaceAcrossWorkspaces(
 
   if (state.workspace?.canonicalCwd === cwd) return { status: "already-active" };
 
-  // Shared-host mode: one Host serves every workspace — skip the dedicated
-  // Host activation entirely and take the in-place `workspace.setCurrent`
-  // path below (same connection, so no prepareForHostSwitch/replay).
-  // Enabled by default, including while settings are still loading.
-  const sharedHostMode = useAppStore.getState().desktopSettings?.sharedHostMode !== false;
-  const connectDedicatedHost = async (force: boolean): Promise<boolean> => {
-    const activated = force
-      ? await activateWorkspaceHost(cwd)
-      : await prepareWorkspaceHost(cwd, workspaceHasActiveAgent(useAppStore.getState()));
-    if (!activated) return false;
-    hostClient.prepareForHostSwitch();
-    useAppStore.getState().setConnecting(true);
-    await replayActiveHostReady();
-    await waitForWorkspaceActivation(host.hostInstanceId);
-    return true;
-  };
-  if (sharedHostMode || !(await connectDedicatedHost(false))) {
-    // Shared mode: always take the in-place setCurrent path (there is no
-    // dedicated Host to prepare). Dedicated mode: fall back to it only when
-    // the prepare pass could not activate the target Host.
-    useAppStore.getState().setWorkspaceSwitchTarget(cwd);
-    let switched;
-    try {
-      // Transient SERVICE_GRAPH_BUSY collisions (an in-flight read holding
-      // the serviceGraphLock) are retryable by design; give the switch a
-      // short retry window instead of surfacing a one-off busy toast.
-      const attempted = await requestWithRetry(
-        () =>
-          hostClient.request(
-            "workspace.setCurrent",
-            workspaceContext(host, state.workspace),
-            { cwd, optimistic: options.optimistic !== false },
-            60_000,
-          ),
-        undefined,
-        () => useAppStore.getState().workspaceSwitchTarget === cwd,
-      );
-      if (!attempted) return { status: "blocked" };
-      switched = attempted;
-    } finally {
-      useAppStore.getState().setWorkspaceSwitchTarget(null);
+  // One shared Host serves every workspace: switch in place via
+  // `workspace.setCurrent` (same connection, no Host swap) and register the
+  // workspace through `rebindActiveWorkspaceHost` afterwards.
+  useAppStore.getState().setWorkspaceSwitchTarget(cwd);
+  let switched;
+  try {
+    // Transient SERVICE_GRAPH_BUSY collisions (an in-flight read holding
+    // the serviceGraphLock) are retryable by design; give the switch a
+    // short retry window instead of surfacing a one-off busy toast.
+    const attempted = await requestWithRetry(
+      () =>
+        hostClient.request(
+          "workspace.setCurrent",
+          workspaceContext(host, state.workspace),
+          { cwd, optimistic: options.optimistic !== false },
+          60_000,
+        ),
+      undefined,
+      () => useAppStore.getState().workspaceSwitchTarget === cwd,
+    );
+    if (!attempted) return { status: "blocked" };
+    switched = attempted;
+  } finally {
+    useAppStore.getState().setWorkspaceSwitchTarget(null);
+  }
+  if (!switched.ok) {
+    // A busy rejection cannot be resolved by another Host (there is none) —
+    // surface it instead of retrying.
+    if (!options.quiet) {
+      useAppStore
+        .getState()
+        .pushNotification(
+          localizeHostError(switched.error, tCurrent),
+          hostErrorLevel(switched.error),
+        );
     }
-    if (!switched.ok) {
-      // In shared mode a busy rejection cannot be resolved by a dedicated
-      // Host (there is none) — surface it instead of retrying.
-      if (
-        isWorkspaceSwitchBusyError(switched.error) &&
-        !sharedHostMode &&
-        (await connectDedicatedHost(true))
-      ) {
-        // The Host became busy after the initial decision; isolation completed.
-      } else {
-        if (!options.quiet) {
-          useAppStore
-            .getState()
-            .pushNotification(
-              localizeHostError(switched.error, tCurrent),
-              hostErrorLevel(switched.error),
-            );
-        }
-        return { status: "failed" };
-      }
-    } else {
-      const result = switched.result;
-      try {
-        await rebindActiveWorkspaceHost(result.workspace.canonicalCwd);
-      } catch (rebindError) {
-        // Registration failure must not break an already-successful switch:
-        // rebind only feeds Rust bookkeeping (activity cwds / restart restore).
-        console.warn("[piabyss] workspace host rebind failed", rebindError);
-      }
-      // workspace.changed / session.snapshot events usually land before this
-      // response resolves; apply only what the event stream has not.
-      const appliedWorkspace = useAppStore.getState().workspace;
-      if (
-        appliedWorkspace === null ||
-        appliedWorkspace.id !== result.workspace.id ||
-        appliedWorkspace.revision !== result.workspace.revision
-      ) {
-        useAppStore.getState().setWorkspace(result.workspace);
-      }
-      if (result.session) {
-        const appliedSession = useAppStore.getState().session;
-        if (
-          appliedSession === null ||
-          appliedSession.sessionId !== result.session.sessionId ||
-          appliedSession.revision !== result.session.revision
-        ) {
-          useAppStore.getState().setSession(result.session);
-        }
-      }
-      useAppStore.getState().setHost({
-        ...host,
-        workspaceId: switched.workspaceId,
-        workspaceRevision: switched.workspaceRevision,
-        sessionId: switched.sessionId,
-        sessionRevision: switched.sessionRevision,
-        packageRevision: switched.packageRevision,
-      });
+    return { status: "failed" };
+  }
+  const result = switched.result;
+  try {
+    await rebindActiveWorkspaceHost(result.workspace.canonicalCwd);
+  } catch (rebindError) {
+    // Registration failure must not break an already-successful switch:
+    // rebind only feeds Rust bookkeeping (activity cwds / restart restore).
+    console.warn("[piabyss] workspace host rebind failed", rebindError);
+  }
+  // workspace.changed / session.snapshot events usually land before this
+  // response resolves; apply only what the event stream has not.
+  const appliedWorkspace = useAppStore.getState().workspace;
+  if (
+    appliedWorkspace === null ||
+    appliedWorkspace.id !== result.workspace.id ||
+    appliedWorkspace.revision !== result.workspace.revision
+  ) {
+    useAppStore.getState().setWorkspace(result.workspace);
+  }
+  if (result.session) {
+    const appliedSession = useAppStore.getState().session;
+    if (
+      appliedSession === null ||
+      appliedSession.sessionId !== result.session.sessionId ||
+      appliedSession.revision !== result.session.revision
+    ) {
+      useAppStore.getState().setSession(result.session);
     }
   }
+  useAppStore.getState().setHost({
+    ...host,
+    workspaceId: switched.workspaceId,
+    workspaceRevision: switched.workspaceRevision,
+    sessionId: switched.sessionId,
+    sessionRevision: switched.sessionRevision,
+    packageRevision: switched.packageRevision,
+  });
   return { status: "opened" };
 }
 
@@ -221,8 +185,8 @@ export async function openSessionAcrossWorkspaces(
     return { status: "already-active" };
   }
 
-  // Cross-workspace activation (dedicated-Host or in-place setCurrent); the
-  // helper owns the shared-host-mode branching and busy recovery.
+  // Cross-workspace activation (in-place setCurrent); the helper owns the
+  // retry window and busy-surface policy.
   const activation = await activateWorkspaceAcrossWorkspaces(target.cwd, {
     optimistic: target.optimistic,
     quiet: target.quiet,

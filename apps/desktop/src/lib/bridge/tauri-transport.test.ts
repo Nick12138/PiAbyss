@@ -2,10 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HostClient } from "./host-client";
 import {
-  activateWorkspaceHost,
   createTauriTransport,
-  prepareWorkspaceHost,
   rebindActiveWorkspaceHost,
+  refreshActiveRoute,
   replayActiveHostReady,
 } from "./tauri-transport";
 
@@ -61,9 +60,9 @@ describe("createTauriTransport", () => {
         return () => listeners.delete(name);
       },
     );
+    let activeRoute = "route-a";
     mocks.invoke.mockImplementation(async (method: string) => {
-      if (method === "pi_host_active_route") return "route-a";
-      if (method === "pi_host_activate") return "route-b";
+      if (method === "pi_host_active_route") return activeRoute;
       return undefined;
     });
 
@@ -74,7 +73,10 @@ describe("createTauriTransport", () => {
 
     stdout({ payload: { routeId: "route-b", line: "ignored" } });
     stdout({ payload: { routeId: "route-a", line: "from-a" } });
-    await activateWorkspaceHost("C:/workspace-b");
+    // The memo widget window refreshes its route before each request batch;
+    // a route refresh must re-point the frame filter.
+    activeRoute = "route-b";
+    await refreshActiveRoute();
     stdout({ payload: { routeId: "route-a", line: "ignored-after-switch" } });
     stdout({ payload: { routeId: "route-b", line: "from-b" } });
     await expect(replayActiveHostReady()).resolves.toBe(true);
@@ -84,33 +86,15 @@ describe("createTauriTransport", () => {
     transport.dispose?.();
   });
 
-  it("keeps the active route for idle reuse and commits its new workspace", async () => {
+  it("commits the switched workspace on the active route", async () => {
     mocks.isTauri.mockReturnValue(true);
-    mocks.invoke.mockImplementation(async (method: string) => {
-      if (method === "pi_host_prepare_switch") return null;
-      return undefined;
-    });
+    mocks.invoke.mockResolvedValue(undefined);
 
-    await expect(prepareWorkspaceHost("C:/workspace-b", false)).resolves.toBe(false);
     await expect(rebindActiveWorkspaceHost("C:/workspace-b")).resolves.toBe(true);
 
-    expect(mocks.invoke).toHaveBeenCalledWith("pi_host_prepare_switch", {
-      cwd: "C:/workspace-b",
-      activeBusy: false,
-    });
     expect(mocks.invoke).toHaveBeenCalledWith("pi_host_rebind_active", {
       cwd: "C:/workspace-b",
     });
-  });
-
-  it("adopts the dedicated route selected for a busy Host", async () => {
-    mocks.isTauri.mockReturnValue(true);
-    mocks.invoke.mockResolvedValue("route-b");
-
-    await expect(prepareWorkspaceHost("C:/workspace-b", true)).resolves.toBe(true);
-    await expect(replayActiveHostReady()).resolves.toBe(true);
-
-    expect(mocks.invoke).toHaveBeenCalledWith("pi_host_replay_ready", { routeId: "route-b" });
   });
 
   it("treats a replay miss during cold start as a no-op, not a failure", async () => {

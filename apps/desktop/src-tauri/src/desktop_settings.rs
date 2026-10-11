@@ -178,11 +178,6 @@ pub struct DesktopSettings {
     /// Opt-in RSS-aware idle retirement for background Hosts (MiB working
     /// set). `0` disables the probe and keeps the time-based rule only.
     pub host_idle_rss_retire_mb: u32,
-    /// Shared-host mode (default on): one Host process serves every
-    /// workspace; switching rebinds the active Host in place instead of
-    /// spawning a dedicated one. Saves memory at the cost of extension
-    /// isolation. Users can opt out for per-workspace Host isolation.
-    pub shared_host_mode: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub known_workspaces: Vec<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -218,7 +213,6 @@ impl Default for DesktopSettings {
             conversation_line_height: DEFAULT_CONVERSATION_LINE_HEIGHT,
             code_font_size: DEFAULT_CODE_FONT_SIZE,
             host_idle_rss_retire_mb: 0,
-            shared_host_mode: true,
             known_workspaces: Vec::new(),
             shortcut_overrides: BTreeMap::new(),
             plugin_env: BTreeMap::new(),
@@ -608,7 +602,6 @@ impl DesktopSettingsStore {
                     | "conversationLineHeight"
                     | "codeFontSize"
                     | "hostIdleRssRetireMb"
-                    | "sharedHostMode"
                     | "knownWorkspaces"
                     | "shortcutOverrides"
                     | "pluginEnv"
@@ -1021,25 +1014,25 @@ mod tests {
     }
 
     #[test]
-    fn defaults_and_persists_shared_host_mode() {
-        let dir = test_dir("shared-host-mode");
+    fn ignores_removed_shared_host_mode_key() {
+        // sharedHostMode was removed together with the dedicated-Host mode it
+        // toggled: an old settings file must still load, the next save drops
+        // the stale key, and patches are rejected as unknown fields.
+        let dir = test_dir("removed-shared-host-mode");
+        fs::write(
+            dir.join(SETTINGS_FILE_NAME),
+            r#"{"schemaVersion":1,"settings":{"sharedHostMode":false}}"#,
+        )
+        .unwrap();
+        let loaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        loaded.save().unwrap();
+        let raw = fs::read_to_string(dir.join(SETTINGS_FILE_NAME)).unwrap();
+        assert!(!raw.contains("sharedHostMode"));
+
         let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
-        // Enabled by default: new installs share one Host across workspaces.
-        assert!(store.settings.shared_host_mode);
-
-        store
+        assert!(store
             .patch(serde_json::json!({ "sharedHostMode": true }))
-            .unwrap();
-        assert!(store.settings.shared_host_mode);
-
-        let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
-        assert!(reloaded.settings.shared_host_mode);
-
-        let mut invalid = reloaded;
-        assert!(invalid
-            .patch(serde_json::json!({ "sharedHostMode": "yes" }))
             .is_err());
-        assert!(invalid.settings.shared_host_mode);
         fs::remove_dir_all(dir).unwrap();
     }
 

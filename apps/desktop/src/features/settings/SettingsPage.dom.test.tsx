@@ -155,7 +155,6 @@ describe("SettingsPage navigation guard", () => {
     expect(screen.getByText("Startup")).toBeInTheDocument();
     expect(screen.getByText("Launch at startup")).toBeInTheDocument();
     expect(screen.queryByText("Auto-restart Pi Host")).not.toBeInTheDocument();
-    expect(screen.queryByText("Shared Host process")).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Theme/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Language/)).not.toBeInTheDocument();
     expect(
@@ -417,7 +416,6 @@ describe("SettingsPage navigation guard", () => {
       screen.getByRole("heading", { name: "Pi Host runtime and app info" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Auto-restart Pi Host")).toBeInTheDocument();
-    expect(screen.getByText("Shared Host process")).toBeInTheDocument();
   });
 
   it("offers a persistent Shortcuts section generated from the command registry", async () => {

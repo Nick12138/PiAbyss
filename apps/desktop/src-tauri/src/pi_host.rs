@@ -535,10 +535,6 @@ pub struct PiHostManager {
     /// into the Host process environment at spawn time. Snapshot taken from
     /// desktop settings; applied on the next Host start.
     plugin_env: BTreeMap<String, BTreeMap<String, String>>,
-    /// Shared-host mode: when true the next spawned Host is told (via
-    /// `PIABYSS_MAX_BOUND_WORKSPACES`) to keep every workspace graph bound so
-    /// in-place switches return instantly.
-    shared_host_mode: bool,
     /// Monotonic child generation used to retire delayed stdout/stderr monitors.
     child_generation: Arc<AtomicU32>,
     stdout_task: Option<JoinHandle<()>>,
@@ -587,13 +583,14 @@ impl PoolBook {
         }
     }
 
-    /// Which entry should serve a workspace activation request under the given
-    /// mode. Dedicated mode reuses an exact key match (1:1 entry ↔ workspace);
-    /// shared-host mode reuses the ACTIVE entry whenever one exists, so the
-    /// pool never grows a second Host — only the cold bootstrap (no active
-    /// entry at all) returns `Spawn`.
-    pub(crate) fn activation_target(&self, key: &str, shared_host_mode: bool) -> ActivationTarget {
-        if shared_host_mode {
+    /// Which entry should serve a workspace activation request. Shared-host
+    /// mode (the only foreground mode) reuses the ACTIVE entry whenever one
+    /// exists, so the pool never grows a second foreground Host — only the
+    /// cold bootstrap (no active entry at all) returns `Spawn`.
+    /// `force_dedicated` (Telegram bootstrap) instead reuses an exact key
+    /// match (1:1 entry ↔ workspace).
+    pub(crate) fn activation_target(&self, key: &str, force_dedicated: bool) -> ActivationTarget {
+        if !force_dedicated {
             return if self.entries.contains_key(&self.active_key) {
                 ActivationTarget::Reuse(self.active_key.clone())
             } else {
@@ -657,23 +654,6 @@ impl PoolBook {
         }
     }
 
-    /// Dedicated-mode rebind: move the active entry to `target_key` (1:1
-    /// entry ↔ workspace), returning the entry's unchanged route id.
-    pub(crate) fn rekey_active(&mut self, target_key: String, canonical_cwd: PathBuf) -> String {
-        let mut entry = self
-            .entries
-            .remove(&self.active_key)
-            .expect("active HostPool entry must exist");
-        self.route_to_key.remove(&entry.route_id);
-        entry.canonical_cwd = canonical_cwd;
-        entry.workspaces = vec![target_key.clone()];
-        self.route_to_key
-            .insert(entry.route_id.clone(), target_key.clone());
-        self.entries.insert(target_key.clone(), entry);
-        self.active_key = target_key;
-        self.entries[&self.active_key].route_id.clone()
-    }
-
     pub(crate) fn remove_entry(&mut self, key: &str) -> Option<String> {
         let entry = self.entries.remove(key)?;
         self.route_to_key.remove(&entry.route_id);
@@ -704,16 +684,9 @@ struct PoolHost {
     activity: Arc<StdMutex<HostActivity>>,
 }
 
-pub struct WorkspaceHostActivation {
-    pub route_id: String,
-    pub manager: Arc<Mutex<PiHostManager>>,
-    pub created: bool,
-}
-
 pub struct WorkspaceHostRebind {
     pub manager: Arc<Mutex<PiHostManager>>,
     pub canonical_workspace: PathBuf,
-    pub retired: Vec<Arc<Mutex<PiHostManager>>>,
 }
 
 pub(crate) struct HostActivity {
@@ -867,7 +840,7 @@ impl PiHostPool {
             // Telegram bootstrap forces a dedicated Host: `/telegram-connect`
             // must run in its own preloaded workspace, never in whatever
             // workspace the shared foreground Host currently serves.
-            settings.settings.shared_host_mode && !force_dedicated,
+            force_dedicated,
         ) {
             ActivationTarget::Reuse(book_key) => {
                 // Shared-host mode: the pool must never grow a second Host —
@@ -906,131 +879,23 @@ impl PiHostPool {
         Ok((route_id, manager, true))
     }
 
-    pub fn prepare_workspace_switch(
-        &mut self,
-        cwd: &Path,
-        renderer_reports_busy: bool,
-        settings: &DesktopSettingsStore,
-    ) -> Result<Option<WorkspaceHostActivation>, String> {
-        let canonical = canonical_workspace(cwd)?;
-        let target_key = workspace_pool_key(&canonical);
-        if settings.settings.shared_host_mode {
-            // Shared-host mode: never prepare a dedicated Host — the active
-            // entry serves every workspace, and the renderer switches in place
-            // via `workspace.setCurrent` + `rebind_active_workspace`. Kept safe
-            // for any caller that still asks: reuse the active route, never
-            // spawn. Only the cold bootstrap (no active entry at all) may
-            // still spawn below.
-            match self.book.activation_target(&target_key, true) {
-                ActivationTarget::Reuse(book_key) => {
-                    let entry = &self.book.entries[&book_key];
-                    let route_id = entry.route_id.clone();
-                    let host = self
-                        .hosts
-                        .get(&book_key)
-                        .expect("hosts map mirrors the book");
-                    return Ok(Some(WorkspaceHostActivation {
-                        route_id,
-                        manager: Arc::clone(&host.manager),
-                        created: false,
-                    }));
-                }
-                ActivationTarget::Spawn => {
-                    let (route_id, manager, created) =
-                        self.activate_workspace(&canonical, settings, false)?;
-                    return Ok(Some(WorkspaceHostActivation {
-                        route_id,
-                        manager,
-                        created,
-                    }));
-                }
-            }
-        }
-        if target_key == self.book.active_key {
-            return Ok(None);
-        }
-
-        if let Some(entry) = self.book.entries.get(&target_key) {
-            let route_id = entry.route_id.clone();
-            let host = self
-                .hosts
-                .get(&target_key)
-                .expect("hosts map mirrors the book");
-            return Ok(Some(WorkspaceHostActivation {
-                route_id,
-                manager: Arc::clone(&host.manager),
-                created: false,
-            }));
-        }
-
-        let active_busy = renderer_reports_busy
-            || host_activity_busy(
-                &self
-                    .hosts
-                    .get(&self.book.active_key)
-                    .expect("active HostPool entry must exist")
-                    .activity,
-            );
-        if !should_activate_workspace_host(active_busy, false) {
-            return Ok(None);
-        }
-
-        let (route_id, manager, created) = self.activate_workspace(&canonical, settings, false)?;
-        Ok(Some(WorkspaceHostActivation {
-            route_id,
-            manager,
-            created,
-        }))
-    }
-
     /// Re-point the pool at a workspace the ACTIVE Host will serve in place.
     ///
-    /// Dedicated mode re-keys the active entry (1:1 entry ↔ workspace).
-    /// Shared-host mode instead REGISTERS the workspace on the entry: the
-    /// route, entry key and `route_to_key` mapping stay untouched, the target
-    /// key joins the entry's bound workspaces, and the canonical path is
-    /// returned so the command layer can keep it as the manager's initial
-    /// workspace for the next app start.
-    pub fn rebind_active_workspace(
-        &mut self,
-        cwd: &Path,
-        shared_host_mode: bool,
-    ) -> Result<WorkspaceHostRebind, String> {
+    /// Registers the workspace on the active entry: the route, entry key and
+    /// `route_to_key` mapping stay untouched, the target key joins the entry's
+    /// bound workspaces, and the canonical path is returned so the command
+    /// layer can keep it as the manager's initial workspace for the next app
+    /// start.
+    pub fn rebind_active_workspace(&mut self, cwd: &Path) -> Result<WorkspaceHostRebind, String> {
         let canonical = canonical_workspace(cwd)?;
         let target_key = workspace_pool_key(&canonical);
-        if target_key == self.book.active_key {
-            return Ok(WorkspaceHostRebind {
-                manager: self.active_manager(),
-                canonical_workspace: canonical,
-                retired: Vec::new(),
-            });
-        }
-        if shared_host_mode {
+        if target_key != self.book.active_key {
             self.book
                 .register_workspace_on_active(target_key, canonical.clone());
-            return Ok(WorkspaceHostRebind {
-                manager: self.active_manager(),
-                canonical_workspace: canonical,
-                retired: Vec::new(),
-            });
         }
-        if self.book.entries.contains_key(&target_key) {
-            return Err("target workspace already has a Host route".to_string());
-        }
-
-        let old_active_key = self.book.active_key.clone();
-        let host = self
-            .hosts
-            .remove(&old_active_key)
-            .expect("active HostPool entry must exist");
-        let active_manager = Arc::clone(&host.manager);
-        self.book
-            .rekey_active(target_key.clone(), canonical.clone());
-        self.hosts.insert(target_key, host);
         Ok(WorkspaceHostRebind {
-            manager: active_manager,
+            manager: self.active_manager(),
             canonical_workspace: canonical,
-            retired: Vec::new(),
         })
     }
 
@@ -1111,7 +976,6 @@ impl PiHostPool {
             manager.set_agent_dir(settings.resolved_agent_dir());
             manager.set_auto_restart_once(settings.settings.auto_restart_host_once);
             manager.set_plugin_env(settings.settings.plugin_env.clone());
-            manager.set_shared_host_mode(settings.settings.shared_host_mode);
         }
     }
 
@@ -1152,6 +1016,9 @@ fn canonical_workspace(cwd: &Path) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
+// Only tests consume the raw busy flag now: the retirement GC pins Hosts via
+// terminal markers (host_activity_expired), not busy sessions.
+#[cfg(test)]
 fn host_activity_busy(activity: &StdMutex<HostActivity>) -> bool {
     !activity
         .lock()
@@ -1442,10 +1309,6 @@ fn clear_host_activity(activity: &StdMutex<HostActivity>) -> bool {
     true
 }
 
-pub(crate) fn should_activate_workspace_host(active_busy: bool, target_exists: bool) -> bool {
-    active_busy || target_exists
-}
-
 #[cfg(test)]
 mod host_activity_tests {
     use super::*;
@@ -1632,13 +1495,6 @@ mod host_activity_tests {
         assert!(observe_host_activity(&activity, &runtime_line("a", "idle")));
         assert!(!clear_host_activity(&activity));
         assert!(!host_activity_busy(&activity));
-    }
-
-    #[test]
-    fn activates_only_for_busy_or_already_allocated_workspaces() {
-        assert!(!should_activate_workspace_host(false, false));
-        assert!(should_activate_workspace_host(true, false));
-        assert!(should_activate_workspace_host(false, true));
     }
 
     #[test]
@@ -2274,7 +2130,6 @@ impl PiHostManager {
             agent_dir: settings.resolved_agent_dir(),
             initial_workspace: initial_workspace.or_else(|| Self::initial_workspace_from(settings)),
             plugin_env: settings.settings.plugin_env.clone(),
-            shared_host_mode: settings.settings.shared_host_mode,
             restart_count: Arc::new(AtomicU32::new(0)),
             auto_restart_once: settings.settings.auto_restart_host_once,
             shutting_down: Arc::new(AtomicBool::new(false)),
@@ -2321,10 +2176,6 @@ impl PiHostManager {
 
     pub fn set_plugin_env(&mut self, plugin_env: BTreeMap<String, BTreeMap<String, String>>) {
         self.plugin_env = plugin_env;
-    }
-
-    pub fn set_shared_host_mode(&mut self, shared: bool) {
-        self.shared_host_mode = shared;
     }
 
     pub fn set_initial_workspace_path(&mut self, path: PathBuf) {
@@ -2609,8 +2460,8 @@ impl PiHostManager {
         // Idle Session queue policy (PIABYSS_IDLE_SESSION_CACHE_LIMIT /
         // _TIMEOUT_MINUTES) is owned by the Host's own defaults now; ambient
         // environment overrides are inherited by the child untouched.
-        if self.shared_host_mode && std::env::var_os("PIABYSS_MAX_BOUND_WORKSPACES").is_none() {
-            // Shared-host mode keeps every workspace graph bound for instant
+        if std::env::var_os("PIABYSS_MAX_BOUND_WORKSPACES").is_none() {
+            // Shared-host keeps every workspace graph bound for instant
             // in-place return (the Host clamps to 1..20). An explicit env set
             // by the launcher wins over this default.
             cmd.env("PIABYSS_MAX_BOUND_WORKSPACES", "10");

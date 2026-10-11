@@ -217,44 +217,12 @@ describe("HostSettings", () => {
     ).toBe(true);
   });
 
-  it("renders the process switches, both on by default", () => {
+  it("renders the auto-restart process switch on by default", () => {
     render(<HostSettings />);
 
     expect(screen.getByRole("switch", { name: "Auto-restart Pi Host" })).toHaveAttribute(
       "aria-checked",
       "true",
-    );
-    expect(screen.getByRole("switch", { name: "Shared Host process" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
-  });
-
-  it("persists the shared Host process toggle via desktop_settings_patch", async () => {
-    const user = userEvent.setup();
-    (invokeMock as unknown as MockInstance).mockImplementation(async (cmd: string) => {
-      if (cmd === "desktop_settings_patch") {
-        const current = useAppStore.getState().desktopSettings ?? ({} as DesktopSettings);
-        const next = { ...current, sharedHostMode: false } as DesktopSettings;
-        useAppStore.getState().setDesktopSettings(next);
-        return next;
-      }
-      return undefined;
-    });
-    render(<HostSettings />);
-
-    await user.click(screen.getByRole("switch", { name: "Shared Host process" }));
-
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith("desktop_settings_patch", {
-        patch: { sharedHostMode: false },
-      }),
-    );
-    await waitFor(() =>
-      expect(screen.getByRole("switch", { name: "Shared Host process" })).toHaveAttribute(
-        "aria-checked",
-        "false",
-      ),
     );
   });
 
@@ -291,7 +259,7 @@ describe("HostSettings", () => {
     invokeMock.mockRejectedValue(new Error("unknown desktop settings field"));
     render(<HostSettings />);
 
-    await user.click(screen.getByRole("switch", { name: "Shared Host process" }));
+    await user.click(screen.getByRole("switch", { name: "Auto-restart Pi Host" }));
 
     await waitFor(() =>
       expect(
@@ -300,7 +268,7 @@ describe("HostSettings", () => {
           .notifications.some((item) => item.message.includes("unknown desktop settings field")),
       ).toBe(true),
     );
-    expect(screen.getByRole("switch", { name: "Shared Host process" })).toHaveAttribute(
+    expect(screen.getByRole("switch", { name: "Auto-restart Pi Host" })).toHaveAttribute(
       "aria-checked",
       "true",
     );

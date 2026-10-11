@@ -9,13 +9,6 @@ function routedLine(payload: string | RoutedHostFrame): string | null {
   return payload.routeId === activeRouteId ? payload.line : null;
 }
 
-export async function activateWorkspaceHost(cwd: string): Promise<boolean> {
-  const { invoke, isTauri } = await import("@tauri-apps/api/core");
-  if (!isTauri()) return false;
-  activeRouteId = await invoke<string>("pi_host_activate", { cwd });
-  return true;
-}
-
 /**
  * Re-reads the pool's active Host route id. The memo widget window keeps its
  * own transport alive across main-window workspace switches, so it must
@@ -79,15 +72,6 @@ export async function installTelegramPlugin(
       errorMessage: err instanceof Error ? err.message : String(err),
     };
   }
-}
-
-export async function prepareWorkspaceHost(cwd: string, activeBusy: boolean): Promise<boolean> {
-  const { invoke, isTauri } = await import("@tauri-apps/api/core");
-  if (!isTauri()) return false;
-  const routeId = await invoke<string | null>("pi_host_prepare_switch", { cwd, activeBusy });
-  if (routeId === null) return false;
-  activeRouteId = routeId;
-  return true;
 }
 
 export async function rebindActiveWorkspaceHost(cwd: string): Promise<boolean> {
