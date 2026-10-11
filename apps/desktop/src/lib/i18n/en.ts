@@ -713,8 +713,6 @@ export const en = {
   pluginsConfigGroup: "Configuration",
   pluginsConfigOpen: "Configure",
   pluginsConfigDialogTitle: "{name} configuration",
-  pluginsConfigHint:
-    "Saved values apply to the running Host immediately and persist across restarts.",
   pluginsConfigRequiredMissing: "{label} is required",
   pluginsConfigSaved: "Configuration saved",
   pluginsVisionModelAuto: "Automatic (the plugin picks an available model)",

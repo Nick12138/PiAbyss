@@ -189,10 +189,10 @@ export function SkillsSettings() {
   // Tracks which workspace the rendered snapshots belong to, so a selection
   // change drops the previous workspace's data while the new one loads.
   const snapshotSourceRef = useRef("");
-  // 全局/项目 default expanded; bundle (packages & extensions) default collapsed.
+  // All groups default collapsed (skills page opens compact).
   const [collapsed, setCollapsed] = useState<Record<SkillGroupId, boolean>>({
-    user: false,
-    project: false,
+    user: true,
+    project: true,
     bundle: true,
   });
   const refreshRequest = useRef(0);

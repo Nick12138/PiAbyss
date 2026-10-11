@@ -470,7 +470,6 @@ function PluginConfigDialog({
             )}
           </div>
         ))}
-        <p className="text-[11px] leading-4 text-muted">{t("pluginsConfigHint")}</p>
         {saving && <span className="sr-only">{t("pluginsConfigSaved")}</span>}
       </div>
     </Dialog>

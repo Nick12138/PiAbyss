@@ -207,10 +207,20 @@ describe("SkillsSettings", () => {
     useAppStore.getState().applyPackageSnapshot(null);
   });
 
+  /** All groups start collapsed; expand a group header before interacting
+   *  with its rows (its content is unmounted while closed). */
+  async function expandGroup(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
+    const header = await screen.findByRole("button", { name });
+    if (header.getAttribute("aria-expanded") === "false") {
+      await user.click(header);
+    }
+  }
+
   it("renders loaded skills grouped by source with configured paths", async () => {
     const user = userEvent.setup();
     render(<SkillsSettings />);
     await waitFor(() => expect(screen.getByText("Global (user)")).toBeInTheDocument());
+    await expandGroup(user, /Global \(user\)/);
     expect(screen.getByText("review")).toBeInTheDocument();
     expect(screen.getByText("Review changes")).toBeInTheDocument();
     // Trusted projects show no trust badge (only untrusted ones do).
@@ -225,6 +235,7 @@ describe("SkillsSettings", () => {
   it("disables an enabled skill via resource.setPreference at user scope", async () => {
     const user = userEvent.setup();
     render(<SkillsSettings />);
+    await expandGroup(user, /Global \(user\)/);
     const toggle = await screen.findByRole("switch", { name: "Toggle skill review" });
     expect(toggle).toHaveAttribute("aria-checked", "true");
     await user.click(toggle);
@@ -248,10 +259,11 @@ describe("SkillsSettings", () => {
       }),
     ];
     render(<SkillsSettings />);
+    const user = userEvent.setup();
+    await expandGroup(user, /Global \(user\)/);
     const toggle = await screen.findByRole("switch", { name: "Toggle skill review" });
     expect(toggle).toHaveAttribute("aria-checked", "false");
     expect(screen.getByText("Disabled")).toBeInTheDocument();
-    const user = userEvent.setup();
     await user.click(toggle);
     await waitFor(() => {
       const call = request.mock.calls.find(([method]) => method === "resource.setPreference");
@@ -349,6 +361,7 @@ describe("SkillsSettings", () => {
     render(<SkillsSettings />);
     // The project group is only visible while a workspace scope is selected.
     await user.click(screen.getByRole("button", { name: /workspace · Current workspace/ }));
+    await expandGroup(user, /Project/);
     const toggle = await screen.findByRole("switch", { name: "Toggle skill project-review" });
     await user.click(toggle);
     await waitFor(() => {
@@ -376,24 +389,23 @@ describe("SkillsSettings", () => {
     await waitFor(() => expect(listCalls()).toBeGreaterThan(before));
   });
 
-  it("keeps global and project groups expanded by default and collapsible", async () => {
+  it("keeps all groups collapsed by default and expandable", async () => {
     const user = userEvent.setup();
     render(<SkillsSettings />);
     const globalHeader = await screen.findByRole("button", { name: /Global \(user\)/ });
+    expect(globalHeader).toHaveAttribute("aria-expanded", "false");
+    await user.click(globalHeader);
     expect(globalHeader).toHaveAttribute("aria-expanded", "true");
     // The project group only renders under a workspace scope.
     await user.click(screen.getByRole("button", { name: /workspace · Current workspace/ }));
-    const projectHeader = await screen.findByRole("button", { name: /Project/ });
-    expect(projectHeader).toHaveAttribute("aria-expanded", "true");
     // Switching to the workspace scope hides the global group again.
     expect(screen.queryByRole("button", { name: /Global \(user\)/ })).not.toBeInTheDocument();
-    // Back to the global scope to collapse/expand its header.
-    await user.click(screen.getByRole("button", { name: "Global" }));
-    const globalHeaderAgain = await screen.findByRole("button", { name: /Global \(user\)/ });
-    await user.click(globalHeaderAgain);
-    expect(globalHeaderAgain).toHaveAttribute("aria-expanded", "false");
-    await user.click(globalHeaderAgain);
-    expect(globalHeaderAgain).toHaveAttribute("aria-expanded", "true");
+    const projectHeader = await screen.findByRole("button", { name: /Project/ });
+    expect(projectHeader).toHaveAttribute("aria-expanded", "false");
+    await user.click(projectHeader);
+    expect(projectHeader).toHaveAttribute("aria-expanded", "true");
+    await user.click(projectHeader);
+    expect(projectHeader).toHaveAttribute("aria-expanded", "false");
   });
 
   it("opens the skill's own folder rather than the SKILL.md file", async () => {
@@ -401,6 +413,7 @@ describe("SkillsSettings", () => {
     (invoke as unknown as MockInstance).mockClear();
     const user = userEvent.setup();
     render(<SkillsSettings />);
+    await expandGroup(user, /Global \(user\)/);
     const openButton = await screen.findByRole("button", { name: "Open review" });
     await user.click(openButton);
     // The skill's baseDir is handed to the host, not the SKILL.md document,
@@ -429,6 +442,7 @@ describe("SkillsSettings", () => {
     try {
       const user = userEvent.setup();
       render(<SkillsSettings />);
+      await expandGroup(user, /Global \(user\)/);
       const nameButton = await screen.findByRole("button", { name: "Preview skill review" });
       await user.click(nameButton);
       expect(await screen.findByRole("dialog")).toBeInTheDocument();
@@ -455,6 +469,7 @@ describe("SkillsSettings", () => {
     try {
       const user = userEvent.setup();
       render(<SkillsSettings />);
+      await expandGroup(user, /Global \(user\)/);
       const nameButton = await screen.findByRole("button", { name: "Preview skill review" });
       await user.click(nameButton);
       expect(await screen.findByRole("dialog")).toBeInTheDocument();
@@ -485,9 +500,11 @@ describe("SkillsSettings", () => {
     const user = userEvent.setup();
     render(<SkillsSettings />);
     await waitFor(() => expect(screen.getByText("Global (user)")).toBeInTheDocument());
+    await expandGroup(user, /Global \(user\)/);
     expect(screen.getByText("AGENTS.md")).toBeInTheDocument();
     // The project prompt renders under the workspace scope.
     await user.click(screen.getByRole("button", { name: /workspace · Current workspace/ }));
+    await expandGroup(user, /Project/);
     expect(await screen.findByText("SYSTEM.md")).toBeInTheDocument();
     // Prompt badge labels every entry; kind badges distinguish override/merge.
     expect(screen.getByText("Prompt")).toBeInTheDocument();
@@ -496,6 +513,7 @@ describe("SkillsSettings", () => {
     expect(request.mock.calls.some(([method]) => method === "prompt.list")).toBe(true);
     // The global prompt renders under the global scope.
     await user.click(screen.getByRole("button", { name: "Global" }));
+    await expandGroup(user, /Global \(user\)/);
     expect(await screen.findByText("AGENTS.md")).toBeInTheDocument();
     expect(screen.getByText("Merge")).toBeInTheDocument();
     expect(screen.getByText("C:/agent/AGENTS.md")).toBeInTheDocument();
@@ -525,9 +543,11 @@ describe("SkillsSettings", () => {
     render(<SkillsSettings />);
     // The shadowed global prompt shows in the global scope's group.
     await waitFor(() => expect(screen.getByText("Global (user)")).toBeInTheDocument());
+    await expandGroup(user, /Global \(user\)/);
     expect(screen.getByText("Not loaded")).toBeInTheDocument();
     // Switch to the workspace scope to see the loaded project prompt.
     await user.click(screen.getByRole("button", { name: /workspace · Current workspace/ }));
+    await expandGroup(user, /Project/);
     expect(await screen.findByText("Loaded")).toBeInTheDocument();
   });
 
@@ -551,6 +571,7 @@ describe("SkillsSettings", () => {
       render(<SkillsSettings />);
       // The project SYSTEM.md prompt only renders under the workspace scope.
       await user.click(screen.getByRole("button", { name: /workspace · Current workspace/ }));
+      await expandGroup(user, /Project/);
       const previewButton = await screen.findByRole("button", {
         name: "Preview prompt SYSTEM.md",
       });
@@ -666,6 +687,7 @@ describe("SkillsSettings", () => {
       const user = userEvent.setup();
       render(<SkillsSettings />);
       await selectWorkspace(user, "other");
+      await expandGroup(user, /Project/);
       const targetToggle = await screen.findByRole("switch", { name: "Toggle skill review" });
       await user.click(targetToggle);
       await waitFor(() => {

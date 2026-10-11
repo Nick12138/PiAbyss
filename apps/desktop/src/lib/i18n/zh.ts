@@ -667,7 +667,6 @@ export const zh: Record<MessageKey, string> = {
   pluginsConfigGroup: "配置",
   pluginsConfigOpen: "配置",
   pluginsConfigDialogTitle: "{name} 配置",
-  pluginsConfigHint: "保存后立即生效；同时写入桌面设置，主机重启后依然保留。",
   pluginsConfigRequiredMissing: "{label} 为必填项",
   pluginsConfigSaved: "配置已保存",
   pluginsVisionModelAuto: "自动选择",
