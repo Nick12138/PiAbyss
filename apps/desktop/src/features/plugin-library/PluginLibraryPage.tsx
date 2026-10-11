@@ -667,9 +667,6 @@ export function PluginLibraryPage() {
   // present); null until the first check for this host+workspace completes.
   const [pluginUpdates, setPluginUpdates] = useState<PackageUpdateSummary[] | null>(null);
   const [updateMenuOpen, setUpdateMenuOpen] = useState(false);
-  // True while the "update all" loop is running, so the button swaps its label
-  // for a spinner even when the pending-op set is between rows.
-  const [updateAllRunning, setUpdateAllRunning] = useState(false);
   const updateMenuRootRef = useRef<HTMLDivElement | null>(null);
   // "" = active workspace; otherwise the selected workspace's raw path.
   // Selection for the scope row: GLOBAL_SCOPE (default) manages the user-
@@ -939,9 +936,7 @@ export function PluginLibraryPage() {
     // Unique package ids in display order; rows sharing a package (repo
     // plugins) update together in one mutation.
     const rows = [...new Map(updateRows.map((row) => [row.packageId, row])).values()];
-    setUpdateAllRunning(true);
-    try {
-      for (const row of rows) {
+    for (const row of rows) {
         const ok = await runMutation(
           "package.update",
           { packageId: row.packageId },
@@ -949,12 +944,9 @@ export function PluginLibraryPage() {
           row.label,
         );
         if (!ok) return; // host/workspace changed or the mutation failed — stop here.
-        markUpdatesApplied([row.packageId]);
-      }
-      if (rows.length > 0) pushNotification(t("notifPluginsUpdated", { count: rows.length }));
-    } finally {
-      setUpdateAllRunning(false);
+      markUpdatesApplied([row.packageId]);
     }
+    if (rows.length > 0) pushNotification(t("notifPluginsUpdated", { count: rows.length }));
   }
 
   async function runMutation(
@@ -1135,13 +1127,8 @@ export function PluginLibraryPage() {
                 className="absolute right-0 top-8 z-50 w-72 rounded-lg border border-border bg-surface p-2 shadow-lg"
               >
                 <div className="flex items-center justify-between gap-2 px-1 pb-1.5">
-                  <span className="flex min-w-0 items-center gap-1 truncate text-xs font-medium">
-                    {updatesBusy && (
-                      <Loader2 size={12} className="shrink-0 animate-spin text-warning" />
-                    )}
-                    <span className="truncate">
-                      {t("pluginsUpdateTitle", { count: updateRows.length })}
-                    </span>
+                  <span className="truncate text-xs font-medium">
+                    {t("pluginsUpdateTitle", { count: updateRows.length })}
                   </span>
                   <button
                     type="button"
@@ -1150,7 +1137,6 @@ export function PluginLibraryPage() {
                     disabled={updatesBusy}
                     onClick={() => void applyAllPluginUpdates()}
                   >
-                    {updateAllRunning && <Loader2 size={11} className="animate-spin" />}
                     {t("pluginsUpdateAll")}
                   </button>
                 </div>
