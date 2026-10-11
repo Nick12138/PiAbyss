@@ -228,7 +228,9 @@ export function ComposerToolsPicker() {
         />
       </button>
       {open && (
-        <div className="absolute bottom-full right-0 z-50 mb-2 w-max min-w-40 max-w-md">
+        // No min-width floor: min-w-40 (140px) was wider than the widest
+        // row, leaving a dead strip on the right of every row.
+        <div className="absolute bottom-full right-0 z-50 mb-2 w-max max-w-md">
           <div className="theme-floating-surface w-full rounded-md border border-border bg-surface-raised shadow-lg">
             <div
               className="max-h-80 w-full overflow-y-auto rounded-t-md py-0.5"
