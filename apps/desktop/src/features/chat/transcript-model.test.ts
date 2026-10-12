@@ -2283,4 +2283,22 @@ describe("persisted system prompt messages", () => {
     // The system message must not fall into the "unknown role" diagnostic path.
     expect(rows.some((row) => row.event?.kind === "unknown")).toBe(false);
   });
+
+  it("pins the systemPrompt row to the top even when it arrives after the user message", () => {
+    // Live streaming order: pi appends the system message to agent state after
+    // the user turn is already visible; the transcript must still render it
+    // above the conversation so replay and live views match.
+    const rows = buildTranscriptRows([
+      { role: "user", content: "hi" },
+      {
+        role: "system",
+        content: "",
+        sections: { preamble: "You are an expert coding assistant." },
+      } as unknown as SerializableAgentMessage,
+      { role: "assistant", content: "hello" },
+    ]);
+
+    expect(rows[0]?.event?.kind).toBe("systemPrompt");
+    expect(rows[1]?.role).toBe("user");
+  });
 });

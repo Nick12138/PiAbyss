@@ -1514,6 +1514,15 @@ export function buildTranscriptRows(
     resetAssistant();
   });
 
+  // The system prompt row is a session-level header, not a conversation turn.
+  // Live event ordering appends the system message after the first user turn,
+  // while persisted entry order puts it before — pin it to the top so replay
+  // and live streaming render identically.
+  const pinnedSystemPrompt = rows.filter((row) => row.event?.kind === "systemPrompt");
+  const orderedRows = pinnedSystemPrompt.length
+    ? [...pinnedSystemPrompt, ...rows.filter((row) => row.event?.kind !== "systemPrompt")]
+    : rows;
+
   // Settle open tools when the turn is inactive. Non-mutating: the aborted
   // clone replaces the cached block so per-message WeakMap projections stay
   // immutable.
@@ -1529,7 +1538,7 @@ export function buildTranscriptRows(
         }
       : block;
 
-  return rows.map(({ rounds, ...row }) => {
+  return orderedRows.map(({ rounds, ...row }) => {
     if (input.turnActive === false) {
       const hasOpenTool = row.blocks.some(
         (block) =>
