@@ -3,7 +3,7 @@
  * The ONLY visible trace of an underlying session switch: emoji + the
  * pixie's own sleep phrase + timestamp + why the segment ended.
  */
-import { Moon, PauseCircle, Timer } from "lucide-react";
+import { Moon, PauseCircle, Sunrise, Timer } from "lucide-react";
 import type { PixieSegment } from "@piabyss/protocol";
 import { useT } from "../../lib/i18n/use-t";
 
@@ -11,6 +11,7 @@ const REASON_ICONS = {
   agent: Moon,
   user: PauseCircle,
   rollover: Timer,
+  daily: Sunrise,
 } as const;
 
 export function SleepChip({ segment }: { segment: PixieSegment }) {
@@ -21,7 +22,9 @@ export function SleepChip({ segment }: { segment: PixieSegment }) {
       ? t("pixieSleepReasonUser")
       : segment.reason === "rollover"
         ? t("pixieSleepReasonRollover")
-        : t("pixieSleepReasonAgent");
+        : segment.reason === "daily"
+          ? t("pixieSleepReasonDaily")
+          : t("pixieSleepReasonAgent");
   return (
     <div
       data-testid="pixie-sleep-chip"

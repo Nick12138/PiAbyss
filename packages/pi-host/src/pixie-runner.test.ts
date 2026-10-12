@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   askDispatch,
+  ensurePixiePersonaFile,
   failDispatch,
   findDispatchBySession,
   hasActiveDispatchFor,
@@ -20,7 +21,7 @@ import {
 } from "./pixie-agent-runner.js";
 import { buildDispatchTaskPrompt } from "./pixie-controller.js";
 import { localDayKey } from "./pixie-usage.js";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -267,5 +268,46 @@ describe("pixie usage day key", () => {
   it("formats a local YYYY-MM-DD key", () => {
     const key = localDayKey(new Date(2026, 8, 29, 9, 30).getTime());
     expect(key).toBe("2026-09-29");
+  });
+});
+
+describe("pixie persona file bootstrap", () => {
+  const personaPath = (agentDir: string) => join(resolvePixieWorkspacePath(agentDir), "CLAUDE.md");
+
+  it("首次创建时写入默认人格（含身份与指挥台指引）", () => {
+    const agentDir = freshAgentDir();
+    ensurePixiePersonaFile(agentDir, resolvePixieWorkspacePath(agentDir));
+    const path = personaPath(agentDir);
+    expect(existsSync(path)).toBe(true);
+    const text = readFileSync(path, "utf8");
+    expect(text).toContain("你是小精灵");
+    expect(text).toContain("指挥台怎么用");
+  });
+
+  it("用户手改过之后不再覆盖", () => {
+    const agentDir = freshAgentDir();
+    const pixieCwd = resolvePixieWorkspacePath(agentDir);
+    mkdirSync(pixieCwd, { recursive: true });
+    writeFileSync(join(pixieCwd, "CLAUDE.md"), "我自己写的人格", "utf8");
+    ensurePixiePersonaFile(agentDir, pixieCwd);
+    expect(readFileSync(join(pixieCwd, "CLAUDE.md"), "utf8")).toBe("我自己写的人格");
+  });
+
+  it("工作区已有别的上下文文件（AGENTS.md）时不插手", () => {
+    const agentDir = freshAgentDir();
+    const pixieCwd = resolvePixieWorkspacePath(agentDir);
+    mkdirSync(pixieCwd, { recursive: true });
+    writeFileSync(join(pixieCwd, "AGENTS.md"), "既有约定", "utf8");
+    ensurePixiePersonaFile(agentDir, pixieCwd);
+    expect(existsSync(join(pixieCwd, "CLAUDE.md"))).toBe(false);
+  });
+
+  it("删掉后不会被恢复（只引导一次）", () => {
+    const agentDir = freshAgentDir();
+    const pixieCwd = resolvePixieWorkspacePath(agentDir);
+    ensurePixiePersonaFile(agentDir, pixieCwd);
+    rmSync(personaPath(agentDir));
+    ensurePixiePersonaFile(agentDir, pixieCwd);
+    expect(existsSync(personaPath(agentDir))).toBe(false);
   });
 });

@@ -2050,6 +2050,7 @@ export const en = {
   pixieSleepReasonAgent: "The pixie dozed off on her own",
   pixieSleepReasonUser: "You asked her to nap",
   pixieSleepReasonRollover: "This segment ran long — auto nap",
+  pixieSleepReasonDaily: "A new day — auto nap into a fresh segment",
   pixieSegmentArchived: "(This segment's log is archived)",
   pixieReplyPlaceholder: "Reply to the question Pixie relayed…",
   pixieReplySend: "Reply",

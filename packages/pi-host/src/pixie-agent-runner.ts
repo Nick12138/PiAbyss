@@ -43,12 +43,92 @@ import type {
 } from "@piabyss/protocol";
 import { createHostAgentSession } from "./agent-session-factory.js";
 import { piabyssDataDir } from "./piabyss-data.js";
+import { upsertPixieSession } from "./pixie-session-cache.js";
+import {
+  composeDailyNapHandoff,
+  dailyNapPhrase,
+  localDayKey,
+  shouldDailyNap,
+  type DailyNapInput,
+} from "./pixie-daily-nap.js";
 import { logger } from "./logger.js";
 
 /** Default pixie workspace directory relative to the agent dir. */
 const PIXIE_WORKSPACE_SEGMENT = join("workspace", "pixie");
 /** Session name so each segment is recognizable in transcripts. */
 const PIXIE_SESSION_NAME = "🧚 小精灵";
+
+/** 小精灵工作区的人格文件名（SDK context files 候选之一，见下）。 */
+const PIXIE_PERSONA_FILE = "CLAUDE.md";
+
+/** SDK 认可的上下文文件名（同目录只取第一个，大小写变体也在列）。 */
+const PIXIE_CONTEXT_FILE_NAMES = [
+  "AGENTS.override.md",
+  "AGENTS.md",
+  "AGENTS.MD",
+  "CLAUDE.md",
+  "CLAUDE.MD",
+];
+
+/**
+ * 默认人格：首次创建小精灵工作区时写进 `<工作区>/CLAUDE.md`。
+ *
+ * 与 Host 注入的 `<pixie-context>` 分工：
+ * - 这里 = **人格与工作方式**（身份、语气、分工、指挥台怎么用）——可以直接手改，
+ *   改完从下一个新段生效（SDK 的 context files 在段会话创建/恢复时 reload）。
+ * - 那边 = **与 Host 行为绑定的契约 + 运行期数据**（落点规则、排队、回调总则、
+ *   模型授权、已知工作区列表、上一段交接摘要）——必须跟实现同源，不放文件里。
+ */
+const PIXIE_PERSONA_TEMPLATE = `# 小精灵（PiAbyss 常驻小助手）
+
+> 这份文件是小精灵的**人格与工作方式**，可以直接改；改完从**下一个新段**开始生效（当段不会重载）。
+> 「已知工作区列表」「上一段交接摘要」等运行期信息由 PiAbyss 注入，不在这里。
+
+## 身份
+你是小精灵，PiAbyss 桌面里的常驻小助手。
+
+## 说话方式
+语气轻快自然、回答简洁直接。不铺垫、不客套，先给结论；有取舍就把取舍讲清楚。
+
+## 怎么分工
+查、解释、问答这类一句话能答的直接答；要跑命令、改文件、多步推进或耗时的活，才委派给对应工作区的会话执行。
+
+## 指挥台怎么用
+- 挑会话继续派活前，先看有哪些会话可复用（含简介与最近结果）
+- 派错了就叫停，别自己想办法兜底
+- 跑偏了就地插话纠正——那是补充，不是新任务
+- 同一任务失败了，会话还活着就地续跑，死了才重派
+- 用户问「那个任务还在跑吗」，先查岗再答，别凭印象
+- 话题收尾了，可以打个盹换段
+`;
+
+/**
+ * 首次创建小精灵工作区时写一份默认人格文件。
+ *
+ * 「首次」用标记文件记一次：写过就永不再写——所以用户后来改了、删了都不会被覆盖或恢复。
+ * 工作区里已经有任一 SDK 认可的上下文文件时也不写（尊重既有约定）。
+ */
+export function ensurePixiePersonaFile(agentDir: string, pixieCwd: string): void {
+  try {
+    const marker = join(pixieDir(agentDir), "persona-bootstrapped");
+    if (existsSync(marker)) return;
+    const hasContextFile = PIXIE_CONTEXT_FILE_NAMES.some((name) =>
+      existsSync(join(pixieCwd, name)),
+    );
+    if (!hasContextFile) {
+      mkdirSync(pixieCwd, { recursive: true });
+      writeFileSync(join(pixieCwd, PIXIE_PERSONA_FILE), PIXIE_PERSONA_TEMPLATE, "utf8");
+      logger.info("Wrote the default pixie persona file", {
+        path: join(pixieCwd, PIXIE_PERSONA_FILE),
+      });
+    }
+    writeFileSync(marker, `${new Date().toISOString()}\n`, "utf8");
+  } catch (err) {
+    logger.warn("Failed to bootstrap the pixie persona file", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 /** Fallback sleep phrases when the pixie does not pick one herself. */
 const SLEEP_PHRASES = [
@@ -111,9 +191,7 @@ export function pixieDir(agentDir: string): string {
 /** Host-owned event emitter (wired in main.ts once the server exists). */
 let emitServerEvent: ((event: string, payload: unknown) => void) | null = null;
 
-export function configurePixieEventEmitter(
-  emit: (event: string, payload: unknown) => void,
-): void {
+export function configurePixieEventEmitter(emit: (event: string, payload: unknown) => void): void {
   emitServerEvent = emit;
 }
 
@@ -141,11 +219,47 @@ function requireHostModelRuntime(): ModelRuntime {
 
 /* ── 时间线（timeline.json：只存指针）──────────────────────────────── */
 
-type PixieSegmentReason = "agent" | "user" | "rollover";
+type PixieSegmentReason = "agent" | "user" | "rollover" | "daily";
+
+/** 每日打盹状态（随 timeline 落盘，跨 Host 重启保留）。 */
+type PixieNapState = {
+  /** 最后一次用户侧活动时间（"最长空窗"的起点）。 */
+  lastActivityAt?: number;
+  /** 上次打盹完成时间。 */
+  lastNapAt?: number;
+  /** 上次打盹的自然日（本地 YYYY-MM-DD）。 */
+  lastNapDate?: string;
+  /** 历史静默间隔样本（毫秒，最多保留 50 条，供自适应阈值用）。 */
+  idleSamples?: number[];
+};
 
 type PixieSegmentRecord = PixieSegment;
 
-type PixieTimelineFile = { version: 1; segments: PixieSegmentRecord[] };
+type PixieTimelineFile = { version: 1; segments: PixieSegmentRecord[]; nap?: PixieNapState };
+
+/** 容错读取 nap 状态（字段非法就丢弃，不因此让整个时间线失效）。 */
+function parseNapState(file: unknown): PixieNapState | null {
+  const raw = (file as { nap?: unknown }).nap;
+  if (typeof raw !== "object" || raw === null) return null;
+  const nap = raw as Partial<PixieNapState>;
+  const out: PixieNapState = {};
+  if (typeof nap.lastActivityAt === "number" && Number.isFinite(nap.lastActivityAt)) {
+    out.lastActivityAt = nap.lastActivityAt;
+  }
+  if (typeof nap.lastNapAt === "number" && Number.isFinite(nap.lastNapAt)) {
+    out.lastNapAt = nap.lastNapAt;
+  }
+  if (typeof nap.lastNapDate === "string" && nap.lastNapDate) out.lastNapDate = nap.lastNapDate;
+  if (Array.isArray(nap.idleSamples)) {
+    out.idleSamples = nap.idleSamples
+      .filter(
+        (value): value is number =>
+          typeof value === "number" && Number.isFinite(value) && value > 0,
+      )
+      .slice(-50);
+  }
+  return out;
+}
 
 function timelinePath(agentDir: string): string {
   return join(pixieDir(agentDir), "timeline.json");
@@ -184,13 +298,17 @@ function loadTimeline(agentDir: string): PixieTimelineFile {
         endedAt: typeof record.endedAt === "number" ? record.endedAt : null,
         separator: typeof record.separator === "string" ? record.separator : null,
         reason:
-          record.reason === "agent" || record.reason === "user" || record.reason === "rollover"
+          record.reason === "agent" ||
+          record.reason === "user" ||
+          record.reason === "rollover" ||
+          record.reason === "daily"
             ? record.reason
             : null,
         handoff: typeof record.handoff === "string" ? record.handoff : null,
       });
     }
-    return { version: 1, segments };
+    const nap = parseNapState(parsed);
+    return nap ? { version: 1, segments, nap } : { version: 1, segments };
   } catch {
     return { version: 1, segments: [] };
   }
@@ -275,7 +393,8 @@ function persistDispatches(agentDir: string): void {
       error: err instanceof Error ? err.message : String(err),
     });
   }
-}function loadDispatches(agentDir: string): void {
+}
+function loadDispatches(agentDir: string): void {
   if (dispatchesLoadedFor === agentDir) return;
   dispatchesLoadedFor = agentDir;
   const path = dispatchesPath(agentDir);
@@ -327,16 +446,14 @@ function persistDispatches(agentDir: string): void {
       reportedAt: typeof record.reportedAt === "number" ? record.reportedAt : null,
       stale: record.stale === true,
       startedAt: typeof record.startedAt === "number" ? record.startedAt : null,
-      lastActiveAt:
-        typeof record.lastActiveAt === "number" ? record.lastActiveAt : null,
+      lastActiveAt: typeof record.lastActiveAt === "number" ? record.lastActiveAt : null,
       staleNotified: record.staleNotified === true,
       batchId: typeof record.batchId === "string" ? record.batchId : null,
       failCount:
         typeof record.failCount === "number" && Number.isSafeInteger(record.failCount)
           ? record.failCount
           : 0,
-      progressSummary:
-        typeof record.progressSummary === "string" ? record.progressSummary : null,
+      progressSummary: typeof record.progressSummary === "string" ? record.progressSummary : null,
       files: Array.isArray(record.files)
         ? record.files.filter((file): file is string => typeof file === "string")
         : null,
@@ -364,7 +481,9 @@ function markStaleDispatches(): void {
   const now = Date.now();
   for (const record of dispatches) {
     const live =
-      record.status === "dispatched" || record.status === "paused" || record.status === "awaiting_user";
+      record.status === "dispatched" ||
+      record.status === "paused" ||
+      record.status === "awaiting_user";
     if (!live) continue;
     if (record.stale && record.staleNotified) continue;
     const idle = now - lastActiveOf(record);
@@ -396,6 +515,13 @@ export function startPixieStaleWatcher(agentDir: string): void {
       loadDispatches(agentDir);
       markStaleDispatches();
       persistDispatchesIfDirty(agentDir);
+      // v4.4 每日打盹（机会型）：只对已经驻留在内存里的段生效——不在这里唤醒/恢复
+      // 会话；Host 重启后未被使用的段交给发送路径的懒兜底判定。已经有人（小精灵自己
+      // 或用户）在收尾打盹时不插手，免得把她的交接摘要丢掉。
+      const state = runner && runner.agentDir === agentDir ? runner : null;
+      if (state?.current && state.pendingRest === null && state.pendingUserRest === false) {
+        maybeDailyNap(state, state.current);
+      }
     } catch {
       /* best-effort */
     }
@@ -495,7 +621,11 @@ export function progressDispatch(
 ): PixieDispatch | null {
   const record = dispatches.find((d) => d.id === id);
   if (!record) return null;
-  if (record.status !== "dispatched" && record.status !== "paused" && record.status !== "awaiting_user")
+  if (
+    record.status !== "dispatched" &&
+    record.status !== "paused" &&
+    record.status !== "awaiting_user"
+  )
     return null;
   record.status = pause ? "paused" : "dispatched";
   record.kind = "progress";
@@ -524,9 +654,7 @@ export function resumePausedDispatch(id: string, agentDir: string): PixieDispatc
  */
 let onTerminalSettleHook: ((sessionId: string | null) => void) | null = null;
 
-export function configurePixieTerminalSettleHook(
-  hook: (sessionId: string | null) => void,
-): void {
+export function configurePixieTerminalSettleHook(hook: (sessionId: string | null) => void): void {
   onTerminalSettleHook = hook;
 }
 
@@ -547,7 +675,11 @@ export function settleDispatch(
 ): PixieDispatch | null {
   const record = dispatches.find((d) => d.id === id);
   if (!record) return null;
-  if (record.status !== "dispatched" && record.status !== "paused" && record.status !== "awaiting_user")
+  if (
+    record.status !== "dispatched" &&
+    record.status !== "paused" &&
+    record.status !== "awaiting_user"
+  )
     return null;
   record.status = "reported";
   record.kind = kind;
@@ -563,7 +695,11 @@ export function settleDispatch(
 export function failDispatch(id: string, reason: string, agentDir?: string): PixieDispatch | null {
   const record = dispatches.find((d) => d.id === id);
   if (!record) return null;
-  if (record.status !== "dispatched" && record.status !== "paused" && record.status !== "awaiting_user")
+  if (
+    record.status !== "dispatched" &&
+    record.status !== "paused" &&
+    record.status !== "awaiting_user"
+  )
     return null;
   record.status = "failed";
   record.kind = "error";
@@ -580,7 +716,11 @@ export function failDispatch(id: string, reason: string, agentDir?: string): Pix
 export function stopSettleDispatch(id: string, agentDir?: string): PixieDispatch | null {
   const record = dispatches.find((d) => d.id === id);
   if (!record) return null;
-  if (record.status !== "dispatched" && record.status !== "paused" && record.status !== "awaiting_user")
+  if (
+    record.status !== "dispatched" &&
+    record.status !== "paused" &&
+    record.status !== "awaiting_user"
+  )
     return null;
   record.status = "stopped";
   record.kind = "stopped";
@@ -791,10 +931,9 @@ function workspaceSettingsManager(pixieCwd: string, agentDir: string): SettingsM
  * the one and only host session factory, and the standard session storage
  * (`SessionManager.create(cwd)` → `<agentDir>/sessions/<key>/`).
  */
-async function createSegmentSession(
-  agentDir: string,
-  pixieCwd: string,
-): Promise<AgentSession> {
+async function createSegmentSession(agentDir: string, pixieCwd: string): Promise<AgentSession> {
+  // 人格文件要在 resourceLoader 之前落盘，本次创建的会话才吃得到。
+  ensurePixiePersonaFile(agentDir, pixieCwd);
   const settingsManager = workspaceSettingsManager(pixieCwd, agentDir);
   const resourceLoader = new DefaultResourceLoader({ cwd: pixieCwd, agentDir, settingsManager });
   await resourceLoader.reload();
@@ -813,7 +952,29 @@ async function createSegmentSession(
   } catch {
     /* cosmetic */
   }
+  // v4.3 会话缓存：小精灵自己的工作区会话段也登记（role=pixie），供交代与查会话。
+  rememberPixieSegmentSession(agentDir, pixieCwd, created.session);
   return created.session;
+}
+
+/** 把小精灵自己的段会话登记进会话缓存（归属 pixie；失败不阻断）。 */
+function rememberPixieSegmentSession(
+  agentDir: string,
+  pixieCwd: string,
+  session: { sessionId: string; sessionFile?: string | null },
+): void {
+  try {
+    upsertPixieSession(agentDir, {
+      sessionId: session.sessionId,
+      sessionPath: session.sessionFile ?? "",
+      cwd: pixieCwd,
+      owner: "pixie",
+      role: "pixie",
+      summary: "小精灵工作区会话段",
+    });
+  } catch {
+    /* 缓存写入失败不影响会话本身 */
+  }
 }
 
 /** Reopen the latest open segment after a Host restart (SessionManager.open). */
@@ -822,6 +983,8 @@ async function resumeSegmentSession(
   pixieCwd: string,
   sessionPath: string,
 ): Promise<AgentSession> {
+  // 首次创建也可能发生在恢复路径上（标记文件存在后就是空操作）。
+  ensurePixiePersonaFile(agentDir, pixieCwd);
   const settingsManager = workspaceSettingsManager(pixieCwd, agentDir);
   const resourceLoader = new DefaultResourceLoader({ cwd: pixieCwd, agentDir, settingsManager });
   await resourceLoader.reload();
@@ -835,6 +998,7 @@ async function resumeSegmentSession(
     sessionManager,
     modelRef: parsePixieModelRef(process.env.PIABYSS_PIXIE_MODEL),
   });
+  rememberPixieSegmentSession(agentDir, pixieCwd, created.session);
   return created.session;
 }
 
@@ -843,9 +1007,9 @@ function subscribeSettle(state: PixieRunner, session: AgentSession): void {
   state.unsubscribeSettle?.();
   state.unsubscribeSettle = session.subscribe((event) => {
     if (event.type !== "agent_settled") return;
-    const pending = state.pendingRest ?? (state.pendingUserRest
-      ? { phrase: null, handoff: null, reason: "user" as const }
-      : null);
+    const pending =
+      state.pendingRest ??
+      (state.pendingUserRest ? { phrase: null, handoff: null, reason: "user" as const } : null);
     state.pendingRest = null;
     state.pendingUserRest = false;
     if (!pending || !state.current) return;
@@ -877,6 +1041,116 @@ function finalizeCurrentSegment(
     separator: current.record.separator,
   });
   emit("pixie.segmentChanged", { segmentId: current.record.id, phase: "ended" });
+}
+
+/* ── 每日自动打盹（v4.4）────────────────────────────────────────── */
+
+/**
+ * 记一次用户侧活动：先按上一次活动算一个静默间隔样本，再刷新最后活动时间。
+ * 判定必须在这之前跑（那时 lastActivityAt 还是旧值）。
+ */
+function notePixieActivity(state: PixieRunner, at: number): void {
+  const nap = state.timeline.nap ?? (state.timeline.nap = {});
+  const previous = nap.lastActivityAt;
+  if (typeof previous === "number" && previous > 0 && at > previous) {
+    const gap = at - previous;
+    // 超过 7 天的间隔属于"把工具搁置了"，不是睡了一觉：不进样本。
+    if (gap < 7 * 24 * 3_600_000) {
+      const samples = nap.idleSamples ?? (nap.idleSamples = []);
+      samples.push(gap);
+      if (samples.length > 50) samples.splice(0, samples.length - 50);
+    }
+  }
+  nap.lastActivityAt = at;
+  saveTimeline(state.agentDir, state.timeline);
+}
+
+/** 当前段最后一条小精灵回复（交接摘要用）。 */
+function lastAssistantTextOf(session: AgentSession): string | null {
+  const messages = messagesOf(session);
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.role === "assistant" && message.text.trim()) return message.text;
+  }
+  return null;
+}
+
+/** 还没走到终态的委派（交接摘要用）。 */
+function unfinishedDispatchesForHandoff(agentDir: string): { task: string; status: string }[] {
+  try {
+    const settled = new Set(["reported", "failed", "stopped", "cancelled"]);
+    return listDispatches(50, agentDir)
+      .filter((record) => !settled.has(record.status))
+      .map((record) => ({ task: record.task, status: record.status }));
+  } catch {
+    return [];
+  }
+}
+
+/** 备忘录里未完成的标题（交接摘要用；容错读取，读不到就当没有）。 */
+function openMemoTitlesOf(agentDir: string): string[] {
+  try {
+    const path = join(piabyssDataDir(agentDir), "memo", "notes.json");
+    if (!existsSync(path)) return [];
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as { notes?: unknown };
+    if (!Array.isArray(parsed.notes)) return [];
+    const titles: string[] = [];
+    for (const raw of parsed.notes) {
+      if (!raw || typeof raw !== "object") continue;
+      const note = raw as { title?: unknown; status?: unknown };
+      if (note.status !== "open" && note.status !== "in_progress") continue;
+      if (typeof note.title === "string" && note.title.trim()) titles.push(note.title.trim());
+      if (titles.length >= 3) break;
+    }
+    return titles;
+  } catch {
+    return [];
+  }
+}
+
+/** 封段 + 记打盹时间；每日打盹是硬切，必须留交接摘要（不像 rollover 那样空手换段）。 */
+function finalizeDailyNap(state: PixieRunner, current: PixieSegmentRuntime): void {
+  const now = Date.now();
+  const nap = state.timeline.nap ?? (state.timeline.nap = {});
+  const idleMs = typeof nap.lastActivityAt === "number" ? now - nap.lastActivityAt : null;
+  nap.lastNapAt = now;
+  nap.lastNapDate = localDayKey(now);
+  const handoff = composeDailyNapHandoff({
+    lastAssistantText: lastAssistantTextOf(current.session),
+    unfinishedDispatches: unfinishedDispatchesForHandoff(state.agentDir),
+    openMemoTitles: openMemoTitlesOf(state.agentDir),
+  });
+  // 先记时间：finalizeCurrentSegment 内部会落盘，nap 字段一并持久化。
+  finalizeCurrentSegment(state, {
+    phrase: dailyNapPhrase(now),
+    handoff,
+    reason: "daily",
+  });
+  logger.info("Pixie daily nap finalized a segment", {
+    segmentId: current.record.id,
+    idleMs,
+    hadHandoff: handoff !== null,
+  });
+}
+
+/**
+ * 每日打盹判定（机会型 tick 与懒兜底共用）。成立就封段并返回 true。
+ * 判据见 pixie-daily-nap.ts：跨本地日 + 静默 ≥ 自适应阈值 + 硬门槛。
+ */
+function maybeDailyNap(state: PixieRunner, current: PixieSegmentRuntime): boolean {
+  const nap = state.timeline.nap ?? {};
+  const input: DailyNapInput = {
+    now: Date.now(),
+    lastActivityAt: nap.lastActivityAt ?? null,
+    lastNapAt: nap.lastNapAt ?? null,
+    turnsInCurrentSegment: state.turnsInCurrentSegment,
+    streaming: current.session.isStreaming,
+    idleSamples: nap.idleSamples ?? [],
+  };
+  const decision = shouldDailyNap(input);
+  if (!decision.nap) return false;
+  finalizeDailyNap(state, current);
+  return true;
 }
 
 /** Create a fresh segment (record + standard session + settle listener). */
@@ -943,9 +1217,11 @@ function buildSegmentContextPreamble(agentDir: string, handoff: string | null): 
   const lines = [
     "[pixie|ui]",
     "<pixie-context>",
-    "你是小精灵，PiAbyss 桌面里的常驻小助手。语气轻快自然、回答简洁直接；轻活直接答，重活用 pixie_dispatch 委派给对应工作区的会话执行。",
-    "回调处理约定：收到 <pixie-report>（完成）→ 只转述不代写总结，并检查相关备忘录是否需要回填；收到 <pixie-error>（报错）→ 决策：原样重试 / 调整委派词再派 / 如实向用户报告；收到 <pixie-ask>（询问）→ 立即把问题转述给用户（不要代答），用户会直接在小精灵对话里回复，你收到的下一条用户消息就是答复。",
-    "模型与推理深度授权：委派和插话默认不传 model/thinkingLevel（跟随会话当前设置）。仅当用户在对话中明确指定了模型或推理深度（如「用 xxx 模型跑」「思考深度调到 high」）时，才把对应参数传给 pixie_dispatch / pixie_interject；未经用户明确授权，绝不得主动更换模型或推理深度。",
+    "你是小精灵，PiAbyss 桌面里的常驻小助手（人格、语气与工作方式见工作区 CLAUDE.md）。",
+    "委派落点：默认只复用【你自己创建的】会话，没有就新开一个。用户自己在界面里创建的会话不要自动复用；只有用户明确给出会话 id 时，才用 sessionId 参数指定（找不到会直接报错，不要改派到别的会话）。",
+    "排队：目标会话有活在跑时，新任务会排队并返回排队说明——不要重复派单，也不用自己数着等，对方回调时你会收到信封。",
+    "回调：信封自带处理要求，照它办。总则——完成只转述、不代写总结；报错在「原样重试 / 调整委派词再派 / 如实报告」里选，但同一任务连败 3 次就别再试，带全部现场升级给用户；询问立刻转述给用户、不要代答，用户的下一条消息就是答复。",
+    "模型与推理深度：默认不传 model / thinkingLevel（跟随会话当前设置）。仅当用户在对话中明确指定（如「用 xxx 模型跑」「深度调到 high」）时才传，绝不主动更换。",
     "委派目标 cwd 必须来自下方已知工作区列表（或用户当前打开的工作区）；用户手动指令的优先级最高。",
     ...(handoff ? [`刚睡醒。上一段的小结：${handoff}`] : []),
     ...(workspaces.length > 0
@@ -971,7 +1247,12 @@ async function deliverToCurrentSegment(args: {
   const state = ensureRunner(args.agentDir);
   let current = await ensureCurrentSegment(args.agentDir);
   if (current && state.pendingRest === null && state.pendingUserRest === false) {
-    if (state.turnsInCurrentSegment >= pixieSegmentMaxTurns()) {
+    // v4.4 每日打盹（懒执行兜底）：今天的第一条用户侧消息在注入之前先判一次。
+    // 此刻 lastActivityAt 仍是昨天的值，"最长空窗"自然成立 → 新的一天从干净段开始。
+    // system 注入（例如失联提醒）不触发换段。
+    if (args.source !== "system" && maybeDailyNap(state, current)) {
+      current = null;
+    } else if (state.turnsInCurrentSegment >= pixieSegmentMaxTurns()) {
       // Turn budget exhausted: close with a rollover phrase; the next block
       // creates the fresh segment.
       finalizeCurrentSegment(state, { phrase: null, handoff: null, reason: "rollover" });
@@ -995,12 +1276,14 @@ async function deliverToCurrentSegment(args: {
     }
   }
   const session = current.session;
+  // 记一次用户侧活动（静默样本 + 最后活动时间）；必须在每日打盹判定之后。
+  notePixieActivity(state, Date.now());
   if (session.isStreaming) {
     if (args.interactive) return { ok: false, error: "上一条回复还在生成中" };
     // Non-interactive envelopes must not be lost: steer into the running turn.
-    void session.steer(`${preamble ? `${preamble}\n` : ""}[pixie|${args.source}]\n${args.text}`).catch(
-      () => undefined,
-    );
+    void session
+      .steer(`${preamble ? `${preamble}\n` : ""}[pixie|${args.source}]\n${args.text}`)
+      .catch(() => undefined);
     return { ok: true, sessionId: session.sessionId };
   }
   const prompt = `${preamble ? `${preamble}\n` : ""}[pixie|${args.source}]\n${args.text}`;

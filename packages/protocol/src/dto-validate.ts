@@ -2771,7 +2771,8 @@ function isPixieSegmentView(value: unknown): boolean {
     (value.reason === null ||
       value.reason === "agent" ||
       value.reason === "user" ||
-      value.reason === "rollover") &&
+      value.reason === "rollover" ||
+      value.reason === "daily") &&
     (value.handoff === null || isString(value.handoff)) &&
     Array.isArray(value.messages) &&
     value.messages.every(isScheduleAgentMessage)

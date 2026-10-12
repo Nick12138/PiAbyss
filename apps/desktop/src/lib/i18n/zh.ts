@@ -1960,6 +1960,7 @@ export const zh: Record<MessageKey, string> = {
   pixieSleepReasonAgent: "小精灵自己打了个盹",
   pixieSleepReasonUser: "你请她打了个盹",
   pixieSleepReasonRollover: "这段聊得太久，自动打盹",
+  pixieSleepReasonDaily: "新的一天，自动打盹换段",
   pixieSegmentArchived: "（此段记录已归档）",
   pixieReplyPlaceholder: "回复小精灵转达的问题…",
   pixieReplySend: "回复",

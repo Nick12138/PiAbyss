@@ -43,6 +43,7 @@ function deps(overrides: Partial<PixieControlPlaneDeps> = {}): PixieControlPlane
       sessionId: "s1",
       sessionPath: "C:/s1.jsonl",
       queued: false,
+      reused: false,
     }),
     report: async () => ({ ok: true }),
     ask: async () => ({ ok: true }),
@@ -50,6 +51,7 @@ function deps(overrides: Partial<PixieControlPlaneDeps> = {}): PixieControlPlane
     stop: async () => ({ ok: true, action: "aborted" }),
     retry: async () => ({ ok: true, dispatchId: "pix_1" }),
     dispatchList: () => [],
+    sessionList: () => [],
     rest: async () => ({ ok: true }),
     inject: async () => ({ ok: true, sessionId: "s1" }),
     dispatchState: () => ({ armed: false, dispatchId: null, kind: null }),
@@ -63,7 +65,14 @@ describe("pixie control-plane endpoints", () => {
     const d = deps({
       dispatch: async (request) => {
         seen.push(request);
-        return { ok: true, dispatchId: "pix_9", sessionId: "s2", sessionPath: "p", queued: true };
+        return {
+          ok: true,
+          dispatchId: "pix_9",
+          sessionId: "s2",
+          sessionPath: "p",
+          queued: true,
+          reused: false,
+        };
       },
     });
     const out = await handlePixieControlPlaneRequest(
@@ -79,6 +88,7 @@ describe("pixie control-plane endpoints", () => {
       sessionId: "s2",
       sessionPath: "p",
       queued: true,
+      reused: false,
     });
     expect(seen).toEqual([{ cwd: "D:/ws", task: "do it", newSession: true }]);
   });
@@ -229,7 +239,12 @@ describe("pixie control-plane endpoints", () => {
       d,
       "POST",
       PIXIE_INTERJECT_PATH,
-      JSON.stringify({ dispatchId: "pix_5", text: "先汇报进度", mode: "checkpoint", after: "wait" }),
+      JSON.stringify({
+        dispatchId: "pix_5",
+        text: "先汇报进度",
+        mode: "checkpoint",
+        after: "wait",
+      }),
     );
     expect(out.status).toBe(200);
     expect(out.body).toEqual({ ok: true });
@@ -424,6 +439,7 @@ describe("pixie control-plane endpoints", () => {
         sessionId: "s1",
         sessionPath: "C:/s1.jsonl",
         queued: false,
+        reused: false,
       });
     } finally {
       await plane.close();
@@ -458,7 +474,9 @@ describe("pixie control-plane body parsers", () => {
       ok: true,
       args: { dispatchId: "d", question: "q" },
     });
-    expect(parseAskBody(JSON.stringify({ dispatchId: "d", question: "q", options: ["A"] }))).toEqual({
+    expect(
+      parseAskBody(JSON.stringify({ dispatchId: "d", question: "q", options: ["A"] })),
+    ).toEqual({
       ok: true,
       args: { dispatchId: "d", question: "q", options: ["A"] },
     });
@@ -487,14 +505,16 @@ describe("pixie control-plane body parsers", () => {
       parseInterjectBody(JSON.stringify({ dispatchId: "d", text: "x", mode: "append" })),
     ).toEqual({ ok: true, args: { dispatchId: "d", text: "x", mode: "append" } });
     expect(
-      parseInterjectBody(JSON.stringify({ dispatchId: "d", text: "x", mode: "checkpoint", after: "wait" })),
+      parseInterjectBody(
+        JSON.stringify({ dispatchId: "d", text: "x", mode: "checkpoint", after: "wait" }),
+      ),
     ).toEqual({
       ok: true,
       args: { dispatchId: "d", text: "x", mode: "checkpoint", after: "wait" },
     });
-    expect(parseInterjectBody(JSON.stringify({ dispatchId: "d", text: "x", mode: "both" })).ok).toBe(
-      false,
-    );
+    expect(
+      parseInterjectBody(JSON.stringify({ dispatchId: "d", text: "x", mode: "both" })).ok,
+    ).toBe(false);
   });
 
   it("parseStopBody requires dispatchId", () => {
@@ -508,7 +528,10 @@ describe("pixie control-plane body parsers", () => {
   it("parseReportBody keeps kind/files/pause only when present", () => {
     expect(
       parseReportBody(JSON.stringify({ dispatchId: "d", summary: "s", kind: "progress" })),
-    ).toEqual({ ok: true, args: { dispatchId: "d", summary: "s", success: true, kind: "progress" } });
+    ).toEqual({
+      ok: true,
+      args: { dispatchId: "d", summary: "s", success: true, kind: "progress" },
+    });
     expect(
       parseReportBody(JSON.stringify({ dispatchId: "d", summary: "s", kind: "nope" })).ok,
     ).toBe(false);

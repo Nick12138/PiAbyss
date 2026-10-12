@@ -32,6 +32,13 @@ import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-
 import { DefaultResourceLoader, SessionManager } from "@earendil-works/pi-coding-agent";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import type { WorkspaceGraph } from "./workspace-graph-types.js";
+import {
+  applyDispatchRecordsToSessionCache,
+  isPixieOwnedSessionId,
+  isPixieOwnedSessionPath,
+  listPixieSessions,
+  upsertPixieSession,
+} from "./pixie-session-cache.js";
 import type { MethodHandler } from "./server.js";
 import {
   abortPixie,
@@ -115,21 +122,29 @@ type TargetResolution =
   | { ok: false; error: string };
 
 /**
- * Find the delegation target inside an already-open workspace:
- * the active session, then busy background runtimes, then the idle cache.
- * `skipSessionPath` forces a fresh session (pixie_dispatch's newSession).
+ * Find the delegation target inside an already-open workspace: the active
+ * session, then busy background runtimes, then the idle cache.
+ *
+ * v4.3 会话归属：**只有小精灵自己创建的会话**（sessions-cache.json 里
+ * owner="pixie"，由委派引擎建过或小精灵工作区自己的段会话）才是候选。用户自己
+ * 在 UI 里创建的会话一律跳过——否则委派会塞进用户正在操作的会话里，跟用户抢同一
+ * 个上下文。用户想让小精灵处理自己的某个会话时，必须在对话里给出会话 id（见
+ * resolveExplicitTargetSession）。
  */
 function findTargetSession(
   factory: WorkspaceGraphFactory,
   graph: WorkspaceGraph,
-  skipSessionPath?: string,
+  agentDir: string,
 ): TargetResolution {
+  const isOwned = (sessionId: string | null, sessionPath: string | null): boolean =>
+    isPixieOwnedSessionPath(agentDir, sessionPath ?? "") ||
+    isPixieOwnedSessionId(agentDir, sessionId ?? "");
   const active = graph.agentSession;
   const activeSnapshot = graph.sessionSnapshot;
   if (
     active &&
     activeSnapshot &&
-    !factory.sessionPathsEqual(activeSnapshot.sessionPath, skipSessionPath ?? "")
+    isOwned(activeSnapshot.sessionId, activeSnapshot.sessionPath ?? "")
   ) {
     return {
       ok: true,
@@ -142,12 +157,7 @@ function findTargetSession(
     };
   }
   for (const runtime of graph.backgroundSessions.values()) {
-    if (
-      skipSessionPath &&
-      factory.sessionPathsEqual(runtime.sessionSnapshot.sessionPath, skipSessionPath)
-    ) {
-      continue;
-    }
+    if (!isOwned(runtime.sessionId, runtime.sessionSnapshot.sessionPath ?? "")) continue;
     return {
       ok: true,
       graph,
@@ -159,12 +169,7 @@ function findTargetSession(
     };
   }
   for (const runtime of graph.idleSessionCache?.values() ?? []) {
-    if (
-      skipSessionPath &&
-      factory.sessionPathsEqual(runtime.sessionSnapshot.sessionPath, skipSessionPath)
-    ) {
-      continue;
-    }
+    if (!isOwned(runtime.sessionId, runtime.sessionSnapshot.sessionPath ?? "")) continue;
     return {
       ok: true,
       graph,
@@ -176,6 +181,54 @@ function findTargetSession(
     };
   }
   return { ok: false, error: "no candidate session" };
+}
+
+/**
+ * 显式指定会话（用户在对话中给出了会话 id）：此时允许复用用户自己的会话。
+ * 找不到 → null（调用方给出可读错误，绝不静默落到别的会话上）。
+ */
+function resolveExplicitTargetSession(
+  factory: WorkspaceGraphFactory,
+  graph: WorkspaceGraph,
+  sessionId: string,
+): TargetResolution | null {
+  const activeSnapshot = graph.sessionSnapshot;
+  if (graph.agentSession && activeSnapshot?.sessionId === sessionId) {
+    return {
+      ok: true,
+      graph,
+      session: graph.agentSession,
+      sessionId,
+      sessionPath: activeSnapshot.sessionPath ?? "",
+      busy: factory.isSessionBusy(graph.agentSession),
+      reused: true,
+    };
+  }
+  for (const runtime of graph.backgroundSessions.values()) {
+    if (runtime.sessionId !== sessionId) continue;
+    return {
+      ok: true,
+      graph,
+      session: runtime.agentSession,
+      sessionId,
+      sessionPath: runtime.sessionSnapshot.sessionPath ?? "",
+      busy: factory.isSessionBusy(runtime.agentSession),
+      reused: true,
+    };
+  }
+  for (const runtime of graph.idleSessionCache?.values() ?? []) {
+    if (runtime.sessionId !== sessionId) continue;
+    return {
+      ok: true,
+      graph,
+      session: runtime.agentSession,
+      sessionId,
+      sessionPath: runtime.sessionSnapshot.sessionPath ?? "",
+      busy: false,
+      reused: true,
+    };
+  }
+  return null;
 }
 
 /** Spin up a brand-new formal session inside the target workspace. */
@@ -262,7 +315,9 @@ async function applyDispatchModelOverride(
   factory: WorkspaceGraphFactory,
   session: AgentSession,
   override: { model?: string | null; thinkingLevel?: string | null },
-): Promise<{ ok: true; model: string | null; thinkingLevel: string | null } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; model: string | null; thinkingLevel: string | null } | { ok: false; error: string }
+> {
   const agentDir = factory.deps.agentDir;
   let appliedModel: string | null = null;
   if (override.model !== undefined && override.model !== null && override.model.trim()) {
@@ -283,7 +338,10 @@ async function applyDispatchModelOverride(
     }
     const allow = (await getProviderModelAllowLists(agentDir))?.[provider];
     if (allow && !allow.includes(modelId)) {
-      return { ok: false, error: `模型 ${modelId} 在 Provider ${provider} 下被隐藏；请先在 Provider 设置中启用` };
+      return {
+        ok: false,
+        error: `模型 ${modelId} 在 Provider ${provider} 下被隐藏；请先在 Provider 设置中启用`,
+      };
     }
     const registry = factory.deps.modelRegistry;
     const model = (registry.getAvailable?.() ?? []).find(
@@ -306,7 +364,8 @@ async function applyDispatchModelOverride(
   if (override.thinkingLevel !== undefined && override.thinkingLevel !== null) {
     try {
       session.setThinkingLevel(override.thinkingLevel as never);
-      appliedModel = appliedModel ?? (session.model ? `${session.model.provider}/${session.model.id}` : null);
+      appliedModel =
+        appliedModel ?? (session.model ? `${session.model.provider}/${session.model.id}` : null);
     } catch {
       /* level not supported by the model — keep the session default */
     }
@@ -314,7 +373,8 @@ async function applyDispatchModelOverride(
   return { ok: true, model: appliedModel, thinkingLevel: override.thinkingLevel ?? null };
 }
 
-function messageTextOf(message: { content?: unknown } | undefined): string {  const content = message?.content;
+function messageTextOf(message: { content?: unknown } | undefined): string {
+  const content = message?.content;
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     return content
@@ -363,7 +423,10 @@ function watchDispatchTurn(
   const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
     if (finished) return;
     if (event.type === "message_end") {
-      if (event.message.role === "user" && messageTextOf(event.message).includes("<pixie-dispatch")) {
+      if (
+        event.message.role === "user" &&
+        messageTextOf(event.message).includes("<pixie-dispatch")
+      ) {
         envelopeSeen = true;
         return;
       }
@@ -470,10 +533,7 @@ function watchDispatchTurn(
 }
 
 /** Find a live AgentSession by id inside a bound graph (active → bg → idle). */
-function findSessionByIdInGraph(
-  graph: WorkspaceGraph,
-  sessionId: string,
-): AgentSession | null {
+function findSessionByIdInGraph(graph: WorkspaceGraph, sessionId: string): AgentSession | null {
   if (graph.agentSession && graph.sessionSnapshot?.sessionId === sessionId) {
     return graph.agentSession;
   }
@@ -575,10 +635,7 @@ async function activateQueuedDispatch(
 }
 
 /** After a terminal settle, wake the next queued dispatch for that session. */
-function drainQueueAfterSettle(
-  factory: WorkspaceGraphFactory,
-  sessionId: string | null,
-): void {
+function drainQueueAfterSettle(factory: WorkspaceGraphFactory, sessionId: string | null): void {
   if (!sessionId) return;
   const head = queuedDispatchesFor(sessionId)[0];
   if (!head) return;
@@ -596,6 +653,11 @@ async function dispatchPixieTask(
     cwd: string;
     task: string;
     newSession?: boolean;
+    /**
+     * 用户在对话中明确给出的会话 id：此时允许复用用户自己的会话。
+     * 不传 = 自动落点（只挑小精灵自己创建的会话，挑不到就新建）。
+     */
+    sessionId?: string | null;
     batchId?: string | null;
     retryOf?: string | null;
     failCount?: number;
@@ -610,6 +672,8 @@ async function dispatchPixieTask(
       sessionId: string;
       sessionPath: string;
       queued: boolean;
+      /** true = 复用了既有会话；false = 新开了一个会话（回执必须能看出落点）。 */
+      reused: boolean;
       /** queued=true 时的排队说明（告知小精灵可等待/取消/改并行）。 */
       queuedNote?: string;
     }
@@ -640,19 +704,43 @@ async function dispatchPixieTask(
     graph = built.graph;
   }
 
-  const resolution: TargetResolution | null =
-    request.newSession === true ? null : findTargetSession(factory, graph);
+  // v4.3 会话归属：自动落点只允许复用「小精灵自己创建的会话」；用户自己在 UI 里
+  // 创建的会话必须由用户在对话中明确给出 id（request.sessionId）才会被委托使用。
+  const explicitSessionId = request.sessionId?.trim() || null;
+  const resolution: TargetResolution | null = explicitSessionId
+    ? resolveExplicitTargetSession(factory, graph, explicitSessionId)
+    : request.newSession === true
+      ? null
+      : findTargetSession(factory, graph, agentDir);
   let session: AgentSession;
   let sessionId: string;
   let sessionPath: string;
   let busy: boolean;
+  let reusedExisting = false;
 
   if (resolution?.ok) {
     session = resolution.session;
     sessionId = resolution.sessionId;
     sessionPath = resolution.sessionPath;
     busy = resolution.busy;
+    reusedExisting = true;
+    // 复用既有会话：刷新缓存（归属不翻转——显式指定用户的会话时登记为 user）。
+    upsertPixieSession(agentDir, {
+      sessionId,
+      sessionPath,
+      cwd: graph.canonicalCwd,
+      owner: explicitSessionId ? "user" : "pixie",
+      role: "delegated",
+      summary: request.task,
+      reused: true,
+    });
   } else {
+    if (explicitSessionId) {
+      return {
+        ok: false,
+        error: `指定的会话在目标工作区里找不到（sessionId: ${explicitSessionId}）。请确认会话 id 是否正确，或改用 newSession 新开一个会话。`,
+      };
+    }
     const created = await createTargetSession(factory, graph);
     if (!created.ok) {
       return { ok: false, error: `无法在目标工作区创建会话：${created.error}` };
@@ -661,6 +749,15 @@ async function dispatchPixieTask(
     sessionId = created.sessionId;
     sessionPath = created.sessionPath;
     busy = false;
+    // 归属登记：新建的会话记在小精灵名下，此后可被自动复用。
+    upsertPixieSession(agentDir, {
+      sessionId,
+      sessionPath,
+      cwd: graph.canonicalCwd,
+      owner: "pixie",
+      role: "delegated",
+      summary: request.task,
+    });
   }
 
   // v4.1 queue gate: an existing LIVE dispatch on this session holds it —
@@ -690,6 +787,7 @@ async function dispatchPixieTask(
       sessionId,
       sessionPath,
       queued: true,
+      reused: reusedExisting,
       queuedNote:
         queuedAhead > 0
           ? `目标会话正有委派任务在执行（${gate.task.slice(0, 60)}…），本任务已排队（前面还有 ${queuedAhead} 个）。当前面的任务回调结束后自动开始；你也可以取消本任务改用 newSession 新开会话并行，或继续等待。`
@@ -751,7 +849,14 @@ async function dispatchPixieTask(
       failDispatch(dispatch.id, error instanceof Error ? error.message : String(error), agentDir);
       return { ok: false, error: `目标会话忙且队列不可用：${String(error)}` };
     }
-    return { ok: true, dispatchId: dispatch.id, sessionId, sessionPath, queued: false };
+    return {
+      ok: true,
+      dispatchId: dispatch.id,
+      sessionId,
+      sessionPath,
+      queued: false,
+      reused: reusedExisting,
+    };
   }
   void session.prompt(prompt).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -768,7 +873,14 @@ async function dispatchPixieTask(
       });
     }
   });
-  return { ok: true, dispatchId: dispatch.id, sessionId, sessionPath, queued: false };
+  return {
+    ok: true,
+    dispatchId: dispatch.id,
+    sessionId,
+    sessionPath,
+    queued: false,
+    reused: reusedExisting,
+  };
 }
 
 /**
@@ -787,7 +899,11 @@ async function replyToDispatch(
   const record = outcome.record;
   const session = dispatchedSessions.get(args.dispatchId) ?? null;
   if (!session) {
-    failDispatch(args.dispatchId, "目标会话已不可达（未打开或 Host 已重启），答复未能送达", agentDir);
+    failDispatch(
+      args.dispatchId,
+      "目标会话已不可达（未打开或 Host 已重启），答复未能送达",
+      agentDir,
+    );
     return {
       ok: false,
       error: "目标会话当前不可达（请让小精灵重新委派，或在 PiAbyss 中打开该工作区）",
@@ -837,12 +953,18 @@ async function interjectDispatch(
   const record = findDispatchById(args.dispatchId);
   if (!record) return { ok: false, error: "委派记录不存在" };
   if (record.status === "queued") {
-    return { ok: false, error: "该任务还在排队中（尚未开始执行），无法插话；可等待启动或取消后重派。" };
+    return {
+      ok: false,
+      error: "该任务还在排队中（尚未开始执行），无法插话；可等待启动或取消后重派。",
+    };
   }
   if (record.status === "paused") {
     // Checkpoint pause: any user interjection doubles as the resume signal.
     if (args.mode === "checkpoint") {
-      return { ok: false, error: "该任务已在暂停等指令中，直接发送新指令即可（无需再要一次进度检查点）。" };
+      return {
+        ok: false,
+        error: "该任务已在暂停等指令中，直接发送新指令即可（无需再要一次进度检查点）。",
+      };
     }
     const session = dispatchedSessions.get(args.dispatchId) ?? null;
     if (!session) {
@@ -910,15 +1032,10 @@ async function interjectDispatch(
         : "汇报完成后暂停本轮（不要再继续执行），等待用户的下一步指令（会以 <pixie-interject> 或 <pixie-reply> 信封到达）。",
     );
   } else {
-    lines.push(
-      "用户对当前任务的插入消息（补充/修正，不是新任务，原任务继续）：",
-      args.text,
-    );
+    lines.push("用户对当前任务的插入消息（补充/修正，不是新任务，原任务继续）：", args.text);
   }
   if (args.model != null) {
-    lines.push(
-      `（用户已授权模型替换：从下一轮起改用 ${args.model} 执行。）`,
-    );
+    lines.push(`（用户已授权模型替换：从下一轮起改用 ${args.model} 执行。）`);
   }
   if (args.thinkingLevel != null) {
     lines.push(`（用户已授权推理深度替换：下一轮起思考深度为 ${args.thinkingLevel}。）`);
@@ -934,7 +1051,10 @@ async function interjectDispatch(
       session.followUp(envelope);
     }
   } catch (error) {
-    return { ok: false, error: `插话送达失败：${error instanceof Error ? error.message : String(error)}` };
+    return {
+      ok: false,
+      error: `插话送达失败：${error instanceof Error ? error.message : String(error)}`,
+    };
   }
   return { ok: true };
 }
@@ -975,9 +1095,7 @@ async function stopDispatchById(
   // Settle FIRST: the turn watcher's aborted branch sees status "stopped"
   // and stays silent, so the stop receipt is the only callback.
   const stopped =
-    stopSettleDispatch(dispatchId, agentDir) ??
-    findDispatchById(dispatchId) ??
-    record;
+    stopSettleDispatch(dispatchId, agentDir) ?? findDispatchById(dispatchId) ?? record;
   if (!session) {
     void deliverDispatchCallback({
       agentDir,
@@ -1021,7 +1139,8 @@ async function retryDispatchById(
   const session = dispatchedSessions.get(args.dispatchId) ?? null;
   const mode = args.mode ?? (session ? "resume" : "redispatch");
   if (mode === "resume") {
-    if (!session) return { ok: false, error: "目标会话已不可达，无法原地续跑；请改用 redispatch 重派" };
+    if (!session)
+      return { ok: false, error: "目标会话已不可达，无法原地续跑；请改用 redispatch 重派" };
     const reactivated = reactivateDispatchForResume(args.dispatchId, agentDir);
     if (!reactivated) return { ok: false, error: "原地续跑失败：记录状态已变化" };
     const envelope = [
@@ -1058,7 +1177,10 @@ async function retryDispatchById(
 
 /** SDK session-dir encoding for a cwd (mirrors SessionManager internals). */
 function sessionDirFor(factory: WorkspaceGraphFactory, cwd: string): string {
-  const resolved = factory.canonicalizeCwd(cwd).replace(/^[/\\]/, "").replace(/[/\\:]/g, "-");
+  const resolved = factory
+    .canonicalizeCwd(cwd)
+    .replace(/^[/\\]/, "")
+    .replace(/[/\\:]/g, "-");
   return join(factory.deps.agentDir, "sessions", `--${resolved}--`);
 }
 
@@ -1203,7 +1325,13 @@ export function createPixieControlPlaneDeps(factory: WorkspaceGraphFactory): Pix
     stop: async (args) => stopDispatchById(factory, args.dispatchId),
     retry: async (args) => retryDispatchById(factory, args),
     dispatchList: (limit: number) => listDispatches(limit, agentDir),
-    rest: async (args) => requestPixieRest({ agentDir, phrase: args.phrase, handoff: args.handoff }),
+    // v4.3 会话缓存：返回前先用委派记录刷新结果/进度（缓存文件始终是最新的交代）。
+    sessionList: (cwd?: string) => {
+      applyDispatchRecordsToSessionCache(agentDir, listDispatches(50, agentDir));
+      return listPixieSessions(agentDir, cwd);
+    },
+    rest: async (args) =>
+      requestPixieRest({ agentDir, phrase: args.phrase, handoff: args.handoff }),
     inject: async (args) =>
       injectPixieMessage({
         agentDir,
@@ -1213,7 +1341,11 @@ export function createPixieControlPlaneDeps(factory: WorkspaceGraphFactory): Pix
     dispatchState: (sessionId) => {
       const found = findDispatchBySession(sessionId);
       return found
-        ? { armed: true, dispatchId: found.id, kind: found.status === "dispatched" ? null : found.kind }
+        ? {
+            armed: true,
+            dispatchId: found.id,
+            kind: found.status === "dispatched" ? null : found.kind,
+          }
         : { armed: false, dispatchId: null, kind: null };
     },
   };

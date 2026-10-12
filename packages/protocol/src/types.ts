@@ -2110,8 +2110,8 @@ export type PixieSegment = {
   endedAt: number | null;
   /** 段结束时小精灵自选的睡觉短语（分隔符文案）。 */
   separator: string | null;
-  /** 换段原因：agent 自睡 / 用户请求 / 轮数自动换段。 */
-  reason: "agent" | "user" | "rollover" | null;
+  /** 换段原因：agent 自睡 / 用户请求 / 轮数自动换段 / 每日自动打盹（v4.4）。 */
+  reason: "agent" | "user" | "rollover" | "daily" | null;
   /** 小精灵写给下一段自己的交接摘要。 */
   handoff: string | null;
 };

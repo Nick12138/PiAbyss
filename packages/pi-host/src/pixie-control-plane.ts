@@ -41,6 +41,8 @@ export const PIXIE_INTERJECT_PATH = "/api/pixie/interject";
 export const PIXIE_STOP_PATH = "/api/pixie/stop";
 export const PIXIE_RETRY_PATH = "/api/pixie/retry";
 export const PIXIE_DISPATCHES_PATH = "/api/pixie/dispatches";
+/** v4.3：小精灵会话缓存（自己创建的会话 + 被委托会话的简介/结果）。 */
+export const PIXIE_SESSIONS_PATH = "/api/pixie/sessions";
 
 /** 控制面鉴权头（v4 token）。 */
 export const PIXIE_TOKEN_HEADER = "x-piabyss-pixie-token";
@@ -51,6 +53,8 @@ export type PixieControlPlaneDeps = {
     cwd: string;
     task: string;
     newSession?: boolean;
+    /** 用户明确给出的会话 id（此时允许复用用户自己的会话）。 */
+    sessionId?: string | null;
     batchId?: string | null;
     /** 用户明确授权的模型/推理深度覆盖。 */
     model?: string | null;
@@ -62,6 +66,8 @@ export type PixieControlPlaneDeps = {
         sessionId: string;
         sessionPath: string;
         queued: boolean;
+        /** true = 复用了既有会话；false = 新开会话。 */
+        reused: boolean;
         queuedNote?: string;
       }
     | { ok: false; error: string }
@@ -94,9 +100,9 @@ export type PixieControlPlaneDeps = {
     thinkingLevel?: string | null;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** 叫停委派（queued 摘队列 / 运行中 abort），回执明确。 */
-  stop: (args: { dispatchId: string }) => Promise<
-    { ok: true; action: PixieStopAction } | { ok: false; error: string }
-  >;
+  stop: (args: {
+    dispatchId: string;
+  }) => Promise<{ ok: true; action: PixieStopAction } | { ok: false; error: string }>;
   /** 重试失败/叫停的委派：resume=原地续跑；redispatch=重派（retryOf 链）。 */
   retry: (args: {
     dispatchId: string;
@@ -104,6 +110,11 @@ export type PixieControlPlaneDeps = {
   }) => Promise<{ ok: true; dispatchId: string } | { ok: false; error: string }>;
   /** 查岗：委派记录列表（状态/进度摘要/时间；查岗工具的数据源）。 */
   dispatchList: (limit: number) => unknown[];
+  /**
+   * v4.3 会话缓存：小精灵自己创建的会话 + 被委托会话（归属/工作区/简介/结果）。
+   * 按 cwd 过滤（不传 = 全部）。
+   */
+  sessionList: (cwd?: string) => unknown[];
   /** pixie_rest：标记休眠请求（下个运行边界收尾换段）。 */
   rest: (args: {
     phrase?: string | null;
@@ -198,15 +209,14 @@ function parseModelOverride(
 }
 
 /** 解析并强校验 dispatch 请求体；失败返回可读中文错误。 */
-export function parseDispatchBody(
-  raw: string | null,
-):
+export function parseDispatchBody(raw: string | null):
   | {
       ok: true;
       request: {
         cwd: string;
         task: string;
         newSession?: boolean;
+        sessionId?: string | null;
         batchId?: string | null;
       } & PixieModelOverride;
     }
@@ -230,6 +240,13 @@ export function parseDispatchBody(
   if (value.batchId !== undefined && value.batchId !== null && typeof value.batchId !== "string") {
     return { ok: false, error: "batchId 必须是字符串" };
   }
+  if (
+    value.sessionId !== undefined &&
+    value.sessionId !== null &&
+    typeof value.sessionId !== "string"
+  ) {
+    return { ok: false, error: "sessionId 必须是字符串" };
+  }
   const override = parseModelOverride(value);
   if (!override.ok) return override;
   return {
@@ -239,15 +256,14 @@ export function parseDispatchBody(
       task: value.task,
       ...(value.newSession !== undefined ? { newSession: value.newSession } : {}),
       ...(value.batchId !== undefined ? { batchId: value.batchId as string | null } : {}),
+      ...(value.sessionId !== undefined ? { sessionId: value.sessionId as string | null } : {}),
       ...override.override,
     },
   };
 }
 
 /** 解析并强校验 report 请求体；失败返回可读中文错误。 */
-export function parseReportBody(
-  raw: string | null,
-):
+export function parseReportBody(raw: string | null):
   | {
       ok: true;
       args: {
@@ -345,7 +361,9 @@ export function parseAskBody(
 /** 解析并强校验 rest 请求体；phrase/handoff 均可省略。 */
 export function parseRestBody(
   raw: string | null,
-): { ok: true; args: { phrase?: string | null; handoff?: string | null } } | { ok: false; error: string } {
+):
+  | { ok: true; args: { phrase?: string | null; handoff?: string | null } }
+  | { ok: false; error: string } {
   if (raw === null) return { ok: true, args: {} };
   let value: unknown;
   try {
@@ -372,7 +390,9 @@ export function parseRestBody(
 /** 解析并强校验 inject 请求体（网关预留）。 */
 export function parseInjectBody(
   raw: string | null,
-): { ok: true; args: { source: "ui" | "tg" | "system"; text: string } } | { ok: false; error: string } {
+):
+  | { ok: true; args: { source: "ui" | "tg" | "system"; text: string } }
+  | { ok: false; error: string } {
   if (raw === null) return { ok: false, error: "请求体读取失败" };
   let value: unknown;
   try {
@@ -391,9 +411,7 @@ export function parseInjectBody(
 }
 
 /** 解析并强校验 interject 请求体（插话：append / checkpoint，可带模型替换）。 */
-export function parseInterjectBody(
-  raw: string | null,
-):
+export function parseInterjectBody(raw: string | null):
   | {
       ok: true;
       args: {
@@ -628,6 +646,19 @@ export async function handlePixieControlPlaneRequest(
     }
   }
 
+  if (path === PIXIE_SESSIONS_PATH) {
+    if (method !== "GET") return { status: 405, body: { ok: false, error: "仅支持 GET" } };
+    const params = new URLSearchParams(query);
+    const cwd = params.get("cwd")?.trim() || undefined;
+    try {
+      return { status: 200, body: { ok: true, sessions: deps.sessionList(cwd) } };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn("pixie control-plane sessions failed", { error: message });
+      return { status: 200, body: { ok: false, error: message } };
+    }
+  }
+
   if (path === PIXIE_DISPATCH_STATE_PATH) {
     if (method !== "GET") return { status: 405, body: { ok: false, error: "仅支持 GET" } };
     const params = new URLSearchParams(query);
@@ -660,13 +691,10 @@ export async function startPixieControlPlane(
     for (const [key, value] of Object.entries(req.headers)) {
       if (typeof value === "string") headers[key] = value;
     }
-    void handlePixieControlPlaneRequest(
-      deps,
-      req.method ?? "GET",
-      req.url ?? "/",
-      readBody(req),
-      { token: options.token ?? null, headers },
-    )
+    void handlePixieControlPlaneRequest(deps, req.method ?? "GET", req.url ?? "/", readBody(req), {
+      token: options.token ?? null,
+      headers,
+    })
       .then((outcome) => {
         if (!res.writableEnded) sendJson(res, outcome.status, outcome.body);
       })
