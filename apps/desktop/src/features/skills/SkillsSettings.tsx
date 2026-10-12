@@ -30,6 +30,7 @@ import type {
 } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
+import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import {
   mergeHostIdentity,
   sessionPackageContext,
@@ -226,7 +227,21 @@ export function SkillsSettings() {
     if (response.error?.code === "AGENT_BUSY" && targetParams()) {
       return t("skillsWorkspaceTargetBusy");
     }
-    return response.error?.message ?? t(fallback);
+    return response.error ? localizeHostError(response.error, t) : t(fallback);
+  }
+
+  /**
+   * Throw helper for mutation responses: carries the localized message plus
+   * the raw host error code, so the catch can classify transient "busy"
+   * codes via hostErrorLevel (toast-only, never the notification history).
+   */
+  function throwMutationError(
+    response: { ok: false; error?: { code?: string; message?: string } },
+    fallback: Parameters<Translate>[0],
+  ): never {
+    const err = new Error(mutationErrorMessage(response, fallback));
+    if (response.error?.code) (err as Error & { code?: string }).code = response.error.code;
+    throw err;
   }
 
   /**
@@ -370,11 +385,9 @@ export function SkillsSettings() {
       );
       if (!response) return;
       if (!response.ok) {
-        throw new Error(
-          mutationErrorMessage(
-            response,
-            method === "skill.addPath" ? "notifSkillPathAddFailed" : "notifSkillPathRemoveFailed",
-          ),
+        throwMutationError(
+          response,
+          method === "skill.addPath" ? "notifSkillPathAddFailed" : "notifSkillPathRemoveFailed",
         );
       }
       setSnapshot(response.result);
@@ -389,7 +402,7 @@ export function SkillsSettings() {
           : t(
               method === "skill.addPath" ? "notifSkillPathAddFailed" : "notifSkillPathRemoveFailed",
             ),
-        "error",
+        hostErrorLevel(error as { code?: string }),
       );
     } finally {
       setBusy(false);
@@ -432,7 +445,7 @@ export function SkillsSettings() {
           );
       if (!response) return;
       if (!response.ok) {
-        throw new Error(mutationErrorMessage(response, "notifSkillToggleFailed"));
+        throwMutationError(response, "notifSkillToggleFailed");
       }
       const result = response.result as PackageMutationResult;
       setResources(
@@ -449,7 +462,10 @@ export function SkillsSettings() {
     } catch (error) {
       pushNotification(
         error instanceof Error ? error.message : t("notifSkillToggleFailed"),
-        "error",
+        // Busy-gate feedback (AGENT_BUSY etc.) is expected, retryable UI
+        // feedback: hostErrorLevel maps it to info, so it toasts without
+        // entering the notification-center history.
+        hostErrorLevel(error as { code?: string }),
       );
     } finally {
       setBusy(false);

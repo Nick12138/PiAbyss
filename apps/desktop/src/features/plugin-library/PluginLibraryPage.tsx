@@ -30,7 +30,7 @@ import type {
   WorkspaceTargetRef,
 } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
-import { localizeHostError } from "../../lib/bridge/localize-host-error";
+import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
 import {
   captureRequestGeneration,
@@ -937,13 +937,13 @@ export function PluginLibraryPage() {
     // plugins) update together in one mutation.
     const rows = [...new Map(updateRows.map((row) => [row.packageId, row])).values()];
     for (const row of rows) {
-        const ok = await runMutation(
-          "package.update",
-          { packageId: row.packageId },
-          `plugin-update:${row.key}`,
-          row.label,
-        );
-        if (!ok) return; // host/workspace changed or the mutation failed — stop here.
+      const ok = await runMutation(
+        "package.update",
+        { packageId: row.packageId },
+        `plugin-update:${row.key}`,
+        row.label,
+      );
+      if (!ok) return; // host/workspace changed or the mutation failed — stop here.
       markUpdatesApplied([row.packageId]);
     }
     if (rows.length > 0) pushNotification(t("notifPluginsUpdated", { count: rows.length }));
@@ -985,14 +985,19 @@ export function PluginLibraryPage() {
         current.workspace?.revision !== workspace.revision
       )
         return false;
-      if (!response.ok)
-        throw new Error(
+      if (!response.ok) {
+        const err = new Error(
           response.error?.code === "AGENT_BUSY" && target
             ? t("pluginsWorkspaceTargetBusy")
             : response.error
               ? localizeHostError(response.error, t)
               : t("notifPluginActionFailed"),
         );
+        // Preserve the raw host error code so the transient "busy" codes can be
+        // classified by hostErrorLevel in the catch below (toast-only, not history).
+        if (response.error?.code) (err as Error & { code?: string }).code = response.error.code;
+        throw err;
+      }
       listRequest.current += 1;
       const result = response.result as PackageMutationResult;
       // Targeted mutations update only this page's scoped snapshot;
@@ -1017,7 +1022,10 @@ export function PluginLibraryPage() {
     } catch (error) {
       pushNotification(
         error instanceof Error ? error.message : t("notifPluginActionFailed"),
-        "error",
+        // Busy-gate feedback (AGENT_BUSY etc.) is expected, retryable UI
+        // feedback: hostErrorLevel maps it to info, so it toasts without
+        // entering the notification-center history.
+        hostErrorLevel(error as { code?: string }),
       );
       return false;
     } finally {

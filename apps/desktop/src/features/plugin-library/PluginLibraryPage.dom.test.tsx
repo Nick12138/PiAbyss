@@ -566,6 +566,48 @@ describe("PluginLibraryPage DOM workflows", () => {
     );
   });
 
+  it("busy-gate failures toast without entering the notification history", async () => {
+    useAppStore.setState({ notifications: [], transientNotifications: [] });
+    currentSnapshot = snapshotWithBrowser(true);
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    const card = (await screen.findByText("浏览器")).closest("article")!;
+    const toggle = within(card).getByRole("switch");
+    await waitFor(() => expect(toggle).not.toBeDisabled());
+
+    // AGENT_BUSY is expected, retryable feedback — it must toast at info
+    // level (transient feed) and never be retained in the history list.
+    request.mockImplementationOnce(
+      async () =>
+        ({
+          ...envelope("resource.setPreferences", null),
+          ok: false,
+          result: undefined,
+          error: { code: "AGENT_BUSY", message: "Agent busy", retryable: true },
+        }) as never,
+    );
+    await user.click(toggle);
+
+    await waitFor(() =>
+      expect(
+        useAppStore
+          .getState()
+          .transientNotifications.some(
+            (notification) =>
+              notification.level === "info" &&
+              notification.message.includes("Agent is busy. Wait for the current run"),
+          ),
+      ).toBe(true),
+    );
+    expect(useAppStore.getState().notifications).toHaveLength(0);
+    // The optimistic flip reverts to the on-disk enabled state.
+    await waitFor(() =>
+      expect(within(card).getByRole("switch")).toHaveAttribute("aria-checked", "true"),
+    );
+  });
+
   it("opens the shared config dialog from the gear button", async () => {
     currentSnapshot = snapshotWithRepo(true);
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
@@ -678,7 +720,9 @@ describe("PluginLibraryPage DOM workflows", () => {
     const gate = new Promise<void>((resolve) => {
       releaseUpdate = resolve;
     });
-    const base = request.getMockImplementation()! as (method: string) => Promise<HostResponseEnvelope>;
+    const base = request.getMockImplementation()! as (
+      method: string,
+    ) => Promise<HostResponseEnvelope>;
     request.mockImplementation(async (method: string) => {
       if (method === "package.update") {
         await gate;
