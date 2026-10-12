@@ -6,6 +6,7 @@ export type GraphOperationKind =
   | "system.rehydrate"
   | "system.shutdown"
   | "workspace.setCurrent"
+  | "workspace.ensureBackground"
   | "session.create"
   | "session.open"
   | "session.reload"

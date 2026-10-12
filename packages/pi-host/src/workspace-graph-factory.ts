@@ -128,6 +128,20 @@ export class WorkspaceGraphFactory {
     );
   }
 
+  /**
+   * Background-build (or reuse) a fully bound graph for `cwd` WITHOUT
+   * switching the foreground: the graph is retained like any parked graph
+   * (visible in host.statusChanged, reactivated by the next switch, LRU
+   * evictable). Serves pixie delegation into workspaces the user has not
+   * opened. Idempotent; fails SERVICE_GRAPH_BUSY while a user switch owns the
+   * service graph lock.
+   */
+  ensureBackgroundGraph(
+    cwd: string,
+  ): Promise<{ graph: WorkspaceGraph } | { error: HostError }> {
+    return this.workspaceLifecycle.ensureBackgroundGraph(cwd);
+  }
+
   getServer(): PiHostServer | null {
     return this.server;
   }

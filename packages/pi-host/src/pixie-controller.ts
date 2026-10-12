@@ -2,33 +2,70 @@
  * Pixie protocol handlers (`pixie.*` methods) + the delegation engine that
  * backs `pixie_dispatch`.
  *
- * The engine resolves a delegation target strictly through EXISTING workspace
- * graph state (active session → busy background runtimes → idle cache →
- * session list on disk), injecting the task prompt with the SDK's own queue
- * semantics: a busy session gets the task as a follow-up (processed after the
- * current turn settles — the user's real-time turns are never interrupted),
- * an idle/loaded session is prompted directly. Workspace graphs that are not
- * open are refused in V1 (the pixie answers with a hint instead of spinning
- * up workspaces behind the user's back).
+ * The engine resolves a delegation target through EXISTING workspace graph
+ * state (active session → busy background runtimes → idle cache), injecting
+ * the task prompt with the SDK's own queue semantics: a busy session gets the
+ * task as a follow-up (processed after the current turn settles — the user's
+ * real-time turns are never interrupted), an idle/loaded session is prompted
+ * directly. v4: when the target workspace is NOT open but is a known
+ * workspace (frontend-pushed `pixie.setContext`, persisted in context.json),
+ * the engine background-builds its graph via `ensureBackgroundGraph` and
+ * delegates as usual — the conversation lands in a real formal session the
+ * user can open and continue later.
+ *
+ * Callbacks come in three kinds: done (pixie_report or the turn-end
+ * auto-fallback below), error (injection failure / error turn / user abort —
+ * automatic), and ask (pixie_ask → awaiting_user → user reply routed back
+ * with a `<pixie-reply>` followUp). Every dispatch turn is attributed by its
+ * `<pixie-dispatch>` envelope marker, so later user turns never trigger the
+ * auto-fallback, and an already-settled record is never settled twice.
  */
-import { createHostError, type PixieDispatchRecord } from "@piabyss/protocol";
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  createHostError,
+  type PixieDispatchRecord,
+  type PixieStopAction,
+  type PixieWorkspaceSessionSummary,
+} from "@piabyss/protocol";
+import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { DefaultResourceLoader, SessionManager } from "@earendil-works/pi-coding-agent";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import type { WorkspaceGraph } from "./workspace-graph-types.js";
 import type { MethodHandler } from "./server.js";
 import {
   abortPixie,
-  continuePixieSession,
-  deliverReportToPixie,
+  activateDispatch,
+  askDispatch,
+  cancelQueuedDispatch,
+  classifyError,
+  configurePixieTerminalSettleHook,
+  deliverDispatchCallback,
+  failDispatch,
+  findDispatchById,
   findDispatchBySession,
+  getKnownWorkspaces,
+  injectPixieMessage,
+  liveDispatchFor,
   listDispatches,
   pixieState,
   pixieTranscriptFrom,
+  progressDispatch,
+  queuedDispatchesFor,
+  reactivateDispatchAfterReply,
+  reactivateDispatchForResume,
+  recordDispatchModelChange,
   registerDispatch,
+  requestPixieRest,
+  requestPixieSegment,
+  resumePausedDispatch,
   sendPixieMessage,
+  settleDispatch,
+  setPixieContext,
+  stopSettleDispatch,
+  summarizeDelegatedProgress,
 } from "./pixie-agent-runner.js";
-import { armPixieDispatch, failDispatch } from "./pixie-tool.js";
+import { getEnabledProviderIds, getProviderModelAllowLists } from "./provider-models-config.js";
 import type { PixieControlPlaneDeps } from "./pixie-control-plane.js";
 import { recordPixieDispatch, recordPixieInteraction, readPixieUsage } from "./pixie-usage.js";
 import { createHostAgentSession } from "./agent-session-factory.js";
@@ -53,10 +90,13 @@ export function buildDispatchTaskPrompt(input: { task: string; from: string }): 
     "",
     "完成（或确认无法完成）后，必须调用 pixie_report 工具回调：",
     "- result 字段填「已完成/未完成 + 结果摘要 + 关键数据」，不要粘贴全文；",
+    "- 产出了文件或修改了文件时，把文件路径列表填入 files 字段（绝对路径）；",
     "- 失败或部分完成时把 success 设为 false 并说明原因。",
+    "用户随时可能插入进度检查点（<pixie-interject> 信封）：append 模式是补充约束，读完继续；checkpoint 模式要求你立即调用 pixie_report（kind=progress）汇报当前进度，然后按信封指示继续或暂停。",
+    "需要用户决策时（方案选择、信息补充、确认操作等），调用 pixie_ask 工具把问题转给小精灵转述给用户（question 填问题，options 可附选项）；不要干等，也不要替用户下结论——用户答复会以 <pixie-reply> 信封回到本会话。",
     "如果本任务源自某条备忘录，先调用 piabyss_memo complete 回填该备忘录（提交结果总结），再调用 pixie_report。",
     "用户在会话中手动发送的指令优先级最高，与上述要求冲突时以用户指令为准。",
-    "只有任务已产出最终结果、不再等待用户输入时才回填备忘录 complete；若需要用户决策（如让用户选择方案）或任务未完成，先回调 pixie_report 如实报告进度，等有结论再回填。",
+    "只有任务已产出最终结果、不再等待用户输入时才回填备忘录 complete；若需要用户决策（如让用户选择方案）或任务未完成，先回调 pixie_report 或 pixie_ask 如实报告进度，等有结论再回填。",
     "不要代用户下结论；做不完就如实报告进度。",
     "</pixie-dispatch>",
   ].join("\n");
@@ -205,6 +245,346 @@ async function createTargetSession(
   }
 }
 
+/* ── 委派回合跟踪（自动回调 + 回合归属判定）────────────────────────── */
+
+/** Live delegated sessions by dispatch id (reply routing + restart = miss). */
+const dispatchedSessions = new Map<string, AgentSession>();
+
+/**
+ * Model/thinking-level override for delegated sessions (v4.2). Mirrors the
+ * manual `model.setCurrent` semantics: a switch is safe while a run is in
+ * flight — the SDK re-reads the session model at every turn boundary, so the
+ * current LLM call finishes on the previous model and the next turn (the
+ * interjection's follow-up) continues on the new one. Only applied when the
+ * user explicitly authorized it (the pixie never changes models on its own).
+ */
+async function applyDispatchModelOverride(
+  factory: WorkspaceGraphFactory,
+  session: AgentSession,
+  override: { model?: string | null; thinkingLevel?: string | null },
+): Promise<{ ok: true; model: string | null; thinkingLevel: string | null } | { ok: false; error: string }> {
+  const agentDir = factory.deps.agentDir;
+  let appliedModel: string | null = null;
+  if (override.model !== undefined && override.model !== null && override.model.trim()) {
+    const spec = override.model.trim();
+    const slash = spec.indexOf("/");
+    if (slash <= 0 || slash === spec.length - 1) {
+      return { ok: false, error: `模型格式应为 provider/id：${spec}` };
+    }
+    const provider = spec.slice(0, slash);
+    const modelId = spec.slice(slash + 1);
+    const enabledProviders = await getEnabledProviderIds(
+      agentDir,
+      session.model?.provider,
+      factory.deps.modelRuntime.getProviders().map((entry) => entry.id),
+    );
+    if (enabledProviders && !enabledProviders.includes(provider)) {
+      return { ok: false, error: `Provider ${provider} 未启用；请先在 Provider 设置中启用` };
+    }
+    const allow = (await getProviderModelAllowLists(agentDir))?.[provider];
+    if (allow && !allow.includes(modelId)) {
+      return { ok: false, error: `模型 ${modelId} 在 Provider ${provider} 下被隐藏；请先在 Provider 设置中启用` };
+    }
+    const registry = factory.deps.modelRegistry;
+    const model = (registry.getAvailable?.() ?? []).find(
+      (entry: { provider: string; id: string }) =>
+        entry.provider === provider && entry.id === modelId,
+    );
+    if (!model) {
+      return { ok: false, error: `找不到模型：${spec}` };
+    }
+    try {
+      await session.setModel(model);
+    } catch (error) {
+      return {
+        ok: false,
+        error: `切换模型失败：${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    appliedModel = spec;
+  }
+  if (override.thinkingLevel !== undefined && override.thinkingLevel !== null) {
+    try {
+      session.setThinkingLevel(override.thinkingLevel as never);
+      appliedModel = appliedModel ?? (session.model ? `${session.model.provider}/${session.model.id}` : null);
+    } catch {
+      /* level not supported by the model — keep the session default */
+    }
+  }
+  return { ok: true, model: appliedModel, thinkingLevel: override.thinkingLevel ?? null };
+}
+
+function messageTextOf(message: { content?: unknown } | undefined): string {  const content = message?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((block) =>
+        block && typeof block === "object" && (block as { type?: string }).type === "text"
+          ? String((block as { text?: string }).text ?? "")
+          : "",
+      )
+      .join("\n");
+  }
+  return "";
+}
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+function lastAssistantSummary(messages: unknown): string {
+  if (!Array.isArray(messages)) return "";
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index] as { role?: unknown; content?: unknown } | undefined;
+    if (message?.role !== "assistant") continue;
+    const text = messageTextOf(message).trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+/**
+ * Watch delegated turns: attribute them by the `<pixie-dispatch>` envelope in
+ * the first user message, then settle the record automatically when the turn
+ * ends — done (last assistant message, truncated) unless the agent already
+ * reported/asked, error on runtime error or user abort. A paused record
+ * (checkpoint wait) keeps the watcher alive across the pause; the record is
+ * never settled twice.
+ */
+function watchDispatchTurn(
+  factory: WorkspaceGraphFactory,
+  session: AgentSession,
+  dispatchId: string,
+): void {
+  const agentDir = factory.deps.agentDir;
+  let envelopeSeen = false;
+  let errorMessage: string | null = null;
+  let finished = false;
+  const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
+    if (finished) return;
+    if (event.type === "message_end") {
+      if (event.message.role === "user" && messageTextOf(event.message).includes("<pixie-dispatch")) {
+        envelopeSeen = true;
+        return;
+      }
+      // Runtime errors surface as assistant messages with stopReason "error".
+      if (event.message.role === "assistant") {
+        const assistant = event.message as { stopReason?: unknown; errorMessage?: unknown };
+        if (
+          assistant.stopReason === "error" ||
+          (typeof assistant.errorMessage === "string" && assistant.errorMessage)
+        ) {
+          errorMessage =
+            typeof assistant.errorMessage === "string" && assistant.errorMessage
+              ? assistant.errorMessage
+              : "委派执行出错";
+        }
+      }
+      return;
+    }
+    if (event.type === "agent_end") {
+      if (event.willRetry === true) return;
+      const live = findDispatchById(dispatchId);
+      if (!live) {
+        finished = true;
+        unsubscribe();
+        dispatchedSessions.delete(dispatchId);
+        return;
+      }
+      // Checkpoint pause: the turn ended on purpose (汇报后暂停) — keep the
+      // watcher armed for the resumed turn and settle nothing.
+      if (live.status === "paused") return;
+      if (live.status !== "dispatched" || !envelopeSeen) {
+        finished = true;
+        unsubscribe();
+        dispatchedSessions.delete(dispatchId);
+        return;
+      }
+      finished = true;
+      unsubscribe();
+      dispatchedSessions.delete(dispatchId);
+      const summary = lastAssistantSummary(event.messages).trim();
+      if (errorMessage) {
+        const settled = failDispatch(dispatchId, `委派执行出错：${errorMessage}`, agentDir);
+        if (settled) {
+          void deliverDispatchCallback({
+            agentDir,
+            record: settled,
+            kind: "error",
+            summary: `委派执行出错：${errorMessage}`,
+            // The session object is right here and still drivable → alive.
+            sessionAlive: "alive",
+            errorType: classifyError(errorMessage),
+            progress: summarizeDelegatedProgress(session),
+          });
+        }
+        return;
+      }
+      if (!summary) {
+        const settled = failDispatch(dispatchId, "回合结束但没有产出可转述的结果", agentDir);
+        if (settled) {
+          void deliverDispatchCallback({
+            agentDir,
+            record: settled,
+            kind: "error",
+            summary: "回合结束但没有产出可转述的结果",
+            sessionAlive: "alive",
+            progress: summarizeDelegatedProgress(session),
+          });
+        }
+        return;
+      }
+      const settled = settleDispatch(dispatchId, summary, "done", agentDir);
+      if (settled) {
+        void deliverDispatchCallback({
+          agentDir,
+          record: settled,
+          kind: "done",
+          summary: `（回合结束自动回调）${truncate(summary, 500)}`,
+        });
+      }
+      return;
+    }
+    if (event.type === "agent_settled") {
+      if (event.aborted !== true) return;
+      finished = true;
+      unsubscribe();
+      dispatchedSessions.delete(dispatchId);
+      const record = findDispatchById(dispatchId);
+      // A user stop settles the record BEFORE aborting, so an already-stopped
+      // record reaching here means the stop flow owns the callback.
+      if (!record || record.status !== "dispatched" || !envelopeSeen) return;
+      const settled = failDispatch(dispatchId, "被用户中断", agentDir);
+      if (settled) {
+        void deliverDispatchCallback({
+          agentDir,
+          record: settled,
+          kind: "error",
+          summary: "委派任务被用户中断。",
+          sessionAlive: "stopped",
+          errorType: "aborted",
+        });
+      }
+    }
+  });
+}
+
+/** Find a live AgentSession by id inside a bound graph (active → bg → idle). */
+function findSessionByIdInGraph(
+  graph: WorkspaceGraph,
+  sessionId: string,
+): AgentSession | null {
+  if (graph.agentSession && graph.sessionSnapshot?.sessionId === sessionId) {
+    return graph.agentSession;
+  }
+  const bg = graph.backgroundSessions.get(sessionId);
+  if (bg) return bg.agentSession;
+  for (const runtime of graph.idleSessionCache?.values() ?? []) {
+    if (runtime.sessionId === sessionId) return runtime.agentSession;
+  }
+  return null;
+}
+
+/**
+ * Dequeue the head queued dispatch for a session and inject it (A 到终态后
+ * 自动出队)。The queue is engine-held: a queued record never touched the
+ * session, so activation re-resolves the session from its graph (rebuilding
+ * a parked graph if needed); an unreachable session fails the record.
+ */
+async function activateQueuedDispatch(
+  factory: WorkspaceGraphFactory,
+  dispatchId: string,
+): Promise<void> {
+  const agentDir = factory.deps.agentDir;
+  const record = activateDispatch(dispatchId, agentDir);
+  if (!record) return;
+  const canonical = factory.canonicalizeCwd(record.cwd);
+  let graph = factory.findBoundGraph(canonical);
+  if (!graph && existsSync(canonical)) {
+    const built = await factory.ensureBackgroundGraph(canonical);
+    if (!("error" in built)) graph = built.graph;
+  }
+  const session = graph ? findSessionByIdInGraph(graph, record.sessionId ?? "") : null;
+  if (!session || !record.sessionId) {
+    const settled = failDispatch(
+      dispatchId,
+      "排队等待期间目标会话已不可达（工作区被关闭或会话已结束）",
+      agentDir,
+    );
+    if (settled) {
+      void deliverDispatchCallback({
+        agentDir,
+        record: settled,
+        kind: "error",
+        summary: "排队任务未能启动：目标会话已不可达",
+        sessionAlive: "dead",
+        errorType: "session_gone",
+      });
+    }
+    return;
+  }
+  const prompt = buildDispatchTaskPrompt({ task: record.task, from: "小精灵委派（排队转正）" });
+  dispatchedSessions.set(dispatchId, session);
+  watchDispatchTurn(factory, session, dispatchId);
+  // Deferred model/thinking override (queued dispatches apply at activation).
+  if (record.model != null || record.thinkingLevel != null) {
+    const applied = await applyDispatchModelOverride(factory, session, {
+      model: record.model,
+      thinkingLevel: record.thinkingLevel,
+    });
+    if (!applied.ok) {
+      dispatchedSessions.delete(dispatchId);
+      const settled = failDispatch(dispatchId, applied.error, agentDir);
+      if (settled) {
+        void deliverDispatchCallback({
+          agentDir,
+          record: settled,
+          kind: "error",
+          summary: applied.error,
+          sessionAlive: "alive",
+          errorType: "model_override",
+        });
+      }
+      return;
+    }
+  }
+  try {
+    if (session.isStreaming) {
+      session.followUp(prompt);
+    } else {
+      void session.prompt(prompt).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        dispatchedSessions.delete(dispatchId);
+        const settled = failDispatch(dispatchId, `委派执行失败：${message}`, agentDir);
+        if (settled) {
+          void deliverDispatchCallback({
+            agentDir,
+            record: settled,
+            kind: "error",
+            summary: `委派执行失败：${message}`,
+            sessionAlive: "alive",
+            errorType: classifyError(message),
+          });
+        }
+      });
+    }
+  } catch (error) {
+    dispatchedSessions.delete(dispatchId);
+    failDispatch(dispatchId, error instanceof Error ? error.message : String(error), agentDir);
+  }
+}
+
+/** After a terminal settle, wake the next queued dispatch for that session. */
+function drainQueueAfterSettle(
+  factory: WorkspaceGraphFactory,
+  sessionId: string | null,
+): void {
+  if (!sessionId) return;
+  const head = queuedDispatchesFor(sessionId)[0];
+  if (!head) return;
+  void activateQueuedDispatch(factory, head.id);
+}
+
 /**
  * The delegation engine behind pixie_dispatch. The plugin-side tool shell
  * (my-pi-plugins pi-pixie) reaches it through the loopback control plane
@@ -212,18 +592,52 @@ async function createTargetSession(
  */
 async function dispatchPixieTask(
   factory: WorkspaceGraphFactory,
-  request: { cwd: string; task: string; newSession?: boolean },
+  request: {
+    cwd: string;
+    task: string;
+    newSession?: boolean;
+    batchId?: string | null;
+    retryOf?: string | null;
+    failCount?: number;
+    /** 用户明确授权的模型/推理深度覆盖（未授权不传，跟随会话当前设置）。 */
+    model?: string | null;
+    thinkingLevel?: string | null;
+  },
 ): Promise<
-  | { ok: true; dispatchId: string; sessionId: string; sessionPath: string; queued: boolean }
+  | {
+      ok: true;
+      dispatchId: string;
+      sessionId: string;
+      sessionPath: string;
+      queued: boolean;
+      /** queued=true 时的排队说明（告知小精灵可等待/取消/改并行）。 */
+      queuedNote?: string;
+    }
   | { ok: false; error: string }
 > {
   const agentDir = factory.deps.agentDir;
-  const graph = factory.findBoundGraph(factory.canonicalizeCwd(request.cwd));
+  let graph = factory.findBoundGraph(factory.canonicalizeCwd(request.cwd));
   if (!graph) {
-    return {
-      ok: false,
-      error: `目标工作区未打开（${request.cwd}）。请用户先在 PiAbyss 中打开该工作区后再委派。`,
-    };
+    // v4: a known workspace that exists on disk gets a BACKGROUND graph
+    // (parked, never foregrounded) and delegation proceeds as usual.
+    const canonicalRequest = factory.canonicalizeCwd(request.cwd);
+    const known = getKnownWorkspaces(agentDir).some(
+      (path) => factory.canonicalizeCwd(path) === canonicalRequest,
+    );
+    if (!known || !existsSync(canonicalRequest)) {
+      return {
+        ok: false,
+        error: `目标工作区未打开且不在已知工作区列表中（${request.cwd}）。请用户先在 PiAbyss 中打开该工作区，或把它加入 PiAbyss 工作区列表后再委派。`,
+      };
+    }
+    const built = await factory.ensureBackgroundGraph(canonicalRequest);
+    if ("error" in built) {
+      return {
+        ok: false,
+        error: `无法在后台打开目标工作区（${built.error.message}）。请用户先在 PiAbyss 中打开该工作区后再委派。`,
+      };
+    }
+    graph = built.graph;
   }
 
   const resolution: TargetResolution | null =
@@ -249,68 +663,558 @@ async function dispatchPixieTask(
     busy = false;
   }
 
+  // v4.1 queue gate: an existing LIVE dispatch on this session holds it —
+  // the new task is registered as queued (envelope NOT sent; the engine
+  // injects it when the prior dispatch reaches a terminal state). Manual
+  // user turns never hold the gate, so user-driven sessions stay open.
+  const gate = liveDispatchFor(sessionId);
+  if (gate) {
+    const queuedAhead = queuedDispatchesFor(sessionId).length;
+    const dispatch = registerDispatch({
+      cwd: graph.canonicalCwd,
+      sessionId,
+      sessionPath,
+      task: request.task,
+      agentDir,
+      batchId: request.batchId ?? null,
+      retryOf: request.retryOf ?? null,
+      failCount: request.failCount ?? 0,
+      queued: true,
+      model: request.model ?? null,
+      thinkingLevel: request.thinkingLevel ?? null,
+    });
+    recordPixieDispatch(agentDir);
+    return {
+      ok: true,
+      dispatchId: dispatch.id,
+      sessionId,
+      sessionPath,
+      queued: true,
+      queuedNote:
+        queuedAhead > 0
+          ? `目标会话正有委派任务在执行（${gate.task.slice(0, 60)}…），本任务已排队（前面还有 ${queuedAhead} 个）。当前面的任务回调结束后自动开始；你也可以取消本任务改用 newSession 新开会话并行，或继续等待。`
+          : `目标会话正有委派任务在执行（${gate.task.slice(0, 60)}…），本任务已排队，等它回调结束后自动开始。可继续等待、取消本任务、或改用 newSession 新开会话并行执行。`,
+    };
+  }
+
   const prompt = buildDispatchTaskPrompt({ task: request.task, from: "小精灵委派" });
+  // Single registration (v3 double-registered via armPixieDispatch — the
+  // ghost record stayed "dispatched" forever).
   const dispatch = registerDispatch({
     cwd: graph.canonicalCwd,
     sessionId,
     sessionPath,
     task: request.task,
+    agentDir,
+    batchId: request.batchId ?? null,
+    retryOf: request.retryOf ?? null,
+    failCount: request.failCount ?? 0,
+    model: request.model ?? null,
+    thinkingLevel: request.thinkingLevel ?? null,
   });
   recordPixieDispatch(agentDir);
+  dispatchedSessions.set(dispatch.id, session);
+  watchDispatchTurn(factory, session, dispatch.id);
+
+  // v4.2 authorized model/thinking override — applied BEFORE the envelope so
+  // the dispatch turn itself already runs on the requested model (turn-boundary
+  // semantics are irrelevant here: the session is idle in this branch).
+  if (request.model != null || request.thinkingLevel != null) {
+    const applied = await applyDispatchModelOverride(factory, session, {
+      model: request.model ?? null,
+      thinkingLevel: request.thinkingLevel ?? null,
+    });
+    if (!applied.ok) {
+      dispatchedSessions.delete(dispatch.id);
+      const settled = failDispatch(dispatch.id, applied.error, agentDir);
+      if (settled) {
+        void deliverDispatchCallback({
+          agentDir,
+          record: settled,
+          kind: "error",
+          summary: applied.error,
+          sessionAlive: "alive",
+          errorType: "model_override",
+        });
+      }
+      return { ok: false, error: applied.error };
+    }
+  }
 
   // Drive the target session. Busy → followUp queue (SDK delivers after the
-  // running turn); idle → direct prompt. The dispatch record is armed for the
-  // duration of the injected turn.
+  // running turn); idle → direct prompt.
   if (busy) {
     try {
       session.followUp(prompt);
     } catch (error) {
-      failDispatch(dispatch.id, error instanceof Error ? error.message : String(error));
+      dispatchedSessions.delete(dispatch.id);
+      failDispatch(dispatch.id, error instanceof Error ? error.message : String(error), agentDir);
       return { ok: false, error: `目标会话忙且队列不可用：${String(error)}` };
     }
-    return { ok: true, dispatchId: dispatch.id, sessionId, sessionPath, queued: true };
+    return { ok: true, dispatchId: dispatch.id, sessionId, sessionPath, queued: false };
   }
   void session.prompt(prompt).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    failDispatch(dispatch.id, `委派执行失败：${message}`);
+    dispatchedSessions.delete(dispatch.id);
+    const settled = failDispatch(dispatch.id, `委派执行失败：${message}`, agentDir);
+    if (settled) {
+      void deliverDispatchCallback({
+        agentDir,
+        record: settled,
+        kind: "error",
+        summary: `委派执行失败：${message}`,
+        sessionAlive: "alive",
+        errorType: classifyError(message),
+      });
+    }
   });
   return { ok: true, dispatchId: dispatch.id, sessionId, sessionPath, queued: false };
 }
 
 /**
+ * Route the user's answer to an awaiting ask back into the delegated session:
+ * reactivate the record, followUp a `<pixie-reply>` envelope, and re-arm the
+ * turn watcher so the continuation turn still auto-callbacks if the agent
+ * forgets pixie_report.
+ */
+async function replyToDispatch(
+  factory: WorkspaceGraphFactory,
+  args: { dispatchId: string; text: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const agentDir = factory.deps.agentDir;
+  const outcome = reactivateDispatchAfterReply(args.dispatchId, args.text, agentDir);
+  if ("error" in outcome) return { ok: false, error: outcome.error };
+  const record = outcome.record;
+  const session = dispatchedSessions.get(args.dispatchId) ?? null;
+  if (!session) {
+    failDispatch(args.dispatchId, "目标会话已不可达（未打开或 Host 已重启），答复未能送达", agentDir);
+    return {
+      ok: false,
+      error: "目标会话当前不可达（请让小精灵重新委派，或在 PiAbyss 中打开该工作区）",
+    };
+  }
+  const envelope = [
+    `<pixie-reply dispatchId="${args.dispatchId}">`,
+    "用户对上述问题的答复：",
+    args.text,
+    "请基于该答复继续执行；完成后再按原要求回调。",
+    "</pixie-reply>",
+  ].join("\n");
+  watchDispatchTurn(factory, session, args.dispatchId);
+  try {
+    if (session.isStreaming) {
+      void session.steer(envelope).catch(() => undefined);
+    } else {
+      session.followUp(envelope);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    failDispatch(args.dispatchId, `答复送达失败：${message}`, agentDir);
+    return { ok: false, error: `答复送达失败：${message}` };
+  }
+  return { ok: true };
+}
+
+/**
+ * Interject into a LIVE delegation (插话 ≠ 新任务): append (补充/修正约束)
+ * or checkpoint (要求进度汇报后继续/暂停). Only dispatched/awaiting_user
+ * records accept interjections; queued/final ones reject with a clear hint.
+ * Never creates a record — it rides the existing dispatch id.
+ */
+async function interjectDispatch(
+  factory: WorkspaceGraphFactory,
+  args: {
+    dispatchId: string;
+    text: string;
+    mode: "append" | "checkpoint";
+    after?: "continue" | "wait";
+    /** 用户明确授权的模型/推理深度替换（下一轮起生效，同手动切换语义）。 */
+    model?: string | null;
+    thinkingLevel?: string | null;
+  },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const agentDir = factory.deps.agentDir;
+  const record = findDispatchById(args.dispatchId);
+  if (!record) return { ok: false, error: "委派记录不存在" };
+  if (record.status === "queued") {
+    return { ok: false, error: "该任务还在排队中（尚未开始执行），无法插话；可等待启动或取消后重派。" };
+  }
+  if (record.status === "paused") {
+    // Checkpoint pause: any user interjection doubles as the resume signal.
+    if (args.mode === "checkpoint") {
+      return { ok: false, error: "该任务已在暂停等指令中，直接发送新指令即可（无需再要一次进度检查点）。" };
+    }
+    const session = dispatchedSessions.get(args.dispatchId) ?? null;
+    if (!session) {
+      return { ok: false, error: "目标会话当前不可达（Host 重启或工作区已关闭），无法恢复" };
+    }
+    const reactivated = resumePausedDispatch(args.dispatchId, agentDir);
+    if (!reactivated) return { ok: false, error: "恢复失败：记录状态已变化" };
+    const envelope = [
+      "<pixie-interject>",
+      "用户对暂停任务的下一步指令（恢复执行）：",
+      args.text,
+      "请基于该指令继续执行；完成后再按原要求回调。",
+      "</pixie-interject>",
+    ].join("\n");
+    watchDispatchTurn(factory, session, args.dispatchId);
+    try {
+      if (session.isStreaming) {
+        void session.steer(envelope).catch(() => undefined);
+      } else {
+        session.followUp(envelope);
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error: `恢复指令送达失败：${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    return { ok: true };
+  }
+  if (record.status !== "dispatched" && record.status !== "awaiting_user") {
+    return {
+      ok: false,
+      error: `该任务已结束（${record.status}），无法插话。要继续做请重派新任务，要续跑失败任务可用 retryDispatch(mode=resume)。`,
+    };
+  }
+  const session = dispatchedSessions.get(args.dispatchId) ?? null;
+  if (!session) {
+    return { ok: false, error: "目标会话当前不可达（Host 重启或工作区已关闭），插话未能送达" };
+  }
+  // Authorized model/thinking replacement: apply BEFORE injecting so the next
+  // turn (triggered by this interjection) runs on the new model — the same
+  // turn-boundary semantics as a manual switch in the workspace UI.
+  if (args.model != null || args.thinkingLevel != null) {
+    const applied = await applyDispatchModelOverride(factory, session, {
+      model: args.model ?? null,
+      thinkingLevel: args.thinkingLevel ?? null,
+    });
+    if (!applied.ok) return { ok: false, error: applied.error };
+    recordDispatchModelChange(
+      args.dispatchId,
+      applied.model ?? findDispatchById(args.dispatchId)?.model ?? null,
+      args.thinkingLevel ?? null,
+      agentDir,
+    );
+  }
+  const lines: string[] = ["<pixie-interject>"];
+  if (args.mode === "checkpoint") {
+    const after = args.after === "wait" ? "wait" : "continue";
+    lines.push(
+      "用户请求一次进度检查点：",
+      args.text,
+      "请立即调用 pixie_report（kind=progress）汇报当前进度（做了什么、到哪一步、还差什么），然后：",
+      after === "continue"
+        ? "汇报完成后继续执行原任务，不要停下。"
+        : "汇报完成后暂停本轮（不要再继续执行），等待用户的下一步指令（会以 <pixie-interject> 或 <pixie-reply> 信封到达）。",
+    );
+  } else {
+    lines.push(
+      "用户对当前任务的插入消息（补充/修正，不是新任务，原任务继续）：",
+      args.text,
+    );
+  }
+  if (args.model != null) {
+    lines.push(
+      `（用户已授权模型替换：从下一轮起改用 ${args.model} 执行。）`,
+    );
+  }
+  if (args.thinkingLevel != null) {
+    lines.push(`（用户已授权推理深度替换：下一轮起思考深度为 ${args.thinkingLevel}。）`);
+  }
+  lines.push("</pixie-interject>");
+  const envelope = lines.join("\n");
+  // Reply-style re-arm is unnecessary (the watcher stays armed across
+  // checkpoints); just deliver.
+  try {
+    if (session.isStreaming) {
+      void session.steer(envelope).catch(() => undefined);
+    } else {
+      session.followUp(envelope);
+    }
+  } catch (error) {
+    return { ok: false, error: `插话送达失败：${error instanceof Error ? error.message : String(error)}` };
+  }
+  return { ok: true };
+}
+
+/**
+ * Stop a delegation with an explicit receipt (叫停必须回执):
+ * queued → cancelled (queue-only, session untouched); dispatched/paused/
+ * awaiting_user with a live session → abort + stopped settle; otherwise
+ * (Host restart / unreachable) → already-stopped settle. Idempotent with
+ * the turn watcher's auto-settle: whoever settles first wins.
+ */
+async function stopDispatchById(
+  factory: WorkspaceGraphFactory,
+  dispatchId: string,
+): Promise<{ ok: true; action: PixieStopAction } | { ok: false; error: string }> {
+  const agentDir = factory.deps.agentDir;
+  const record = findDispatchById(dispatchId);
+  if (!record) return { ok: false, error: "委派记录不存在" };
+  if (record.status === "queued") {
+    const cancelled = cancelQueuedDispatch(dispatchId, agentDir);
+    if (!cancelled) return { ok: true, action: "already-stopped" };
+    void deliverDispatchCallback({
+      agentDir,
+      record: cancelled,
+      kind: "stopped",
+      summary: "排队中的任务已被用户取消（尚未开始执行）。",
+    });
+    return { ok: true, action: "cancelled" };
+  }
+  if (
+    record.status !== "dispatched" &&
+    record.status !== "paused" &&
+    record.status !== "awaiting_user"
+  ) {
+    return { ok: true, action: "already-stopped" };
+  }
+  const session = dispatchedSessions.get(dispatchId) ?? null;
+  // Settle FIRST: the turn watcher's aborted branch sees status "stopped"
+  // and stays silent, so the stop receipt is the only callback.
+  const stopped =
+    stopSettleDispatch(dispatchId, agentDir) ??
+    findDispatchById(dispatchId) ??
+    record;
+  if (!session) {
+    void deliverDispatchCallback({
+      agentDir,
+      record: stopped,
+      kind: "stopped",
+      summary: "任务已标记停止（目标会话不在宿主内存中，无需中断执行）。",
+    });
+    return { ok: true, action: "already-stopped" };
+  }
+  void deliverDispatchCallback({
+    agentDir,
+    record: stopped,
+    kind: "stopped",
+    summary: "任务已被用户叫停，执行已中断。",
+  });
+  try {
+    void session.abort().catch(() => undefined);
+  } catch {
+    /* the settle already happened; abort is best-effort */
+  }
+  return { ok: true, action: "aborted" };
+}
+
+/**
+ * Retry a failed/stopped delegation (标准决策流的执行入口):
+ * - resume: the delegated session is still in memory → reactivate the SAME
+ *   record (context intact) and followUp a continue envelope;
+ * - redispatch: session gone → a fresh record chained via retryOf;
+ * - mode omitted → auto: resume when the session is reachable.
+ */
+async function retryDispatchById(
+  factory: WorkspaceGraphFactory,
+  args: { dispatchId: string; mode?: "resume" | "redispatch" },
+): Promise<{ ok: true; dispatchId: string } | { ok: false; error: string }> {
+  const agentDir = factory.deps.agentDir;
+  const record = findDispatchById(args.dispatchId);
+  if (!record) return { ok: false, error: "委派记录不存在" };
+  if (record.status !== "failed" && record.status !== "stopped") {
+    return { ok: false, error: `该任务当前状态为 ${record.status}，只有失败/被叫停的任务可以重试` };
+  }
+  const session = dispatchedSessions.get(args.dispatchId) ?? null;
+  const mode = args.mode ?? (session ? "resume" : "redispatch");
+  if (mode === "resume") {
+    if (!session) return { ok: false, error: "目标会话已不可达，无法原地续跑；请改用 redispatch 重派" };
+    const reactivated = reactivateDispatchForResume(args.dispatchId, agentDir);
+    if (!reactivated) return { ok: false, error: "原地续跑失败：记录状态已变化" };
+    const envelope = [
+      `<pixie-resume dispatchId="${args.dispatchId}">`,
+      "用户要求原地续跑之前的任务（第 " + reactivated.failCount + " 次尝试）：",
+      record.task,
+      "请从当前进度继续执行（不要重头开始）；完成后再按原要求回调。",
+      "</pixie-resume>",
+    ].join("\n");
+    watchDispatchTurn(factory, session, args.dispatchId);
+    try {
+      if (session.isStreaming) {
+        void session.steer(envelope).catch(() => undefined);
+      } else {
+        session.followUp(envelope);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      failDispatch(args.dispatchId, `续跑注入失败：${message}`, agentDir);
+      return { ok: false, error: `续跑注入失败：${message}` };
+    }
+    return { ok: true, dispatchId: args.dispatchId };
+  }
+  // redispatch: same cwd + task, fresh record chained to the failed one.
+  const outcome = await dispatchPixieTask(factory, {
+    cwd: record.cwd,
+    task: record.task,
+    retryOf: record.id,
+    failCount: record.failCount,
+  });
+  if (!outcome.ok) return { ok: false, error: outcome.error };
+  return { ok: true, dispatchId: outcome.dispatchId };
+}
+
+/** SDK session-dir encoding for a cwd (mirrors SessionManager internals). */
+function sessionDirFor(factory: WorkspaceGraphFactory, cwd: string): string {
+  const resolved = factory.canonicalizeCwd(cwd).replace(/^[/\\]/, "").replace(/[/\\:]/g, "-");
+  return join(factory.deps.agentDir, "sessions", `--${resolved}--`);
+}
+
+/** Read a session JSONL's head/tail lines for the history summary. */
+function summarizeSessionFile(path: string): {
+  createdAt: number;
+  lastActiveAt: number;
+  turns: number;
+  summary: string;
+} {
+  let raw = "";
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return { createdAt: 0, lastActiveAt: 0, turns: 0, summary: "" };
+  }
+  const lines = raw.split("\n").filter((line) => line.trim().length > 0);
+  let createdAt = 0;
+  let lastActiveAt = 0;
+  let turns = 0;
+  let summary = "";
+  for (const line of lines) {
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const timestamp = typeof parsed.timestamp === "string" ? Date.parse(parsed.timestamp) : NaN;
+    if (Number.isFinite(timestamp)) {
+      if (createdAt === 0 || timestamp < createdAt) createdAt = timestamp;
+      if (timestamp > lastActiveAt) lastActiveAt = timestamp;
+    }
+    if (parsed.type !== "message") continue;
+    const message = parsed.message as { role?: unknown; content?: unknown } | undefined;
+    if (!message || (message.role !== "user" && message.role !== "assistant")) continue;
+    turns += 1;
+    if (message.role === "assistant") {
+      const text = messageTextOf(message).trim();
+      if (text) summary = truncate(text.replaceAll(/\s+/g, " "), 120);
+    }
+  }
+  const stat = existsSync(path) ? undefined : undefined;
+  void stat;
+  return { createdAt, lastActiveAt, turns, summary };
+}
+
+/**
+ * List historical sessions of a workspace (标准存储目录，找回旧会话继续派活).
+ */
+function listWorkspaceSessions(
+  factory: WorkspaceGraphFactory,
+  cwd: string,
+): PixieWorkspaceSessionSummary[] {
+  const dir = sessionDirFor(factory, cwd);
+  if (!existsSync(dir)) return [];
+  const out: PixieWorkspaceSessionSummary[] = [];
+  for (const entry of readdirSync(dir)) {
+    if (!entry.endsWith(".jsonl")) continue;
+    const path = join(dir, entry);
+    const info = summarizeSessionFile(path);
+    // Session id = file stem (SDK naming: <timestamp>-<uuid>.jsonl → stem).
+    const id = entry.replace(/\.jsonl$/, "");
+    if (!info.lastActiveAt) continue; // empty/hidden file
+    out.push({
+      id,
+      path,
+      createdAt: info.createdAt,
+      lastActiveAt: info.lastActiveAt,
+      turns: info.turns,
+      summary: info.summary,
+    });
+  }
+  out.sort((left, right) => right.lastActiveAt - left.lastActiveAt);
+  return out.slice(0, 50);
+}
+
+/**
  * Control-plane callbacks wired to the delegation engine (the loopback server
- * in pixie-control-plane.ts exposes them to the pi-pixie plugin shell). The
- * dispatch path mirrors the former createPixieDispatchToolFor exactly: engine
- * first, then the arm that flips the delegated session's report gating.
+ * in pixie-control-plane.ts exposes them to the pi-pixie plugin shell).
  */
 export function createPixieControlPlaneDeps(factory: WorkspaceGraphFactory): PixieControlPlaneDeps {
+  const agentDir = factory.deps.agentDir;
+  // Queue drain: every terminal settle wakes the next queued dispatch.
+  configurePixieTerminalSettleHook((sessionId) => drainQueueAfterSettle(factory, sessionId));
   return {
-    dispatch: async (request) => {
-      const out = await dispatchPixieTask(factory, request);
-      if (!out.ok) return { ok: false as const, error: out.error };
-      const dispatchId = armPixieDispatch({
-        cwd: request.cwd,
-        sessionId: out.sessionId,
-        sessionPath: out.sessionPath,
-        task: request.task,
-      });
-      return {
-        ok: true as const,
-        dispatchId,
-        sessionId: out.sessionId,
-        sessionPath: out.sessionPath,
-        queued: out.queued,
-      };
-    },
-    report: (args) =>
-      deliverReportToPixie({
-        agentDir: factory.deps.agentDir,
-        dispatchId: args.dispatchId,
+    dispatch: async (request) => dispatchPixieTask(factory, request),
+    report: async (args) => {
+      const kind = args.kind ?? (args.success === false ? "error" : "done");
+      if (kind === "progress") {
+        // 非终态进度汇报：记录进度，委派继续（或转 paused）。
+        const updated = progressDispatch(
+          args.dispatchId,
+          args.summary,
+          args.files ?? null,
+          agentDir,
+          args.pause === true,
+        );
+        if (!updated) return { ok: false, error: "委派记录不存在或已结束，进度汇报被忽略" };
+        return deliverDispatchCallback({
+          agentDir,
+          record: updated,
+          kind: "progress",
+          summary: args.summary,
+          files: args.files ?? null,
+        });
+      }
+      const success = kind !== "error" && args.success !== false;
+      const settled = success
+        ? settleDispatch(args.dispatchId, args.summary, "done", agentDir)
+        : failDispatch(args.dispatchId, args.summary, agentDir);
+      if (!settled) return { ok: false, error: "委派记录不存在或已结束" };
+      return deliverDispatchCallback({
+        agentDir,
+        record: settled,
+        kind: success ? "done" : "error",
         summary: args.summary,
+        files: args.files ?? null,
+      });
+    },
+    ask: async (args) => {
+      const record = askDispatch(args.dispatchId, args.question, args.options ?? [], agentDir);
+      if (!record) return { ok: false, error: "委派记录不存在或已结束" };
+      return deliverDispatchCallback({
+        agentDir,
+        record,
+        kind: "ask",
+        summary: args.question,
+      });
+    },
+    interject: async (args) => {
+      const out = await interjectDispatch(factory, {
+        dispatchId: args.dispatchId,
+        text: args.text,
+        mode: args.mode,
+        after: args.after,
+        model: args.model,
+        thinkingLevel: args.thinkingLevel,
+      });
+      return out.ok ? { ok: true } : { ok: false, error: out.error };
+    },
+    stop: async (args) => stopDispatchById(factory, args.dispatchId),
+    retry: async (args) => retryDispatchById(factory, args),
+    dispatchList: (limit: number) => listDispatches(limit, agentDir),
+    rest: async (args) => requestPixieRest({ agentDir, phrase: args.phrase, handoff: args.handoff }),
+    inject: async (args) =>
+      injectPixieMessage({
+        agentDir,
+        text: args.text,
+        source: args.source === "tg" ? "tg" : "system",
       }),
     dispatchState: (sessionId) => {
       const found = findDispatchBySession(sessionId);
-      return found ? { armed: true, dispatchId: found.id } : { armed: false, dispatchId: null };
+      return found
+        ? { armed: true, dispatchId: found.id, kind: found.status === "dispatched" ? null : found.kind }
+        : { armed: false, dispatchId: null, kind: null };
     },
   };
 }
@@ -328,31 +1232,26 @@ export function createPixieHandlers(
   return {
     "pixie.state": async () => {
       if (!gate()) return { error: pixiePluginDisabledError() };
-      return { result: pixieState() };
+      return { result: pixieState(agentDir) };
     },
 
     "pixie.send": async (ctx) => {
       if (!gate()) return { error: pixiePluginDisabledError() };
       const params = ctx.params as { text: string };
-      // The resident session loads the pi-pixie extension from the installed
-      // my-pi-plugins checkout (buildPixieSession); no customTools injection.
       const out = await sendPixieMessage({ agentDir, text: params.text });
       if (!out.ok) return { error: createHostError("AGENT_BUSY", out.error, { retryable: true }) };
       recordPixieInteraction(agentDir);
       return { result: { sessionId: out.sessionId } };
     },
 
-    "pixie.continue": async (ctx) => {
+    "pixie.continue": async () => {
       if (!gate()) return { error: pixiePluginDisabledError() };
-      const params = ctx.params as { sessionPath: string; text: string };
-      const out = await continuePixieSession({
-        agentDir,
-        sessionPath: params.sessionPath,
-        text: params.text,
-      });
-      if (!out.ok) return { error: createHostError("RESOURCE_NOT_FOUND", out.error) };
-      recordPixieInteraction(agentDir);
-      return { result: { sessionId: out.sessionId, sessionPath: out.sessionPath } };
+      return {
+        error: createHostError(
+          "RESOURCE_NOT_FOUND",
+          "pixie.continue 已废弃：小精灵会话由时间线接管，直接向小精灵发消息即可。",
+        ),
+      };
     },
 
     "pixie.abort": async () => {
@@ -370,13 +1269,70 @@ export function createPixieHandlers(
     "pixie.dispatches": async (ctx) => {
       if (!gate()) return { error: pixiePluginDisabledError() };
       const params = (ctx.params ?? {}) as { limit?: number };
-      const dispatches: PixieDispatchRecord[] = listDispatches(params.limit ?? 20);
+      const dispatches: PixieDispatchRecord[] = listDispatches(params.limit ?? 20, agentDir);
       return { result: { dispatches } };
     },
 
     "pixie.usage": async () => {
       if (!gate()) return { error: pixiePluginDisabledError() };
       return { result: readPixieUsage(agentDir) };
+    },
+
+    "pixie.reply": async (ctx) => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
+      const params = ctx.params as { dispatchId: string; text: string };
+      const out = await replyToDispatch(factory, params);
+      if (!out.ok) return { error: createHostError("INVALID_REQUEST", out.error) };
+      return { result: { ok: true } };
+    },
+
+    "pixie.setContext": async (ctx) => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
+      const params = ctx.params as { workspaces: string[] };
+      setPixieContext(agentDir, params.workspaces);
+      return { result: { ok: true as const } };
+    },
+
+    "pixie.newSegment": async () => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
+      await requestPixieSegment({ agentDir });
+      return { result: { ok: true as const } };
+    },
+
+    "pixie.interject": async (ctx) => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
+      const params = ctx.params as {
+        dispatchId: string;
+        text: string;
+        mode: "append" | "checkpoint";
+        after?: "continue" | "wait";
+      };
+      const out = await interjectDispatch(factory, params);
+      return out.ok
+        ? { result: { ok: true, error: null } }
+        : { result: { ok: false, error: out.error } };
+    },
+
+    "pixie.stopDispatch": async (ctx) => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
+      const params = ctx.params as { dispatchId: string };
+      const out = await stopDispatchById(factory, params.dispatchId);
+      if (!out.ok) return { error: createHostError("INVALID_REQUEST", out.error) };
+      return { result: { ok: out.ok, action: out.action } };
+    },
+
+    "pixie.retryDispatch": async (ctx) => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
+      const params = ctx.params as { dispatchId: string; mode?: "resume" | "redispatch" };
+      const out = await retryDispatchById(factory, params);
+      if (!out.ok) return { result: { ok: false, dispatchId: null, error: out.error } };
+      return { result: { ok: true, dispatchId: out.dispatchId, error: null } };
+    },
+
+    "pixie.listSessions": async (ctx) => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
+      const params = ctx.params as { cwd: string };
+      return { result: { sessions: listWorkspaceSessions(factory, params.cwd) } };
     },
   };
 }

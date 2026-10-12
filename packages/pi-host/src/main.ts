@@ -3,10 +3,10 @@
  * PiAbyss Host entry — owns all Pi SDK services.
  * Transport: JSONL on stdin/stdout; logs on stderr.
  */
-import { mkdirSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { randomBytes, randomUUID } from "node:crypto";
 import {
   ModelRegistry,
   ModelRuntime,
@@ -40,7 +40,7 @@ import { createMemoHandlers } from "./memo-controller.js";
 import { createShellJobHandlers } from "./shelljob-controller.js";
 import { startShellJobWatcher } from "./shelljob-watcher.js";
 import { configureScheduleAgentRuntime } from "./schedule-agent-runner.js";
-import { configurePixieRuntime } from "./pixie-agent-runner.js";
+import { configurePixieRuntime, configurePixieEventEmitter, pixieDir, startPixieStaleWatcher, stopPixieStaleWatcher } from "./pixie-agent-runner.js";
 import { createPixieHandlers, createPixieControlPlaneDeps } from "./pixie-controller.js";
 import { startPixieControlPlane, type PixieControlPlane } from "./pixie-control-plane.js";
 import { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
@@ -91,6 +91,32 @@ function resolveMaxBoundWorkspaces(): number | undefined {
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed)) return undefined;
   return Math.min(20, Math.max(1, parsed));
+}
+
+/**
+ * Pixie control-plane token: generated once per agent dir, re-read on every
+ * Host start. The value is shared with the pi-pixie plugin through the
+ * process environment (PIABYSS_PIXIE_HTTP_TOKEN) and enforced by the loopback
+ * control plane on every request.
+ */
+function ensurePixieControlToken(agentDir: string): string {
+  const tokenPath = join(pixieDir(agentDir), "control-token");
+  try {
+    const existing = readFileSync(tokenPath, "utf8").trim();
+    if (existing) return existing;
+  } catch {
+    /* first run */
+  }
+  const token = randomBytes(24).toString("hex");
+  try {
+    mkdirSync(dirname(tokenPath), { recursive: true });
+    writeFileSync(tokenPath, `${token}\n`, "utf8");
+  } catch (err) {
+    logger.warn("Failed to persist the pixie control token", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return token;
 }
 
 /**
@@ -350,13 +376,21 @@ async function main(): Promise<void> {
   // The pixie (小精灵) resident session shares the same authoritative runtime.
   configurePixieRuntime(modelRuntime);
 
-  // Loopback control plane for the pi-pixie plugin (pixie_dispatch/report
-  // forward here). Must exist before ANY agent session is created — the port
-  // is discovered by the plugin through the process environment.
+  // Loopback control plane for the pi-pixie plugin (dispatch/report/ask/rest/
+  // inject forward here). Must exist before ANY agent session is created — the
+  // port and token are discovered by the plugin through the process env.
   let pixieControlPlane: PixieControlPlane | null = null;
   try {
-    pixieControlPlane = await startPixieControlPlane(createPixieControlPlaneDeps(graphFactory));
+    const pixieToken = ensurePixieControlToken(agentDir);
+    process.env.PIABYSS_PIXIE_HTTP_TOKEN = pixieToken;
+    pixieControlPlane = await startPixieControlPlane(createPixieControlPlaneDeps(graphFactory), {
+      token: pixieToken,
+    });
     process.env.PIABYSS_PIXIE_HTTP_PORT = String(pixieControlPlane.port);
+    // v4.1 失联提醒：定时扫描 dispatches.json，超时未回调的委派推送
+    // pixie.staleWarning（每条仅一次）。事件发射器在下方才接线，扫描在
+    // 首个 60s tick 时触发，届时 emitter 早已就绪。
+    startPixieStaleWatcher(agentDir);
   } catch (err) {
     // Non-fatal: the plugin's tools degrade to readable errors; everything
     // else keeps working.
@@ -409,7 +443,9 @@ async function main(): Promise<void> {
       if (pixieControlPlane) {
         await pixieControlPlane.close();
         delete process.env.PIABYSS_PIXIE_HTTP_PORT;
+        delete process.env.PIABYSS_PIXIE_HTTP_TOKEN;
       }
+      stopPixieStaleWatcher();
       const { cancelAllPending } = await import("./extension-ui-bridge.js");
       cancelAllPending("Host shutdown");
       const g = graphFactory.getGraph();
@@ -427,6 +463,12 @@ async function main(): Promise<void> {
   });
 
   graphFactory.bindServer(server);
+  // Pixie host events (report/ask/segment timeline) ride the standard event
+  // channel; the runner module emits through this indirection because it has
+  // no server reference of its own.
+  configurePixieEventEmitter((event, payload) => {
+    server.emit(event as Parameters<typeof server.emit>[0], payload);
+  });
   // Real-time schedule notification signal → push host event to the desktop.
   const stopScheduleNotifyWatcher = startScheduleNotifyWatcher((event, payload) =>
     server.emit(event, payload),

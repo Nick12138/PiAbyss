@@ -110,8 +110,12 @@ import type {
   ScheduleAgentState,
   PixieAgentState,
   PixieAgentMessage,
+  PixieDispatchKind,
   PixieDispatchRecord,
+  PixieSessionAlive,
+  PixieStopAction,
   PixieUsageStats,
+  PixieWorkspaceSessionSummary,
   ScheduleAgentTranscript,
   MemoNote,
   MemoNoteStatus,
@@ -297,6 +301,13 @@ export type HostContextMap = {
   "pixie.transcript": HostContext;
   "pixie.dispatches": HostContext;
   "pixie.usage": HostContext;
+  "pixie.reply": HostContext;
+  "pixie.setContext": HostContext;
+  "pixie.newSegment": HostContext;
+  "pixie.interject": HostContext;
+  "pixie.stopDispatch": HostContext;
+  "pixie.retryDispatch": HostContext;
+  "pixie.listSessions": HostContext;
 };
 
 export type HostRequestParams = {
@@ -574,6 +585,33 @@ export type HostRequestParams = {
   "pixie.transcript": { sessionPath: string };
   "pixie.dispatches": { limit?: number };
   "pixie.usage": null;
+  /** 用户对 ask 询问的答复：路由回被委派会话（followUp）。 */
+  "pixie.reply": { dispatchId: string; text: string };
+  /** 前端推送已知工作区列表（新段 <pixie-context> 注入用）。 */
+  "pixie.setContext": { workspaces: string[] };
+  /** 用户请求打盹：注入收尾指令，小精灵不配合时 Host 兜底强制换段。 */
+  "pixie.newSegment": null;
+  /** 向进行中委派的目标会话插话（补充/修正/进度检查点；非新任务，不建记录）。 */
+  "pixie.interject": {
+    dispatchId: string;
+    text: string;
+    mode: "append" | "checkpoint";
+    /** checkpoint 后续：continue=汇报后自动继续；wait=汇报后暂停等指令。 */
+    after?: "continue" | "wait";
+    /**
+     * 模型替换（"provider/id"）：下一轮起生效（turn 边界，与手动切换一致）。
+     * 仅在用户明确授权时携带；缺省保持当前模型。
+     */
+    model?: string;
+    /** 推理深度替换（off|minimal|low|medium|high|xhigh|max）；缺省保持当前。 */
+    thinkingLevel?: string;
+  };
+  /** 叫停委派：运行中 abort 会话；排队中摘队列；已终态返回 already-stopped。 */
+  "pixie.stopDispatch": { dispatchId: string };
+  /** 失败/叫停后的重试：resume=活会话原地续跑；redispatch=死会话重派（缺省自动判定）。 */
+  "pixie.retryDispatch": { dispatchId: string; mode?: "resume" | "redispatch" };
+  /** 按工作区列出历史会话（找回旧会话继续派活）。 */
+  "pixie.listSessions": { cwd: string };
 };
 
 export type HostResultMap = {
@@ -830,6 +868,13 @@ export type HostResultMap = {
   "pixie.transcript": { found: boolean; messages: PixieAgentMessage[] };
   "pixie.dispatches": { dispatches: PixieDispatchRecord[] };
   "pixie.usage": PixieUsageStats;
+  "pixie.reply": { ok: boolean };
+  "pixie.setContext": { ok: true };
+  "pixie.newSegment": { ok: true };
+  "pixie.interject": { ok: boolean; error: string | null };
+  "pixie.stopDispatch": { ok: boolean; action: PixieStopAction };
+  "pixie.retryDispatch": { ok: boolean; dispatchId: string | null; error: string | null };
+  "pixie.listSessions": { sessions: PixieWorkspaceSessionSummary[] };
 };
 
 export type HostEventPayloadMap = {
@@ -923,8 +968,39 @@ export type HostEventPayloadMap = {
   };
   "extensionUi.customFrame": { requestId: string; data: string };
   "extensionUi.customClosed": { requestId: string };
-  /** 小精灵收到委派回调（结果回流，前端刷新对话与委派列表）。 */
-  "pixie.reportReceived": { dispatchId: string; summary: string };
+  /**
+   * 小精灵收到委派回调（结果回流，前端刷新对话与委派列表）。
+   * - done：终态完成；error：终态报错（payload 附失败决策流字段）
+   * - progress：进度检查点非终态汇报（委派继续运行/暂停）
+   * - stopped：委派被叫停（小精灵知情回执）
+   */
+  "pixie.reportReceived": {
+    dispatchId: string;
+    summary: string;
+    kind: PixieDispatchKind;
+    /** 回调携带的产物/变更文件清单（无则缺省）。 */
+    files?: string[];
+    /** error 专用：被委派会话存活状态（驱动「继续/重派/评估」决策流）。 */
+    sessionAlive?: PixieSessionAlive;
+    /** error 专用：连续失败计数（≥3 时小精灵升级给用户）。 */
+    failCount?: number;
+    /** error 专用：错误类型短标签（如 tool_error / rate_limit / aborted）。 */
+    errorType?: string;
+    /** error 专用：已完成进度摘要（失败前做到哪一步）。 */
+    progress?: string;
+  };
+  /** 小精灵收到 ask 询问（待用户答复；前端刷新并切换 composer）。 */
+  "pixie.askReceived": { dispatchId: string; question: string; options: string[] };
+  /** 会话段时间线变化（新段开始或旧段收尾；前端刷新时间线）。 */
+  "pixie.segmentChanged": { segmentId: string; phase: "started" | "ended" };
+  /** 失联提醒：委派超时未收到任何回调（每条仅推送一次；前端横幅提示）。 */
+  "pixie.staleWarning": {
+    dispatchId: string;
+    /** 距最后活跃的分钟数。 */
+    minutes: number;
+    task: string;
+    cwd: string;
+  };
 };
 
 // Compile-time completeness: every HostMethod/HostEventName key present

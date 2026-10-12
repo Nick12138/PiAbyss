@@ -2050,13 +2050,76 @@ export type ScheduleStatus = {
 };
 
 /* ── 小精灵（pixie）───────────────────────────────────────────────
- * 宿主持有的常驻助手会话（自建通道，不进工作区会话列表）。
- * 委派：pixie 会话通过 pixie_dispatch 工具把任务派给工作区正式会话；
- * 回调：被委派会话通过宿主注入的 pixie_report 工具把结果回流。
+ * 小精灵 = 真实文件夹工作区（<agentDir>/workspace/pixie）+ 标准普通会话 +
+ * 会话段时间线（timeline.json 只存指针，段渲染读标准会话 JSONL）。
+ * 委派：pixie_dispatch 工具把任务派给工作区正式会话；
+ * 回调三类：done / error / ask —— pixie_report、回合结束自动兜底、pixie_ask。
+ * v4.1：排队串行（queued 不发信封由引擎持有）、插话（interject 附属于进行中
+ * 委派，非新任务）、叫停（stopped/cancelled）、进度检查点（progress 非终态）、
+ * 失联主动提醒（staleWarning）、批次聚合（batchId）、重试链（retryOf）。
  */
 
-/** 一条委派记录的生命周期状态。 */
-export type PixieDispatchStatus = "dispatched" | "reported" | "failed";
+/**
+ * 一条委派记录的生命周期状态。
+ * - dispatched：已注入目标会话运行中
+ * - queued：排队中（目标会话有活跃委派，引擎持队列，未发信封）
+ * - paused：进度检查点 wait 模式（汇报后暂停，插入新指令即恢复）
+ * - awaiting_user：pixie_ask 等待用户答复
+ * - reported / failed：终态（完成 / 出错）
+ * - stopped：被叫停（运行中会话被 abort）
+ * - cancelled：排队中被取消（纯摘队列，未碰过会话）
+ */
+export type PixieDispatchStatus =
+  | "dispatched"
+  | "queued"
+  | "paused"
+  | "awaiting_user"
+  | "reported"
+  | "failed"
+  | "stopped"
+  | "cancelled";
+
+/** 委派回调种类：完成 / 报错 / 询问用户 / 进度（非终态）/ 叫停知情。 */
+export type PixieDispatchKind = "done" | "error" | "ask" | "progress" | "stopped";
+
+/** 被委派会话的存活状态（错误推送携带，驱动失败决策流）。 */
+export type PixieSessionAlive = "alive" | "dead" | "stopped";
+
+/** pixie.stopDispatch 的动作结果。 */
+export type PixieStopAction = "aborted" | "already-stopped" | "cancelled";
+
+/** 标准会话存储中一个历史会话的摘要（pixie.listSessions 返回）。 */
+export type PixieWorkspaceSessionSummary = {
+  id: string;
+  /** 会话 JSONL 文件路径。 */
+  path: string;
+  createdAt: number;
+  lastActiveAt: number;
+  /** 消息条数（粗略规模）。 */
+  turns: number;
+  /** 最后一条 user/assistant 消息摘要（≤120 字）。 */
+  summary: string;
+};
+
+/** 小精灵会话段（时间线指针；消息经 pixie.state 的段视图携带）。 */
+export type PixieSegment = {
+  id: string;
+  sessionId: string;
+  sessionPath: string;
+  startedAt: number;
+  endedAt: number | null;
+  /** 段结束时小精灵自选的睡觉短语（分隔符文案）。 */
+  separator: string | null;
+  /** 换段原因：agent 自睡 / 用户请求 / 轮数自动换段。 */
+  reason: "agent" | "user" | "rollover" | null;
+  /** 小精灵写给下一段自己的交接摘要。 */
+  handoff: string | null;
+};
+
+/** pixie.state 携带的段视图：时间线指针 + 该段消息投影（记录已归档时 messages 为空）。 */
+export type PixieSegmentView = PixieSegment & {
+  messages: PixieAgentMessage[];
+};
 
 /** 小精灵会话的流式消息，形状与 schedule agent 的投影一致。 */
 export type PixieAgentMessage = {
@@ -2073,6 +2136,8 @@ export type PixieAgentMessage = {
 export type PixieDispatchRecord = {
   id: string;
   status: PixieDispatchStatus;
+  /** 回调种类：终态落定 done/error/stopped；进行中为 ask（等答复）/ progress（检查点汇报后回到运行）。 */
+  kind: PixieDispatchKind | null;
   /** 目标工作区 cwd（Host 规范化后）。 */
   cwd: string;
   /** 目标会话 id（存在时）。 */
@@ -2081,23 +2146,57 @@ export type PixieDispatchRecord = {
   sessionPath: string | null;
   /** 委派给目标会话的任务说明（用户可读）。 */
   task: string;
-  /** pixie_report 回传的结果摘要（reported 后有值）。 */
+  /** pixie_report / 自动兜底回传的结果摘要（reported 后有值）。 */
   report: string | null;
+  /** ask 回调等待用户答复的问题（awaiting_user 期间有值）。 */
+  question: string | null;
+  /** ask 回调附带的可选项。 */
+  options: string[];
   createdAt: number;
+  /** 排队中记录：出队并注入会话的时间（未出队为 null）。 */
+  startedAt: number | null;
   reportedAt: number | null;
-  /** 回调超时标记：超过阈值未回调时置 true（V1 默认 30 分钟）。 */
+  /** 最后活跃时间（信封注入 / 回调 / 回合事件时更新；查岗展示用）。 */
+  lastActiveAt: number | null;
+  /** 回调超时标记：超过阈值未回调时置 true（默认 30 分钟，可配置）。 */
   stale: boolean;
+  /** 失联提醒是否已推送（每条仅提醒一次）。 */
+  staleNotified: boolean;
+  /** 批次聚合标记（一次并行派发多任务时同批共享；无批次为 null）。 */
+  batchId: string | null;
+  /** 连续失败计数（resume / redispatch 成功启动后保留并 +1；升级阈值判定用）。 */
+  failCount: number;
+  /** 最近一次进度摘要（progress 回调或查岗推断更新）。 */
+  progressSummary: string | null;
+  /** 回调携带的产物/变更文件清单（progress/done 回调可带；无则 null）。 */
+  files: string[] | null;
+  /** 重派链来源：本记录由哪条失败记录重派而来（redispatch 时回填）。 */
+  retryOf: string | null;
+  /**
+   * 当前生效的委派模型（"provider/id"）：dispatch/interject 显式指定时记录；
+   * null = 跟随目标会话自身模型（未经授权小精灵不得更换）。
+   */
+  model: string | null;
+  /** 当前生效的推理深度（off|minimal|low|medium|high|xhigh|max）；null = 会话默认。 */
+  thinkingLevel: string | null;
 };
 
-/** pixie.state 结果：常驻会话快照 + 活跃委派列表。 */
+/** pixie.state 结果：会话段时间线 + 委派列表。 */
 export type PixieAgentState = {
-  /** 常驻会话是否在宿主内存中（宿主重启后 false，走 fork 续聊）。 */
+  /** 当前段会话是否在宿主内存中（宿主重启后首次访问时按时间线重建）。 */
   resident: boolean;
-  /** 常驻会话文件路径（持久化定位用；无会话时 null）。 */
+  /** 当前段会话文件路径（无会话时 null）。 */
   sessionPath: string | null;
   running: boolean;
   error: string | null;
+  /** 当前段消息（兼容旧前端的单对话投影）。 */
   messages: PixieAgentMessage[];
+  /** 会话段时间线（含各段消息投影）。 */
+  segments: PixieSegmentView[];
+  /** 是否有待用户答复的询问回调（composer 切换回复模式）。 */
+  askPending: boolean;
+  /** 当前段使用的模型名（展示用；未知为 null）。 */
+  modelName: string | null;
   /** 进行中/最近完成的委派（按创建时间倒序，上限 20 条）。 */
   dispatches: PixieDispatchRecord[];
 };

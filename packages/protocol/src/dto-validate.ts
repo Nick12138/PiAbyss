@@ -2658,31 +2658,123 @@ function isScheduleAgentMessage(value: unknown): boolean {
 function isPixieDispatchRecord(value: unknown): boolean {
   return (
     isPlainObject(value) &&
-    hasExactKeys(value, [
-      "id",
-      "status",
-      "cwd",
-      "sessionId",
-      "sessionPath",
-      "task",
-      "report",
-      "createdAt",
-      "reportedAt",
-      "stale",
-    ]) &&
+    hasExactKeys(
+      value,
+      [
+        "id",
+        "status",
+        "kind",
+        "cwd",
+        "sessionId",
+        "sessionPath",
+        "task",
+        "report",
+        "question",
+        "options",
+        "createdAt",
+        "reportedAt",
+        "stale",
+      ],
+      [
+        "startedAt",
+        "lastActiveAt",
+        "staleNotified",
+        "batchId",
+        "failCount",
+        "progressSummary",
+        "files",
+        "retryOf",
+        "model",
+        "thinkingLevel",
+      ],
+    ) &&
     isString(value.id) &&
     value.id.length > 0 &&
-    (value.status === "dispatched" || value.status === "reported" || value.status === "failed") &&
+    (value.status === "dispatched" ||
+      value.status === "queued" ||
+      value.status === "paused" ||
+      value.status === "awaiting_user" ||
+      value.status === "reported" ||
+      value.status === "failed" ||
+      value.status === "stopped" ||
+      value.status === "cancelled") &&
+    (value.kind === null ||
+      value.kind === "done" ||
+      value.kind === "error" ||
+      value.kind === "ask" ||
+      value.kind === "progress" ||
+      value.kind === "stopped") &&
     isString(value.cwd) &&
     (value.sessionId === null || isString(value.sessionId)) &&
     (value.sessionPath === null || isString(value.sessionPath)) &&
     isString(value.task) &&
     (value.report === null || isString(value.report)) &&
+    (value.question === null || isString(value.question)) &&
+    Array.isArray(value.options) &&
+    value.options.every((option: unknown) => isString(option)) &&
     typeof value.createdAt === "number" &&
     Number.isSafeInteger(value.createdAt) &&
     (value.reportedAt === null ||
       (typeof value.reportedAt === "number" && Number.isSafeInteger(value.reportedAt))) &&
-    typeof value.stale === "boolean"
+    typeof value.stale === "boolean" &&
+    (value.startedAt === undefined ||
+      (value.startedAt === null ||
+        (typeof value.startedAt === "number" && Number.isSafeInteger(value.startedAt)))) &&
+    (value.lastActiveAt === undefined ||
+      (value.lastActiveAt === null ||
+        (typeof value.lastActiveAt === "number" && Number.isSafeInteger(value.lastActiveAt)))) &&
+    (value.staleNotified === undefined || typeof value.staleNotified === "boolean") &&
+    (value.batchId === undefined || value.batchId === null || isString(value.batchId)) &&
+    (value.failCount === undefined ||
+      (typeof value.failCount === "number" &&
+        Number.isSafeInteger(value.failCount) &&
+        value.failCount >= 0)) &&
+    (value.progressSummary === undefined ||
+      value.progressSummary === null ||
+      isString(value.progressSummary)) &&
+    (value.files === undefined ||
+      value.files === null ||
+      (Array.isArray(value.files) && value.files.every((f: unknown) => isString(f)))) &&
+    (value.retryOf === undefined || value.retryOf === null || isString(value.retryOf)) &&
+    (value.model === undefined || value.model === null || isString(value.model)) &&
+    (value.thinkingLevel === undefined ||
+      value.thinkingLevel === null ||
+      isString(value.thinkingLevel))
+  );
+}
+
+/** 小精灵会话段视图的 DTO 校验（时间线指针 + 消息投影）。 */
+function isPixieSegmentView(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "id",
+      "sessionId",
+      "sessionPath",
+      "startedAt",
+      "endedAt",
+      "separator",
+      "reason",
+      "handoff",
+      "messages",
+    ]) &&
+    isString(value.id) &&
+    value.id.length > 0 &&
+    isString(value.sessionId) &&
+    value.sessionId.length > 0 &&
+    isString(value.sessionPath) &&
+    typeof value.startedAt === "number" &&
+    Number.isSafeInteger(value.startedAt) &&
+    (value.endedAt === null ||
+      (typeof value.endedAt === "number" && Number.isSafeInteger(value.endedAt))) &&
+    (value.separator === null || isString(value.separator)) &&
+    (value.reason === null ||
+      value.reason === "agent" ||
+      value.reason === "user" ||
+      value.reason === "rollover") &&
+    (value.handoff === null || isString(value.handoff)) &&
+    Array.isArray(value.messages) &&
+    value.messages.every(isScheduleAgentMessage)
   );
 }
 
@@ -3686,6 +3778,9 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
           "running",
           "error",
           "messages",
+          "segments",
+          "askPending",
+          "modelName",
           "dispatches",
         ]) &&
         typeof result.resident === "boolean" &&
@@ -3694,6 +3789,10 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         (result.error === null || isString(result.error)) &&
         Array.isArray(result.messages) &&
         result.messages.every(isScheduleAgentMessage) &&
+        Array.isArray(result.segments) &&
+        result.segments.every(isPixieSegmentView) &&
+        typeof result.askPending === "boolean" &&
+        (result.modelName === null || isString(result.modelName)) &&
         Array.isArray(result.dispatches) &&
         result.dispatches.every(isPixieDispatchRecord)
         ? null
@@ -3750,6 +3849,67 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         })
         ? null
         : "invalid pixie.usage result";
+    case "pixie.reply":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["ok"]) &&
+        typeof result.ok === "boolean"
+        ? null
+        : "invalid pixie.reply result";
+    case "pixie.setContext":
+      return isPlainObject(result) && hasExactKeys(result, ["ok"]) && result.ok === true
+        ? null
+        : "invalid pixie.setContext result";
+    case "pixie.newSegment":
+      return isPlainObject(result) && hasExactKeys(result, ["ok"]) && result.ok === true
+        ? null
+        : "invalid pixie.newSegment result";
+    case "pixie.interject":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["ok", "error"]) &&
+        typeof result.ok === "boolean" &&
+        (result.error === null || isString(result.error))
+        ? null
+        : "invalid pixie.interject result";
+    case "pixie.stopDispatch":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["ok", "action"]) &&
+        typeof result.ok === "boolean" &&
+        (result.action === "aborted" ||
+          result.action === "already-stopped" ||
+          result.action === "cancelled")
+        ? null
+        : "invalid pixie.stopDispatch result";
+    case "pixie.retryDispatch":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["ok", "dispatchId", "error"]) &&
+        typeof result.ok === "boolean" &&
+        (result.dispatchId === null || isString(result.dispatchId)) &&
+        (result.error === null || isString(result.error))
+        ? null
+        : "invalid pixie.retryDispatch result";
+    case "pixie.listSessions":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["sessions"]) &&
+        Array.isArray(result.sessions) &&
+        result.sessions.every((session: unknown) => {
+          if (!isPlainObject(session) || !hasExactKeys(session, ["id", "path", "createdAt", "lastActiveAt", "turns", "summary"]))
+            return false;
+          return (
+            isString(session.id) &&
+            session.id.length > 0 &&
+            isString(session.path) &&
+            typeof session.createdAt === "number" &&
+            Number.isSafeInteger(session.createdAt) &&
+            typeof session.lastActiveAt === "number" &&
+            Number.isSafeInteger(session.lastActiveAt) &&
+            typeof session.turns === "number" &&
+            Number.isSafeInteger(session.turns) &&
+            session.turns >= 0 &&
+            isString(session.summary)
+          );
+        })
+        ? null
+        : "invalid pixie.listSessions result";
     case "model.list":
       return isPlainObject(result) &&
         hasExactKeys(
@@ -4060,12 +4220,62 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
         : "invalid extensionUi.customClosed payload";
     case "pixie.reportReceived":
       return isPlainObject(payload) &&
-        hasExactKeys(payload, ["dispatchId", "summary"]) &&
+        hasExactKeys(
+          payload,
+          ["dispatchId", "summary", "kind"],
+          ["files", "sessionAlive", "failCount", "errorType", "progress"],
+        ) &&
         isString(payload.dispatchId) &&
         payload.dispatchId.length > 0 &&
-        isString(payload.summary)
+        isString(payload.summary) &&
+        (payload.kind === "done" ||
+          payload.kind === "error" ||
+          payload.kind === "progress" ||
+          payload.kind === "stopped") &&
+        (payload.files === undefined ||
+          (Array.isArray(payload.files) && payload.files.every((f: unknown) => isString(f)))) &&
+        (payload.sessionAlive === undefined ||
+          payload.sessionAlive === "alive" ||
+          payload.sessionAlive === "dead" ||
+          payload.sessionAlive === "stopped") &&
+        (payload.failCount === undefined ||
+          (typeof payload.failCount === "number" &&
+            Number.isSafeInteger(payload.failCount) &&
+            payload.failCount >= 0)) &&
+        (payload.errorType === undefined || isString(payload.errorType)) &&
+        (payload.progress === undefined || isString(payload.progress))
         ? null
         : "invalid pixie.reportReceived payload";
+    case "pixie.askReceived":
+      return isPlainObject(payload) &&
+        hasExactKeys(payload, ["dispatchId", "question", "options"]) &&
+        isString(payload.dispatchId) &&
+        payload.dispatchId.length > 0 &&
+        isString(payload.question) &&
+        Array.isArray(payload.options) &&
+        payload.options.every((option: unknown) => isString(option))
+        ? null
+        : "invalid pixie.askReceived payload";
+    case "pixie.segmentChanged":
+      return isPlainObject(payload) &&
+        hasExactKeys(payload, ["segmentId", "phase"]) &&
+        isString(payload.segmentId) &&
+        payload.segmentId.length > 0 &&
+        (payload.phase === "started" || payload.phase === "ended")
+        ? null
+        : "invalid pixie.segmentChanged payload";
+    case "pixie.staleWarning":
+      return isPlainObject(payload) &&
+        hasExactKeys(payload, ["dispatchId", "minutes", "task", "cwd"]) &&
+        isString(payload.dispatchId) &&
+        payload.dispatchId.length > 0 &&
+        typeof payload.minutes === "number" &&
+        Number.isSafeInteger(payload.minutes) &&
+        payload.minutes > 0 &&
+        isString(payload.task) &&
+        isString(payload.cwd)
+        ? null
+        : "invalid pixie.staleWarning payload";
     default:
       // Exhaustiveness guard — same contract as validateMethodResultShape.
       return assertNeverShape(event, "event payload");

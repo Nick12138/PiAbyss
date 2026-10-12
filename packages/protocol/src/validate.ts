@@ -1634,6 +1634,68 @@ export function validateRequestParams<M extends HostMethod>(
             params.limit > 0))
         ? ok(params)
         : fail("invalid pixie.dispatches params", { method });
+    case "pixie.reply":
+      return exactObject(params, ["dispatchId", "text"]) &&
+        isNonEmptyString(params.dispatchId) &&
+        params.dispatchId.length <= 128 &&
+        isNonEmptyString(params.text) &&
+        params.text.trim().length > 0 &&
+        params.text.length <= 20_000
+        ? ok(params)
+        : fail("invalid pixie.reply params", { method });
+    case "pixie.setContext":
+      return exactObject(params, ["workspaces"]) &&
+        Array.isArray(params.workspaces) &&
+        params.workspaces.length <= 200 &&
+        params.workspaces.every(
+          (value: unknown) => typeof value === "string" && value.length > 0 && value.length <= 1_024,
+        )
+        ? ok(params)
+        : fail("invalid pixie.setContext params", { method });
+    case "pixie.newSegment":
+      return params === null ? ok(null) : fail("params must be null", { method });
+    case "pixie.interject":
+      return exactObject(params, ["dispatchId", "text", "mode"], ["after", "model", "thinkingLevel"]) &&
+        isNonEmptyString(params.dispatchId) &&
+        params.dispatchId.length <= 128 &&
+        isNonEmptyString(params.text) &&
+        params.text.trim().length > 0 &&
+        params.text.length <= 20_000 &&
+        (params.mode === "append" || params.mode === "checkpoint") &&
+        (params.after === undefined ||
+          params.after === "continue" ||
+          params.after === "wait") &&
+        (params.model === undefined ||
+          (isNonEmptyString(params.model) && params.model.length <= 200)) &&
+        (params.thinkingLevel === undefined ||
+          (params.thinkingLevel === "off" ||
+            params.thinkingLevel === "minimal" ||
+            params.thinkingLevel === "low" ||
+            params.thinkingLevel === "medium" ||
+            params.thinkingLevel === "high" ||
+            params.thinkingLevel === "xhigh" ||
+            params.thinkingLevel === "max"))
+        ? ok(params)
+        : fail("invalid pixie.interject params", { method });
+    case "pixie.stopDispatch":
+      return exactObject(params, ["dispatchId"]) &&
+        isNonEmptyString(params.dispatchId) &&
+        params.dispatchId.length <= 128
+        ? ok(params)
+        : fail("invalid pixie.stopDispatch params", { method });
+    case "pixie.retryDispatch":
+      return exactObject(params, ["dispatchId"], ["mode"]) &&
+        isNonEmptyString(params.dispatchId) &&
+        params.dispatchId.length <= 128 &&
+        (params.mode === undefined || params.mode === "resume" || params.mode === "redispatch")
+        ? ok(params)
+        : fail("invalid pixie.retryDispatch params", { method });
+    case "pixie.listSessions":
+      return exactObject(params, ["cwd"]) &&
+        isNonEmptyString(params.cwd) &&
+        params.cwd.length <= 1_024
+        ? ok(params)
+        : fail("invalid pixie.listSessions params", { method });
     default:
       // Exhaustiveness guard: adding a HostMethod without a params validator
       // is a compile error here, not a silently-undefined result at runtime.

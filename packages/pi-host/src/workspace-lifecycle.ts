@@ -511,6 +511,130 @@ export class WorkspaceLifecycle {
     }
   }
 
+  /**
+   * Build (or reuse) a fully bound workspace graph WITHOUT switching the
+   * foreground: the built graph is retained (parked) instead of committed to
+   * `setGraph`, no optimistic shell event is emitted, and `server.identity`
+   * stays untouched. Serves the pixie delegation engine (dispatch into a
+   * workspace the user has not opened) — the graph then behaves exactly like
+   * any other parked graph: visible in host.statusChanged boundWorkspaces,
+   * reactivated (not rebuilt) by the next foreground switch, evictable by the
+   * retained-graph LRU bound.
+   *
+   * Idempotent: an already-bound graph for the same canonical cwd (active,
+   * parked, or mid-switch) is returned as-is. Concurrency: the same
+   * serviceGraphLock + graphOperations slot discipline as setCurrent guards
+   * the shared model runtime; the operation slot is acquired non-superseding
+   * (a pixie delegation never cancels a user's in-flight switch) and fails
+   * busy instead.
+   */
+  async ensureBackgroundGraph(cwd: string): Promise<{ graph: WorkspaceGraph } | { error: HostError }> {
+    const server = this.context.getServer();
+    if (!server) {
+      return { error: createHostError("HOST_NOT_READY", "Server not bound") };
+    }
+    let canonical: string;
+    try {
+      canonical = this.canonicalizeCwd(cwd);
+    } catch (err) {
+      const hostError = err as HostError;
+      if (hostError && typeof hostError === "object" && "code" in hostError) {
+        return { error: hostError };
+      }
+      return { error: createHostError("WORKSPACE_SWITCH_FAILED", String(err)) };
+    }
+    // Idempotent short-circuit: active, mid-switch, or already retained.
+    const activeGraph = this.context.getGraph();
+    if (activeGraph && workspaceCanonicalPathsEqual(activeGraph.canonicalCwd, canonical)) {
+      return { graph: activeGraph };
+    }
+    if (this.reactivatingGraph && workspaceCanonicalPathsEqual(this.reactivatingGraph.canonicalCwd, canonical)) {
+      return { graph: this.reactivatingGraph };
+    }
+    if (this.parkingGraph && workspaceCanonicalPathsEqual(this.parkingGraph.canonicalCwd, canonical)) {
+      return { graph: this.parkingGraph };
+    }
+    const retained = this.retainedGraphs.get(this.retainedGraphKey(canonical));
+    if (retained) return { graph: retained };
+
+    const requestId = randomUUID();
+    const operation = server.graphOperations.begin({
+      operationKind: "workspace.ensureBackground",
+      requestId,
+      operationId: randomUUID(),
+    });
+    if (!operation) {
+      return {
+        error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
+          retryable: true,
+          details: {
+            operationKind: server.graphOperations.getActive()?.operationKind ?? null,
+          },
+        }),
+      };
+    }
+    try {
+      const lockState = await acquireWithAbort(
+        server.serviceGraphLock,
+        { operationKind: "workspace.ensureBackground", requestId },
+        WORKSPACE_SWITCH_LOCK_WAIT_MS,
+        operation.signal,
+      );
+      if (lockState !== true) {
+        return {
+          error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
+            retryable: true,
+            details: {
+              operationKind: server.serviceGraphLock.getOwner()?.operationKind ?? null,
+            },
+          }),
+        };
+      }
+      operation.signal.throwIfAborted();
+      // Re-check under the lock: a concurrent switch may have built it.
+      const activeNow = this.context.getGraph();
+      if (activeNow && workspaceCanonicalPathsEqual(activeNow.canonicalCwd, canonical)) {
+        return { graph: activeNow };
+      }
+      const retainedNow = this.retainedGraphs.get(this.retainedGraphKey(canonical));
+      if (retainedNow) return { graph: retainedNow };
+      const built = await this.buildServices({
+        workspaceId: randomUUID(),
+        cwd,
+        canonicalCwd: canonical,
+        // Placeholder revision: commitReactivateRetainedGraph rewrites the
+        // graph's revision at the next foreground switch, and identity checks
+        // compare (workspaceId, revision) pairs — cross-graph collisions are
+        // meaningless.
+        revision: server.identity.workspaceRevision + 1,
+        sessionRevision: 0,
+        packageRevision: 0,
+      });
+      if ("error" in built) return built;
+      // Retain (park) instead of committing to the foreground. The idle
+      // branch unsubscribes agent events, suspends providers, and runs the
+      // retained-graph LRU eviction — exactly the parked-graph semantics a
+      // background-built graph should carry.
+      await this.retainGraph(built.graph);
+      logger.info("Background workspace graph built and retained", {
+        cwd: canonical,
+        workspaceId: built.graph.workspaceId,
+      });
+      return { graph: built.graph };
+    } catch (err) {
+      return {
+        error: createHostError(
+          "WORKSPACE_SWITCH_FAILED",
+          err instanceof Error ? err.message : "Background workspace build failed",
+          { retryable: operation.signal.aborted },
+        ),
+      };
+    } finally {
+      server.serviceGraphLock.release(requestId);
+      operation.finish();
+    }
+  }
+
   /** Test seam: await every in-flight optimistic workspace build. */
   async flushOptimisticBuilds(): Promise<void> {
     while (this.optimisticBuilds.size > 0) {

@@ -36,6 +36,9 @@ export const HOST_EVENT_NAMES = [
   "extensionUi.customFrame",
   "extensionUi.customClosed",
   "pixie.reportReceived",
+  "pixie.askReceived",
+  "pixie.segmentChanged",
+  "pixie.staleWarning",
 ] as const;
 
 export type HostEventName = (typeof HOST_EVENT_NAMES)[number];

@@ -175,6 +175,13 @@ export const HOST_METHODS = [
   "pixie.transcript",
   "pixie.dispatches",
   "pixie.usage",
+  "pixie.reply",
+  "pixie.setContext",
+  "pixie.newSegment",
+  "pixie.interject",
+  "pixie.stopDispatch",
+  "pixie.retryDispatch",
+  "pixie.listSessions",
 ] as const;
 
 export type HostMethod = (typeof HOST_METHODS)[number];
@@ -287,7 +294,14 @@ export type HostOnlyMethod =
   | "pixie.abort"
   | "pixie.transcript"
   | "pixie.dispatches"
-  | "pixie.usage";
+  | "pixie.usage"
+  | "pixie.reply"
+  | "pixie.setContext"
+  | "pixie.newSegment"
+  | "pixie.interject"
+  | "pixie.stopDispatch"
+  | "pixie.retryDispatch"
+  | "pixie.listSessions";
 export type WorkspaceOnlyMethod =
   | "workspace.setCurrent"
   | "workspace.getCurrent"
@@ -587,6 +601,13 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "pixie.transcript": "host",
   "pixie.dispatches": "host",
   "pixie.usage": "host",
+  "pixie.reply": "host",
+  "pixie.setContext": "host",
+  "pixie.newSegment": "host",
+  "pixie.interject": "host",
+  "pixie.stopDispatch": "host",
+  "pixie.retryDispatch": "host",
+  "pixie.listSessions": "host",
   "extensionUi.respond": "sessionTarget",
   "extensionUi.customInput": "sessionTarget",
   "extensionUi.customResize": "sessionTarget",

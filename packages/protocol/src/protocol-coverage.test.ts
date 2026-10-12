@@ -361,6 +361,20 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "pixie.transcript": { sessionPath: "C:/s.jsonl" },
   "pixie.dispatches": { limit: 20 },
   "pixie.usage": null,
+  "pixie.reply": { dispatchId: "pix_abc", text: "选方案 A" },
+  "pixie.setContext": { workspaces: ["C:/work/alpha"] },
+  "pixie.newSegment": null,
+  "pixie.interject": {
+    dispatchId: "pix_abc",
+    text: "先汇报一下当前进度",
+    mode: "checkpoint",
+    after: "wait",
+    model: "anthropic/claude-sonnet-4-5",
+    thinkingLevel: "high",
+  },
+  "pixie.stopDispatch": { dispatchId: "pix_abc" },
+  "pixie.retryDispatch": { dispatchId: "pix_abc", mode: "resume" },
+  "pixie.listSessions": { cwd: "C:/work/alpha" },
 };
 
 function contextFor(method: HostMethod): Record<string, unknown> {
@@ -679,6 +693,20 @@ function invalidParams(method: HostMethod): unknown {
       return { sessionPath: "" };
     case "pixie.dispatches":
       return { limit: 0 };
+    case "pixie.reply":
+      return { dispatchId: "", text: "x" };
+    case "pixie.setContext":
+      return { workspaces: [42] };
+    case "pixie.newSegment":
+      return { unexpected: true };
+    case "pixie.interject":
+      return { dispatchId: "", text: "x", mode: "nonsense", thinkingLevel: "ultra" };
+    case "pixie.stopDispatch":
+      return { dispatchId: "" };
+    case "pixie.retryDispatch":
+      return { dispatchId: "", mode: "nonsense" };
+    case "pixie.listSessions":
+      return { cwd: "" };
     case "schedule.agentTranscript":
       return { sessionPath: "" };
     default:
@@ -1097,7 +1125,15 @@ describe("protocol coverage — events", () => {
     },
     "extensionUi.customFrame": { requestId: EXTENSION_REQUEST_ID, data: "\x1b[2J" },
     "extensionUi.customClosed": { requestId: EXTENSION_REQUEST_ID },
-    "pixie.reportReceived": { dispatchId: RUN_ID, summary: "已完成，总结如下" },
+    "pixie.reportReceived": {
+      dispatchId: RUN_ID,
+      summary: "已完成，总结如下",
+      kind: "done",
+      files: ["C:/work/out/report.md"],
+    },
+    "pixie.askReceived": { dispatchId: RUN_ID, question: "选哪个方案？", options: ["方案 A", "方案 B"] },
+    "pixie.segmentChanged": { segmentId: RUN_ID, phase: "started" },
+    "pixie.staleWarning": { dispatchId: RUN_ID, minutes: 35, task: "跑测试", cwd: "C:/work/alpha" },
   };
 
   for (const event of HOST_EVENT_NAMES) {
