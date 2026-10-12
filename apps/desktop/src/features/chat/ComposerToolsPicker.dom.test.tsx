@@ -128,7 +128,7 @@ function catalog(): PluginLibraryCatalog {
   };
 }
 
-/** Snapshot with the seven built-ins, the attachment tool, a workspace-
+/** Snapshot with the built-ins, the attachment tool, a workspace-
  *  toggleable plugin tool and a global-only plugin tool. */
 const FULL_TOOLS: ToolSnapshot["tools"] = [
   { name: "read", sourcePath: "<builtin:read>" },
@@ -138,6 +138,7 @@ const FULL_TOOLS: ToolSnapshot["tools"] = [
   { name: "grep", sourcePath: "<builtin:grep>" },
   { name: "find", sourcePath: "<builtin:find>" },
   { name: "ls", sourcePath: "<builtin:ls>" },
+  { name: "powershell", sourcePath: "<builtin:powershell>" },
   { name: "read_attachment", sourcePath: "<sdk:read_attachment>" },
   {
     name: "shelljob",
@@ -249,12 +250,42 @@ describe("ComposerToolsPicker", () => {
     // Only the workspace-toggleable plugin group remains visible.
     expect(screen.getByRole("menuitemcheckbox", { name: /后台 Shell/ })).toBeInTheDocument();
     expect(screen.queryByRole("menuitemcheckbox", { name: /备忘录/ })).not.toBeInTheDocument();
-    for (const builtin of ["read", "bash", "edit", "write", "grep", "find", "ls"]) {
+    for (const builtin of ["read", "bash", "edit", "write", "grep", "find", "ls", "powershell"]) {
       expect(screen.queryByRole("menuitemcheckbox", { name: builtin })).not.toBeInTheDocument();
     }
     expect(
       screen.queryByRole("menuitemcheckbox", { name: "read_attachment" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("never offers powershell — it is always on and hidden from every surface", async () => {
+    // Regression: the picker used its own hardcoded builtin list, so adding
+    // powershell to BUILTIN_TOOLS left it rendered as a stray, uncheckable-by-
+    // design row that could actually be switched off.
+    const tools = toolSnapshot(FULL_TOOLS, [
+      "read",
+      "bash",
+      "powershell",
+      "shelljob",
+    ]);
+    useAppStore.getState().applySessionSnapshot(session(tools));
+    const request = mockCatalogRequests();
+    render(<ComposerToolsPicker />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Tools for this conversation" }));
+    expect(
+      screen.queryByRole("menuitemcheckbox", { name: /powershell/i }),
+    ).not.toBeInTheDocument();
+
+    // Toggling a visible group must carry the hidden powershell along, not
+    // silently drop it from the active set.
+    await user.click(screen.getByRole("menuitemcheckbox", { name: /后台 Shell/ }));
+    await vi.waitFor(() => {
+      const call = request.mock.calls.find(([method]) => method === "agent.setActiveTools");
+      expect(call).toBeDefined();
+      expect((call![2] as { names: string[] }).names).toContain("powershell");
+    });
   });
 
   it("groups a plugin's tools into one switch row (not one row per tool)", async () => {

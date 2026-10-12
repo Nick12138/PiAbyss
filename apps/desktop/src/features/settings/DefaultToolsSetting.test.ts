@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { BUILTIN_TOOLS, DEFAULT_TOOLS, normalizeSelectedTools } from "./DefaultToolsSetting";
+import { BUILTIN_TOOLS, DEFAULT_TOOLS } from "../../lib/builtin-tools";
+import { normalizeSelectedTools } from "./DefaultToolsSetting";
 
 describe("default tool options", () => {
   it("offers every built-in tool pi ships", () => {

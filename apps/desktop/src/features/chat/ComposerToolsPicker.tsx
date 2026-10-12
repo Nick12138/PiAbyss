@@ -13,16 +13,12 @@ import {
   isGlobalOnlyPluginTool,
   pluginEntryForTool,
 } from "../plugin-library/plugin-library-model";
+import { BUILTIN_TOOL_NAMES } from "../../lib/builtin-tools";
 
 /** Host-side attachment tool, force-appended to every active set by
  *  agent.setActiveTools (agent-controller.ts). Never user-togglable —
  *  hide it so the checkbox states match what the Host actually saves. */
 const READ_ATTACHMENT_TOOL_NAME = "read_attachment";
-
-/** Built-in tools pi ships (mirrors BUILTIN_TOOLS in DefaultToolsSetting).
- *  The per-conversation picker only offers plugin-provided tools: built-ins
- *  are managed globally in Settings → General → 默认工具. */
-const BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
 
 /** Tool selection for a brand-new conversation's composer toolbar.
  *
@@ -37,7 +33,7 @@ const BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", "fi
  *
  * Menu contents: plugin tools only, grouped one row per plugin — a plugin's
  * switch toggles all of its tools together (mirrors the plugin-library card
- * switch). The seven built-in tools and tools from global-only plugins
+ * switch). Every tool in BUILTIN_TOOLS and tools from global-only plugins
  * (`toggleScopes: ["user"]` in the plugin registry) are hidden — but their
  * active state is preserved on every mutation, so toggling a visible group
  * never silently disables a hidden tool. The trigger is icon-only until the
