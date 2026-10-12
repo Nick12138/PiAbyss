@@ -350,6 +350,11 @@ export class WorkspaceGraphFactory {
     return this.workspaceLifecycle.invalidateRetainedRuntimeCaches();
   }
 
+  /** Reload parked graphs' in-memory settings after host-level settings writes. */
+  async refreshRetainedGraphSettings(): Promise<void> {
+    return this.workspaceLifecycle.refreshRetainedGraphSettings();
+  }
+
   /** @internal — session-lifecycle module */
   async activateExtensionUi(g: WorkspaceGraph): Promise<() => void> {
     return activateOnce(g);

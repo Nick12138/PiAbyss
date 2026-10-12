@@ -21,6 +21,7 @@ function mockFactory(opts: {
   graphBusy?: boolean;
   graphBusyAfterAgentAcquire?: boolean;
   agentBusy?: boolean;
+  parkedBusy?: boolean;
 }): WorkspaceGraphFactory {
   const globalSettings = {
     packages: [] as unknown[],
@@ -74,12 +75,15 @@ function mockFactory(opts: {
         themes: [],
       }),
       setProgressCallback: () => {},
+      getInstalledPath: vi.fn((): string | null => null),
     },
     settingsManager: {
       flush: async () => {},
       drainErrors: () => [],
       getGlobalSettings: () => globalSettings,
       getProjectSettings: () => projectSettings,
+      getPackages: vi.fn((): unknown[] => []),
+      setPackages: vi.fn(),
       setExtensionPaths: vi.fn((paths: string[]) => {
         globalSettings.extensions = paths;
       }),
@@ -167,14 +171,18 @@ function mockFactory(opts: {
     getGraph: () => g,
     getServer: () => server,
     getSessionOperationLock: () => server.agentOperationLock,
+    // Active-graph busy check: a "parked" run in another workspace must not
+    // flip this one (sessionRuntimeCache.hasBusySessions semantics).
     hasBusySessions: () => opts.agentBusy === true || !g.agentSession.isIdle,
-    hasAnyBusySessions: () => opts.agentBusy === true || !g.agentSession.isIdle,
+    hasAnyBusySessions: () =>
+      opts.parkedBusy === true || opts.agentBusy === true || !g.agentSession.isIdle,
     setSessionRunId: () => {},
     clearSessionRunId: () => {},
     publishCurrentRuntimeState: vi.fn(),
     publishCurrentRuntimeStateForSession: vi.fn(),
     currentSessionIdentity: vi.fn(() => null),
     invalidateRetainedRuntimeCaches: vi.fn(async () => {}),
+    refreshRetainedGraphSettings: vi.fn(async () => {}),
     setActiveSessionName: vi.fn((name: string) => {
       g.agentSession.setSessionName(name);
       const snapshot = { sessionId: "s1", name };
@@ -736,5 +744,136 @@ describe("uninstalled-package ENOENT tolerance", () => {
 
     expect("error" in out && out.error.code).toBe("PACKAGE_REMOVE_FAILED");
     expect(pm.removeSourceFromSettings).not.toHaveBeenCalled();
+  });
+});
+
+describe("package mutation busy gating scope", () => {
+  const REPO_SOURCE = "git:github.com/Nick12138/my-pi-plugins";
+
+  function seedExtensionResource(graph: { resourceIdMap: Map<string, unknown> }): void {
+    graph.resourceIdMap.set("resource-extension", {
+      type: "extension",
+      scope: "user",
+      path: "/tmp/.pi/extensions/example.ts",
+      baseDir: "/tmp/.pi",
+      relativePath: "extensions/example.ts",
+      origin: "top-level",
+      configurableScopes: ["user"],
+    });
+  }
+
+  it("allows settings-only preference toggles while a parked workspace runs", async () => {
+    const factory = mockFactory({ resourceReloadRequired: false, parkedBusy: true });
+    const g = factory.getGraph()!;
+    seedExtensionResource(g);
+
+    const out = await createPackageHandlers(factory)["resource.setPreferences"]!({
+      ...reloadCtx,
+      id: "req-pref-parked-busy",
+      params: {
+        updates: [
+          { resourceId: "resource-extension", targetScope: "user", preference: "disabled" },
+        ],
+      },
+    } as never);
+
+    expect("error" in out).toBe(false);
+    expect(g.agentSession!.reload).toHaveBeenCalledTimes(1);
+    // Parked graphs' in-memory settings must be refreshed behind the write.
+    expect(factory.refreshRetainedGraphSettings).toHaveBeenCalled();
+    // The parked run survives the packageBusy phase: restore agentBusy, not ready.
+    expect(factory.getServer()!.getPhase()).toBe("agentBusy");
+  });
+
+  it("still rejects settings-only toggles while the active workspace runs", async () => {
+    const factory = mockFactory({ resourceReloadRequired: false, agentBusy: true });
+    const g = factory.getGraph()!;
+    seedExtensionResource(g);
+
+    const out = await createPackageHandlers(factory)["resource.setPreferences"]!({
+      ...reloadCtx,
+      id: "req-pref-active-busy",
+      params: {
+        updates: [
+          { resourceId: "resource-extension", targetScope: "user", preference: "disabled" },
+        ],
+      },
+    } as never);
+
+    expect("error" in out && out.error.code).toBe("AGENT_BUSY");
+    expect(g.agentSession!.reload).not.toHaveBeenCalled();
+  });
+
+  it("keeps the host-wide gate for disk-touching installs", async () => {
+    const factory = mockFactory({ resourceReloadRequired: false, parkedBusy: true });
+
+    const out = await createPackageHandlers(factory)["package.install"]!({
+      ...reloadCtx,
+      id: "req-install-parked-busy",
+      params: { source: "npm:some-pkg", scope: "user" },
+    } as never);
+
+    expect("error" in out && out.error.code).toBe("AGENT_BUSY");
+  });
+
+  it("treats a plugin library apply on an installed package as settings-only", async () => {
+    const factory = mockFactory({ resourceReloadRequired: false, parkedBusy: true });
+    const g = factory.getGraph()!;
+    const pm = g.packageManager as unknown as { getInstalledPath: ReturnType<typeof vi.fn> };
+    pm.getInstalledPath.mockReturnValue(`/agent/git/${REPO_SOURCE.slice("git:".length)}`);
+    const sm = g.settingsManager as unknown as {
+      getPackages: ReturnType<typeof vi.fn>;
+      setPackages: ReturnType<typeof vi.fn>;
+    };
+    sm.getPackages.mockReturnValue([
+      { source: REPO_SOURCE, extensions: ["+packages/foo/extensions/**"] },
+    ]);
+
+    const out = await createPackageHandlers(factory)["pluginLibrary.apply"]!({
+      ...reloadCtx,
+      id: "req-plugin-apply-installed",
+      params: { source: REPO_SOURCE, pattern: "packages/foo/extensions/**", enabled: false },
+    } as never);
+
+    expect("error" in out).toBe(false);
+    expect(sm.setPackages).toHaveBeenCalled();
+    expect(g.agentSession!.reload).toHaveBeenCalledTimes(1);
+    expect(factory.refreshRetainedGraphSettings).toHaveBeenCalled();
+    expect(factory.getServer()!.getPhase()).toBe("agentBusy");
+  });
+
+  it("keeps the host-wide gate for plugin library installs of missing packages", async () => {
+    const factory = mockFactory({ resourceReloadRequired: false, parkedBusy: true });
+
+    const out = await createPackageHandlers(factory)["pluginLibrary.apply"]!({
+      ...reloadCtx,
+      id: "req-plugin-apply-missing",
+      params: {
+        source: REPO_SOURCE,
+        pattern: "packages/foo/extensions/**",
+        enabled: true,
+      },
+    } as never);
+
+    expect("error" in out && out.error.code).toBe("AGENT_BUSY");
+  });
+
+  it("restores the ready phase when no workspace stayed busy", async () => {
+    const factory = mockFactory({ resourceReloadRequired: false });
+    const g = factory.getGraph()!;
+    seedExtensionResource(g);
+
+    const out = await createPackageHandlers(factory)["resource.setPreferences"]!({
+      ...reloadCtx,
+      id: "req-pref-idle",
+      params: {
+        updates: [
+          { resourceId: "resource-extension", targetScope: "user", preference: "disabled" },
+        ],
+      },
+    } as never);
+
+    expect("error" in out).toBe(false);
+    expect(factory.getServer()!.getPhase()).toBe("ready");
   });
 });

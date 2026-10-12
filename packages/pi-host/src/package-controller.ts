@@ -518,6 +518,49 @@ export function packageMutationMayChangeDisk(kind: MutateKind): boolean {
   );
 }
 
+/**
+ * True for mutations that only write settings files: resource preference
+ * toggles (plugin/skill switches in the settings pages), and a plugin library
+ * apply whose package is already installed on disk — that path only flips
+ * the filter entry in user-level settings and never downloads or removes
+ * files. These never reshape the shared package tree under parked graphs.
+ */
+function isSettingsOnlyPackageMutation(
+  g: WorkspaceGraph,
+  kind: MutateKind,
+  params: unknown,
+): boolean {
+  if (kind === "setPreferences") return true;
+  if (kind !== "pluginLibraryApply") return false;
+  const p = params as { source?: unknown } | null;
+  if (!p || typeof p.source !== "string") return false;
+  try {
+    return Boolean(g.packageManager?.getInstalledPath?.(p.source, "user"));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Busy gate for package mutations. Disk-touching kinds keep the host-wide
+ * gate: parked workspaces may lazily load from the shared tree, so their
+ * live sessions must be quiet. Settings-file-only writes require just the
+ * ACTIVE workspace to be quiet — their reload runs through the active
+ * graph's AgentSession — while busy sessions in parked workspaces keep
+ * their loaded resources and pick the change up on their next reload or
+ * rebuild (same policy as the skills settings write paths).
+ */
+function packageMutationBusyError(
+  factory: WorkspaceGraphFactory,
+  settingsOnly: boolean,
+): ReturnType<typeof createHostError> | null {
+  const busy = settingsOnly ? factory.hasBusySessions() : factory.hasAnyBusySessions();
+  if (!busy) return null;
+  return createHostError("AGENT_BUSY", "Stop the agent before modifying packages", {
+    retryable: true,
+  });
+}
+
 function operationKindForPackageMutation(
   kind: MutateKind,
 ): "package.reload" | "resource.setPreferences" | "package.mutation" {
@@ -758,15 +801,14 @@ async function mutatePackageUnderLock(
     return { error: createHostError("AGENT_NOT_READY", "Workspace services not ready") };
   }
 
-  // Parked workspaces may still be running sessions; a package mutation would
-  // pull resources out from under them.
-  if (factory.hasAnyBusySessions()) {
-    return {
-      error: createHostError("AGENT_BUSY", "Stop the agent before modifying packages", {
-        retryable: true,
-      }),
-    };
-  }
+  // Settings-file-only writes (preference toggles; filter flips on installed
+  // packages) never touch the shared package tree, so busy sessions in parked
+  // workspaces can keep running — they hold their loaded resources and never
+  // re-read settings mid-run. Disk-touching mutations keep the host-wide
+  // gate: they reshape files under every bound graph.
+  const settingsOnly = isSettingsOnlyPackageMutation(g, kind, ctx.params);
+  const busy = packageMutationBusyError(factory, settingsOnly);
+  if (busy) return { error: busy };
 
   if (
     !server.serviceGraphLock.tryAcquire({
@@ -821,14 +863,11 @@ async function mutatePackageUnderLock(
       requirePackage: true,
     });
     if (stale2) return { error: stale2 };
-    // Re-check under the lock, including parked workspaces' live sessions.
-    if (factory.hasAnyBusySessions()) {
-      return {
-        error: createHostError("AGENT_BUSY", "Stop the agent before modifying packages", {
-          retryable: true,
-        }),
-      };
-    }
+    // Re-check under the lock. Settings-only writes stay scoped to the
+    // active graph; disk mutations keep the host-wide check, including
+    // parked workspaces' live sessions.
+    const busyUnderLock = packageMutationBusyError(factory, settingsOnly);
+    if (busyUnderLock) return { error: busyUnderLock };
 
     // Cached runtimes own resource loaders and extension/model state from
     // before this mutation. Drop Session and Workspace caches together.
@@ -857,6 +896,15 @@ async function mutatePackageUnderLock(
       }
     } catch (err) {
       flushError = err instanceof Error ? err : new Error(String(err));
+    }
+
+    if (settingsOnly) {
+      // The user-level settings file changed behind parked graphs' backs.
+      // Reload their in-memory settings so the next session created there
+      // observes the new preferences without waiting for a fingerprint
+      // rebuild; busy graphs' running sessions are untouched by a settings
+      // reload. (Idle parked graphs were already dropped above.)
+      await factory.refreshRetainedGraphSettings?.();
     }
 
     let afterDiskFingerprint = beforeDiskFingerprint;
@@ -1087,7 +1135,9 @@ async function mutatePackageUnderLock(
   } finally {
     server.serviceGraphLock.release(ctx.id);
     if (server.getPhase() === "packageBusy") {
-      server.setPhase("ready");
+      // A parked workspace may have kept running through a settings-only
+      // mutation; restore the host-wide agent phase instead of "ready".
+      server.setPhase(factory.hasAnyBusySessions() ? "agentBusy" : "ready");
     }
   }
 }

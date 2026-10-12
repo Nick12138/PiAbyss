@@ -371,6 +371,32 @@ describe("Workspace lifecycle busy-graph parking", () => {
     expect(subject.isBoundGraph(busy)).toBe(false);
   });
 
+  it("reloads every retained graph settings and tolerates failures", async () => {
+    const subject = lifecycle("linux");
+    const parkedReload = vi.fn(async () => {});
+    const brokenReload = vi.fn(async () => {
+      throw new Error("boom");
+    });
+    const parked = {
+      canonicalCwd: "/repo/parked",
+      settingsManager: { reload: parkedReload },
+    } as unknown as WorkspaceGraph;
+    const broken = {
+      canonicalCwd: "/repo/broken",
+      settingsManager: { reload: brokenReload },
+    } as unknown as WorkspaceGraph;
+    const bare = { canonicalCwd: "/repo/bare" } as WorkspaceGraph;
+    const internal = subject as unknown as { retainedGraphs: Map<string, WorkspaceGraph> };
+    internal.retainedGraphs.set(workspaceIdentityKey("/repo/parked", "linux"), parked);
+    internal.retainedGraphs.set(workspaceIdentityKey("/repo/broken", "linux"), broken);
+    internal.retainedGraphs.set(workspaceIdentityKey("/repo/bare", "linux"), bare);
+
+    await expect(subject.refreshRetainedGraphSettings()).resolves.toBeUndefined();
+
+    expect(parkedReload).toHaveBeenCalledTimes(1);
+    expect(brokenReload).toHaveBeenCalledTimes(1);
+  });
+
   it("answers bound-workspace identity questions across active and retained graphs", async () => {
     const active = { ...retainableGraph("/repo/active"), workspaceId: "workspace-a", revision: 7 };
     const subject = lifecycleWith({ platform: "linux", active });

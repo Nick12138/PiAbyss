@@ -221,6 +221,27 @@ export class WorkspaceLifecycle {
     await this.disposeRetainedGraphs({ skipBusy: true });
   }
 
+  /**
+   * Reload every parked graph's in-memory settings after a host-level
+   * settings write (e.g. user-scope plugin preference toggles) changed the
+   * settings files behind their backs. Running sessions never re-read
+   * settings mid-run — the refresh only guarantees the NEXT session created
+   * in a parked workspace observes the new state without waiting for
+   * fingerprint drift to rebuild the graph.
+   */
+  async refreshRetainedGraphSettings(): Promise<void> {
+    for (const graph of this.retainedGraphs.values()) {
+      try {
+        await graph.settingsManager?.reload();
+      } catch (error) {
+        logger.warn("Retained graph settings reload failed", {
+          cwd: graph.canonicalCwd,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
   async setCurrent(
     cwd: string,
     requestId: string,
