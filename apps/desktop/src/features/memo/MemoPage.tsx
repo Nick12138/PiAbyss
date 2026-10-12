@@ -7,14 +7,13 @@
  * 数据全部经 pi-host 的 memo.* 协议方法落盘（v1 纯本地）。
  */
 import {
-  Archive,
-  ArchiveRestore,
   ArrowLeft,
   Bot,
   Check,
   CheckCircle2,
   ChevronDown,
   CircleAlert,
+  Clock,
   Eraser,
   Loader2,
   Pencil,
@@ -39,8 +38,8 @@ import {
   type KeyboardEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import type { MemoNote, MemoNoteStatus } from "@piabyss/protocol";
-import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
+import type { MemoNote, MemoNoteStatus, MemoRecurrence } from "@piabyss/protocol";
+import { Dialog, primaryButton } from "../../components/Dialog";
 import { LightboxImage } from "../../components/ImageLightbox";
 import { Select } from "../../components/Select";
 import { useT, type Translate } from "../../lib/i18n/use-t";
@@ -59,6 +58,7 @@ import { createNewSession } from "../../lib/commands/actions";
 import { useAppStore } from "../../lib/stores/app-store";
 import {
   clearMemoDraft,
+  completeMemoNote,
   createMemoNote,
   optimizeMemo,
   deleteMemoNote,
@@ -80,6 +80,7 @@ import {
   extractTags,
   filterNotes,
   formatMemoDateTime,
+  isMemoOverdue,
   noteExcerpt,
   noteMatchesWorkspace,
   pathBasename,
@@ -90,8 +91,14 @@ import {
   withMemoPrompt,
   type MemoStatusFilter,
 } from "./memo-model";
+import {
+  emptySchedule,
+  formatRecurrenceText,
+  MemoScheduleEditor,
+  noteScheduleSummary,
+} from "./MemoScheduleEditor";
 
-const STATUS_TABS: readonly MemoStatusFilter[] = ["open", "in_progress", "done", "archived"];
+const STATUS_TABS: readonly MemoStatusFilter[] = ["open", "in_progress", "done"];
 
 /**
  * 查看态的 Markdown 渲染器（Streamdown + shiki/mermaid，体积可观）。
@@ -126,6 +133,10 @@ type EditorState = {
   id: string | null;
   contentMd: string;
   workspaceHint: string;
+  /** 计划：一次性截止时刻（epoch ms）；null = 无截止。 */
+  dueAt: number | null;
+  /** 计划：周期规则；null = 非周期记录。 */
+  recurrence: MemoRecurrence | null;
   pendingImages: PendingImage[];
   removedImageIds: string[];
 };
@@ -162,7 +173,6 @@ export function MemoPage() {
   const [draftEpoch, setDraftEpoch] = useState(0);
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [confirmingClear, setConfirmingClear] = useState(false);
   const [confirmingClearResult, setConfirmingClearResult] = useState(false);
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
   const [dragOver, setDragOver] = useState(false);
@@ -386,6 +396,7 @@ export function MemoPage() {
       id: null,
       contentMd: "",
       workspaceHint: cwd ? pathBasename(cwd) : "",
+      ...emptySchedule(),
       pendingImages: [],
       removedImageIds: [],
     };
@@ -394,7 +405,6 @@ export function MemoPage() {
   /** 保存/取消查看后回到全新的新建表单（epoch 变化触发重新挂载以 autofocus）；窄屏下同时回到列表栏。 */
   function resetToCreate() {
     setConfirmingDelete(false);
-    setConfirmingClear(false);
     setSelectedId(null);
     setPane("list");
     setDraftEpoch((epoch) => epoch + 1);
@@ -413,6 +423,8 @@ export function MemoPage() {
       id: note.id,
       contentMd: seeded,
       workspaceHint: note.workspaceHint ?? "",
+      dueAt: note.dueAt,
+      recurrence: note.recurrence,
       pendingImages: note.images.map((image) => ({
         key: `existing:${image.id}`,
         fileName: image.fileName,
@@ -467,7 +479,14 @@ export function MemoPage() {
     if (!editor || editor.id !== null) return;
     pendingDraftRef.current = null;
     void clearMemoDraft().catch(() => undefined);
-    setEditor({ ...editor, contentMd: "", pendingImages: [], removedImageIds: [] });
+    setEditor({
+      ...editor,
+      contentMd: "",
+      dueAt: null,
+      recurrence: null,
+      pendingImages: [],
+      removedImageIds: [],
+    });
   }
 
   async function saveEditor() {
@@ -485,6 +504,8 @@ export function MemoPage() {
           contentMd: editor.contentMd,
           tags,
           workspaceHint: hint,
+          dueAt: editor.dueAt,
+          recurrence: editor.recurrence,
           images: editor.pendingImages.map(({ fileName, mediaType, dataBase64 }) => ({
             fileName,
             mediaType,
@@ -492,11 +513,18 @@ export function MemoPage() {
           })),
         });
       } else {
+        const original = (notes ?? []).find((entry) => entry.id === editor.id) ?? null;
         await updateMemoNote(editor.id, {
           title,
           contentMd: editor.contentMd,
           tags,
           workspaceHint: hint,
+          // 计划字段仅在真正变化时提交：否则仅改正文也会触发 nextDueAt 重算
+          // （Host 侧更新 recurrence 时会以当前时刻滚动下一轮）。
+          ...(original && original.dueAt !== editor.dueAt ? { dueAt: editor.dueAt } : {}),
+          ...(original && JSON.stringify(original.recurrence) !== JSON.stringify(editor.recurrence)
+            ? { recurrence: editor.recurrence }
+            : {}),
           addImages: editor.pendingImages
             .filter((image) => image.existingId === undefined)
             .map(({ fileName, mediaType, dataBase64 }) => ({
@@ -545,23 +573,25 @@ export function MemoPage() {
     }
   }
 
-  /** 列表内联归档/取消归档：成功后该记录离开当前页签，回到新建表单。 */
-  async function toggleFromList(note: MemoNote, status: MemoNoteStatus) {
-    const updated = await setStatus(note, status);
-    if (updated && selectedId === note.id) resetToCreate();
-  }
-
-  /** 一键清空全部已归档记录（二次确认后执行）。 */
-  async function clearArchived() {
-    if (!confirmingClear) {
-      setConfirmingClear(true);
-      return;
+  /** 完成记录：周期记录走 Host 的「完成本轮」（自动滚动下一轮），非周期直接完结。 */
+  async function completeNote(note: MemoNote) {
+    try {
+      const updated = await completeMemoNote(note.id);
+      setNotes((current) =>
+        current ? current.map((entry) => (entry.id === updated.id ? updated : entry)) : current,
+      );
+      if (updated.recurrence !== null && updated.nextDueAt !== null) {
+        pushNotification(
+          t("memoRoundDoneNext", { time: formatMemoDateTime(updated.nextDueAt) }),
+          "info",
+        );
+      }
+    } catch (error) {
+      pushNotification(
+        `${t("memoSaveFailed")}: ${error instanceof Error ? error.message : String(error)}`,
+        "error",
+      );
     }
-    const archived = (notes ?? []).filter((note) => note.status === "archived");
-    await Promise.allSettled(archived.map((note) => deleteMemoNote(note.id)));
-    setConfirmingClear(false);
-    await refresh();
-    resetToCreate();
   }
 
   async function removeNote(note: MemoNote) {
@@ -909,10 +939,7 @@ export function MemoPage() {
               type="button"
               role="tab"
               aria-selected={statusFilter === tab}
-              onClick={() => {
-                setConfirmingClear(false);
-                setStatusFilter(tab);
-              }}
+              onClick={() => setStatusFilter(tab)}
               className={`flex h-[28px] shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12px] transition-colors ${
                 statusFilter === tab
                   ? "bg-nav-active text-nav-active-foreground"
@@ -947,20 +974,6 @@ export function MemoPage() {
             options={workspaceOptions.map((hint) => ({ value: hint, label: hint }))}
             onChange={setWorkspaceFilter}
           />
-          {statusFilter === "archived" && counts.archived > 0 && (
-            <button
-              type="button"
-              onClick={() => void clearArchived()}
-              data-state={confirmingClear ? "confirm" : "idle"}
-              title={t("memoClearArchivedHint")}
-              className={`${secondaryButton} h-8 shrink-0 gap-1.5 px-3 text-[12px] ${
-                confirmingClear ? "border-destructive text-destructive" : ""
-              }`}
-            >
-              <Trash2 size={13} className="shrink-0" />
-              <span>{confirmingClear ? t("memoActionDeleteConfirm") : t("memoClearArchived")}</span>
-            </button>
-          )}
           <button
             type="button"
             onClick={() => {
@@ -1024,8 +1037,6 @@ export function MemoPage() {
                     setSelectedId(note.id);
                     setPane("detail");
                   }}
-                  onArchive={(target) => void toggleFromList(target, "archived")}
-                  onUnarchive={(target) => void toggleFromList(target, "open")}
                 />
               ))}
             </ul>
@@ -1066,7 +1077,7 @@ export function MemoPage() {
               onEdit={() => startEdit(selectedNote)}
               onAgent={() => void openMemoWithAgent(selectedNote)}
               onOpenSession={() => void openBoundSession(selectedNote)}
-              onComplete={() => void setStatus(selectedNote, "done")}
+              onComplete={() => void completeNote(selectedNote)}
               onReopen={() => void setStatus(selectedNote, "open")}
               onResult={() => {
                 setConfirmingClearResult(false);
@@ -1187,29 +1198,23 @@ function memoStatusLabel(status: MemoStatusFilter | MemoNoteStatus, t: Translate
       ? "memoFilterTodo"
       : status === "in_progress"
         ? "memoFilterInProgress"
-        : status === "done"
-          ? "memoFilterDone"
-          : status === "archived"
-            ? "memoFilterArchived"
-            : "memoFilterAll";
+        : "memoFilterDone";
   return t(key);
 }
 
-/** 列表项：类型图标 + 标题 + 摘要 + 标签/工作区/时间。 */
+/** 列表项：类型图标 + 标题 + 摘要 + 标签/工作区/计划/时间。 */
 function MemoListItem({
   note,
   selected,
   onSelect,
-  onArchive,
-  onUnarchive,
 }: {
   note: MemoNote;
   selected: boolean;
   onSelect: () => void;
-  onArchive: (note: MemoNote) => void;
-  onUnarchive: (note: MemoNote) => void;
 }) {
   const t = useT();
+  const plan = noteScheduleSummary(note, t);
+  const overdue = isMemoOverdue(note, Date.now());
   return (
     <li>
       <div
@@ -1235,48 +1240,19 @@ function MemoListItem({
             {note.title}
           </span>
           {/* 右上角状态图标区：进行中=加载图标（手动完成/重新打开走详情页的常驻按钮）；
-              已完成=归档(悬浮)；
-              已归档=静态归档图标，悬浮换为恢复(点击取消归档)。 */}
-          {note.status === "done" && (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onArchive(note);
-              }}
-              title={t("memoActionArchive")}
-              aria-label={t("memoActionArchive")}
-              data-testid="memo-list-item-archive"
-              className="hidden shrink-0 cursor-pointer items-center rounded text-muted transition-colors hover:text-foreground group-hover:flex group-focus-within:flex"
+              逾期=红色角标。 */}
+          {overdue && (
+            <span
+              data-testid="memo-list-item-overdue"
+              className="shrink-0 rounded bg-destructive/15 px-1 text-[10px] font-medium text-destructive"
             >
-              <Archive size={14} aria-hidden />
-            </button>
+              {t("memoOverdueBadge")}
+            </span>
           )}
-          {note.status === "archived" ? (
-            <>
-              <Archive
-                size={14}
-                className="shrink-0 text-muted group-hover:hidden group-focus-within:hidden"
-                aria-hidden
-              />
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onUnarchive(note);
-                }}
-                title={t("memoActionUnarchive")}
-                aria-label={t("memoActionUnarchive")}
-                data-testid="memo-list-item-unarchive"
-                className="hidden shrink-0 cursor-pointer items-center rounded text-muted transition-colors hover:text-foreground group-hover:flex group-focus-within:flex"
-              >
-                <ArchiveRestore size={14} aria-hidden />
-              </button>
-            </>
-          ) : note.status === "in_progress" ? (
+          {note.status === "in_progress" && (
             // 静态状态：手动「标记完成 / 重新打开」走详情页的常驻按钮，行内不做快捷切换。
             <Loader2 size={14} className="shrink-0 animate-spin text-accent" aria-hidden />
-          ) : null}
+          )}
         </span>
         {noteExcerpt(note) && (
           <span className="line-clamp-2 text-[12px] text-muted">{noteExcerpt(note)}</span>
@@ -1286,6 +1262,17 @@ function MemoListItem({
             <TagChip key={tag} tag={tag} />
           ))}
           {note.workspaceHint && <WorkspaceChip name={note.workspaceHint} />}
+          {plan && (
+            <span
+              data-testid="memo-list-item-plan"
+              className={`flex items-center gap-1 text-[11px] ${
+                overdue ? "text-destructive" : "text-muted"
+              }`}
+            >
+              <Clock size={11} aria-hidden />
+              {plan}
+            </span>
+          )}
           <span className="ml-auto shrink-0 text-[11px] text-muted">
             {formatMemoDateTime(note.updatedAt)}
           </span>
@@ -1347,6 +1334,31 @@ function MemoDetail({
   // 只有 Agent 主动提交总结后才展示「Agent完成总结」；
   // 待处理/进行中或手动完成 → 保持「用 Agent 处理」。
   const showResult = note.status === "done" && note.result !== null;
+  const now = Date.now();
+  const planRows: { key: string; text: string; danger: boolean }[] = [];
+  if (note.recurrence !== null) {
+    planRows.push({ key: "recur", text: formatRecurrenceText(note.recurrence, t), danger: false });
+    if (note.nextDueAt !== null) {
+      planRows.push({
+        key: "next",
+        text: t("memoNextLabel", { time: formatMemoDateTime(note.nextDueAt) }),
+        danger: note.status !== "done" && note.nextDueAt <= now,
+      });
+    }
+    if (note.lastDoneAt !== null) {
+      planRows.push({
+        key: "last",
+        text: t("memoLastDoneLabel", { time: formatMemoDateTime(note.lastDoneAt) }),
+        danger: false,
+      });
+    }
+  } else if (note.dueAt !== null) {
+    planRows.push({
+      key: "due",
+      text: t("memoDueLabel", { time: formatMemoDateTime(note.dueAt) }),
+      danger: note.status !== "done" && note.dueAt <= now,
+    });
+  }
   return (
     <div className="flex h-full flex-col" data-testid="memo-detail">
       {/* 标题行：返回（窄屏）+ 图标 + 单行标题（溢出省略），右侧常驻 Agent/编辑/删除。 */}
@@ -1401,7 +1413,20 @@ function MemoDetail({
             <RotateCcw size={14} className="shrink-0" />
             <span>{t("memoActionReopen")}</span>
           </button>
-        ) : note.status === "archived" ? null : (
+        ) : note.recurrence !== null ? (
+          // 周期记录：完成 = 完成本轮（Host 自动滚动下一轮），给出明确文案。
+          <button
+            type="button"
+            onClick={onComplete}
+            title={t("memoActionCompleteRound")}
+            aria-label={t("memoActionCompleteRound")}
+            data-testid="memo-detail-complete"
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-foreground transition-colors hover:bg-surface-overlay"
+          >
+            <CheckCircle2 size={14} className="shrink-0" />
+            <span>{t("memoActionCompleteRound")}</span>
+          </button>
+        ) : (
           <button
             type="button"
             onClick={onComplete}
@@ -1446,6 +1471,25 @@ function MemoDetail({
           {note.workspaceHint && <WorkspaceChip name={note.workspaceHint} />}
           <span className="text-muted">{formatMemoDateTime(note.updatedAt)}</span>
         </div>
+
+        {planRows.length > 0 && (
+          <div
+            data-testid="memo-detail-plan"
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-surface-overlay px-2.5 py-1.5 text-[11px]"
+          >
+            {planRows.map((row) => (
+              <span
+                key={row.key}
+                className={`flex items-center gap-1 ${
+                  row.danger ? "text-destructive" : "text-muted"
+                }`}
+              >
+                <Clock size={12} aria-hidden />
+                {row.text}
+              </span>
+            ))}
+          </div>
+        )}
 
         {unresolvedWorkspace && (
           <div className="flex items-center gap-1.5 rounded-md bg-surface-overlay px-2.5 py-1.5 text-[12px] text-muted">
@@ -1712,6 +1756,11 @@ function MemoEditor({
             ))}
           </div>
         )}
+
+        <MemoScheduleEditor
+          value={{ dueAt: editor.dueAt, recurrence: editor.recurrence }}
+          onChange={(next) => patch({ dueAt: next.dueAt, recurrence: next.recurrence })}
+        />
       </div>
     </div>
   );
@@ -1901,4 +1950,3 @@ function SelectFilter({
     />
   );
 }
-

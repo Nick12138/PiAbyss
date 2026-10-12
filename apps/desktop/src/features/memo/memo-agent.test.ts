@@ -34,6 +34,10 @@ function note(overrides: Partial<MemoNote> = {}): MemoNote {
     completedAt: null,
     result: null,
     deletedAt: null,
+    dueAt: null,
+    recurrence: null,
+    nextDueAt: null,
+    lastDoneAt: null,
     ...overrides,
   };
 }

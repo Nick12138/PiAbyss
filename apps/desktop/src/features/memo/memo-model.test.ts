@@ -40,6 +40,10 @@ function note(overrides: Partial<MemoNote> = {}): MemoNote {
     completedAt: null,
     result: null,
     deletedAt: null,
+    dueAt: null,
+    recurrence: null,
+    nextDueAt: null,
+    lastDoneAt: null,
     ...overrides,
   };
 }
@@ -97,22 +101,22 @@ describe("filterNotes / statusCounts / sortNotesForList", () => {
     note({ status: "in_progress", sessionId: "session-1", updatedAt: 4 }),
     note({ status: "done", tags: ["bug"], completedAt: 9, updatedAt: 1 }),
     note({ status: "done", tags: ["bug"], completedAt: 5, updatedAt: 2 }),
-    note({ status: "archived", title: "旧想法 archive", updatedAt: 4 }),
+    note({ status: "done", title: "旧想法 archive", updatedAt: 4 }),
   ];
 
   it("counts statuses", () => {
-    expect(statusCounts(notes)).toEqual({ open: 1, in_progress: 1, done: 2, archived: 1 });
+    expect(statusCounts(notes)).toEqual({ open: 1, in_progress: 1, done: 3 });
   });
 
   it("filters by status, tag, query", () => {
     expect(
       filterNotes(notes, { status: "done", tag: null, workspace: null, query: "" }),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
     expect(
       filterNotes(notes, { status: "done", tag: "BUG", workspace: null, query: "" }),
     ).toHaveLength(2);
     expect(
-      filterNotes(notes, { status: "archived", tag: null, workspace: null, query: "archive" }),
+      filterNotes(notes, { status: "done", tag: null, workspace: null, query: "archive" }),
     ).toHaveLength(1);
     expect(
       filterNotes(notes, { status: "open", tag: "bug", workspace: null, query: "" }),
@@ -125,7 +129,7 @@ describe("filterNotes / statusCounts / sortNotesForList", () => {
   it("sorts done by completedAt, others by updatedAt", () => {
     const doneFilter = { status: "done" as const, tag: null, workspace: null, query: "" };
     const done = sortNotesForList(filterNotes(notes, doneFilter), "done");
-    expect(done.map((entry) => entry.completedAt)).toEqual([9, 5]);
+    expect(done.map((entry) => entry.completedAt)).toEqual([9, 5, null]);
     const open = sortNotesForList(notes, "open");
     expect(open.map((entry) => entry.updatedAt)).toEqual([4, 4, 3, 2, 1]);
   });

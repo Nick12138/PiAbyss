@@ -10,6 +10,7 @@ import { clearPendingMemoRevealForTest, requestMemoReveal } from "./memo-reveal"
 const mocks = vi.hoisted(() => ({
   listMemoNotes: vi.fn(),
   updateMemoNote: vi.fn(),
+  completeMemoNote: vi.fn(),
   createMemoNote: vi.fn(),
   deleteMemoNote: vi.fn(),
   optimizeMemo: vi.fn(),
@@ -60,6 +61,10 @@ function note(overrides: Partial<MemoNote> = {}): MemoNote {
     completedAt: null,
     result: null,
     deletedAt: null,
+    dueAt: null,
+    recurrence: null,
+    nextDueAt: null,
+    lastDoneAt: null,
     ...overrides,
   };
 }
@@ -88,6 +93,12 @@ beforeEach(() => {
       [openNote, runningNote, doneNote].find((entry) => entry.id === id) ?? note({ id });
     return { ...source, ...patch };
   });
+  mocks.completeMemoNote.mockImplementation(async (id: string) => {
+    const source =
+      [openNote, runningNote, doneNote].find((entry) => entry.id === id) ?? note({ id });
+    // 非周期记录：complete 等价于置 done（周期记录由 Host 滚动下一轮）。
+    return { ...source, status: "done" as const, completedAt: 9 };
+  });
   useAppStore.setState({
     host,
     workspace,
@@ -115,7 +126,7 @@ describe("MemoPage 手动标记完成 / 重新打开", () => {
     fireEvent.click(await screen.findByTestId("memo-detail-complete"));
 
     await waitFor(() => {
-      expect(mocks.updateMemoNote).toHaveBeenCalledWith("memo-1", { status: "done" });
+      expect(mocks.completeMemoNote).toHaveBeenCalledWith("memo-1");
     });
   });
 
@@ -132,7 +143,7 @@ describe("MemoPage 手动标记完成 / 重新打开", () => {
     fireEvent.click(await screen.findByTestId("memo-detail-complete"));
 
     await waitFor(() => {
-      expect(mocks.updateMemoNote).toHaveBeenCalledWith("memo-2", { status: "done" });
+      expect(mocks.completeMemoNote).toHaveBeenCalledWith("memo-2");
     });
   });
 

@@ -2718,11 +2718,11 @@ function isPixieDispatchRecord(value: unknown): boolean {
       (typeof value.reportedAt === "number" && Number.isSafeInteger(value.reportedAt))) &&
     typeof value.stale === "boolean" &&
     (value.startedAt === undefined ||
-      (value.startedAt === null ||
-        (typeof value.startedAt === "number" && Number.isSafeInteger(value.startedAt)))) &&
+      value.startedAt === null ||
+      (typeof value.startedAt === "number" && Number.isSafeInteger(value.startedAt))) &&
     (value.lastActiveAt === undefined ||
-      (value.lastActiveAt === null ||
-        (typeof value.lastActiveAt === "number" && Number.isSafeInteger(value.lastActiveAt)))) &&
+      value.lastActiveAt === null ||
+      (typeof value.lastActiveAt === "number" && Number.isSafeInteger(value.lastActiveAt))) &&
     (value.staleNotified === undefined || typeof value.staleNotified === "boolean") &&
     (value.batchId === undefined || value.batchId === null || isString(value.batchId)) &&
     (value.failCount === undefined ||
@@ -2814,6 +2814,49 @@ function isMemoAgentResult(value: unknown): boolean {
   );
 }
 
+/** 备忘录周期规则的 DTO 校验（形状与 pi-host recurrence.ts 归一化结果一致）。 */
+function isMemoRecurrence(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "frequency",
+      "interval",
+      "weekdays",
+      "monthDay",
+      "time",
+      "tz",
+      "until",
+      "startDate",
+    ]) &&
+    (value.frequency === "daily" ||
+      value.frequency === "weekly" ||
+      value.frequency === "monthly") &&
+    typeof value.interval === "number" &&
+    Number.isSafeInteger(value.interval) &&
+    value.interval >= 1 &&
+    value.interval <= 365 &&
+    Array.isArray(value.weekdays) &&
+    value.weekdays.every(
+      (day) => typeof day === "number" && Number.isSafeInteger(day) && day >= 1 && day <= 7,
+    ) &&
+    (value.monthDay === null ||
+      (typeof value.monthDay === "number" &&
+        Number.isSafeInteger(value.monthDay) &&
+        value.monthDay >= 1 &&
+        value.monthDay <= 31)) &&
+    typeof value.time === "string" &&
+    /^([01]\d|2[0-3]):([0-5]\d)$/.test(value.time) &&
+    typeof value.tz === "string" &&
+    value.tz.length > 0 &&
+    (value.until === null ||
+      (typeof value.until === "number" && Number.isSafeInteger(value.until) && value.until > 0)) &&
+    (value.startDate === null ||
+      (typeof value.startDate === "number" &&
+        Number.isSafeInteger(value.startDate) &&
+        value.startDate > 0))
+  );
+}
+
 /** 备忘录记录的 DTO 校验。 */
 function isMemoNote(value: unknown): boolean {
   return (
@@ -2833,16 +2876,17 @@ function isMemoNote(value: unknown): boolean {
         "completedAt",
         "result",
         "deletedAt",
+        "dueAt",
+        "recurrence",
+        "nextDueAt",
+        "lastDoneAt",
       ],
       ["sessionId"],
     ) &&
     isString(value.id) &&
     isString(value.title) &&
     isString(value.contentMd) &&
-    (value.status === "open" ||
-      value.status === "in_progress" ||
-      value.status === "done" ||
-      value.status === "archived") &&
+    (value.status === "open" || value.status === "in_progress" || value.status === "done") &&
     (value.sessionId === undefined || value.sessionId === null || isString(value.sessionId)) &&
     isStringArray(value.tags) &&
     (value.workspaceHint === null || isString(value.workspaceHint)) &&
@@ -2856,7 +2900,18 @@ function isMemoNote(value: unknown): boolean {
       (typeof value.completedAt === "number" && Number.isSafeInteger(value.completedAt))) &&
     (value.result === null || isMemoAgentResult(value.result)) &&
     (value.deletedAt === null ||
-      (typeof value.deletedAt === "number" && Number.isSafeInteger(value.deletedAt)))
+      (typeof value.deletedAt === "number" && Number.isSafeInteger(value.deletedAt))) &&
+    (value.dueAt === null ||
+      (typeof value.dueAt === "number" && Number.isSafeInteger(value.dueAt) && value.dueAt > 0)) &&
+    (value.recurrence === null || isMemoRecurrence(value.recurrence)) &&
+    (value.nextDueAt === null ||
+      (typeof value.nextDueAt === "number" &&
+        Number.isSafeInteger(value.nextDueAt) &&
+        value.nextDueAt > 0)) &&
+    (value.lastDoneAt === null ||
+      (typeof value.lastDoneAt === "number" &&
+        Number.isSafeInteger(value.lastDoneAt) &&
+        value.lastDoneAt > 0))
   );
 }
 
@@ -3681,9 +3736,10 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         : "invalid memo.optimize result";
     case "memo.create":
     case "memo.update":
+    case "memo.complete":
       return isPlainObject(result) && hasExactKeys(result, ["note"]) && isMemoNote(result.note)
         ? null
-        : "invalid memo.create result";
+        : `invalid ${method} result`;
     case "memo.delete":
       return isPlainObject(result) && hasExactKeys(result, ["ok"]) && isBoolean(result.ok)
         ? null
@@ -3850,9 +3906,7 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         ? null
         : "invalid pixie.usage result";
     case "pixie.reply":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["ok"]) &&
-        typeof result.ok === "boolean"
+      return isPlainObject(result) && hasExactKeys(result, ["ok"]) && typeof result.ok === "boolean"
         ? null
         : "invalid pixie.reply result";
     case "pixie.setContext":
@@ -3892,7 +3946,10 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         hasExactKeys(result, ["sessions"]) &&
         Array.isArray(result.sessions) &&
         result.sessions.every((session: unknown) => {
-          if (!isPlainObject(session) || !hasExactKeys(session, ["id", "path", "createdAt", "lastActiveAt", "turns", "summary"]))
+          if (
+            !isPlainObject(session) ||
+            !hasExactKeys(session, ["id", "path", "createdAt", "lastActiveAt", "turns", "summary"])
+          )
             return false;
           return (
             isString(session.id) &&

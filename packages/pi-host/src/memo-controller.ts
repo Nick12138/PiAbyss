@@ -271,6 +271,8 @@ export function createMemoHandlers(
         workspaceHint:
           params.workspaceHint === undefined ? undefined : (params.workspaceHint as string | null),
         images: asImageInputs(params.images),
+        dueAt: params.dueAt === undefined ? undefined : (params.dueAt as number | null),
+        recurrence: params.recurrence === undefined ? undefined : params.recurrence,
       };
       const note = store.create(input);
       // 通知插件内同步引擎：autoSync 开启时防抖同步（控制面不可达时静默）。
@@ -302,7 +304,19 @@ export function createMemoHandlers(
         );
       }
       if (rawPatch.clearResult !== undefined) patch.clearResult = rawPatch.clearResult === true;
+      if (rawPatch.dueAt !== undefined) patch.dueAt = rawPatch.dueAt as number | null;
+      if (rawPatch.recurrence !== undefined) patch.recurrence = rawPatch.recurrence;
       const note = store.update(id, patch);
+      pokeMemoAutoSync(agentDir);
+      return { result: { note } };
+    },
+
+    // 桌面端「完成 / 完成本轮」：周期记录滚动下一轮（status 保持 open），
+    // 非周期记录置 done。不带结果总结（那是 agent 工具的 complete 路径）。
+    "memo.complete": async (ctx) => {
+      if (!gate()) return { error: memoPluginDisabledError() };
+      const params = ctx.params as Record<string, unknown>;
+      const note = store.complete(asString(params.id));
       pokeMemoAutoSync(agentDir);
       return { result: { note } };
     },

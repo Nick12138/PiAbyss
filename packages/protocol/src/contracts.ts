@@ -120,6 +120,7 @@ import type {
   MemoNote,
   MemoNoteStatus,
   MemoImageInput,
+  MemoRecurrence,
   MemoDraft,
   MemoDraftInput,
   MemoSyncSettings,
@@ -286,6 +287,7 @@ export type HostContextMap = {
   "memo.optimize": HostContext;
   "memo.create": HostContext;
   "memo.update": HostContext;
+  "memo.complete": HostContext;
   "memo.delete": HostContext;
   "memo.readImage": HostContext;
   "memo.getDraft": HostContext;
@@ -555,6 +557,10 @@ export type HostRequestParams = {
     tags?: string[];
     workspaceHint?: string | null;
     images?: MemoImageInput[];
+    /** 一次性截止时刻（epoch ms）。 */
+    dueAt?: number | null;
+    /** 周期规则；null/缺省 = 非周期记录（停用周期）。 */
+    recurrence?: MemoRecurrence | null;
   };
   "memo.update": {
     id: string;
@@ -568,8 +574,13 @@ export type HostRequestParams = {
       addImages?: MemoImageInput[];
       removeImageIds?: string[];
       clearResult?: boolean;
+      /** 一次性截止时刻（epoch ms）；null = 清除截止。 */
+      dueAt?: number | null;
+      /** 周期规则；null = 清除周期（停用，转普通记录并清空 nextDueAt）。 */
+      recurrence?: MemoRecurrence | null;
     };
   };
+  "memo.complete": { id: string };
   "memo.delete": { id: string };
   "memo.readImage": { noteId: string; imageId: string };
   "memo.getDraft": null;
@@ -846,6 +857,7 @@ export type HostResultMap = {
   };
   "memo.create": { note: MemoNote };
   "memo.update": { note: MemoNote };
+  "memo.complete": { note: MemoNote };
   "memo.delete": { ok: boolean };
   "memo.readImage": { dataBase64: string; mediaType: string };
   "memo.getDraft": { draft: MemoDraft | null };

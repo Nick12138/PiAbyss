@@ -106,10 +106,25 @@ export function statusCounts(notes: MemoNote[]): Record<MemoNoteStatus, number> 
     open: 0,
     in_progress: 0,
     done: 0,
-    archived: 0,
   };
   for (const note of notes) counts[note.status] += 1;
   return counts;
+}
+
+/**
+ * 记录是否逾期（列表红点/置顶用）：
+ * - 周期记录看 `nextDueAt`，一次性记录看 `dueAt`；
+ * - 已完成为不逾期；两个时刻都为 null 时不逾期。
+ */
+export function isMemoOverdue(note: MemoNote, now: number): boolean {
+  if (note.status === "done") return false;
+  const target = note.recurrence !== null ? note.nextDueAt : note.dueAt;
+  return target !== null && target <= now;
+}
+
+/** 记录当前应关注的计划时刻（周期看 nextDueAt，否则看 dueAt）；无计划返回 null。 */
+export function memoPlanTarget(note: MemoNote): number | null {
+  return note.recurrence !== null ? note.nextDueAt : note.dueAt;
 }
 
 /** 展示用标签串（#a #b）。 */

@@ -28,6 +28,7 @@ import type {
   MemoNoteStatus,
 } from "@piabyss/protocol";
 import { createHostError, type HostError } from "@piabyss/protocol";
+import { nextOccurrence, normalizeRecurrence } from "./recurrence.js";
 
 /** 单张图片的 base64 解码后大小上限（8 MiB）。 */
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -41,7 +42,35 @@ const MAX_TITLE_LENGTH = 300;
 const MAX_TAG_LENGTH = 60;
 const MAX_TAGS_PER_NOTE = 20;
 
-const NOTE_STATUSES: readonly MemoNoteStatus[] = ["open", "in_progress", "done", "archived"];
+/** v0.4.0 起只有三种状态；旧数据的 "archived" 读取时迁移为 "done"。 */
+const NOTE_STATUSES: readonly MemoNoteStatus[] = ["open", "in_progress", "done"];
+
+/**
+ * 旧数据兼容（本地 notes.json 与同步合并结果共用，就地补齐/迁移）：
+ * - v1/v2 缺失的可空字段补为 null（下次写盘时落定）；
+ * - v2 时代的 status "archived" 迁移为 "done"（v0.4.0 起状态只有三种，
+ *   归档停用语义改由「清除周期规则 + 正常完成」表达）；
+ * - v0.3.0 之前写入的 type 字段统一剔除；
+ * - recurrence 形状非法时清为 null，防止单条脏数据拖垮整个页面。
+ */
+export function normalizeNoteDefaults(note: MemoNote): void {
+  if (note.result === undefined) note.result = null;
+  if (note.sessionId === undefined) note.sessionId = null;
+  if (note.deletedAt === undefined) note.deletedAt = null;
+  if (note.dueAt === undefined) note.dueAt = null;
+  if (note.recurrence === undefined) note.recurrence = null;
+  if (note.nextDueAt === undefined) note.nextDueAt = null;
+  if (note.lastDoneAt === undefined) note.lastDoneAt = null;
+  delete (note as { type?: unknown }).type;
+  if ((note.status as string) === "archived") note.status = "done";
+  if (note.recurrence !== null && note.recurrence !== undefined) {
+    try {
+      note.recurrence = normalizeRecurrence(note.recurrence);
+    } catch {
+      note.recurrence = null;
+    }
+  }
+}
 
 /** mediaType → 扩展名（用于图片落盘命名）。 */
 const IMAGE_EXTENSIONS: Record<string, string> = {
@@ -80,6 +109,10 @@ export type MemoCreateInput = {
   tags?: string[];
   workspaceHint?: string | null;
   images?: MemoImageInput[];
+  /** 一次性截止时刻（epoch ms）。 */
+  dueAt?: number | null;
+  /** 周期规则（经 normalizeRecurrence 校验归一）。 */
+  recurrence?: unknown;
 };
 
 export type MemoUpdatePatch = {
@@ -93,6 +126,10 @@ export type MemoUpdatePatch = {
   removeImageIds?: string[];
   /** 清空 Agent 结果总结（进行中恢复后重跑时使用）。 */
   clearResult?: boolean;
+  /** 一次性截止时刻（epoch ms）；null = 清除截止。 */
+  dueAt?: number | null;
+  /** 周期规则；null = 清除周期（停用，转普通记录并清空 nextDueAt）。 */
+  recurrence?: unknown;
 };
 
 /** piabyss_memo 工具 complete 时提交的结果总结及会话关联。 */
@@ -162,6 +199,7 @@ export class MemoStore {
     const title = this.requireTitle(input.title);
     const contentMd = this.requireContent(input.contentMd);
     const now = Date.now();
+    const recurrence = input.recurrence ? normalizeRecurrence(input.recurrence) : null;
     const note: MemoNote = {
       id: randomUUID(),
       title,
@@ -176,6 +214,10 @@ export class MemoStore {
       completedAt: null,
       result: null,
       deletedAt: null,
+      dueAt: input.dueAt == null ? null : this.requireTimestamp(input.dueAt, "dueAt"),
+      recurrence,
+      nextDueAt: recurrence ? nextOccurrence(recurrence, now, now) : null,
+      lastDoneAt: null,
     };
     note.images = this.storeImages(note.id, input.images ?? []);
     const file = this.readFile();
@@ -195,10 +237,33 @@ export class MemoStore {
     if (patch.workspaceHint !== undefined) {
       note.workspaceHint = this.normalizeHint(patch.workspaceHint);
     }
+    // 计划字段（先于状态处理：周期守卫需要看到本次更新后的 recurrence）。
+    if (patch.dueAt !== undefined) {
+      note.dueAt = patch.dueAt === null ? null : this.requireTimestamp(patch.dueAt, "dueAt");
+    }
+    if (patch.recurrence !== undefined) {
+      if (patch.recurrence === null) {
+        note.recurrence = null;
+        note.nextDueAt = null;
+      } else {
+        note.recurrence = normalizeRecurrence(patch.recurrence);
+        note.nextDueAt = nextOccurrence(note.recurrence, Date.now(), note.createdAt);
+      }
+    }
     if (patch.status !== undefined) {
       const status = this.requireStatus(patch.status);
+      if (status === "done" && note.recurrence !== null) {
+        throw memoError(
+          "INVALID_REQUEST",
+          "周期记录不能直接标记完成：请用 complete 提交本轮总结（自动滚动下一轮），或先清除周期规则（update 传 recurrence: null）转为普通记录",
+        );
+      }
       note.status = status;
       note.completedAt = status === "done" ? (note.completedAt ?? Date.now()) : null;
+      // 重新打开周期记录（如自然终结后 reopen）：nextDueAt 为空时重算下一轮。
+      if (status !== "done" && note.recurrence !== null && note.nextDueAt === null) {
+        note.nextDueAt = nextOccurrence(note.recurrence, Date.now(), note.createdAt);
+      }
     }
     if (patch.sessionId !== undefined) {
       note.sessionId = this.normalizeSessionId(patch.sessionId);
@@ -217,7 +282,22 @@ export class MemoStore {
   }
 
   /**
-   * Agent 处理完成：标记 done 并写入/覆盖结果总结（含会话关联）。
+   * 完成一条记录（不带结果总结；桌面端「完成 / 完成本轮」按钮走这里）。
+   * 周期记录滚动下一轮（status 保持 open），非周期记录置 done。
+   */
+  complete(id: string): MemoNote {
+    const file = this.readFile();
+    const note = file.notes.find((entry) => entry.id === id);
+    if (!note) throw memoError("RESOURCE_NOT_FOUND", `备忘录记录不存在：${id}`);
+    const now = Date.now();
+    this.applyCompletion(note, now);
+    note.updatedAt = now;
+    this.writeFile(file);
+    return note;
+  }
+
+  /**
+   * Agent 处理完成：写入/覆盖结果总结（含会话关联）并按完成语义收尾。
    * 与手动标记完成（update status）不同，只有本方法会产生总结。
    */
   completeWithResult(id: string, input: MemoCompleteResultInput): MemoNote {
@@ -232,9 +312,7 @@ export class MemoStore {
     const sessionId = input.sessionId.trim();
     if (!sessionId) throw memoError("INVALID_REQUEST", "缺少提交总结的会话信息");
     const now = Date.now();
-    note.status = "done";
     note.sessionId = sessionId;
-    note.completedAt = note.completedAt ?? now;
     note.result = {
       resultMd,
       sessionId,
@@ -243,9 +321,36 @@ export class MemoStore {
       sessionCwd: input.sessionCwd?.trim() || null,
       at: now,
     };
+    this.applyCompletion(note, now);
     note.updatedAt = now;
     this.writeFile(file);
     return note;
+  }
+
+  /**
+   * 完成的收尾语义（complete 与 completeWithResult 共用）：
+   * - 周期记录：记 lastDoneAt、滚动 nextDueAt、status 回到 open（否则下一轮就再也
+   *   看不到了）；已过 until（含端点）时自然终结（nextDueAt=null、status=done、
+   *   completedAt 补上）；
+   * - 非周期记录：status=done、completedAt 补齐。
+   */
+  private applyCompletion(note: MemoNote, now: number): void {
+    if (note.recurrence !== null) {
+      note.lastDoneAt = now;
+      const next = nextOccurrence(note.recurrence, now, note.createdAt);
+      if (next === null) {
+        note.nextDueAt = null;
+        note.status = "done";
+        note.completedAt = note.completedAt ?? now;
+      } else {
+        note.nextDueAt = next;
+        note.status = "open";
+        note.completedAt = null;
+      }
+    } else {
+      note.status = "done";
+      note.completedAt = note.completedAt ?? now;
+    }
   }
 
   /** 删除 = 打墓碑（记录体与图片保留，供同步传播删除；见 purgeDeleted）。 */
@@ -293,8 +398,8 @@ export class MemoStore {
 
   /** 用给定记录集整体替换 notes.json（同步引擎合并结果落盘用；图片文件不动）。 */
   replaceAll(notes: MemoNote[]): void {
-    // v0.3.0 起不再落盘类别字段：合并结果里云端旧数据可能仍带 type，这里统一剔除。
-    for (const note of notes) delete (note as { type?: unknown }).type;
+    // 云端旧数据可能带 type / archived、缺计划字段：统一经 normalizeNoteDefaults 剔除补齐。
+    for (const note of notes) normalizeNoteDefaults(note);
     this.writeFile({ schemaVersion: 1, notes });
   }
 
@@ -343,11 +448,7 @@ export class MemoStore {
     if (!existsSync(this.draftPath)) return null;
     try {
       const raw = JSON.parse(readFileSync(this.draftPath, "utf8")) as MemoDraft;
-      if (
-        raw &&
-        typeof raw.contentMd === "string" &&
-        raw.contentMd.length <= MAX_CONTENT_LENGTH
-      ) {
+      if (raw && typeof raw.contentMd === "string" && raw.contentMd.length <= MAX_CONTENT_LENGTH) {
         return raw;
       }
       return null;
@@ -380,14 +481,9 @@ export class MemoStore {
     try {
       const raw = JSON.parse(readFileSync(this.filePath, "utf8")) as MemoFile;
       if (raw && raw.schemaVersion === 1 && Array.isArray(raw.notes)) {
-        // 旧数据兼容：result / deletedAt / sessionId 缺失时补齐为 null（下次写盘时落定）。
-        for (const note of raw.notes) {
-          if (note.result === undefined) note.result = null;
-          if (note.deletedAt === undefined) note.deletedAt = null;
-          if (note.sessionId === undefined) note.sessionId = null;
-          // v0.3.0 起取消类别（type）字段：读盘时丢弃旧记录遗留的类别，下次写盘不再落盘。
-          delete (note as { type?: unknown }).type;
-        }
+        // 旧数据兼容：补齐可空字段、archived→done、剔除 type、清非法 recurrence
+        // （下次写盘时落定）。与插件端 normalizeNoteDefaults 逐条对齐。
+        for (const note of raw.notes) normalizeNoteDefaults(note);
         return raw;
       }
     } catch {
@@ -479,6 +575,15 @@ export class MemoStore {
       throw memoError("INVALID_REQUEST", `正文过长（上限 ${MAX_CONTENT_LENGTH} 字符）`);
     }
     return value;
+  }
+
+  /** 校验毫秒时间戳（dueAt 等计划字段用；拒绝非正/非有限值）。 */
+  private requireTimestamp(value: number, field: string): number {
+    const num = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(num) || num <= 0) {
+      throw memoError("INVALID_REQUEST", `${field} 无效：应为正的毫秒时间戳`);
+    }
+    return Math.round(num);
   }
 
   private normalizeHint(value: string | null | undefined): string | null {

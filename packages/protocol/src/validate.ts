@@ -497,9 +497,77 @@ function base64DecodedByteLength(data: string): number | null {
   return Math.floor((contentLength * 3) / 4);
 }
 
-/** 备忘录状态白名单。 */
+/** 备忘录状态白名单（v0.4.0 起只有三种；旧数据的 archived 读取时迁移为 done）。 */
 function isMemoNoteStatus(value: unknown): boolean {
-  return value === "open" || value === "in_progress" || value === "done" || value === "archived";
+  return value === "open" || value === "in_progress" || value === "done";
+}
+
+/** 计划字段时间戳：null（清除）或正的毫秒整数。 */
+function isMemoTimestampOrNull(value: unknown): boolean {
+  return value === null || (typeof value === "number" && Number.isSafeInteger(value) && value > 0);
+}
+
+/** 备忘录周期规则载荷（约束与 pi-host recurrence.ts 的 normalizeRecurrence 对齐）。 */
+function isMemoRecurrenceInput(value: unknown): boolean {
+  if (!isPlainObject(value)) return false;
+  const allowed = new Set([
+    "frequency",
+    "interval",
+    "weekdays",
+    "monthDay",
+    "time",
+    "tz",
+    "until",
+    "startDate",
+  ]);
+  if (!Object.keys(value).every((key) => allowed.has(key))) return false;
+  if (
+    value.frequency !== "daily" &&
+    value.frequency !== "weekly" &&
+    value.frequency !== "monthly"
+  ) {
+    return false;
+  }
+  if (
+    value.interval !== undefined &&
+    !(
+      typeof value.interval === "number" &&
+      Number.isSafeInteger(value.interval) &&
+      value.interval >= 1 &&
+      value.interval <= 365
+    )
+  ) {
+    return false;
+  }
+  if (value.weekdays !== undefined) {
+    if (
+      !Array.isArray(value.weekdays) ||
+      !value.weekdays.every(
+        (day) => typeof day === "number" && Number.isSafeInteger(day) && day >= 1 && day <= 7,
+      )
+    ) {
+      return false;
+    }
+  }
+  if (
+    value.monthDay !== undefined &&
+    value.monthDay !== null &&
+    !(
+      typeof value.monthDay === "number" &&
+      Number.isSafeInteger(value.monthDay) &&
+      value.monthDay >= 1 &&
+      value.monthDay <= 31
+    )
+  ) {
+    return false;
+  }
+  if (!(typeof value.time === "string" && /^([01]\d|2[0-3]):([0-5]\d)$/.test(value.time))) {
+    return false;
+  }
+  if (value.tz !== undefined && !isNonEmptyString(value.tz)) return false;
+  if (value.until !== undefined && !isMemoTimestampOrNull(value.until)) return false;
+  if (value.startDate !== undefined && !isMemoTimestampOrNull(value.startDate)) return false;
+  return true;
 }
 
 /** 备忘录图片载荷：base64 解码后不超过 8 MiB。 */
@@ -530,7 +598,11 @@ function isMemoNoteFields(value: Record<string, unknown>): boolean {
         value.tags.every((tag) => tag.length <= 60))) &&
     (value.workspaceHint === undefined ||
       value.workspaceHint === null ||
-      (isString(value.workspaceHint) && value.workspaceHint.length <= 300))
+      (isString(value.workspaceHint) && value.workspaceHint.length <= 300)) &&
+    (value.dueAt === undefined || isMemoTimestampOrNull(value.dueAt)) &&
+    (value.recurrence === undefined ||
+      value.recurrence === null ||
+      isMemoRecurrenceInput(value.recurrence))
   );
 }
 
@@ -1521,7 +1593,7 @@ export function validateRequestParams<M extends HostMethod>(
       return exactObject(
         params,
         ["title", "contentMd"],
-        ["tags", "workspaceHint", "images"],
+        ["tags", "workspaceHint", "images", "dueAt", "recurrence"],
       ) &&
         isNonEmptyString(params.title) &&
         params.title.length <= 300 &&
@@ -1534,6 +1606,10 @@ export function validateRequestParams<M extends HostMethod>(
         (params.workspaceHint === undefined ||
           params.workspaceHint === null ||
           (isString(params.workspaceHint) && params.workspaceHint.length <= 300)) &&
+        (params.dueAt === undefined || isMemoTimestampOrNull(params.dueAt)) &&
+        (params.recurrence === undefined ||
+          params.recurrence === null ||
+          isMemoRecurrenceInput(params.recurrence)) &&
         (params.images === undefined ||
           (Array.isArray(params.images) &&
             params.images.length <= 20 &&
@@ -1557,6 +1633,8 @@ export function validateRequestParams<M extends HostMethod>(
             "addImages",
             "removeImageIds",
             "clearResult",
+            "dueAt",
+            "recurrence",
           ],
         ) &&
         isMemoNoteFields(params.patch) &&
@@ -1570,10 +1648,11 @@ export function validateRequestParams<M extends HostMethod>(
         (params.patch.clearResult === undefined || typeof params.patch.clearResult === "boolean")
         ? ok(params)
         : fail("invalid memo.update params", { method });
+    case "memo.complete":
     case "memo.delete":
       return exactObject(params, ["id"]) && isNonEmptyString(params.id) && params.id.length <= 128
         ? ok(params)
-        : fail("invalid memo.delete params", { method });
+        : fail(`invalid ${method} params`, { method });
     case "memo.readImage":
       return exactObject(params, ["noteId", "imageId"]) &&
         isNonEmptyString(params.noteId) &&
@@ -1648,33 +1727,36 @@ export function validateRequestParams<M extends HostMethod>(
         Array.isArray(params.workspaces) &&
         params.workspaces.length <= 200 &&
         params.workspaces.every(
-          (value: unknown) => typeof value === "string" && value.length > 0 && value.length <= 1_024,
+          (value: unknown) =>
+            typeof value === "string" && value.length > 0 && value.length <= 1_024,
         )
         ? ok(params)
         : fail("invalid pixie.setContext params", { method });
     case "pixie.newSegment":
       return params === null ? ok(null) : fail("params must be null", { method });
     case "pixie.interject":
-      return exactObject(params, ["dispatchId", "text", "mode"], ["after", "model", "thinkingLevel"]) &&
+      return exactObject(
+        params,
+        ["dispatchId", "text", "mode"],
+        ["after", "model", "thinkingLevel"],
+      ) &&
         isNonEmptyString(params.dispatchId) &&
         params.dispatchId.length <= 128 &&
         isNonEmptyString(params.text) &&
         params.text.trim().length > 0 &&
         params.text.length <= 20_000 &&
         (params.mode === "append" || params.mode === "checkpoint") &&
-        (params.after === undefined ||
-          params.after === "continue" ||
-          params.after === "wait") &&
+        (params.after === undefined || params.after === "continue" || params.after === "wait") &&
         (params.model === undefined ||
           (isNonEmptyString(params.model) && params.model.length <= 200)) &&
         (params.thinkingLevel === undefined ||
-          (params.thinkingLevel === "off" ||
-            params.thinkingLevel === "minimal" ||
-            params.thinkingLevel === "low" ||
-            params.thinkingLevel === "medium" ||
-            params.thinkingLevel === "high" ||
-            params.thinkingLevel === "xhigh" ||
-            params.thinkingLevel === "max"))
+          params.thinkingLevel === "off" ||
+          params.thinkingLevel === "minimal" ||
+          params.thinkingLevel === "low" ||
+          params.thinkingLevel === "medium" ||
+          params.thinkingLevel === "high" ||
+          params.thinkingLevel === "xhigh" ||
+          params.thinkingLevel === "max")
         ? ok(params)
         : fail("invalid pixie.interject params", { method });
     case "pixie.stopDispatch":

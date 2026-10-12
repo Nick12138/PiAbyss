@@ -10,6 +10,7 @@ import type {
   MemoImageInput,
   MemoNote,
   MemoNoteStatus,
+  MemoRecurrence,
   MemoSyncSettings,
 } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
@@ -49,6 +50,10 @@ export type MemoCreateRequest = {
   tags?: string[];
   workspaceHint?: string | null;
   images?: MemoImageInput[];
+  /** 一次性截止时刻（epoch ms）。 */
+  dueAt?: number | null;
+  /** 周期规则；null/缺省 = 非周期记录（停用周期）。 */
+  recurrence?: MemoRecurrence | null;
 };
 
 export type MemoUpdateRequest = {
@@ -62,6 +67,10 @@ export type MemoUpdateRequest = {
   removeImageIds?: string[];
   /** 清空 Agent 结果总结。 */
   clearResult?: boolean;
+  /** 一次性截止时刻（epoch ms）；null = 清除截止。 */
+  dueAt?: number | null;
+  /** 周期规则；null = 清除周期（停用，转普通记录）。 */
+  recurrence?: MemoRecurrence | null;
 };
 
 export async function listMemoNotes(): Promise<MemoNote[]> {
@@ -84,6 +93,22 @@ export async function updateMemoNote(id: string, patch: MemoUpdateRequest): Prom
     IMAGE_TIMEOUT_MS,
   );
   if (!response.ok) throw new Error(response.error?.message ?? "memo.update failed");
+  return response.result.note;
+}
+
+/**
+ * 完成一条记录（桌面端「完成 / 完成本轮」按钮）。
+ * 周期记录由 Host 滚动到下一轮（status 保持 open），非周期记录置 done；
+ * 与 `memo.update { status: "done" }` 不同，对周期记录不会报错。
+ */
+export async function completeMemoNote(id: string): Promise<MemoNote> {
+  const response = await hostClient.request(
+    "memo.complete",
+    requireHost(),
+    { id },
+    DEFAULT_TIMEOUT_MS,
+  );
+  if (!response.ok) throw new Error(response.error?.message ?? "memo.complete failed");
   return response.result.note;
 }
 

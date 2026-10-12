@@ -341,6 +341,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
     id: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150",
     patch: { status: "done" },
   },
+  "memo.complete": { id: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150" },
   "memo.delete": { id: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150" },
   "memo.readImage": {
     noteId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150",
@@ -669,6 +670,8 @@ function invalidParams(method: HostMethod): unknown {
       return { title: "", contentMd: 42 };
     case "memo.update":
       return { id: "", patch: { status: "bogus" } };
+    case "memo.complete":
+      return { id: "" };
     case "memo.delete":
       return { id: "" };
     case "memo.readImage":
@@ -1131,7 +1134,11 @@ describe("protocol coverage — events", () => {
       kind: "done",
       files: ["C:/work/out/report.md"],
     },
-    "pixie.askReceived": { dispatchId: RUN_ID, question: "选哪个方案？", options: ["方案 A", "方案 B"] },
+    "pixie.askReceived": {
+      dispatchId: RUN_ID,
+      question: "选哪个方案？",
+      options: ["方案 A", "方案 B"],
+    },
     "pixie.segmentChanged": { segmentId: RUN_ID, phase: "started" },
     "pixie.staleWarning": { dispatchId: RUN_ID, minutes: 35, task: "跑测试", cwd: "C:/work/alpha" },
   };

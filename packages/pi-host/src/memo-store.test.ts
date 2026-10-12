@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -236,5 +236,118 @@ describe("MemoStore", () => {
     const reopened = new MemoStore(agentDir);
     const loaded = reopened.list().find((entry) => entry.id === note.id);
     expect(loaded?.result).toBeNull();
+  });
+});
+
+describe("MemoStore v0.4.0 计划与状态收敛", () => {
+  /** 手写 notes.json（模拟旧版/云端落盘数据）。 */
+  function writeRawNotes(agentDir: string, notes: Record<string, unknown>[]): void {
+    const dir = join(agentDir, "piabyss", "memo");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "notes.json"), JSON.stringify({ schemaVersion: 1, notes }), "utf8");
+  }
+
+  it("creates recurrence notes with nextDueAt and rolls it forward on complete", async () => {
+    const { store } = await tempLayout();
+    const note = store.create({
+      title: "周报",
+      contentMd: "写周报",
+      recurrence: { frequency: "weekly", weekdays: [1], time: "13:00", tz: "Asia/Shanghai" },
+    });
+    expect(note.recurrence).toMatchObject({
+      frequency: "weekly",
+      interval: 1,
+      weekdays: [1],
+      time: "13:00",
+    });
+    expect(note.nextDueAt).not.toBeNull();
+    expect(note.lastDoneAt).toBeNull();
+
+    const completed = store.complete(note.id);
+    // 周期记录完成本轮：status 回到 open，lastDoneAt 记录，nextDueAt 滚动到未来。
+    expect(completed.status).toBe("open");
+    expect(completed.lastDoneAt).not.toBeNull();
+    expect(completed.nextDueAt).not.toBeNull();
+    expect(completed.nextDueAt ?? 0).toBeGreaterThan(Date.now());
+  });
+
+  it("rejects marking a recurrence note done via update, allows clearing first", async () => {
+    const { store } = await tempLayout();
+    const note = store.create({
+      title: "周期",
+      contentMd: "c",
+      recurrence: { frequency: "daily", time: "09:00" },
+    });
+    expect(() => store.update(note.id, { status: "done" })).toThrow(/周期记录不能直接标记完成/);
+
+    // 同一次更新里先清周期再置 done = 明确「停用并完结」。
+    const stopped = store.update(note.id, { recurrence: null, status: "done" });
+    expect(stopped.status).toBe("done");
+    expect(stopped.recurrence).toBeNull();
+    expect(stopped.nextDueAt).toBeNull();
+  });
+
+  it("completes a non-recurrence note as done", async () => {
+    const { store } = await tempLayout();
+    const note = store.create({ title: "普通", contentMd: "c" });
+    const completed = store.complete(note.id);
+    expect(completed.status).toBe("done");
+    expect(completed.completedAt).not.toBeNull();
+  });
+
+  it("migrates legacy archived notes to done and backfills plan fields on read", async () => {
+    const { agentDir, store } = await tempLayout();
+    writeRawNotes(agentDir, [
+      {
+        id: "legacy-1",
+        title: "旧记录",
+        contentMd: "c",
+        status: "archived",
+        tags: [],
+        workspaceHint: null,
+        images: [],
+        createdAt: 1,
+        updatedAt: 2,
+        completedAt: null,
+        result: null,
+        deletedAt: null,
+        type: "bug",
+      },
+    ]);
+    const migrated = store.list()[0];
+    expect(migrated).toMatchObject({
+      status: "done",
+      dueAt: null,
+      recurrence: null,
+      nextDueAt: null,
+      lastDoneAt: null,
+    });
+    expect(migrated && "type" in migrated).toBe(false);
+  });
+
+  it("clears an invalid recurrence on read instead of failing the whole page", async () => {
+    const { agentDir, store } = await tempLayout();
+    writeRawNotes(agentDir, [
+      {
+        id: "bad-1",
+        title: "脏数据",
+        contentMd: "c",
+        status: "open",
+        tags: [],
+        workspaceHint: null,
+        images: [],
+        createdAt: 1,
+        updatedAt: 2,
+        completedAt: null,
+        result: null,
+        deletedAt: null,
+        dueAt: null,
+        recurrence: { frequency: "yearly", time: "09:00" },
+        nextDueAt: null,
+        lastDoneAt: null,
+      },
+    ]);
+    const [note] = store.list();
+    expect(note?.recurrence).toBeNull();
   });
 });

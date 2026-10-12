@@ -2207,8 +2207,33 @@ export type PixieUsageStats = {
   days: Record<string, { interactions: number; dispatches: number }>;
 };
 
-/** 备忘录状态：待处理 / 进行中 / 已完成 / 已归档。 */
-export type MemoNoteStatus = "open" | "in_progress" | "done" | "archived";
+/** 备忘录状态：待处理 / 进行中 / 已完成。 */
+export type MemoNoteStatus = "open" | "in_progress" | "done";
+
+/** 备忘录周期频率。 */
+export type MemoRecurrenceFrequency = "daily" | "weekly" | "monthly";
+
+/**
+ * 备忘录周期规则（结构化，非 cron；权威实现见 pi-host/src/recurrence.ts）。
+ * 时刻计算一律在规则声明的 IANA 时区内进行，不依赖设备本地时区。
+ */
+export type MemoRecurrence = {
+  frequency: MemoRecurrenceFrequency;
+  /** 每 N 天/周/月发生一次；1 = 每天/每周/每月（上限 365）。 */
+  interval: number;
+  /** weekly 必填：ISO 星期（1=周一 … 7=周日，去重升序）；其余频率恒为 []。 */
+  weekdays: number[];
+  /** monthly 必填：每月几号（1..31）；其余频率恒为 null。 */
+  monthDay: number | null;
+  /** 发生当天的时刻（24 小时制 "HH:mm"）。 */
+  time: string;
+  /** IANA 时区（如 "Asia/Shanghai"）。 */
+  tz: string;
+  /** 周期终点（epoch ms，含端点）；null = 无限期。 */
+  until: number | null;
+  /** interval 对齐锚点（epoch ms）；null 时以记录 createdAt 为锚。 */
+  startDate: number | null;
+};
 
 /** 备忘录记录的图片引用（图片文件由 Host 存储在备忘录目录下）。 */
 export type MemoImage = {
@@ -2258,6 +2283,14 @@ export type MemoNote = {
    * 把删除传播到其他设备（编辑时间晚于墓碑可复活）；超过 TTL 后物理清除。
    */
   deletedAt: number | null;
+  /** 一次性截止时刻（epoch ms）；周期记录不使用。null = 无截止。 */
+  dueAt: number | null;
+  /** 周期规则；null = 非周期记录。清除（置 null）= 停用周期。 */
+  recurrence: MemoRecurrence | null;
+  /** 周期记录当前轮次应处理时刻（epoch ms）；非周期记录恒为 null。 */
+  nextDueAt: number | null;
+  /** 周期记录最近一轮完成时刻（epoch ms）；从未完成过为 null。 */
+  lastDoneAt: number | null;
 };
 
 /** 备忘录「新建」草稿（仅本机持久化，不参与云同步；不含图片附件）。 */
