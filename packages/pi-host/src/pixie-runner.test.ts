@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   askDispatch,
+  configurePixieRuntime,
+  ensureCurrentSegment,
   ensurePixiePersonaFile,
   failDispatch,
   findDispatchBySession,
@@ -21,6 +23,9 @@ import {
 } from "./pixie-agent-runner.js";
 import { buildDispatchTaskPrompt } from "./pixie-controller.js";
 import { localDayKey } from "./pixie-usage.js";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp-agent.js";
+import { createTestModelServices } from "./test-helpers/model-runtime.js";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,8 +35,11 @@ function freshAgentDir(): string {
   return mkdtempSync(join(tmpdir(), "pixie-test-"));
 }
 
+const layouts: TempAgentLayout[] = [];
+
 afterEach(() => {
   resetPixieStateForTests();
+  for (const layout of layouts.splice(0)) layout.cleanup();
   delete process.env.PIABYSS_PIXIE_WORKSPACE;
   delete process.env.PIABYSS_PIXIE_STALE_MS;
   delete process.env.PIABYSS_PIXIE_MAX_TURNS;
@@ -309,5 +317,135 @@ describe("pixie persona file bootstrap", () => {
     rmSync(personaPath(agentDir));
     ensurePixiePersonaFile(agentDir, pixieCwd);
     expect(existsSync(personaPath(agentDir))).toBe(false);
+  });
+});
+
+describe("pixie restart resume", () => {
+  /**
+   * Write the timeline a running Host leaves behind: one OPEN segment pointer
+   * (endedAt=null) to a session file that is still on disk. `pixie.state`
+   * counts as resident only while that segment is actually back in memory.
+   */
+  function writeOpenSegment(agentDir: string, sessionPath: string): void {
+    const dir = join(agentDir, "piabyss", "pixie");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "timeline.json"),
+      JSON.stringify({
+        version: 1,
+        segments: [
+          {
+            id: "seg_restart",
+            sessionId: "sess_restart",
+            sessionPath,
+            startedAt: Date.now() - 60_000,
+            endedAt: null,
+            separator: null,
+            reason: null,
+            handoff: null,
+          },
+        ],
+      }),
+      "utf8",
+    );
+  }
+
+  it("宿主重启后按时间线重建当前段，resident 由 false 变 true", async () => {
+    const layout = createTempAgentLayout("piabyss-pixie-resume-");
+    layouts.push(layout);
+    const { modelRuntime } = await createTestModelServices(layout.agentDir);
+    configurePixieRuntime(modelRuntime);
+
+    // 重启前留下的现场：段会话真的写盘过（含一条用户消息）。
+    const pixieCwd = resolvePixieWorkspacePath(layout.agentDir);
+    mkdirSync(pixieCwd, { recursive: true });
+    const sessionManager = SessionManager.create(
+      pixieCwd,
+      join(layout.agentDir, "sessions", "pixie-test"),
+    );
+    sessionManager.appendMessage({
+      role: "user",
+      content: "重启前的一句话",
+      timestamp: Date.now(),
+    });
+    const sessionPath = sessionManager.getSessionFile();
+    expect(sessionPath).toBeTruthy();
+    resetPixieStateForTests(); // Host 重启：内存里的段没了，磁盘还在
+
+    writeOpenSegment(layout.agentDir, sessionPath!);
+
+    // 纯快照路径不重建（这就是「打个盹」按钮曾经被卡死的那个值）。
+    expect(pixieState(layout.agentDir).resident).toBe(false);
+    expect(pixieState(layout.agentDir).segments[0]?.messages[0]?.text).toBe("重启前的一句话");
+
+    const resumed = await ensureCurrentSegment(layout.agentDir);
+    expect(resumed).not.toBeNull();
+    const state = pixieState(layout.agentDir);
+    expect(state.resident).toBe(true);
+    expect(state.sessionPath).toBe(sessionPath);
+    expect(resumed!.record.id).toBe("seg_restart");
+    resumed!.session.dispose();
+  });
+
+  it("已经是内存里的段时直接返回，不重复打开", async () => {
+    const layout = createTempAgentLayout("piabyss-pixie-resident-");
+    layouts.push(layout);
+    const { modelRuntime } = await createTestModelServices(layout.agentDir);
+    configurePixieRuntime(modelRuntime);
+
+    const pixieCwd = resolvePixieWorkspacePath(layout.agentDir);
+    mkdirSync(pixieCwd, { recursive: true });
+    const sessionManager = SessionManager.create(
+      pixieCwd,
+      join(layout.agentDir, "sessions", "pixie-test"),
+    );
+    sessionManager.appendMessage({ role: "user", content: "hi", timestamp: Date.now() });
+    writeOpenSegment(layout.agentDir, sessionManager.getSessionFile()!);
+
+    const first = await ensureCurrentSegment(layout.agentDir);
+    const second = await ensureCurrentSegment(layout.agentDir);
+    expect(second).toBe(first);
+    first!.session.dispose();
+  });
+
+  it("恢复失败退化为归档占位，且不在每次轮询里重试", async () => {
+    const agentDir = freshAgentDir();
+    // 段指针指向一个写坏的会话文件（截断/半截落盘的现场）：open 必然抛错。
+    const broken = join(agentDir, "broken-session.jsonl");
+    writeFileSync(broken, "这不是一个合法的 pi 会话\n", "utf8");
+    writeOpenSegment(agentDir, broken);
+
+    await expect(ensureCurrentSegment(agentDir)).resolves.toBeNull();
+    expect(pixieState(agentDir).resident).toBe(false);
+    expect(pixieState(agentDir).segments[0]?.messages).toEqual([]);
+    // 第二次直接短路（resumeFailed 记住段 id），不会每次轮询都去开一遍文件。
+    await expect(ensureCurrentSegment(agentDir)).resolves.toBeNull();
+    expect(pixieState(agentDir).resident).toBe(false);
+  });
+
+  it("并发调用只打开一次会话（单飞）", async () => {
+    const layout = createTempAgentLayout("piabyss-pixie-singleflight-");
+    layouts.push(layout);
+    const { modelRuntime } = await createTestModelServices(layout.agentDir);
+    configurePixieRuntime(modelRuntime);
+
+    const pixieCwd = resolvePixieWorkspacePath(layout.agentDir);
+    mkdirSync(pixieCwd, { recursive: true });
+    const sessionManager = SessionManager.create(
+      pixieCwd,
+      join(layout.agentDir, "sessions", "pixie-test"),
+    );
+    sessionManager.appendMessage({ role: "user", content: "hi", timestamp: Date.now() });
+    writeOpenSegment(layout.agentDir, sessionManager.getSessionFile()!);
+    resetPixieStateForTests();
+
+    // 轮询与发送同时撞上来：两次调用拿到的必须是同一个运行时。
+    const [first, second] = await Promise.all([
+      ensureCurrentSegment(layout.agentDir),
+      ensureCurrentSegment(layout.agentDir),
+    ]);
+    expect(first).not.toBeNull();
+    expect(second).toBe(first);
+    first!.session.dispose();
   });
 });

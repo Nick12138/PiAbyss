@@ -885,6 +885,12 @@ type PixieRunner = {
   turnsInCurrentSegment: number;
   /** Segment ids whose JSONL could not be reopened after a Host restart. */
   resumeFailed: Set<string>;
+  /**
+   * Single-flight guard for the restart resume. `pixie.state` polls while a
+   * send may be resuming the same segment; two concurrent
+   * `SessionManager.open` calls on one JSONL would fork the transcript.
+   */
+  resumeInFlight: Promise<PixieSegmentRuntime | null> | null;
   knownWorkspaces: string[];
   unsubscribeSettle: (() => void) | null;
 };
@@ -910,6 +916,7 @@ function ensureRunner(agentDir: string): PixieRunner {
     pendingUserRest: false,
     turnsInCurrentSegment: 0,
     resumeFailed: new Set(),
+    resumeInFlight: null,
     knownWorkspaces: loadKnownWorkspaces(agentDir),
     unsubscribeSettle: null,
   };
@@ -1185,12 +1192,35 @@ async function startNewSegment(
  * Ensure a live current segment: resume the latest open segment after a Host
  * restart, or return the in-memory one. Never CREATES a segment — creation
  * happens on the next user message (lazy, matching 搬家即睡觉 semantics).
+ *
+ * This is the rebuild the `PixieAgentState.resident` contract promises: every
+ * read path that reports pixie state (the `pixie.state` handler) awaits it, so
+ * the first poll after a restart already sees the resumed segment instead of
+ * an empty runner. `resumeFailed` keeps a corrupt segment from being retried
+ * on every poll, and `resumeInFlight` keeps concurrent callers (poll + send)
+ * from opening the same JSONL twice.
  */
-async function ensureCurrentSegment(agentDir: string): Promise<PixieSegmentRuntime | null> {
+export async function ensureCurrentSegment(agentDir: string): Promise<PixieSegmentRuntime | null> {
   const state = ensureRunner(agentDir);
   if (state.current) return state.current;
+  if (state.resumeInFlight) return state.resumeInFlight;
   const last = state.timeline.segments[state.timeline.segments.length - 1];
   if (!last || last.endedAt !== null || state.resumeFailed.has(last.id)) return null;
+  const attempt = resumeSegment(agentDir, state, last);
+  state.resumeInFlight = attempt;
+  try {
+    return await attempt;
+  } finally {
+    state.resumeInFlight = null;
+  }
+}
+
+/** The actual reopen: one attempt per segment id, failure renders as archived. */
+async function resumeSegment(
+  agentDir: string,
+  state: PixieRunner,
+  last: PixieSegmentRecord,
+): Promise<PixieSegmentRuntime | null> {
   try {
     const pixieCwd = resolvePixieWorkspacePath(agentDir);
     mkdirSync(pixieCwd, { recursive: true });
@@ -1471,7 +1501,16 @@ export function classifyError(raw: string): string {
 
 /* ── 状态（pixie.state）──────────────────────────────────────────── */
 
-/** Full pixie state for the frontend: segment timeline + delegation registry. */
+/**
+ * Snapshot pixie state for the frontend: segment timeline + delegation registry.
+ *
+ * Read-only and synchronous by design: it reports whatever the runner currently
+ * holds. The restart rebuild is `ensureCurrentSegment` — the `pixie.state`
+ * handler awaits it before calling this, so the first poll after a Host restart
+ * already reports `resident: true`. Calling this directly (tests, other Host
+ * paths) skips the rebuild and reports `resident: false` for a segment that is
+ * still open on disk.
+ */
 export function pixieState(agentDir: string): {
   resident: boolean;
   sessionPath: string | null;
@@ -1486,8 +1525,6 @@ export function pixieState(agentDir: string): {
   const state = ensureRunner(agentDir);
   loadDispatches(agentDir);
   markStaleDispatches();
-  // Best-effort resume of the latest open segment (Host restart path). Never
-  // creates a session; failure degrades to the archived placeholder.
   const current = state.current;
   const segmentViews = state.timeline.segments.map((record) => {
     const isCurrent = current !== null && current.record.id === record.id;

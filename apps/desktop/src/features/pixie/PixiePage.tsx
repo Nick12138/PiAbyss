@@ -8,7 +8,7 @@
  * delegation panel shows the three callback kinds with inline reply.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Loader2, Moon, Sparkles } from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2, Sparkles } from "lucide-react";
 import type { PixieAgentMessage, PixieDispatchRecord, PixieSegmentView } from "@piabyss/protocol";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -321,7 +321,6 @@ export function PixiePage() {
   const refresh = usePixieViewStore((s) => s.refresh);
   const send = usePixieViewStore((s) => s.send);
   const reply = usePixieViewStore((s) => s.reply);
-  const nap = usePixieViewStore((s) => s.nap);
   const pushContext = usePixieViewStore((s) => s.pushContext);
   const interject = usePixieViewStore((s) => s.interject);
   const stopDispatch = usePixieViewStore((s) => s.stopDispatch);
@@ -337,7 +336,6 @@ export function PixiePage() {
   const segments: PixieSegmentView[] = useMemo(() => state?.segments ?? [], [state]);
   const running = state?.running ?? false;
   const askPending = state?.askPending ?? false;
-  const modelName = state?.modelName ?? null;
   const dispatches = state?.dispatches ?? [];
   const awaitingDispatch = dispatches.find((d) => d.status === "awaiting_user") ?? null;
 
@@ -477,28 +475,6 @@ export function PixiePage() {
 
   return (
     <div className="@container flex h-full min-w-0 flex-col" data-pixie-page>
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-        <Sparkles size={14} className="text-primary" />
-        <span className="text-sm font-medium">{t("pixieTitle")}</span>
-        <span className="text-xs text-muted">{t("pixieHeaderHint")}</span>
-        <span
-          data-testid="pixie-running-dot"
-          className={`ml-1 size-1.5 rounded-full ${running ? "bg-success animate-pulse" : "bg-muted/40"}`}
-          title={running ? t("pixieThinking") : undefined}
-        />
-        {modelName && <span className="ml-auto text-[10px] text-muted">{modelName}</span>}
-        <button
-          type="button"
-          data-testid="pixie-nap-button"
-          className="ml-2 flex shrink-0 items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted transition-colors hover:border-primary/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-          disabled={running || !state?.resident}
-          title={t("pixieNapHint")}
-          onClick={() => void nap()}
-        >
-          <Moon size={11} />
-          {t("pixieNapButton")}
-        </button>
-      </div>
       <div className="flex min-h-0 flex-1 flex-col @3xl:flex-row">
         {/* Conversation (70%) */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col @3xl:flex-[7]">

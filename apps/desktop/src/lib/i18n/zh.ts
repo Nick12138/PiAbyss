@@ -1930,7 +1930,6 @@ export const zh: Record<MessageKey, string> = {
 
   // 小精灵（pixie）
   pixieTitle: "小精灵",
-  pixieHeaderHint: "常驻助手 · 轻量查询直接答，重活委派给工作区会话",
   pixieEmptyTitle: "嗨，我是小精灵",
   pixieEmptyHint: "可以问我今天有什么工作需要做，或者让我帮你查看某个项目的运行情况。",
   pixieThinking: "小精灵思考中…",
@@ -1956,6 +1955,8 @@ export const zh: Record<MessageKey, string> = {
   pixieRetryRedispatch: "重派",
   pixieNapButton: "打个盹",
   pixieNapHint: "结束当前会话段，小精灵会写一句交接后开启新段",
+  pixieNapHintBusy: "她正在回复，等这一轮说完再打盹",
+  pixieNapHintAsleep: "当前没有进行中的会话段（她正睡着）；发一条消息就会开新段，点这里也能请她收尾",
   pixieSleepPhraseFallback: "打个盹~",
   pixieSleepReasonAgent: "小精灵自己打了个盹",
   pixieSleepReasonUser: "你请她打了个盹",

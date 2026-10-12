@@ -2018,8 +2018,6 @@ export const en = {
 
   // Pixie
   pixieTitle: "Pixie",
-  pixieHeaderHint:
-    "Resident helper · answers quick queries, delegates heavy work to workspace sessions",
   pixieEmptyTitle: "Hi, I'm Pixie",
   pixieEmptyHint: "Ask what work is due today, or have me check how a project is doing.",
   pixieThinking: "Pixie is thinking…",
@@ -2046,6 +2044,9 @@ export const en = {
   pixieRetryRedispatch: "Resend",
   pixieNapButton: "Take a nap",
   pixieNapHint: "End the current segment; the pixie leaves a handoff note and starts fresh",
+  pixieNapHintBusy: "She is still replying — take a nap once this turn settles",
+  pixieNapHintAsleep:
+    "No segment is open (she is asleep); sending a message starts a new one — this still asks her to wrap up",
   pixieSleepPhraseFallback: "Taking a nap~",
   pixieSleepReasonAgent: "The pixie dozed off on her own",
   pixieSleepReasonUser: "You asked her to nap",

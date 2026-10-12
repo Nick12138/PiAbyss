@@ -1,4 +1,4 @@
-import { Search, CalendarClock, ListTodo } from "lucide-react";
+import { Search, CalendarClock, ListTodo, Sparkles } from "lucide-react";
 import { useAppStore } from "../lib/stores/app-store";
 import { useT } from "../lib/i18n/use-t";
 import { requestGlobalSearchOpen } from "../lib/commands/events";
@@ -10,6 +10,8 @@ import { SidebarBrandToggle } from "./Sidebar";
 import { MemoSyncHeaderActions } from "../features/memo/MemoSyncHeaderActions";
 import { MemoSyncStatusDot } from "../features/memo/memo-sync-status";
 import { SubagentTitleMenu } from "../features/subagents/SubagentTitleMenu";
+import { PixieNapButton } from "../features/pixie/PixieNapButton";
+import { usePixieViewStore } from "../features/pixie/pixie-store";
 import { clampSessionTitleForDisplay } from "../lib/session-title-display";
 
 /** Single full-width app-level top bar replacing the three independent header
@@ -38,6 +40,10 @@ export function AppTopBar({
   const activeSubagentNodeId = useAppStore((s) => s.activeSubagentNodeId);
   const setActiveSubagent = useAppStore((s) => s.setActiveSubagent);
   const platform = resolveWindowControlsPlatform();
+  // Pixie header state, hoisted here when the page stopped drawing its own
+  // header (title + liveness dot + model name now live in this bar).
+  const pixieRunning = usePixieViewStore((s) => s.state?.running ?? false);
+  const pixieModelName = usePixieViewStore((s) => s.state?.modelName ?? null);
 
   const isNewConversation = Boolean(
     session && session.messages.length === 0 && session.isIdle && !sessionTreeNavigated,
@@ -199,6 +205,35 @@ export function AppTopBar({
             </span>
             <MemoSyncStatusDot />
           </div>
+        ) : page === "pixie" ? (
+          <div
+            className="pointer-events-none flex min-w-0 flex-1 items-center gap-2"
+            data-tauri-drag-region
+          >
+            <Sparkles
+              size={16}
+              className="pointer-events-none shrink-0 text-primary"
+              aria-hidden="true"
+            />
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              <h1 className="min-w-0 shrink-0 truncate text-base font-semibold leading-5">
+                {t("pixieTitle")}
+              </h1>
+              {/* Pixie liveness dot: green = thinking, muted = idle. */}
+              <span
+                data-testid="pixie-running-dot"
+                aria-hidden="true"
+                className={`size-1.5 shrink-0 rounded-full ${
+                  pixieRunning ? "bg-success animate-pulse" : "bg-muted/40"
+                }`}
+              />
+              {pixieModelName && (
+                <span className="min-w-0 truncate text-xs leading-5 text-muted">
+                  {pixieModelName}
+                </span>
+              )}
+            </div>
+          </div>
         ) : page === "settings" || page === "packages" ? (
           <div
             className="pointer-events-none flex min-w-0 flex-1"
@@ -216,6 +251,7 @@ export function AppTopBar({
         ref={actionsSlotRef}
       >
         {page === "memo" && <MemoSyncHeaderActions />}
+        {page === "pixie" && <PixieNapButton />}
       </div>
 
       {/* Right segment: download-and-update (while an update is available) +

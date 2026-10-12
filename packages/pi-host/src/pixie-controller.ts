@@ -48,6 +48,7 @@ import {
   classifyError,
   configurePixieTerminalSettleHook,
   deliverDispatchCallback,
+  ensureCurrentSegment,
   failDispatch,
   findDispatchById,
   findDispatchBySession,
@@ -1364,6 +1365,12 @@ export function createPixieHandlers(
   return {
     "pixie.state": async () => {
       if (!gate()) return { error: pixiePluginDisabledError() };
+      // Host 重启后按时间线把当前段重建回内存，再读状态：resident /
+      // running / messages 都依赖内存里的那个段。不做这一步，时间线里
+      // 那段明明还开着（endedAt=null），界面也会认为"没有驻留段"，顶栏的
+      // 「打个盹」按钮就被 disabled 卡死（它门禁在 resident 上）。
+      // 幂等且廉价：有段直接返回，恢复失败只记一次 resumeFailed，不重试。
+      await ensureCurrentSegment(agentDir);
       return { result: pixieState(agentDir) };
     },
 
