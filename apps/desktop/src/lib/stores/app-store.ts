@@ -655,6 +655,11 @@ export type AppState = EpochState & {
   workspaceActivities: Record<string, WorkspaceActivity>;
   setWorkspaceActivities: (activities: Record<string, WorkspaceActivity>) => void;
   setDraftTextLocal: (target: DraftTarget, text: string) => number;
+  /**
+   * 按裸草稿键写入文本（如小精灵的固定键 "pixie"）。不登记 draft-target，
+   * 因此不参与 native draft 持久化，仅作共享输入框的内存草稿。
+   */
+  setDraftTextByKey: (key: string, text: string) => void;
   /** Replace the injected references of one draft (empty array clears them). */
   setDraftReferences: (target: DraftTarget, references: readonly DraftReference[]) => void;
   /** Replace the persisted attachment snapshot of one draft (empty array clears it). */
@@ -1609,6 +1614,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     });
     return version;
+  },
+  setDraftTextByKey: (key, text) => {
+    set((state) => {
+      const draftTexts = { ...state.draftTexts };
+      if (text) draftTexts[key] = text;
+      else delete draftTexts[key];
+      return {
+        draftTexts,
+        draftEditVersions: { ...state.draftEditVersions, [key]: (state.draftEditVersions[key] ?? 0) + 1 },
+      };
+    });
   },
   setDraftReferences: (target, references) =>
     set((state) => {

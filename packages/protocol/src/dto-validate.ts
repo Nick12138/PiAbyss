@@ -1097,6 +1097,114 @@ function isSessionContextBreakdown(value: unknown): boolean {
   );
 }
 
+function isSessionStatsSnapshot(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      ["messageCount"],
+      [
+        "toolCallCount",
+        "tokenUsage",
+        "userMessageCount",
+        "assistantMessageCount",
+        "toolResultCount",
+        "tokens",
+        "timing",
+        "cost",
+        "sessionFile",
+      ],
+    ) &&
+    isSafeRevision(value.messageCount) &&
+    (value.toolCallCount === undefined || isSafeRevision(value.toolCallCount)) &&
+    (value.tokenUsage === undefined || isJsonValue(value.tokenUsage)) &&
+    (value.userMessageCount === undefined || isSafeRevision(value.userMessageCount)) &&
+    (value.assistantMessageCount === undefined || isSafeRevision(value.assistantMessageCount)) &&
+    (value.toolResultCount === undefined || isSafeRevision(value.toolResultCount)) &&
+    (value.tokens === undefined ||
+      (isPlainObject(value.tokens) &&
+        hasExactKeys(value.tokens, ["input", "output", "cacheRead", "cacheWrite", "total"]) &&
+        isFiniteNumber(value.tokens.input) &&
+        isFiniteNumber(value.tokens.output) &&
+        isFiniteNumber(value.tokens.cacheRead) &&
+        isFiniteNumber(value.tokens.cacheWrite) &&
+        isFiniteNumber(value.tokens.total))) &&
+    (value.timing === undefined ||
+      (isPlainObject(value.timing) &&
+        hasExactKeys(
+          value.timing,
+          ["llmMs", "toolMs"],
+          ["ttftMs", "ttftSteps", "decodeMs", "decodeTokens"],
+        ) &&
+        isFiniteNumber(value.timing.llmMs) &&
+        isFiniteNumber(value.timing.toolMs) &&
+        (value.timing.ttftMs === undefined || isFiniteNumber(value.timing.ttftMs)) &&
+        (value.timing.ttftSteps === undefined || isFiniteNumber(value.timing.ttftSteps)) &&
+        (value.timing.decodeMs === undefined || isFiniteNumber(value.timing.decodeMs)) &&
+        (value.timing.decodeTokens === undefined || isFiniteNumber(value.timing.decodeTokens)))) &&
+    (value.cost === undefined || isFiniteNumber(value.cost)) &&
+    (value.sessionFile === undefined || isString(value.sessionFile))
+  );
+}
+
+function isSessionContextUsage(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["tokens", "contextWindow"], ["breakdown"]) &&
+    (value.tokens === null || isSafeRevision(value.tokens)) &&
+    isSafeRevision(value.contextWindow) &&
+    value.contextWindow > 0 &&
+    (value.breakdown === undefined || isSessionContextBreakdown(value.breakdown))
+  );
+}
+
+/** 小精灵当前生效的模型选择（provider/id）。 */
+function isPixieModelSelection(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["provider", "id"]) &&
+    isNonEmptyString(value.provider) &&
+    isNonEmptyString(value.id)
+  );
+}
+
+/** 小精灵可选模型项。 */
+function isPixieModelOption(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["provider", "id", "label"], ["providerName"]) &&
+    isNonEmptyString(value.provider) &&
+    isNonEmptyString(value.id) &&
+    isNonEmptyString(value.label) &&
+    isOptionalString(value.providerName)
+  );
+}
+
+/** 小精灵段会话实时统计与运行态。 */
+function isPixieSessionRundown(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "model",
+      "thinkingLevel",
+      "availableThinkingLevels",
+      "isStreaming",
+      "isCompacting",
+      "autoCompactionEnabled",
+      "stats",
+      "contextUsage",
+    ]) &&
+    (value.model === null || isPixieModelSelection(value.model)) &&
+    (value.thinkingLevel === null || isString(value.thinkingLevel)) &&
+    isStringArray(value.availableThinkingLevels) &&
+    isBoolean(value.isStreaming) &&
+    isBoolean(value.isCompacting) &&
+    isBoolean(value.autoCompactionEnabled) &&
+    (value.stats === null || isSessionStatsSnapshot(value.stats)) &&
+    (value.contextUsage === null || isSessionContextUsage(value.contextUsage))
+  );
+}
+
 function isSerializableCompactionResult(value: unknown): boolean {
   return (
     isPlainObject(value) &&
@@ -3968,6 +4076,46 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         })
         ? null
         : "invalid pixie.listSessions result";
+    case "pixie.models":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["models", "current"]) &&
+        Array.isArray(result.models) &&
+        result.models.every(isPixieModelOption) &&
+        (result.current === null || isPixieModelSelection(result.current))
+        ? null
+        : "invalid pixie.models result";
+    case "pixie.setModel":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["ok", "error", "current"]) &&
+        typeof result.ok === "boolean" &&
+        (result.error === null || isString(result.error)) &&
+        (result.current === null || isPixieModelSelection(result.current))
+        ? null
+        : "invalid pixie.setModel result";
+    case "pixie.rundown":
+      return isPixieSessionRundown(result) ? null : "invalid pixie.rundown result";
+    case "pixie.compact":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["ok", "error", "tokensBefore", "tokensAfter"]) &&
+        typeof result.ok === "boolean" &&
+        (result.error === null || isString(result.error)) &&
+        (result.tokensBefore === null || isFiniteNumber(result.tokensBefore)) &&
+        (result.tokensAfter === null || isFiniteNumber(result.tokensAfter))
+        ? null
+        : "invalid pixie.compact result";
+    case "pixie.abortCompaction":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["ok"]) &&
+        typeof result.ok === "boolean"
+        ? null
+        : "invalid pixie.abortCompaction result";
+    case "pixie.setAutoCompaction":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["ok", "enabled"]) &&
+        typeof result.ok === "boolean" &&
+        typeof result.enabled === "boolean"
+        ? null
+        : "invalid pixie.setAutoCompaction result";
     case "model.list":
       return isPlainObject(result) &&
         hasExactKeys(

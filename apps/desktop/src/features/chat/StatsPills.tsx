@@ -40,6 +40,7 @@ import {
 } from "./stats-format";
 import { usePopoverLeft } from "./popover-placement";
 import { ContextUsageRing } from "./ModelControls";
+import { useComposerRuntime, type ComposerRuntime } from "./composer-runtime";
 
 /** Exact integer token count with digit grouping. */
 function exactTokens(value: number): string {
@@ -60,12 +61,19 @@ function StatRow({ label, value }: { label: string; value: string }) {
  * on mount, identity change, and idle flips (a settled run refreshes the
  * durable aggregates). Mid-stream revisions do not refetch — the labels fall
  * back to the live-measured timings while streaming.
+ *
+ * 普通会话沿用 session.getStats；小精灵没有 session.messages 可派生，改由
+ * `runtime.rundown()` 的 stats 供给（每次轮询刷新时重取）。
  */
-function useSessionStats(enabled: boolean): {
+function useSessionStats(
+  enabled: boolean,
+  runtime: ComposerRuntime,
+): {
   stats: SessionStatsSnapshot | null;
   error: string | null;
 } {
   const t = useT();
+  const isPixie = runtime.variant === "pixie";
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
   const session = useAppStore((s) => s.session);
@@ -79,7 +87,7 @@ function useSessionStats(enabled: boolean): {
   const isIdle = session?.isIdle ?? true;
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || isPixie) return;
     const current = useAppStore.getState();
     if (!current.host || !current.workspace || !current.session) return;
     let cancelled = false;
@@ -114,7 +122,28 @@ function useSessionStats(enabled: boolean): {
     return () => {
       cancelled = true;
     };
-  }, [enabled, hostInstanceId, workspaceId, workspaceRevision, sessionId, isIdle, t]);
+  }, [enabled, isPixie, hostInstanceId, workspaceId, workspaceRevision, sessionId, isIdle, t]);
+
+  useEffect(() => {
+    if (!enabled || !isPixie) return;
+    let cancelled = false;
+    void runtime
+      .rundown()
+      .then((rundown) => {
+        if (cancelled) return;
+        setError(null);
+        // 不主动清空：轮询重取时保留上一帧读数，避免胶囊闪烁。
+        setStats(rundown?.stats ?? null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(userErrorMessage(err, t("statsLoadFailed")));
+      });
+    return () => {
+      cancelled = true;
+    };
+    // runtime 由小精灵页每次轮询重建（对象身份变化即重取）。
+  }, [enabled, isPixie, runtime, t]);
 
   return { stats, error };
 }
@@ -127,14 +156,19 @@ export type StatsPopoverId = "time" | "usage" | "context";
 
 export function SessionStatsPills() {
   const t = useT();
-  const session = useAppStore((s) => s.session);
+  const runtime = useComposerRuntime();
+  const isPixie = runtime.variant === "pixie";
+  const session = runtime.session;
   const messages = useMemo(() => session?.messages ?? [], [session?.messages]);
   const stats = useMemo(() => derivePillStats(messages), [messages]);
   const [openPopover, setOpenPopover] = useState<StatsPopoverId | null>(null);
 
   const hasTokens = billedInputTokens(stats.usage) > 0 || stats.usage.output > 0;
-  const visible = stats.steps > 0 || hasTokens;
-  const { stats: fetched, error: fetchError } = useSessionStats(visible);
+  const liveVisible = stats.steps > 0 || hasTokens;
+  // 小精灵没有 session.messages，可见性只能落在 rundown 的 stats 上；普通会话
+  // 沿用可见消息的实时派生。
+  const { stats: fetched, error: fetchError } = useSessionStats(isPixie || liveVisible, runtime);
+  const visible = isPixie ? fetched !== null : liveVisible;
 
   // Pill labels ride the durable whole-history aggregates when fetched,
   // falling back to the live-measured visible snapshot while streaming.

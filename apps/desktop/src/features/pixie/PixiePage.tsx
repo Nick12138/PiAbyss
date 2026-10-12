@@ -8,19 +8,79 @@
  * delegation panel shows the three callback kinds with inline reply.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Loader2, Sparkles } from "lucide-react";
-import type { PixieAgentMessage, PixieDispatchRecord, PixieSegmentView } from "@piabyss/protocol";
+import { ArrowDown, Loader2, Sparkles } from "lucide-react";
+import type {
+  PixieAgentMessage,
+  PixieAgentState,
+  PixieDispatchRecord,
+  PixieSegmentView,
+  PixieSessionRundown,
+  SessionSnapshot,
+} from "@piabyss/protocol";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
+import { hostContext } from "../../lib/bridge/host-context";
+import { formatTokenCount } from "../../lib/format-token-count";
 import { TranscriptRowView } from "../chat/Transcript";
 import { buildTranscriptRows, type TranscriptRow } from "../chat/transcript-model";
 import type { SerializableAgentContent, SerializableAgentMessage } from "@piabyss/protocol";
+import { Composer } from "../chat/Composer";
+import { ComposerRuntimeProvider, type ComposerRuntime } from "../chat/composer-runtime";
+import { SessionStatsPills } from "../chat/StatsPills";
 import { usePixieViewStore } from "./pixie-store";
 import { SleepChip } from "./SleepChip";
 
 const POLL_IDLE_MS = 2_500;
 const POLL_ACTIVE_MS = 1_200;
+const RUNDOWN_TIMEOUT_MS = 30_000;
+
+/**
+ * 把 pixie.state + pixie.rundown 合成为共享输入框可消费的会话视图。
+ * 小精灵段没有会话级 host 通道，这里只填输入框真正会读的字段：
+ * isIdle / isCompacting / thinkingLevel / model / contextUsage / autoCompaction。
+ */
+function pixieSessionSnapshot(
+  state: PixieAgentState | null,
+  rundown: PixieSessionRundown | null,
+): SessionSnapshot | null {
+  if (!state) return null;
+  const sessionId = state.sessionPath ?? "pixie";
+  return {
+    sessionId,
+    cwd: "",
+    revision: 0,
+    isStreaming: state.running,
+    isIdle: !state.running,
+    isCompacting: rundown?.isCompacting ?? false,
+    isRetrying: false,
+    thinkingLevel: rundown?.thinkingLevel ?? "off",
+    autoCompactionEnabled: rundown?.autoCompactionEnabled ?? false,
+    autoRetryEnabled: false,
+    steeringMode: "all",
+    followUpMode: "all",
+    pending: { revision: 0, steering: [], followUp: [] },
+    messages: [],
+    tools: {
+      revision: 0,
+      workspaceId: "",
+      sessionId,
+      sessionRevision: 0,
+      tools: [],
+      active: [],
+    },
+    ...(rundown?.model
+      ? {
+          model: {
+            provider: rundown.model.provider,
+            modelId: rundown.model.id,
+            name: rundown.model.id,
+          },
+        }
+      : {}),
+    ...(rundown?.contextUsage ? { contextUsage: rundown.contextUsage } : {}),
+  };
+}
 
 /** Strip the `[pixie|channel]` marker so user messages read naturally. */
 function stripSourceMarker(text: string): string {
@@ -149,7 +209,6 @@ function DispatchRow({
           : record.stale
             ? "text-warning"
             : "text-muted";
-  const lastActive = record.lastActiveAt ?? record.createdAt;
   return (
     <div className="rounded-md border border-border bg-surface-raised p-2.5 text-xs">
       <div className="mb-1 flex items-center justify-between gap-2">
@@ -319,15 +378,13 @@ export function PixiePage() {
   const state = usePixieViewStore((s) => s.state);
   const error = usePixieViewStore((s) => s.error);
   const refresh = usePixieViewStore((s) => s.refresh);
-  const send = usePixieViewStore((s) => s.send);
   const reply = usePixieViewStore((s) => s.reply);
   const pushContext = usePixieViewStore((s) => s.pushContext);
   const interject = usePixieViewStore((s) => s.interject);
   const stopDispatch = usePixieViewStore((s) => s.stopDispatch);
   const retryDispatch = usePixieViewStore((s) => s.retryDispatch);
 
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
+  const [rundown, setRundown] = useState<PixieSessionRundown | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
   const lastCountRef = useRef(0);
@@ -336,8 +393,25 @@ export function PixiePage() {
   const segments: PixieSegmentView[] = useMemo(() => state?.segments ?? [], [state]);
   const running = state?.running ?? false;
   const askPending = state?.askPending ?? false;
-  const dispatches = state?.dispatches ?? [];
+  const dispatches = useMemo(() => state?.dispatches ?? [], [state]);
   const awaitingDispatch = dispatches.find((d) => d.status === "awaiting_user") ?? null;
+
+  /** 拉取小精灵段实时统计（模型/推理深度/用量/压缩态），供共享输入框消费。 */
+  const refreshRundown = useCallback(async () => {
+    const currentHost = useAppStore.getState().host;
+    if (!currentHost) return;
+    try {
+      const res = await hostClient.request(
+        "pixie.rundown",
+        hostContext(currentHost),
+        null,
+        RUNDOWN_TIMEOUT_MS,
+      );
+      if (res.ok) setRundown(res.result);
+    } catch {
+      /* 统计为最佳努力，失败不清空上一帧 */
+    }
+  }, []);
 
   // Known-workspace push: on mount and whenever the list changes.
   useEffect(() => {
@@ -347,13 +421,20 @@ export function PixiePage() {
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+    void refreshRundown();
+  }, [refresh, refreshRundown]);
 
   // Polling: fast while streaming (ScheduleAgentPage先例).
   useEffect(() => {
-    const timer = setInterval(() => void refresh(), running ? POLL_ACTIVE_MS : POLL_IDLE_MS);
+    const timer = setInterval(
+      () => {
+        void refresh();
+        void refreshRundown();
+      },
+      running ? POLL_ACTIVE_MS : POLL_IDLE_MS,
+    );
     return () => clearInterval(timer);
-  }, [refresh, running]);
+  }, [refresh, refreshRundown, running]);
 
   // Instant refresh on callback/ask/segment/stale events.
   useEffect(() => {
@@ -435,16 +516,116 @@ export function PixiePage() {
 
   const isEmpty = segments.every((segment) => (rowsBySegment.get(segment.id) ?? []).length === 0);
 
-  async function handleSend() {
-    const text = draft.trim();
-    if (!text || sending || running) return;
-    setSending(true);
-    setDraft("");
-    userScrolledRef.current = false;
-    setShowScrollToBottom(false);
-    await send(text);
-    setSending(false);
-  }
+  /**
+   * 小精灵的 Composer 运行时：把共享输入框接到 pixie.* 通道上。发送复用
+   * usePixieViewStore().send（内部已实现"有 awaiting 委派就走 pixie.reply"），
+   * 其余能力一律走 HostContext 的 pixie.* RPC。
+   */
+  const pixieRuntime = useMemo<ComposerRuntime>(() => {
+    const rpcTimeout = RUNDOWN_TIMEOUT_MS;
+    return {
+      variant: "pixie",
+      host,
+      session: pixieSessionSnapshot(state, rundown),
+      draftKey: "pixie",
+      rpcContext: host ? hostContext(host) : null,
+
+      send: async ({ text, images, attachmentIds }) => {
+        const ok = await usePixieViewStore.getState().send(text, images, attachmentIds);
+        return ok ? { ok: true } : { ok: false, error: usePixieViewStore.getState().error };
+      },
+
+      abort: async () => {
+        const currentHost = useAppStore.getState().host;
+        if (!currentHost) return;
+        await hostClient.request("pixie.abort", hostContext(currentHost), null, rpcTimeout);
+      },
+
+      applySession: () => {
+        /* 小精灵段由 Host 持有，前端不写回会话快照。 */
+      },
+
+      rundown: async () => {
+        const currentHost = useAppStore.getState().host;
+        if (!currentHost) return null;
+        const res = await hostClient.request(
+          "pixie.rundown",
+          hostContext(currentHost),
+          null,
+          rpcTimeout,
+        );
+        return res.ok ? res.result : null;
+      },
+
+      compact: async (instructions) => {
+        const currentHost = useAppStore.getState().host;
+        if (!currentHost) return { ok: false, error: null };
+        const res = await hostClient.request(
+          "pixie.compact",
+          hostContext(currentHost),
+          instructions ? { instructions } : null,
+          rpcTimeout,
+        );
+        if (!res.ok) return { ok: false, error: res.error?.message ?? null };
+        const { tokensBefore, tokensAfter } = res.result;
+        if (typeof tokensBefore === "number" && typeof tokensAfter === "number") {
+          useAppStore
+            .getState()
+            .pushNotification(
+              t("notifCompacted", {
+                before: formatTokenCount(tokensBefore),
+                after: formatTokenCount(tokensAfter),
+              }),
+              "info",
+            );
+        } else {
+          useAppStore.getState().pushNotification(t("notifCompactedPlain"), "info");
+        }
+        void refreshRundown();
+        return { ok: res.result.ok, error: res.result.error };
+      },
+
+      abortCompaction: async () => {
+        const currentHost = useAppStore.getState().host;
+        if (!currentHost) return;
+        await hostClient.request("pixie.abortCompaction", hostContext(currentHost), null, rpcTimeout);
+        void refreshRundown();
+      },
+
+      setAutoCompaction: async (enabled) => {
+        const currentHost = useAppStore.getState().host;
+        if (!currentHost) return;
+        await hostClient.request(
+          "pixie.setAutoCompaction",
+          hostContext(currentHost),
+          { enabled },
+          rpcTimeout,
+        );
+        void refreshRundown();
+      },
+
+      listModels: async () => {
+        const currentHost = useAppStore.getState().host;
+        if (!currentHost) return null;
+        const res = await hostClient.request("pixie.models", hostContext(currentHost), null, rpcTimeout);
+        return res.ok ? res.result : null;
+      },
+
+      setModel: async (model, thinkingLevel) => {
+        const currentHost = useAppStore.getState().host;
+        if (!currentHost) return { ok: false, error: null };
+        const res = await hostClient.request(
+          "pixie.setModel",
+          hostContext(currentHost),
+          { model, ...(thinkingLevel !== undefined ? { thinkingLevel } : {}) },
+          rpcTimeout,
+        );
+        if (!res.ok) return { ok: false, error: res.error?.message ?? null };
+        void refreshRundown();
+        return { ok: res.result.ok, error: res.result.error };
+      },
+    };
+  }, [host, state, rundown, refreshRundown, t]);
 
   function handleReplyInline(dispatchId: string, text: string) {
     if (!text) return;
@@ -552,40 +733,12 @@ export function PixiePage() {
                 ❓ {t("pixieAskPendingBanner")}
               </p>
             )}
-            <div className="chat-composer-surface rounded-xl border-[1.5px] border-border bg-surface-raised p-2 shadow-sm">
-              <textarea
-                data-testid="pixie-input"
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                    event.preventDefault();
-                    void handleSend();
-                  }
-                }}
-                rows={2}
-                placeholder={
-                  askPending ? t("pixieReplyPlaceholder") : t("pixieInputPlaceholder")
-                }
-                className="chat-composer-input min-h-[48px] max-h-[200px] w-full resize-none bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted"
-              />
-              <div className="composer-toolbar flex h-8 items-center justify-end px-1">
-                <button
-                  type="button"
-                  title={t("composerSend")}
-                  aria-label={t("composerSend")}
-                  className="theme-send-control flex size-7 items-center justify-center rounded-full bg-foreground text-surface transition-colors hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-30"
-                  disabled={sending || running || !draft.trim()}
-                  onClick={() => void handleSend()}
-                >
-                  {sending || running ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <ArrowUp size={18} strokeWidth={2.25} className="block shrink-0" />
-                  )}
-                </button>
-              </div>
-            </div>
+            <ComposerRuntimeProvider runtime={pixieRuntime}>
+              {/* 共享输入框：模型切换 / 附件 / 命令补全 / 发送-停止。运行中禁发。 */}
+              <Composer disabled={running} inputTestId="pixie-input" />
+              {/* 速度 / 缓存 / 上下文用量 + 压缩入口（数据源为 pixie.rundown）。 */}
+              <SessionStatsPills />
+            </ComposerRuntimeProvider>
           </div>
         </div>
 

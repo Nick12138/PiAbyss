@@ -10,9 +10,25 @@ import { tCurrent } from "../../lib/i18n/use-t";
 import { notifyOperationFailure } from "../../lib/notify-operation-error";
 import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 
+/**
+ * 压缩相关的运行时窄接口。由 ComposerRuntime 结构化满足（普通会话走默认实现、
+ * 小精灵走 pixie.compact / pixie.abortCompaction / pixie.setAutoCompaction）。
+ * 传 null/undefined 时这三个函数保持原有「直接操作 app store」的行为。
+ */
+export type CompactionRuntime = {
+  compact(instructions?: string): Promise<{ ok: boolean; error: string | null }>;
+  abortCompaction(): Promise<void>;
+  setAutoCompaction(enabled: boolean): Promise<void>;
+};
+
 /** Manually compact the active session's context. Surfaces the outcome
  * through notifications; returns true when compaction succeeded. */
-export async function requestCompact(instructions?: string): Promise<boolean> {
+export async function requestCompact(
+  instructions?: string,
+  runtime?: CompactionRuntime | null,
+): Promise<boolean> {
+  // 注入运行时（小精灵）：交给运行时实现，通知由运行时自行处理。
+  if (runtime) return (await runtime.compact(instructions)).ok;
   const { host, workspace, session, pushNotification, applySessionSnapshot } =
     useAppStore.getState();
   if (!host || !workspace || !session) return false;
@@ -66,7 +82,8 @@ export async function requestCompact(instructions?: string): Promise<boolean> {
 }
 
 /** Stop an in-flight compaction (manual or auto). */
-export async function abortCompaction(): Promise<void> {
+export async function abortCompaction(runtime?: CompactionRuntime | null): Promise<void> {
+  if (runtime) return runtime.abortCompaction();
   const { host, workspace, session, pushNotification } = useAppStore.getState();
   if (!host || !workspace || !session) return;
   const res = await hostClient.request(
@@ -83,7 +100,11 @@ export async function abortCompaction(): Promise<void> {
 }
 
 /** Toggle auto-compaction for the active session. */
-export async function setAutoCompaction(enabled: boolean): Promise<void> {
+export async function setAutoCompaction(
+  enabled: boolean,
+  runtime?: CompactionRuntime | null,
+): Promise<void> {
+  if (runtime) return runtime.setAutoCompaction(enabled);
   const { host, workspace, session, pushNotification, applySessionSnapshot } =
     useAppStore.getState();
   if (!host || !workspace || !session) return;

@@ -34,14 +34,20 @@ import {
   type AgentSession,
   type ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
+import type { ImageContent } from "@earendil-works/pi-ai";
 import type {
   PixieAgentMessage,
   PixieDispatchKind,
   PixieDispatchRecord,
+  PixieModelOption,
+  PixieModelSelection,
   PixieSegment,
   PixieSessionAlive,
+  PixieSessionRundown,
 } from "@piabyss/protocol";
 import { createHostAgentSession } from "./agent-session-factory.js";
+import { getEnabledProviderIds, getProviderModelAllowLists } from "./provider-models-config.js";
+import { buildSessionStatsSnapshot } from "./session-stats.js";
 import { piabyssDataDir } from "./piabyss-data.js";
 import { upsertPixieSession } from "./pixie-session-cache.js";
 import {
@@ -1273,6 +1279,8 @@ async function deliverToCurrentSegment(args: {
   source: "ui" | "tg" | "system";
   /** Interactive send → refuse when busy; callback/envelope → steer in. */
   interactive: boolean;
+  /** 随消息一并发送的图片（UI 附件，透传给 session.prompt/steer）。 */
+  images?: ImageContent[];
 }): Promise<{ ok: true; sessionId: string } | { ok: false; error: string }> {
   const state = ensureRunner(args.agentDir);
   let current = await ensureCurrentSegment(args.agentDir);
@@ -1312,16 +1320,21 @@ async function deliverToCurrentSegment(args: {
     if (args.interactive) return { ok: false, error: "上一条回复还在生成中" };
     // Non-interactive envelopes must not be lost: steer into the running turn.
     void session
-      .steer(`${preamble ? `${preamble}\n` : ""}[pixie|${args.source}]\n${args.text}`)
+      .steer(
+        `${preamble ? `${preamble}\n` : ""}[pixie|${args.source}]\n${args.text}`,
+        args.images,
+      )
       .catch(() => undefined);
     return { ok: true, sessionId: session.sessionId };
   }
   const prompt = `${preamble ? `${preamble}\n` : ""}[pixie|${args.source}]\n${args.text}`;
   state.turnsInCurrentSegment += 1;
   current.lastError = null;
-  void session.prompt(prompt).catch((error: unknown) => {
-    current!.lastError = error instanceof Error ? error.message : String(error);
-  });
+  void session
+    .prompt(prompt, args.images?.length ? { images: args.images } : undefined)
+    .catch((error: unknown) => {
+      current!.lastError = error instanceof Error ? error.message : String(error);
+    });
   return { ok: true, sessionId: session.sessionId };
 }
 
@@ -1329,6 +1342,8 @@ async function deliverToCurrentSegment(args: {
 export async function sendPixieMessage(args: {
   agentDir: string;
   text: string;
+  /** 随消息发送的图片附件（SDK ImageContent）。 */
+  images?: ImageContent[];
 }): Promise<{ ok: true; sessionId: string } | { ok: false; error: string }> {
   return deliverToCurrentSegment({ ...args, source: "ui", interactive: true });
 }
@@ -1552,6 +1567,264 @@ export function abortPixie(): boolean {
   if (!runner?.current) return false;
   void runner.current.session.abort().catch(() => undefined);
   return true;
+}
+
+/* ── 模型 / 运行态 / 压缩（pixie.models / rundown / compact）────────── */
+
+/** 会话当前模型选择；未知哨兵（无启用 Provider）或未选模型 → null。 */
+function modelSelectionOf(session: AgentSession): PixieModelSelection | null {
+  const model = session.model;
+  if (!model || !model.provider || !model.id) return null;
+  if (model.provider === "unknown" || model.id === "unknown") return null;
+  return { provider: model.provider, id: model.id };
+}
+
+/**
+ * 确保有可写的当前段会话：先走 ensureCurrentSegment（重启恢复/内存复用），
+ * 段不存在时才懒建一个新段。**只有写操作**允许调用——读操作（rundown/models）
+ * 一律走 ensureCurrentSegment 并在无段时返回空值，绝不为了读统计而建段。
+ */
+async function ensureWritableSegment(agentDir: string): Promise<PixieSegmentRuntime | null> {
+  const state = ensureRunner(agentDir);
+  const current = await ensureCurrentSegment(agentDir);
+  if (current) return current;
+  try {
+    return await startNewSegment(state, "agent");
+  } catch (error) {
+    logger.warn("Failed to lazily create a pixie segment for a write operation", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/** 当前段生效的模型选择（读操作；不建段——无驻留段返回 null）。 */
+export function pixieCurrentModel(agentDir: string): PixieModelSelection | null {
+  const current = ensureRunner(agentDir).current;
+  return current ? modelSelectionOf(current.session) : null;
+}
+
+/**
+ * 可选模型列表（与普通会话 model.list 同源）：取 runtime 的 available 快照，
+ * 按启用 Provider 与 Provider 模型白名单过滤；当前段模型始终保留。
+ *
+ * 注意：与规格中给的同步签名略有出入——启用 Provider / 白名单过滤需要异步读
+ * models.json，因此这里返回 Promise，由 handler await。模型来源与 model.list
+ * 完全一致（同一个 ModelRuntime.getAvailableSnapshot()）。
+ */
+export async function pixieModelOptions(agentDir: string): Promise<PixieModelOption[]> {
+  const runtime = hostModelRuntime;
+  if (!runtime) return [];
+  const providers = runtime.getProviders();
+  const providerNames = new Map(providers.map((provider) => [provider.id, provider.name] as const));
+  const currentModel = ensureRunner(agentDir).current?.session.model;
+  const enabledProviders = await getEnabledProviderIds(
+    agentDir,
+    currentModel?.provider,
+    providers.map((provider) => provider.id),
+  );
+  const enabledProviderSet = enabledProviders ? new Set(enabledProviders) : undefined;
+  const modelAllowLists = await getProviderModelAllowLists(agentDir);
+  return runtime
+    .getAvailableSnapshot()
+    .filter((model) => !enabledProviderSet || enabledProviderSet.has(model.provider))
+    .filter((model) => {
+      const allow = modelAllowLists?.[model.provider];
+      if (!allow) return true;
+      // 当前段模型始终列出（即便它已被勾除）。
+      if (
+        currentModel &&
+        model.provider === currentModel.provider &&
+        model.id === currentModel.id
+      ) {
+        return true;
+      }
+      return allow.includes(model.id);
+    })
+    .map((model) => {
+      const providerName = providerNames.get(model.provider);
+      return {
+        provider: model.provider,
+        ...(providerName ? { providerName } : {}),
+        id: model.id,
+        label: model.name ?? model.id,
+      };
+    });
+}
+
+/**
+ * 切换当前段的模型与推理深度。`model` 是 "provider/id" 字符串；`null` 表示清除
+ * 选择（回落全局默认，走 session.clearModel()）。写操作允许懒建段。
+ */
+export async function pixieSetModel(
+  agentDir: string,
+  model: string | null,
+  thinkingLevel?: string | null,
+): Promise<{ ok: boolean; error: string | null; current: PixieModelSelection | null }> {
+  const current = await ensureWritableSegment(agentDir);
+  if (!current) {
+    return { ok: false, error: "小精灵会话创建失败", current: null };
+  }
+  const session = current.session;
+  try {
+    if (model === null) {
+      await session.clearModel();
+    } else {
+      const spec = model.trim();
+      const slash = spec.indexOf("/");
+      if (slash <= 0 || slash === spec.length - 1) {
+        return {
+          ok: false,
+          error: `模型格式应为 provider/id：${spec}`,
+          current: modelSelectionOf(session),
+        };
+      }
+      const provider = spec.slice(0, slash);
+      const id = spec.slice(slash + 1);
+      const runtime = hostModelRuntime;
+      const enabledProviders = await getEnabledProviderIds(
+        agentDir,
+        session.model?.provider,
+        runtime?.getProviders().map((entry) => entry.id) ?? [],
+      );
+      if (enabledProviders && !enabledProviders.includes(provider)) {
+        return {
+          ok: false,
+          error: `Provider ${provider} 未启用；请先在 Provider 设置中启用`,
+          current: modelSelectionOf(session),
+        };
+      }
+      const allow = (await getProviderModelAllowLists(agentDir))?.[provider];
+      if (allow && !allow.includes(id)) {
+        return {
+          ok: false,
+          error: `模型 ${id} 在 Provider ${provider} 下被隐藏；请先在 Provider 设置中启用`,
+          current: modelSelectionOf(session),
+        };
+      }
+      const found = runtime
+        ?.getAvailableSnapshot()
+        .find((entry) => entry.provider === provider && entry.id === id);
+      if (!found) {
+        return {
+          ok: false,
+          error: `找不到模型：${spec}`,
+          current: modelSelectionOf(session),
+        };
+      }
+      await session.setModel(found);
+    }
+    if (typeof thinkingLevel === "string" && thinkingLevel.trim()) {
+      try {
+        session.setThinkingLevel(thinkingLevel as never);
+      } catch {
+        /* level not supported by the model — keep the session default */
+      }
+    }
+    return { ok: true, error: null, current: modelSelectionOf(session) };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+      current: modelSelectionOf(session),
+    };
+  }
+}
+
+/** 当前段会话的实时统计与运行态（读操作；段不存在返回 null，不建段）。 */
+export async function pixieRundown(agentDir: string): Promise<PixieSessionRundown | null> {
+  const current = await ensureCurrentSegment(agentDir);
+  if (!current) return null;
+  const session = current.session;
+  const contextUsage = session.getContextUsage?.();
+  return {
+    model: modelSelectionOf(session),
+    thinkingLevel: String(session.thinkingLevel),
+    availableThinkingLevels: session.getAvailableThinkingLevels().map(String),
+    isStreaming: session.isStreaming,
+    isCompacting: session.isCompacting,
+    autoCompactionEnabled: session.autoCompactionEnabled,
+    stats: buildSessionStatsSnapshot(
+      session.getSessionStats(),
+      session.sessionManager?.getEntries?.() ?? [],
+    ),
+    contextUsage: contextUsage
+      ? { tokens: contextUsage.tokens, contextWindow: contextUsage.contextWindow }
+      : null,
+  };
+}
+
+/**
+ * 手动压缩当前段上下文。没有驻留段时直接返回失败——不会为了压缩而懒建段
+ * （空会话压缩无意义且必然抛 "Nothing to compact"）。
+ */
+export async function pixieCompact(
+  agentDir: string,
+  instructions?: string,
+): Promise<{
+  ok: boolean;
+  error: string | null;
+  tokensBefore: number | null;
+  tokensAfter: number | null;
+}> {
+  const current = await ensureCurrentSegment(agentDir);
+  if (!current) {
+    return {
+      ok: false,
+      error: "小精灵还没有会话，无需压缩",
+      tokensBefore: null,
+      tokensAfter: null,
+    };
+  }
+  const session = current.session;
+  if (!session.isIdle) {
+    return {
+      ok: false,
+      error: "小精灵正在忙，请稍后再压缩",
+      tokensBefore: null,
+      tokensAfter: null,
+    };
+  }
+  try {
+    const result = await session.compact(instructions);
+    return {
+      ok: true,
+      error: null,
+      tokensBefore: typeof result.tokensBefore === "number" ? result.tokensBefore : null,
+      tokensAfter:
+        typeof result.estimatedTokensAfter === "number" ? result.estimatedTokensAfter : null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+      tokensBefore: null,
+      tokensAfter: null,
+    };
+  }
+}
+
+/** 中止当前段正在进行的手动压缩（无驻留段返回 false，不做任何事）。 */
+export function pixieAbortCompaction(agentDir: string): boolean {
+  const current = ensureRunner(agentDir).current;
+  if (!current) return false;
+  try {
+    current.session.abortCompaction();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 开关当前段的自动压缩（写操作，允许懒建段）。 */
+export async function pixieSetAutoCompaction(
+  agentDir: string,
+  enabled: boolean,
+): Promise<{ ok: boolean; enabled: boolean }> {
+  const current = await ensureWritableSegment(agentDir);
+  if (!current) return { ok: false, enabled: false };
+  current.session.setAutoCompactionEnabled(enabled);
+  return { ok: true, enabled: current.session.autoCompactionEnabled };
 }
 
 /* ── 回调回流（done / error / ask → 小精灵会话）────────────────────── */

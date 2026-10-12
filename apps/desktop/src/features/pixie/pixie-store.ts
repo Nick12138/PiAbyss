@@ -5,7 +5,7 @@
  * Modeled after telegram-view-store (zustand + hostClient).
  */
 import { create } from "zustand";
-import type { PixieAgentState } from "@piabyss/protocol";
+import type { PixieAgentState, SerializableImage } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -21,7 +21,11 @@ type PixieViewState = {
   refresh: () => Promise<void>;
   /** Send a user message to the current segment (auto pixie.reply when an
    *  ask is pending — the composer switches to reply mode). */
-  send: (text: string) => Promise<boolean>;
+  send: (
+    text: string,
+    images?: SerializableImage[],
+    attachmentIds?: string[],
+  ) => Promise<boolean>;
   /** Answer an awaiting ask explicitly (inline reply in the dispatch panel). */
   reply: (dispatchId: string, text: string) => Promise<boolean>;
   /** 打个盹: instruct the pixie to rest; Host force-finalizes on refusal. */
@@ -72,7 +76,7 @@ export const usePixieViewStore = create<PixieViewState>((set, get) => ({
     }
   },
 
-  send: async (text) => {
+  send: async (text, images, attachmentIds) => {
     const host = useAppStore.getState().host;
     if (!host || !text.trim()) return false;
     const current = get().state;
@@ -89,7 +93,11 @@ export const usePixieViewStore = create<PixieViewState>((set, get) => ({
         : await hostClient.request(
             "pixie.send",
             hostContext(host),
-            { text: text.trim() },
+            {
+              text: text.trim(),
+              ...(images && images.length > 0 ? { images } : {}),
+              ...(attachmentIds && attachmentIds.length > 0 ? { attachmentIds } : {}),
+            },
             SEND_TIMEOUT_MS,
           );
       if (!response.ok) {

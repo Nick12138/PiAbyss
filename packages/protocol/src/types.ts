@@ -2207,6 +2207,33 @@ export type PixieUsageStats = {
   days: Record<string, { interactions: number; dispatches: number }>;
 };
 
+/** 小精灵当前生效的模型选择。 */
+export type PixieModelSelection = { provider: string; id: string };
+
+/** 可选模型项（与普通会话 model.list 的选项同源）。 */
+export type PixieModelOption = {
+  provider: string;
+  providerName?: string;
+  id: string;
+  label: string;
+};
+
+/** 小精灵段会话的实时统计与运行态。 */
+export type PixieSessionRundown = {
+  /** 当前模型选择；未知为 null（= 跟随全局默认）。 */
+  model: PixieModelSelection | null;
+  thinkingLevel: string | null;
+  /** 可选推理深度；空数组表示当前模型不支持思考。 */
+  availableThinkingLevels: string[];
+  isStreaming: boolean;
+  isCompacting: boolean;
+  autoCompactionEnabled: boolean;
+  /** 复用既有类型：整段历史聚合（速度/缓存/成本）。 */
+  stats: SessionStatsSnapshot | null;
+  /** 复用既有类型：上下文用量环。 */
+  contextUsage: SessionContextUsage | null;
+};
+
 /** 备忘录状态：待处理 / 进行中 / 已完成。 */
 export type MemoNoteStatus = "open" | "in_progress" | "done";
 

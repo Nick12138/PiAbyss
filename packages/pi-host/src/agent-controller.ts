@@ -43,7 +43,7 @@ import {
 } from "./prompt-cache-contract.js";
 
 /** Protocol images ({mediaType,data}) → SDK ImageContent ({type,mimeType,data}). */
-function toSdkImages(images: SerializableImage[] | undefined): ImageContent[] | undefined {
+export function toSdkImages(images: SerializableImage[] | undefined): ImageContent[] | undefined {
   if (!images?.length) return undefined;
   return images.map((image) => ({
     type: "image" as const,
@@ -325,7 +325,7 @@ function buildOcrGuideText(attachments: readonly AttachmentSnapshot[]): string |
   ].join("\n");
 }
 
-async function buildPromptWithAttachments(args: {
+export async function buildPromptWithAttachments(args: {
   factory: WorkspaceGraphFactory;
   sessionId: string;
   text: string;
@@ -348,7 +348,7 @@ async function buildPromptWithAttachments(args: {
   };
 }
 
-function commitPromptAttachments(
+export function commitPromptAttachments(
   factory: WorkspaceGraphFactory,
   sessionId: string,
   attachmentIds: readonly string[],

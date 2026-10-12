@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   askDispatch,
   configurePixieRuntime,
@@ -9,11 +9,14 @@ import {
   hasActiveDispatchFor,
   listDispatches,
   parsePixieModelRef,
+  pixieRundown,
+  pixieSetModel,
   pixieState,
   reactivateDispatchAfterReply,
   registerDispatch,
   resetPixieStateForTests,
   resolvePixieWorkspacePath,
+  sendPixieMessage,
   settleDispatch,
   pixieStaleMs,
   pixieSegmentMaxTurns,
@@ -22,6 +25,9 @@ import {
   getKnownWorkspaces,
 } from "./pixie-agent-runner.js";
 import { buildDispatchTaskPrompt } from "./pixie-controller.js";
+import { buildPromptWithAttachments, toSdkImages } from "./agent-controller.js";
+import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
+import type { ImageContent } from "@earendil-works/pi-ai";
 import { localDayKey } from "./pixie-usage.js";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp-agent.js";
@@ -447,5 +453,136 @@ describe("pixie restart resume", () => {
     expect(first).not.toBeNull();
     expect(second).toBe(first);
     first!.session.dispose();
+  });
+});
+
+describe("pixie rundown（pixie.rundown）", () => {
+  it("无驻留段时返回 null —— 读操作绝不为了统计而建段", async () => {
+    const agentDir = freshAgentDir();
+    await expect(pixieRundown(agentDir)).resolves.toBeNull();
+    const state = pixieState(agentDir);
+    expect(state.resident).toBe(false);
+    expect(state.segments).toEqual([]);
+  });
+});
+
+describe("pixie 段落模型选择（pixie.setModel）", () => {
+  async function layoutWithRuntime(prefix: string) {
+    const layout = createTempAgentLayout(prefix);
+    layouts.push(layout);
+    const { modelRuntime } = await createTestModelServices(layout.agentDir);
+    configurePixieRuntime(modelRuntime);
+    return layout;
+  }
+
+  it("非法格式（无斜杠 / 空 provider / 空 id）⇒ 明确报错，不落到 SDK", async () => {
+    const layout = await layoutWithRuntime("piabyss-pixie-setmodel-bad-");
+    for (const bad of ["gpt-4o", "/nope", "openai/"]) {
+      const out = await pixieSetModel(layout.agentDir, bad);
+      expect(out.ok).toBe(false);
+      expect(out.error).toContain("provider/id");
+    }
+    (await ensureCurrentSegment(layout.agentDir))?.session.dispose();
+  });
+
+  it("null 清除当前段模型选择（回落全局默认），current 归 null", async () => {
+    const layout = await layoutWithRuntime("piabyss-pixie-setmodel-clear-");
+    // 首次写操作会懒建一个段，这正是 clearModel 的作用对象。
+    const out = await pixieSetModel(layout.agentDir, null);
+    expect(out.ok).toBe(true);
+    expect(out.error).toBeNull();
+    expect(out.current).toBeNull();
+    (await ensureCurrentSegment(layout.agentDir))?.session.dispose();
+  });
+
+  it("格式合法但 Provider 未启用 ⇒ ok=false 且保留当前选择", async () => {
+    const layout = await layoutWithRuntime("piabyss-pixie-setmodel-disabled-");
+    const out = await pixieSetModel(layout.agentDir, "no-such-provider/some-model");
+    expect(out.ok).toBe(false);
+    expect(out.error).toBeTruthy();
+    (await ensureCurrentSegment(layout.agentDir))?.session.dispose();
+  });
+});
+
+describe("pixie 发送附件（pixie.send）", () => {
+  it("图片按 SDK ImageContent 透传到 session.prompt 的 images 选项", async () => {
+    const layout = createTempAgentLayout("piabyss-pixie-send-img-");
+    layouts.push(layout);
+    const { modelRuntime } = await createTestModelServices(layout.agentDir);
+    configurePixieRuntime(modelRuntime);
+
+    // 先懒建一个段（写操作），再把同一个运行时的 prompt 换成 spy。
+    await pixieSetModel(layout.agentDir, null);
+    const runtime = await ensureCurrentSegment(layout.agentDir);
+    expect(runtime).not.toBeNull();
+    const promptSpy = vi.fn(async () => undefined);
+    (runtime!.session as unknown as { prompt: unknown }).prompt = promptSpy;
+
+    const image: ImageContent = { type: "image", data: "aGVsbG8=", mimeType: "image/png" };
+    const out = await sendPixieMessage({ agentDir: layout.agentDir, text: "看看这张图", images: [image] });
+    expect(out.ok).toBe(true);
+    expect(promptSpy).toHaveBeenCalledTimes(1);
+    const [promptText, options] = promptSpy.mock.calls[0] as unknown as [
+      string,
+      { images?: unknown[] } | undefined,
+    ];
+    expect(promptText).toContain("看看这张图");
+    expect(options?.images).toEqual([image]);
+    runtime!.session.dispose();
+  });
+
+  it("不带图片时不传 images 选项（保持既有 prompt 调用形态）", async () => {
+    const layout = createTempAgentLayout("piabyss-pixie-send-plain-");
+    layouts.push(layout);
+    const { modelRuntime } = await createTestModelServices(layout.agentDir);
+    configurePixieRuntime(modelRuntime);
+
+    await pixieSetModel(layout.agentDir, null);
+    const runtime = await ensureCurrentSegment(layout.agentDir);
+    const promptSpy = vi.fn(async () => undefined);
+    (runtime!.session as unknown as { prompt: unknown }).prompt = promptSpy;
+
+    await sendPixieMessage({ agentDir: layout.agentDir, text: "只有文字" });
+    const [, options] = promptSpy.mock.calls[0] as unknown as [string, unknown];
+    expect(options).toBeUndefined();
+    runtime!.session.dispose();
+  });
+
+  it("toSdkImages 把协议图片映射成 SDK ImageContent（与 agent.prompt 同一转换）", () => {
+    expect(toSdkImages([{ mediaType: "image/png", data: "aGk=" }])).toEqual([
+      { type: "image", mimeType: "image/png", data: "aGk=" },
+    ]);
+    expect(toSdkImages([])).toBeUndefined();
+    expect(toSdkImages(undefined)).toBeUndefined();
+  });
+
+  it("buildPromptWithAttachments 把 attachmentIds 解析成引用块（与 agent.prompt 同一实现）", async () => {
+    const factory = {
+      deps: {
+        attachmentStore: {
+          prepareForPrompt: vi.fn().mockResolvedValue([
+            {
+              id: "44444444-4444-4444-8444-444444444444",
+              name: "manual.pdf",
+              mediaType: "application/pdf",
+              sizeBytes: 1024,
+              status: "ready",
+              unit: "page",
+              unitCount: 3,
+            },
+          ]),
+        },
+      },
+    } as unknown as WorkspaceGraphFactory;
+
+    const out = await buildPromptWithAttachments({
+      factory,
+      sessionId: "33333333-3333-4333-8333-333333333333",
+      text: "review this",
+      attachmentIds: ["44444444-4444-4444-8444-444444444444"],
+    });
+    expect(out.text).toContain('<piabyss-attachments version="1">');
+    expect(out.text).toContain("manual.pdf");
+    expect(out.attachmentIds).toEqual(["44444444-4444-4444-8444-444444444444"]);
   });
 });

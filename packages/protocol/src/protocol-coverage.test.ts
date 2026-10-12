@@ -376,6 +376,12 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "pixie.stopDispatch": { dispatchId: "pix_abc" },
   "pixie.retryDispatch": { dispatchId: "pix_abc", mode: "resume" },
   "pixie.listSessions": { cwd: "C:/work/alpha" },
+  "pixie.models": null,
+  "pixie.setModel": { model: "anthropic/claude-sonnet-4-5", thinkingLevel: "high" },
+  "pixie.rundown": null,
+  "pixie.compact": { instructions: "保留关键决策" },
+  "pixie.abortCompaction": null,
+  "pixie.setAutoCompaction": { enabled: true },
 };
 
 function contextFor(method: HostMethod): Record<string, unknown> {
@@ -687,9 +693,18 @@ function invalidParams(method: HostMethod): unknown {
     case "pixie.state":
     case "pixie.abort":
     case "pixie.usage":
+    case "pixie.models":
+    case "pixie.rundown":
+    case "pixie.abortCompaction":
       return { unexpected: true };
     case "pixie.send":
       return { text: "   " };
+    case "pixie.setModel":
+      return { model: 42 };
+    case "pixie.compact":
+      return { instructions: 42 };
+    case "pixie.setAutoCompaction":
+      return { enabled: "yes" };
     case "pixie.continue":
       return { sessionPath: "", text: "x" };
     case "pixie.transcript":

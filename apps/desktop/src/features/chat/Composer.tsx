@@ -27,7 +27,6 @@ import {
   Undo2,
   X,
 } from "lucide-react";
-import { busySendMethod } from "../../lib/busy-send";
 import { useAppStore } from "../../lib/stores/app-store";
 import { isExtensionDecisionBlockingSession } from "../../lib/stores/extension-ui-state";
 import { hostClient, isHostEpochError } from "../../lib/bridge/host-client";
@@ -70,7 +69,7 @@ import {
 import { subscribeValidatedHostEvent } from "../../lib/bridge/validated-host-events";
 import { subscribeComposerInsert } from "../../lib/composer-insert";
 import { BUILTIN_COMMANDS, matchBuiltinCommand } from "./builtin-commands";
-import { abortCompaction, requestCompact } from "./compaction-actions";
+import { useComposerRuntime } from "./composer-runtime";
 import { SessionStatsModal } from "./SessionStatsModal";
 import { ForkModal } from "./ForkModal";
 import {
@@ -362,7 +361,10 @@ function looksBinary(text: string): boolean {
 
 type CompletionItem = { insert: string; label: string; detail?: string };
 
-function builtinCompletionItems(t: Translate): CompletionItem[] {
+function builtinCompletionItems(
+  t: Translate,
+  variant: "session" | "pixie" = "session",
+): CompletionItem[] {
   const descriptions = {
     compact: "composerBuiltinCompact",
     session: "composerBuiltinSession",
@@ -370,7 +372,12 @@ function builtinCompletionItems(t: Translate): CompletionItem[] {
     export: "composerBuiltinExport",
     login: "composerBuiltinLogin",
   } as const;
-  return BUILTIN_COMMANDS.map((command) => ({
+  // 小精灵只有 /compact 有对应动作；其余内建命令是会话专属，不在此列出。
+  const commands =
+    variant === "pixie"
+      ? BUILTIN_COMMANDS.filter((command) => command.name === "compact")
+      : BUILTIN_COMMANDS;
+  return commands.map((command) => ({
     insert: `/${command.name} `,
     label: `/${command.name}`,
     detail: [
@@ -433,18 +440,22 @@ export function Composer({
   disabled,
   isNewConversation,
   welcomeWorkspaceName,
+  inputTestId,
 }: {
   disabled?: boolean;
   /** Welcome-state composer: shows the per-session tool picker. */
   isNewConversation?: boolean;
   welcomeWorkspaceName?: string;
+  /** 覆盖 textarea 的 data-testid（小精灵页保留既有 "pixie-input"）。 */
+  inputTestId?: string;
 }) {
   const t = useT();
   const locale = useLocale();
-  const host = useAppStore((s) => s.host);
+  const runtime = useComposerRuntime();
+  const sessionVariant = runtime.variant === "session";
+  const host = runtime.host;
+  const session = runtime.session;
   const workspace = useAppStore((s) => s.workspace);
-  const session = useAppStore((s) => s.session);
-  const busySendBehavior = useAppStore((s) => s.desktopSettings?.busySendBehavior);
   // Re-pick a greeting whenever a new conversation (session) is opened.
   const welcomeKey = useMemo(
     () => (welcomeWorkspaceName ? pickWelcomeKey() : null),
@@ -453,8 +464,8 @@ export function Composer({
   );
   const extensionUiRequest = useAppStore((s) => s.extensionUiRequest);
   const extensionDecisionGroups = useAppStore((s) => s.extensionDecisionGroups);
-  const draftTarget = draftTargetFor(workspace, session);
-  const draftKey = draftTarget ? draftKeyForTarget(draftTarget) : null;
+  const draftTarget = sessionVariant ? draftTargetFor(workspace, session) : null;
+  const draftKey = runtime.draftKey;
   const text = useAppStore((s) => (draftKey ? (s.draftTexts[draftKey] ?? "") : ""));
   // Injected prompt references (memo "handle now"): rendered as `@` chips and
   // expanded into the outgoing text at send time, never shown as raw prompt.
@@ -465,7 +476,6 @@ export function Composer({
   const draftHydratedWorkspace = useAppStore((s) => s.draftHydratedWorkspace);
   const extensionWidgetsOpen = useAppStore((s) => s.extensionWidgetsOpen);
   const setExtensionWidgetsOpen = useAppStore((s) => s.setExtensionWidgetsOpen);
-  const setSession = useAppStore((s) => s.applySessionSnapshot);
   const pushNotification = useAppStore((s) => s.pushNotification);
   const openSettingsSection = useAppStore((s) => s.openSettingsSection);
   const setAuthBlocked = useAppStore((s) => s.setAuthBlocked);
@@ -536,17 +546,30 @@ export function Composer({
   const ime = useImeComposition();
   const busy = session ? !session.isIdle : false;
   const sessionId = session?.sessionId ?? null;
-  const decisionBlocked = isExtensionDecisionBlockingSession(
-    extensionUiRequest,
-    extensionDecisionGroups,
-    sessionId,
-  );
+  // 扩展 UI 决策拦截仅对普通会话生效：小精灵页不渲染任何扩展控件。
+  const decisionBlocked =
+    sessionVariant &&
+    isExtensionDecisionBlockingSession(extensionUiRequest, extensionDecisionGroups, sessionId);
   const blockedSessionId = decisionBlocked ? sessionId : null;
 
   const dismissCompletion = useCallback(() => {
     completionGeneration.current += 1;
     setCompletion(null);
   }, []);
+
+  /**
+   * 写入当前草稿文本：普通会话走 draft-target 持久化；小精灵落到固定内存键
+   * （不参与 draft-target 持久化），保证共享输入框两条路径行为一致。
+   */
+  function writeDraft(value: string) {
+    if (draftTarget) {
+      editDraft(draftTarget, value);
+      return;
+    }
+    if (draftKey) {
+      useAppStore.getState().setDraftTextByKey(draftKey, value);
+    }
+  }
 
   /** Drop one injected reference chip from the active draft. */
   function removeReference(id: string) {
@@ -764,7 +787,13 @@ export function Composer({
     cacheKey: string | null;
     items: CompletionItem[];
   }> {
-    if (!host || !workspace || !session) return { cacheKey: null, items: [] };
+    if (!host || !workspace || !session) {
+      // 小精灵没有会话作用域的 host 命令源，仍提供内建命令补全。
+      return {
+        cacheKey: null,
+        items: sessionVariant ? [] : builtinCompletionItems(t, runtime.variant),
+      };
+    }
     const key = `${locale}:${session.sessionId}:${session.revision}`;
     if (templatesRef.current?.key === key) {
       return { cacheKey: key, items: templatesRef.current.items };
@@ -774,7 +803,7 @@ export function Composer({
       activeSessionContext(host, workspace, session),
       null,
     );
-    const builtins = builtinCompletionItems(t);
+    const builtins = builtinCompletionItems(t, runtime.variant);
     if (!res.ok) return { cacheKey: null, items: builtins };
     const kindLabel = {
       template: t("composerCommandKindPrompt"),
@@ -908,10 +937,10 @@ export function Composer({
 
   function acceptCompletion(state: CompletionState, index: number) {
     const item = state.items[index];
-    if (!item || !draftTarget) return;
+    if (!item) return;
     const caret = textareaRef.current?.selectionStart ?? text.length;
     const nextText = text.slice(0, state.tokenStart) + item.insert + text.slice(caret);
-    editDraft(draftTarget, nextText);
+    writeDraft(nextText);
     dismissCompletion();
     const nextCaret = state.tokenStart + item.insert.length;
     requestAnimationFrame(() => {
@@ -1544,7 +1573,9 @@ export function Composer({
   }
 
   async function send() {
-    if (!host || !workspace || !session || !draftTarget || disabled || decisionBlocked) return;
+    if (!host || disabled || decisionBlocked) return;
+    // 普通会话需要完整的 workspace/draft-target；小精灵两者都没有。
+    if (sessionVariant && (!workspace || !session || !draftTarget)) return;
     if (
       documents.some((document) => !isDocumentSendable(document.status)) ||
       (!text.trim() &&
@@ -1557,53 +1588,62 @@ export function Composer({
     }
 
     const builtin = matchBuiltinCommand(text);
-    if (builtin?.name === "session") {
-      deleteDraft(draftTarget);
-      dismissCompletion();
-      setStatsOpen(true);
-      return;
-    }
-    if (builtin?.name === "fork") {
-      deleteDraft(draftTarget);
-      dismissCompletion();
-      setForkOpen(true);
-      return;
-    }
-    if (builtin?.name === "export") {
-      const arg = builtin.args?.trim().toLowerCase();
-      if (arg && arg !== "html" && arg !== "jsonl") {
-        pushNotification(t("composerExportUsage"), "error");
-        return;
-      }
-      deleteDraft(draftTarget);
-      dismissCompletion();
-      void requestExport(arg === "jsonl" ? "jsonl" : "html");
-      return;
-    }
     if (builtin?.name === "compact") {
       if (busy) {
-        // requestCompact surfaces the busy notification; keep the draft.
-        void requestCompact(builtin.args);
+        // runtime.compact surfaces the busy notification; keep the draft.
+        void runtime.compact(builtin.args);
         return;
       }
-      const receipt = stageDraftSend(draftTarget);
-      dismissCompletion();
-      if (!(await requestCompact(builtin.args))) {
-        restoreDraftSend(receipt);
+      if (draftTarget) {
+        const receipt = stageDraftSend(draftTarget);
+        dismissCompletion();
+        if (!(await runtime.compact(builtin.args)).ok) {
+          restoreDraftSend(receipt);
+        } else {
+          commitDraftSend(receipt);
+        }
       } else {
-        commitDraftSend(receipt);
+        const pending = text;
+        dismissCompletion();
+        writeDraft("");
+        if (!(await runtime.compact(builtin.args)).ok) writeDraft(pending);
       }
       return;
     }
-    if (builtin?.name === "login") {
-      // The Pi CLI's /login has no meaning here — without this interception it
-      // would go to the model as plain text and, in the no-credentials case,
-      // echo back the same "run /login" guidance forever.
-      deleteDraft(draftTarget);
-      dismissCompletion();
-      openSettingsSection("providers");
-      pushNotification(t("composerLoginGuidance"), "info");
-      return;
+    if (sessionVariant) {
+      if (builtin?.name === "session") {
+        if (draftTarget) deleteDraft(draftTarget);
+        dismissCompletion();
+        setStatsOpen(true);
+        return;
+      }
+      if (builtin?.name === "fork") {
+        if (draftTarget) deleteDraft(draftTarget);
+        dismissCompletion();
+        setForkOpen(true);
+        return;
+      }
+      if (builtin?.name === "export") {
+        const arg = builtin.args?.trim().toLowerCase();
+        if (arg && arg !== "html" && arg !== "jsonl") {
+          pushNotification(t("composerExportUsage"), "error");
+          return;
+        }
+        if (draftTarget) deleteDraft(draftTarget);
+        dismissCompletion();
+        void requestExport(arg === "jsonl" ? "jsonl" : "html");
+        return;
+      }
+      if (builtin?.name === "login") {
+        // The Pi CLI's /login has no meaning here — without this interception it
+        // would go to the model as plain text and, in the no-credentials case,
+        // echo back the same "run /login" guidance forever.
+        if (draftTarget) deleteDraft(draftTarget);
+        dismissCompletion();
+        openSettingsSection("providers");
+        pushNotification(t("composerLoginGuidance"), "info");
+        return;
+      }
     }
 
     const value = text;
@@ -1611,7 +1651,7 @@ export function Composer({
     const sentFiles = files;
     const sentDocuments = documents;
     const sentReferences = references;
-    const sendReceipt = stageDraftSend(draftTarget);
+    const sendReceipt = draftTarget ? stageDraftSend(draftTarget) : null;
     dismissCompletion();
     setImages([]);
     setFiles([]);
@@ -1620,9 +1660,13 @@ export function Composer({
     // Clear the persisted snapshot synchronously with the live composer state.
     // The draft target can change as soon as the first prompt creates a session,
     // before the attachment persistence effect gets a chance to run.
-    setDraftAttachmentSnapshot(draftTarget, []);
-    setDraftReferences(draftTarget, []);
-    const context = activeSessionContext(host, workspace, session);
+    if (draftTarget) {
+      setDraftAttachmentSnapshot(draftTarget, []);
+      setDraftReferences(draftTarget, []);
+    } else {
+      // 小精灵：草稿是固定内存键，发送后即清空。
+      writeDraft("");
+    }
     const attachmentBlocks: string[] = sentFiles.map((f) =>
       f.kind === "path"
         ? buildAttachedPathBlock(f.name, f.sourcePath ?? "")
@@ -1638,21 +1682,16 @@ export function Composer({
       value.trimEnd(),
       ...attachmentBlocks,
     ]);
-    const imageParams =
-      sentImages.length > 0
-        ? { images: sentImages.map(({ mediaType, data }) => ({ mediaType, data })) }
-        : {};
-    const attachmentParams =
-      sentDocuments.length > 0
-        ? { attachmentIds: sentDocuments.map((document) => document.id) }
-        : {};
+    const imagesPayload = sentImages.map(({ mediaType, data }) => ({ mediaType, data }));
+    const attachmentIds = sentDocuments.map((document) => document.id);
     const restoreDraft = () => {
-      restoreDraftSend(sendReceipt);
+      if (sendReceipt) restoreDraftSend(sendReceipt);
+      else writeDraft(value);
       setImages(sentImages);
       setFiles(sentFiles);
       documentsRef.current = sentDocuments;
       setDocuments(sentDocuments);
-      setDraftReferences(draftTarget, sentReferences);
+      if (draftTarget) setDraftReferences(draftTarget, sentReferences);
     };
     // 备忘录交接（「用 Agent 处理」注入的引用胶囊）只有消息真的发出去才算
     // 「进行中」：用户没发就离开、或把会话删掉时，不该留下指向死会话的绑定。
@@ -1671,7 +1710,7 @@ export function Composer({
       optimisticKey = appendOptimisticUserMessage(
         outgoingText,
         session?.sessionId,
-        sentImages.map(({ mediaType, data }) => ({ mediaType, data })),
+        imagesPayload,
       );
     };
     const removeOptimisticMessage = () => {
@@ -1699,6 +1738,9 @@ export function Composer({
       restoreDraft();
     };
 
+    const failWith = (error: unknown) =>
+      handleSendFailure(error as { code: string; message: string; details?: JsonValue });
+
     try {
       if (busy) {
         // Running-session sends use the configured steer or follow-up behavior.
@@ -1706,66 +1748,47 @@ export function Composer({
         // the queued text via pending.steering/followUp, and echoing it into the
         // transcript would render the message twice (and pin it at a stale
         // position when the queued run later starts).
-        const res = await hostClient.request(busySendMethod(busySendBehavior), context, {
+        const res = await runtime.send({
           text: outgoingText,
-          ...imageParams,
-          ...attachmentParams,
+          images: imagesPayload,
+          attachmentIds,
         });
         if (!res.ok) {
-          handleSendFailure(res.error);
+          failWith(res.error);
         } else {
-          commitDraftSend(sendReceipt);
+          if (sendReceipt) commitDraftSend(sendReceipt);
           bindSentMemoHandoffs();
         }
         return;
       }
 
-      appendOptimisticMessage();
-      const res = await hostClient.request(
-        "agent.prompt",
-        context,
-        { text: outgoingText, ...imageParams, ...attachmentParams },
-        null,
-      );
+      // 优化回显仅对普通会话有意义（小精灵的转写来自 pixie.state）。
+      if (sessionVariant) appendOptimisticMessage();
+      const res = await runtime.send({
+        text: outgoingText,
+        images: imagesPayload,
+        attachmentIds,
+      });
       if (!res.ok) {
-        removeOptimisticMessage();
-        handleSendFailure(res.error);
+        if (sessionVariant) removeOptimisticMessage();
+        failWith(res.error);
       } else {
-        commitDraftSend(sendReceipt);
+        if (sendReceipt) commitDraftSend(sendReceipt);
         bindSentMemoHandoffs();
         // An accepted prompt means credentials resolved; drop any stale banner.
-        setAuthBlocked(null);
+        if (sessionVariant) setAuthBlocked(null);
       }
     } catch (error) {
-      removeOptimisticMessage();
+      if (sessionVariant) removeOptimisticMessage();
       notifyOperationFailure(error, t("composerSendFailed"));
       restoreDraft();
     }
   }
 
   async function abort() {
-    if (!host || !workspace || !session) return;
-    const generation = captureRequestGeneration(host);
-    const res = await hostClient.request(
-      "agent.abort",
-      activeSessionContext(host, workspace, session),
-      null,
-    );
-    if (
-      !isCurrentRequestGeneration(useAppStore.getState().host, generation, {
-        session: true,
-      })
-    ) {
-      return;
-    }
-    if (!res.ok) {
-      pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
-      return;
-    }
-    setSession(res.result.session);
-    if (res.result.error) {
-      pushNotification(res.result.error.message, "error");
-    }
+    if (!host) return;
+    if (sessionVariant && (!workspace || !session)) return;
+    await runtime.abort();
   }
 
   const hasDraftContent =
@@ -1798,14 +1821,14 @@ export function Composer({
           <p className="h-4" aria-hidden />
         </div>
       )}
-      <ShellJobsBar />
-      <QueuePanel />
+      {sessionVariant && <ShellJobsBar />}
+      {sessionVariant && <QueuePanel />}
       <div
         ref={extensionWidgetAnchorRef}
         className="conversation-content-width relative mx-auto w-full"
         data-extension-widget-anchor
       >
-        <ExtensionStatusStrip />
+        {sessionVariant && <ExtensionStatusStrip />}
         <div
           className={`chat-composer-surface rounded-xl border-[1.5px] bg-surface-raised p-2 shadow-sm transition-colors ${
             dragOver ? "border-accent" : "border-border"
@@ -2145,14 +2168,14 @@ export function Composer({
             )}
             <textarea
               ref={textareaRef}
+              data-testid={inputTestId}
               className="chat-composer-input min-h-[60px] max-h-[280px] w-full resize-none bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted"
               placeholder={disabled ? t("composerUnavailable") : t("composerPlaceholder")}
               value={text}
               disabled={disabled}
               aria-describedby={decisionBlocked ? decisionHintId : undefined}
               onChange={(event) => {
-                if (!draftTarget) return;
-                editDraft(draftTarget, event.target.value);
+                writeDraft(event.target.value);
                 updateCompletion(
                   event.target.value,
                   event.target.selectionStart ?? event.target.value.length,
@@ -2245,10 +2268,12 @@ export function Composer({
             >
               <Paperclip size={14} />
             </button>
-            <TodoPopoverButton />
-            <ExtensionWidgetsButton open={extensionWidgetsOpen} onToggle={toggleExtensionWidgets} />
+            {sessionVariant && <TodoPopoverButton />}
+            {sessionVariant && (
+              <ExtensionWidgetsButton open={extensionWidgetsOpen} onToggle={toggleExtensionWidgets} />
+            )}
             <div className="ml-auto flex items-center gap-2.5">
-              {isNewConversation && <ComposerToolsPicker />}
+              {sessionVariant && isNewConversation && <ComposerToolsPicker />}
               <ModelControls />
               {busy ? (
                 canSend ? (
@@ -2269,7 +2294,7 @@ export function Composer({
                       session?.isCompacting ? t("composerStopCompaction") : t("composerStop")
                     }
                     className="flex size-7 items-center justify-center rounded-full bg-danger/15 text-danger hover:bg-danger/20"
-                    onClick={() => void (session?.isCompacting ? abortCompaction() : abort())}
+                    onClick={() => void (session?.isCompacting ? runtime.abortCompaction() : abort())}
                   >
                     <Square size={14} fill="currentColor" className="block shrink-0" />
                   </button>
@@ -2289,13 +2314,19 @@ export function Composer({
             </div>
           </div>
         </div>
-        <ExtensionWidgetsPopover
-          anchorRef={extensionWidgetAnchorRef}
-          open={extensionWidgetsOpen}
-          onClose={closeExtensionWidgets}
-        />
-        <SessionStatsModal open={statsOpen} onClose={() => setStatsOpen(false)} />
-        <ForkModal open={forkOpen} onClose={() => setForkOpen(false)} />
+        {sessionVariant && (
+          <ExtensionWidgetsPopover
+            anchorRef={extensionWidgetAnchorRef}
+            open={extensionWidgetsOpen}
+            onClose={closeExtensionWidgets}
+          />
+        )}
+        {sessionVariant && (
+          <>
+            <SessionStatsModal open={statsOpen} onClose={() => setStatsOpen(false)} />
+            <ForkModal open={forkOpen} onClose={() => setForkOpen(false)} />
+          </>
+        )}
       </div>
     </div>
   );

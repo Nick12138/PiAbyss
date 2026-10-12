@@ -25,8 +25,10 @@ import { join } from "node:path";
 import {
   createHostError,
   type PixieDispatchRecord,
+  type PixieSessionRundown,
   type PixieStopAction,
   type PixieWorkspaceSessionSummary,
+  type SerializableImage,
 } from "@piabyss/protocol";
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { DefaultResourceLoader, SessionManager } from "@earendil-works/pi-coding-agent";
@@ -56,6 +58,13 @@ import {
   injectPixieMessage,
   liveDispatchFor,
   listDispatches,
+  pixieAbortCompaction,
+  pixieCompact,
+  pixieCurrentModel,
+  pixieModelOptions,
+  pixieRundown,
+  pixieSetAutoCompaction,
+  pixieSetModel,
   pixieState,
   pixieTranscriptFrom,
   progressDispatch,
@@ -77,8 +86,26 @@ import { getEnabledProviderIds, getProviderModelAllowLists } from "./provider-mo
 import type { PixieControlPlaneDeps } from "./pixie-control-plane.js";
 import { recordPixieDispatch, recordPixieInteraction, readPixieUsage } from "./pixie-usage.js";
 import { createHostAgentSession } from "./agent-session-factory.js";
+import {
+  buildPromptWithAttachments,
+  commitPromptAttachments,
+  toSdkImages,
+} from "./agent-controller.js";
+import { attachmentHostError } from "./attachment-controller.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
 import { isRepoPluginEnabled, PIXIE_PLUGIN_ENTRY_FILE } from "./plugin-gate.js";
+
+/** pixie.rundown 在无驻留段时返回的空值快照（stats/contextUsage 皆 null）。 */
+const EMPTY_PIXIE_RUNDOWN: PixieSessionRundown = {
+  model: null,
+  thinkingLevel: null,
+  availableThinkingLevels: [],
+  isStreaming: false,
+  isCompacting: false,
+  autoCompactionEnabled: false,
+  stats: null,
+  contextUsage: null,
+};
 
 /** Error returned for every pixie.* call while the pi-pixie plugin is off. */
 function pixiePluginDisabledError() {
@@ -1376,9 +1403,41 @@ export function createPixieHandlers(
 
     "pixie.send": async (ctx) => {
       if (!gate()) return { error: pixiePluginDisabledError() };
-      const params = ctx.params as { text: string };
-      const out = await sendPixieMessage({ agentDir, text: params.text });
+      const params = ctx.params as {
+        text: string;
+        images?: SerializableImage[];
+        attachmentIds?: string[];
+      };
+      // 附件解析与 agent.prompt 完全一致：附件存储挂在 WorkspaceGraphFactory 上
+      // （runner 拿不到），所以在 controller 侧按同一 sessionId（活动会话）解析成
+      // 随消息发送的文本引用块；图片则透传给 session.prompt/steer。
+      const server = factory.getServer();
+      const attachmentSessionId = server?.identity.sessionId ?? null;
+      let text = params.text;
+      let resolvedAttachmentIds: string[] = [];
+      if (params.attachmentIds?.length) {
+        if (!attachmentSessionId) {
+          return { error: createHostError("AGENT_NOT_READY", "Attachment service is not ready") };
+        }
+        try {
+          const prompt = await buildPromptWithAttachments({
+            factory,
+            sessionId: attachmentSessionId,
+            text: params.text,
+            attachmentIds: params.attachmentIds,
+          });
+          text = prompt.text;
+          resolvedAttachmentIds = prompt.attachmentIds;
+        } catch (error) {
+          return { error: attachmentHostError(error) };
+        }
+      }
+      const images = toSdkImages(params.images);
+      const out = await sendPixieMessage({ agentDir, text, images });
       if (!out.ok) return { error: createHostError("AGENT_BUSY", out.error, { retryable: true }) };
+      if (attachmentSessionId && resolvedAttachmentIds.length) {
+        commitPromptAttachments(factory, attachmentSessionId, resolvedAttachmentIds);
+      }
       recordPixieInteraction(agentDir);
       return { result: { sessionId: out.sessionId } };
     },
@@ -1472,6 +1531,48 @@ export function createPixieHandlers(
       if (!gate()) return { error: pixiePluginDisabledError() };
       const params = ctx.params as { cwd: string };
       return { result: { sessions: listWorkspaceSessions(factory, params.cwd) } };
+    },
+
+    "pixie.models": async () => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
+      // 读操作：恢复/复用当前段即可，不新建段（无段时 current 为 null）。
+      await ensureCurrentSegment(agentDir);
+      return {
+        result: {
+          models: await pixieModelOptions(agentDir),
+          current: pixieCurrentModel(agentDir),
+        },
+      };
+    },
+
+    "pixie.setModel": async (ctx) => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
+      const params = ctx.params as { model: string | null; thinkingLevel?: string | null };
+      return { result: await pixieSetModel(agentDir, params.model, params.thinkingLevel) };
+    },
+
+    "pixie.rundown": async () => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
+      // 读操作：无驻留段时返回空值快照（stats/contextUsage 均为 null），不新建段。
+      const rundown = await pixieRundown(agentDir);
+      return { result: rundown ?? EMPTY_PIXIE_RUNDOWN };
+    },
+
+    "pixie.compact": async (ctx) => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
+      const params = (ctx.params ?? {}) as { instructions?: string } | null;
+      return { result: await pixieCompact(agentDir, params?.instructions) };
+    },
+
+    "pixie.abortCompaction": async () => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
+      return { result: { ok: pixieAbortCompaction(agentDir) } };
+    },
+
+    "pixie.setAutoCompaction": async (ctx) => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
+      const params = ctx.params as { enabled: boolean };
+      return { result: await pixieSetAutoCompaction(agentDir, params.enabled) };
     },
   };
 }
