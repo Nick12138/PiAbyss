@@ -6,6 +6,7 @@ import {
   findDispatchBySession,
   hasActiveDispatchFor,
   listDispatches,
+  listDispatchesForPanel,
   parsePixieModelRef,
   reactivateDispatchAfterReply,
   registerDispatch,
@@ -101,6 +102,145 @@ describe("pixie delegation registry", () => {
       expect(previous.createdAt).toBeGreaterThanOrEqual(current.createdAt);
     }
     expect(listDispatches(2, agentDir)).toHaveLength(2);
+  });
+
+  it("panel list: 按当前会话严格归属（本段终态 + 跨段活跃），null 归属不再全段兜底", () => {
+    const agentDir = freshAgentDir();
+    const base = {
+      cwd: "C:/ws",
+      sessionPath: null,
+      task: "t",
+      agentDir,
+    };
+    // seg-a：一条还在跑（跨段也必须可见）+ 一条已终态（只归 seg-a）。
+    const live = registerDispatch({ ...base, sessionId: "t-live", originSessionId: "seg-a" });
+    expect(live.originSessionId).toBe("seg-a");
+    const segADone = registerDispatch({ ...base, sessionId: "t-a-done", originSessionId: "seg-a" });
+    settleDispatch(segADone.id, "ok", "done", agentDir);
+    // seg-b：一条已失败（只归 seg-b）。
+    const segBFailed = registerDispatch({
+      ...base,
+      sessionId: "t-b-fail",
+      originSessionId: "seg-b",
+    });
+    failDispatch(segBFailed.id, "boom", agentDir);
+    // 旧版无归属记录：推断不出归属就不显示（否则面板退化成混合历史）。
+    const legacy = registerDispatch({ ...base, sessionId: "t-legacy" });
+    expect(legacy.originSessionId).toBeNull();
+    settleDispatch(legacy.id, "old, hidden unless inferred", "done", agentDir);
+
+    const panelForSegB = listDispatchesForPanel(agentDir, "seg-b");
+    expect(panelForSegB.map((d) => d.id)).toEqual(expect.arrayContaining([live.id, segBFailed.id]));
+    expect(panelForSegB.some((d) => d.id === segADone.id)).toBe(false);
+    expect(panelForSegB.some((d) => d.id === legacy.id)).toBe(false);
+
+    const panelForSegA = listDispatchesForPanel(agentDir, "seg-a");
+    expect(panelForSegA.map((d) => d.id)).toEqual(expect.arrayContaining([live.id, segADone.id]));
+    expect(panelForSegA.some((d) => d.id === segBFailed.id)).toBe(false);
+    expect(panelForSegA.some((d) => d.id === legacy.id)).toBe(false);
+
+    // 拿不到会话上下文：只显示活跃委派，宁可少显示也不混入他段历史。
+    const panelForNull = listDispatchesForPanel(agentDir, null);
+    expect(panelForNull.map((d) => d.id)).toEqual([live.id]);
+  });
+
+  it("loadDispatches: 旧记录缺归属时用 v4 timeline.json 段窗口反推", async () => {
+    const agentDir = freshAgentDir();
+    const pixieDirPath = join(agentDir, "piabyss", "pixie");
+    mkdirSync(pixieDirPath, { recursive: true });
+    const segAStart = Date.now() - 60_000;
+    const segAEnd = Date.now() - 30_000;
+    writeFileSync(
+      join(pixieDirPath, "timeline.json"),
+      JSON.stringify({
+        version: 1,
+        segments: [
+          {
+            id: "seg-a",
+            sessionId: "session-a",
+            sessionPath: "/a.jsonl",
+            startedAt: segAStart,
+            endedAt: segAEnd,
+            separator: null,
+            reason: "agent",
+            handoff: null,
+          },
+          {
+            id: "seg-b",
+            sessionId: "session-b",
+            sessionPath: "/b.jsonl",
+            startedAt: segAEnd + 1,
+            endedAt: null,
+            separator: null,
+            reason: null,
+            handoff: null,
+          },
+        ],
+      }),
+      "utf8",
+    );
+    writeFileSync(
+      join(pixieDirPath, "dispatches.json"),
+      JSON.stringify({
+        version: 1,
+        records: [
+          {
+            id: "pix_old_a",
+            status: "reported",
+            kind: "done",
+            cwd: "C:/ws",
+            sessionId: "worker-1",
+            sessionPath: null,
+            task: "seg-a 时代的任务",
+            report: null,
+            question: null,
+            options: [],
+            createdAt: segAStart + 1000,
+            startedAt: segAStart + 1000,
+            reportedAt: null,
+            stale: false,
+            staleNotified: false,
+            batchId: null,
+            failCount: 0,
+            progressSummary: null,
+            files: null,
+            retryOf: null,
+            model: null,
+            thinkingLevel: null,
+          },
+          {
+            id: "pix_old_b",
+            status: "reported",
+            kind: "done",
+            cwd: "C:/ws",
+            sessionId: "worker-2",
+            sessionPath: null,
+            task: "seg-b 时代的任务",
+            report: null,
+            question: null,
+            options: [],
+            createdAt: segAEnd + 5000,
+            startedAt: segAEnd + 5000,
+            reportedAt: null,
+            stale: false,
+            staleNotified: false,
+            batchId: null,
+            failCount: 0,
+            progressSummary: null,
+            files: null,
+            retryOf: null,
+            model: null,
+            thinkingLevel: null,
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const panelForA = listDispatchesForPanel(agentDir, "session-a");
+    expect(panelForA.map((d) => d.id)).toEqual(["pix_old_a"]);
+    const panelForB = listDispatchesForPanel(agentDir, "session-b");
+    expect(panelForB.map((d) => d.id)).toEqual(["pix_old_b"]);
   });
 
   it("persists dispatch records across a registry reload", () => {

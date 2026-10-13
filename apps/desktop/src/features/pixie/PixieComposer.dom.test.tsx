@@ -10,8 +10,9 @@ import type {
   SessionSnapshot,
 } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
+import type { ExtensionUiRequestState } from "../../lib/stores/extension-ui-state";
 import { useAppStore } from "../../lib/stores/app-store";
-import { usePixieViewStore } from "./pixie-store";
+import { resetPixiePanelSessionForTests, usePixieViewStore } from "./pixie-store";
 import { PixiePage } from "./PixiePage";
 
 // jsdom 没有 scrollIntoView；命令补全高亮项滚动依赖它。
@@ -139,6 +140,7 @@ beforeEach(() => {
     } as unknown as DesktopSettings,
   });
   dispatchesMock.length = 0;
+  resetPixiePanelSessionForTests();
   usePixieViewStore.setState({
     current: null,
     dispatches: [],
@@ -150,6 +152,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   cleanup();
+  resetPixiePanelSessionForTests();
   useAppStore.getState().setHost(null);
   useAppStore.getState().setWorkspace(null);
   useAppStore.getState().applySessionSnapshot(null);
@@ -163,7 +166,12 @@ afterEach(() => {
 });
 
 function mockPixieHost() {
-  return vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+  return mockPixieHostWithParams();
+}
+
+/** 同 mockPixieHost，但每次 pixie.dispatches 调用把 params 交给 onDispatches（归属断言用）。 */
+function mockPixieHostWithParams(onDispatches?: (params: unknown) => void) {
+  return vi.spyOn(hostClient, "request").mockImplementation(async (method, _ctx, params) => {
     if (method === "pixie.ensureCurrent") {
       return {
         ok: true,
@@ -175,6 +183,7 @@ function mockPixieHost() {
       } as never;
     }
     if (method === "pixie.dispatches") {
+      onDispatches?.(params);
       return { ok: true, result: { dispatches: [...dispatchesMock] } } as never;
     }
     if (method === "session.getCommands") {
@@ -271,5 +280,174 @@ describe("PixiePage 复用共享 Composer（v5 标准通道）", () => {
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(ensureCalls()).toBe(1);
     expect(useAppStore.getState().session?.sessionId).toBe(OTHER_SESSION_ID);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* 提问工具与子代理视图适配：pixie 页挂载面与 ChatPage 对齐。            */
+/* ------------------------------------------------------------------ */
+
+const EXT_CONTEXT = {
+  expectedHostInstanceId: HOST_ID,
+  expectedWorkspaceId: WORKSPACE_ID,
+  expectedWorkspaceRevision: 1,
+  expectedSessionId: SESSION_ID,
+  expectedSessionRevision: 3,
+};
+
+/** 内嵌呈现的 confirm 决策（ask_user_question 问卷之外最常见的 inline 形态）。 */
+function inlineConfirmRequest(): ExtensionUiRequestState {
+  return {
+    requestId: "44444444-4444-4444-8444-000000000001",
+    kind: "confirm",
+    title: "Continue with the risky step?",
+    presentation: "inline",
+    context: EXT_CONTEXT,
+  } as unknown as ExtensionUiRequestState;
+}
+
+function subagentRunsStatus() {
+  return {
+    version: 1 as const,
+    available: true,
+    generatedAt: 1,
+    totalActive: 1,
+    omitted: 0,
+    fleet: [],
+    runs: [{ id: "run-1", kind: "subagent", label: "Scout task", state: "running" }] as never,
+  };
+}
+
+const EMPTY_SUBAGENTS_STATUS = {
+  version: 1 as const,
+  available: false,
+  generatedAt: 0,
+  totalActive: 0,
+  omitted: 0,
+  fleet: [],
+  runs: [],
+};
+
+describe("PixiePage 适配提问与子代理（对齐 ChatPage 挂载面）", () => {
+  afterEach(() => {
+    useAppStore.setState({
+      activeSubagentNodeId: null,
+      extensionUiRequest: null,
+      subagentsStatus: EMPTY_SUBAGENTS_STATUS,
+    });
+  });
+
+  it("扩展 UI 请求（如 ask_user_question）在 pixie 页就地渲染内嵌卡片", async () => {
+    mockPixieHost();
+    render(<PixiePage />);
+    await screen.findByTestId("pixie-input");
+
+    act(() => {
+      useAppStore.setState({ extensionUiRequest: inlineConfirmRequest() });
+    });
+
+    // 内嵌问题卡片必须出现——否则 Composer 被 decisionBlocked 锁死且无处可答。
+    expect(document.querySelector('[data-extension-ui-surface="inline"]')).not.toBeNull();
+    expect(screen.getByText("Continue with the risky step?")).toBeInTheDocument();
+  });
+
+  it("activeSubagentNodeId 时渲染子代理对话视图，主输入框让位", async () => {
+    mockPixieHost();
+    useAppStore.setState({
+      activeSubagentNodeId: "run-1",
+      subagentsStatus: subagentRunsStatus(),
+    });
+    render(<PixiePage />);
+
+    await waitFor(() => {
+      expect(document.querySelector("[data-subagent-conversation]")).not.toBeNull();
+    });
+    expect(screen.queryByTestId("pixie-input")).not.toBeInTheDocument();
+  });
+
+  it("卸载 pixie 页时丢弃子代理视图状态（不残留到 chat 页）", async () => {
+    mockPixieHost();
+    useAppStore.setState({
+      activeSubagentNodeId: "run-1",
+      subagentsStatus: subagentRunsStatus(),
+    });
+    const { unmount } = render(<PixiePage />);
+    await waitFor(() => {
+      expect(document.querySelector("[data-subagent-conversation]")).not.toBeNull();
+    });
+
+    unmount();
+
+    expect(useAppStore.getState().activeSubagentNodeId).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* 委派面板分层（瘦身重构）：活跃详细卡置顶，终态记录进历史折叠区。      */
+/* ------------------------------------------------------------------ */
+
+describe("PixiePage 委派面板分层", () => {
+  afterEach(() => {
+    useAppStore.setState({ activeSubagentNodeId: null, extensionUiRequest: null });
+  });
+
+  it("活跃记录直接渲染详细卡；终态记录收进历史折叠区，展开行可再看详情", async () => {
+    const user = userEvent.setup();
+    dispatchesMock.push(
+      dispatchRecord({ id: "d-run", status: "dispatched" }),
+      dispatchRecord({
+        id: "d-done",
+        status: "reported",
+        kind: "done",
+        report: "干完了",
+        lastActiveAt: Date.now() - 120_000,
+      }),
+    );
+    mockPixieHost();
+    render(<PixiePage />);
+    await screen.findByTestId("pixie-input");
+
+    // 活跃区：只有 running 那张详细卡；历史默认收起。
+    const cards = document.querySelectorAll('[data-testid="pixie-dispatch-card"]');
+    expect(cards.length).toBe(1);
+    const toggle = screen.getByTestId("pixie-history-toggle");
+    expect(toggle.textContent).toContain("1");
+
+    await user.click(toggle);
+    const row = screen.getByTestId("pixie-dispatch-history-row");
+    expect(row).toBeInTheDocument();
+    // 详情默认收起：展开行后出现完整卡（含回调正文与 retry 动作区）。
+    expect(document.querySelectorAll('[data-testid="pixie-dispatch-card"]').length).toBe(1);
+    await user.click(row.querySelector("button")!);
+    expect(document.querySelectorAll('[data-testid="pixie-dispatch-card"]').length).toBe(2);
+  });
+
+  it("切换会话后面板归属跟随：pixie.dispatches 带上当前打开的 sessionId 重新拉取", async () => {
+    const seenParams: Array<string | null | undefined> = [];
+    mockPixieHostWithParams((params) => {
+      seenParams.push((params as { sessionId?: string | null } | null)?.sessionId ?? null);
+    });
+    render(<PixiePage />);
+    await screen.findByTestId("pixie-input");
+
+    // 首次拉取归属 = 打开的会话。
+    await waitFor(() => expect(seenParams).toContain(SESSION_ID));
+
+    // 用户在会话弹窗里切到另一条会话（session.open 后的两笔 store 更新）。
+    const OTHER_SESSION_ID = "44444444-4444-4444-8444-444444444444";
+    act(() => {
+      useAppStore
+        .getState()
+        .applySessionSnapshot(sessionSnapshot({ sessionId: OTHER_SESSION_ID, revision: 7 }));
+      useAppStore
+        .getState()
+        .setHost({ ...host(), sessionId: OTHER_SESSION_ID, sessionRevision: 7 });
+    });
+
+    // 面板必须立即改用新会话作为归属重新拉取。
+    await waitFor(() => {
+      const last = seenParams[seenParams.length - 1];
+      expect(last).toBe(OTHER_SESSION_ID);
+    });
   });
 });

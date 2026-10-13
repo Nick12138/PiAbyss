@@ -416,6 +416,40 @@ function persistDispatches(agentDir: string): void {
     });
   }
 }
+/**
+ * 旧派发记录的归属反推（仅迁移期使用）。
+ *
+ * v5.1 之前记录的 originSessionId 是后补字段，老记录缺失。若直接把 null 当作
+ * “所有会话都可见”，面板就退化成混合历史（每个会话都看到同样的旧记录）——
+ * 正是引入归属字段要解决的问题。这里用 v4 timeline.json 的段窗口（只读，不再
+ * 维护）按 createdAt 落在哪一段来反推真实归属；推不出来就保持 null（不显示）。
+ */
+function legacySegmentWindows(
+  agentDir: string,
+): { sessionId: string; startedAt: number; endedAt: number | null }[] {
+  try {
+    return loadTimeline(agentDir).segments.map((segment) => ({
+      sessionId: segment.sessionId,
+      startedAt: segment.startedAt,
+      endedAt: segment.endedAt,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function inferLegacyOriginSessionId(
+  windows: { sessionId: string; startedAt: number; endedAt: number | null }[],
+  createdAt: number,
+): string | null {
+  for (const window of windows) {
+    if (createdAt < window.startedAt) continue;
+    if (window.endedAt !== null && createdAt > window.endedAt) continue;
+    return window.sessionId;
+  }
+  return null;
+}
+
 function loadDispatches(agentDir: string): void {
   if (dispatchesLoadedFor === agentDir) return;
   dispatchesLoadedFor = agentDir;
@@ -429,10 +463,19 @@ function loadDispatches(agentDir: string): void {
   }
   const records = (raw as { records?: unknown }).records;
   if (!Array.isArray(records)) return;
+  // 旧记录归属反推的段窗口（惰性：只有真出现缺归属的记录才读 timeline.json）。
+  let legacyWindows: { sessionId: string; startedAt: number; endedAt: number | null }[] | null =
+    null;
   for (const item of records) {
     if (typeof item !== "object" || item === null) continue;
     const record = item as Partial<PixieDispatch>;
     if (typeof record.id !== "string" || typeof record.task !== "string") continue;
+    const createdAt = typeof record.createdAt === "number" ? record.createdAt : Date.now();
+    const recordedOrigin =
+      typeof record.originSessionId === "string" && record.originSessionId
+        ? record.originSessionId
+        : null;
+    if (recordedOrigin === null) legacyWindows ??= legacySegmentWindows(agentDir);
     const status =
       record.status === "awaiting_user" ||
       record.status === "reported" ||
@@ -464,7 +507,7 @@ function loadDispatches(agentDir: string): void {
       options: Array.isArray(record.options)
         ? record.options.filter((option): option is string => typeof option === "string")
         : [],
-      createdAt: typeof record.createdAt === "number" ? record.createdAt : Date.now(),
+      createdAt,
       reportedAt: typeof record.reportedAt === "number" ? record.reportedAt : null,
       stale: record.stale === true,
       startedAt: typeof record.startedAt === "number" ? record.startedAt : null,
@@ -482,6 +525,8 @@ function loadDispatches(agentDir: string): void {
       retryOf: typeof record.retryOf === "string" ? record.retryOf : null,
       model: typeof record.model === "string" ? record.model : null,
       thinkingLevel: typeof record.thinkingLevel === "string" ? record.thinkingLevel : null,
+      // 归属段：老记录缺字段 → 用 v4 段窗口按时间反推；推不出=null（不显示）。
+      originSessionId: recordedOrigin ?? inferLegacyOriginSessionId(legacyWindows ?? [], createdAt),
     });
   }
   dispatches.sort((left, right) => right.createdAt - left.createdAt);
@@ -598,6 +643,8 @@ export function registerDispatch(input: {
   model?: string | null;
   /** 用户明确授权的推理深度覆盖；缺省 = 会话默认。 */
   thinkingLevel?: string | null;
+  /** 发起委派时小精灵所在会话段（面板按段过滤的归属键；null = 无归属）。 */
+  originSessionId?: string | null;
 }): PixieDispatch {
   loadDispatches(input.agentDir);
   const now = Date.now();
@@ -625,6 +672,7 @@ export function registerDispatch(input: {
     retryOf: input.retryOf ?? null,
     model: input.model ?? null,
     thinkingLevel: input.thinkingLevel ?? null,
+    originSessionId: input.originSessionId ?? null,
   };
   dispatches.unshift(record);
   if (dispatches.length > MAX_DISPATCHES) dispatches.length = MAX_DISPATCHES;
@@ -888,6 +936,46 @@ export function findDispatchById(id: string): PixieDispatch | undefined {
   return dispatches.find((d) => d.id === id);
 }
 
+/** 当前小精灵会话段的指针（轻量：只读 pixie-state.json，不建图不写盘）。 */
+export function currentPixieSessionId(agentDir: string): string | null {
+  return ensureRunner(agentDir).pointer.sessionId;
+}
+
+/** 活跃（未到终态）的委派：跨段都必须可见可操作。 */
+function isLiveDispatchRecord(record: PixieDispatch): boolean {
+  return (
+    record.status === "dispatched" ||
+    record.status === "queued" ||
+    record.status === "paused" ||
+    record.status === "awaiting_user"
+  );
+}
+
+/**
+ * 委派面板列表（pixie.dispatches RPC）：与「当前打开的小精灵会话」关联的
+ * 全量委派。关联语义：
+ *   - 活跃委派（dispatched/queued/paused/awaiting_user）→ 一律显示：回调注入
+ *     的是当前段，跨段活跃任务不能失踪，否则用户看不到也叫不停；
+ *   - 终态委派 → 只有 originSessionId 命中当前会话才显示（历史按会话归档）。
+ * 不截断：当前会话的全量就是面板要的"全量关联"。
+ *
+ * currentSessionId=null（拿不到会话上下文）时只显示活跃委派——宁可少显示，
+ * 也不能把别的会话的历史混进来。
+ */
+export function listDispatchesForPanel(
+  agentDir: string,
+  currentSessionId: string | null,
+): PixieDispatchRecord[] {
+  loadDispatches(agentDir);
+  return dispatches
+    .filter(
+      (d) =>
+        isLiveDispatchRecord(d) ||
+        (currentSessionId !== null && d.originSessionId === currentSessionId),
+    )
+    .map((d) => ({ ...d }));
+}
+
 export function listDispatches(limit: number, agentDir?: string): PixieDispatchRecord[] {
   if (agentDir) loadDispatches(agentDir);
   markStaleDispatches();
@@ -933,9 +1021,8 @@ type PixieAcquisition = {
 };
 
 /** backgroundSessions / idleSessionCache 里驻留的运行时形状。 */
-type PixieParkedRuntime = WorkspaceGraph["backgroundSessions"] extends Map<string, infer R>
-  ? R
-  : never;
+type PixieParkedRuntime =
+  WorkspaceGraph["backgroundSessions"] extends Map<string, infer R> ? R : never;
 
 let runner: PixieRunner | null = null;
 
@@ -996,7 +1083,12 @@ function loadRunnerState(
       needsPreamble: false, // 旧段首条消息早已吃过前导
     };
   } catch {
-    return { pointer: { sessionId: null, sessionPath: null }, nap: {}, lastHandoff: null, needsPreamble: false };
+    return {
+      pointer: { sessionId: null, sessionPath: null },
+      nap: {},
+      lastHandoff: null,
+      needsPreamble: false,
+    };
   }
 }
 
@@ -1099,7 +1191,10 @@ async function ensurePixieGraph(
 function findCurrentRuntime(
   graph: WorkspaceGraph,
   sessionId: string,
-): { where: "active"; session: AgentSession } | { where: "parked"; runtime: PixieParkedRuntime } | null {
+):
+  | { where: "active"; session: AgentSession }
+  | { where: "parked"; runtime: PixieParkedRuntime }
+  | null {
   if (graph.agentSession && graph.sessionSnapshot?.sessionId === sessionId) {
     return { where: "active", session: graph.agentSession };
   }
@@ -1159,9 +1254,7 @@ async function createPixieSessionInGraph(
     sessionSnapshot: snapshot,
     // 与 createSession 完全同一事件接线：前台活动会话 → 全量流式；
     // 前台后台/停驻图 → handleAgentEvent 内部按规则过滤（终态/运行态）。
-    unsubscribeAgent: session.subscribe((event) =>
-      factory.handleAgentEvent(graph, session, event),
-    ),
+    unsubscribeAgent: session.subscribe((event) => factory.handleAgentEvent(graph, session, event)),
     extensionUiActivate: null,
     extensionUiCleanup: null,
     extensionUiUpdateIdentity: null,
@@ -1213,9 +1306,7 @@ async function openPixieSessionInGraph(
     extensionsResult: created.extensionsResult,
     toolRevision: graph.toolRevision,
     sessionSnapshot: snapshot,
-    unsubscribeAgent: session.subscribe((event) =>
-      factory.handleAgentEvent(graph, session, event),
-    ),
+    unsubscribeAgent: session.subscribe((event) => factory.handleAgentEvent(graph, session, event)),
     extensionUiActivate: null,
     extensionUiCleanup: null,
     extensionUiUpdateIdentity: null,
@@ -1680,8 +1771,7 @@ export async function ensurePixieCurrent(
   factory: WorkspaceGraphFactory,
   agentDir: string,
 ): Promise<
-  | { ok: true; cwd: string; sessionId: string; sessionPath: string }
-  | { ok: false; error: string }
+  { ok: true; cwd: string; sessionId: string; sessionPath: string } | { ok: false; error: string }
 > {
   const state = ensureRunner(agentDir);
   let acquired = await acquireCurrentSession(factory, agentDir);
@@ -1885,19 +1975,20 @@ export async function deliverDispatchCallback(
   factory: WorkspaceGraphFactory,
   args: {
     agentDir: string;
-  record: PixieDispatch;
-  kind: PixieDispatchKind;
-  summary: string;
-  options?: string[];
-  /** 产物/变更文件清单（progress/done 回调透传）。 */
-  files?: string[] | null;
-  /** error 专用：被委派会话存活状态（失败决策流）。 */
-  sessionAlive?: PixieSessionAlive;
-  /** error 专用：错误类型短标签。 */
-  errorType?: string | null;
-  /** error 专用：失败前的已完成进度。 */
-  progress?: string | null;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+    record: PixieDispatch;
+    kind: PixieDispatchKind;
+    summary: string;
+    options?: string[];
+    /** 产物/变更文件清单（progress/done 回调透传）。 */
+    files?: string[] | null;
+    /** error 专用：被委派会话存活状态（失败决策流）。 */
+    sessionAlive?: PixieSessionAlive;
+    /** error 专用：错误类型短标签。 */
+    errorType?: string | null;
+    /** error 专用：失败前的已完成进度。 */
+    progress?: string | null;
+  },
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const record = args.record;
   const filesBlock =
     args.files && args.files.length > 0

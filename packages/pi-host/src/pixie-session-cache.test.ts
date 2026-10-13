@@ -55,6 +55,7 @@ function dispatchRecord(over: Partial<PixieDispatchRecord>): PixieDispatchRecord
     retryOf: null,
     model: null,
     thinkingLevel: null,
+    originSessionId: null,
     ...over,
   };
 }

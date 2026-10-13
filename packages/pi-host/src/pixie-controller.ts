@@ -47,6 +47,7 @@ import {
   cancelQueuedDispatch,
   classifyError,
   configurePixieTerminalSettleHook,
+  currentPixieSessionId,
   deliverDispatchCallback,
   ensurePixieCurrent,
   failDispatch,
@@ -56,6 +57,7 @@ import {
   injectPixieMessage,
   liveDispatchFor,
   listDispatches,
+  listDispatchesForPanel,
   progressDispatch,
   queuedDispatchesFor,
   reactivateDispatchAfterReply,
@@ -783,6 +785,7 @@ async function dispatchPixieTask(
       queued: true,
       model: request.model ?? null,
       thinkingLevel: request.thinkingLevel ?? null,
+      originSessionId: currentPixieSessionId(agentDir),
     });
     recordPixieDispatch(agentDir);
     return {
@@ -813,6 +816,7 @@ async function dispatchPixieTask(
     failCount: request.failCount ?? 0,
     model: request.model ?? null,
     thinkingLevel: request.thinkingLevel ?? null,
+    originSessionId: currentPixieSessionId(agentDir),
   });
   recordPixieDispatch(agentDir);
   dispatchedSessions.set(dispatch.id, session);
@@ -1378,8 +1382,13 @@ export function createPixieHandlers(
 
     "pixie.dispatches": async (ctx) => {
       if (!gate()) return { error: pixiePluginDisabledError() };
-      const params = (ctx.params ?? {}) as { limit?: number };
-      const dispatches: PixieDispatchRecord[] = listDispatches(params.limit ?? 20, agentDir);
+      // 面板语义：与「用户当前打开的会话」关联的全量委派（该会话发起的终态
+      // 历史 + 跨会话仍在跑的活跃任务），不限条数。
+      // 会话来源：前端把当前打开的会话 id 显式传上来（用户在会话弹窗里切换时
+      // 立即跟随）；没传（如工具/脚本调用）才退回小精灵当前段的指针。
+      const params = (ctx.params ?? {}) as { sessionId?: string | null };
+      const scopedSessionId = params.sessionId?.trim() || currentPixieSessionId(agentDir);
+      const dispatches: PixieDispatchRecord[] = listDispatchesForPanel(agentDir, scopedSessionId);
       return { result: { dispatches } };
     },
 

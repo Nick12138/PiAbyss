@@ -586,7 +586,12 @@ export type HostRequestParams = {
   "memo.getSyncConfig": null;
   "memo.testSync": null;
   "memo.syncNow": null;
-  "pixie.dispatches": { limit?: number };
+  /** 面板拉取：无参数，Host 按小精灵当前会话段返回全量关联委派。 */
+  /**
+   * 面板归属：用户当前打开的小精灵会话（前端在会话弹窗切换时立即带上）；
+   * 缺省/null = Host 退回小精灵当前段指针。
+   */
+  "pixie.dispatches": { sessionId?: string | null };
   "pixie.usage": null;
   "pixie.ensureCurrent": null;
   /** 用户对 ask 询问的答复：路由回被委派会话（followUp）。 */

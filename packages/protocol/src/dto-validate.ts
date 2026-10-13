@@ -2757,6 +2757,7 @@ function isPixieDispatchRecord(value: unknown): boolean {
         "retryOf",
         "model",
         "thinkingLevel",
+        "originSessionId",
       ],
     ) &&
     isString(value.id) &&
@@ -2810,7 +2811,10 @@ function isPixieDispatchRecord(value: unknown): boolean {
     (value.model === undefined || value.model === null || isString(value.model)) &&
     (value.thinkingLevel === undefined ||
       value.thinkingLevel === null ||
-      isString(value.thinkingLevel))
+      isString(value.thinkingLevel)) &&
+    (value.originSessionId === undefined ||
+      value.originSessionId === null ||
+      isString(value.originSessionId))
   );
 }
 

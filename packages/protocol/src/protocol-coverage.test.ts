@@ -355,7 +355,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "memo.getSyncConfig": null,
   "memo.testSync": null,
   "memo.syncNow": null,
-  "pixie.dispatches": { limit: 20 },
+  "pixie.dispatches": { sessionId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150" },
   "pixie.usage": null,
   "pixie.ensureCurrent": null,
   "pixie.reply": { dispatchId: "pix_abc", text: "选方案 A" },
@@ -682,10 +682,11 @@ function invalidParams(method: HostMethod): unknown {
     case "memo.syncNow":
     case "pixie.usage":
       return { unexpected: true };
+    case "pixie.dispatches":
+      // 归属会话必须是字符串（或 null）；数字/多余键都非法。
+      return { sessionId: 42 };
     case "pixie.ensureCurrent":
       return { cwd: "", sessionId: "", sessionPath: "" };
-    case "pixie.dispatches":
-      return { limit: 0 };
     case "pixie.reply":
       return { dispatchId: "", text: "x" };
     case "pixie.setContext":

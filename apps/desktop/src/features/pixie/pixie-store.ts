@@ -31,8 +31,8 @@ type PixieViewState = {
   error: string | null;
   /** 取当前 pixie 会话锚点（幂等；Host 侧单飞保证不重复建会话）。 */
   ensureCurrent: () => Promise<PixieCurrent | null>;
-  /** 拉取委派列表。 */
-  refreshDispatches: () => Promise<void>;
+  /** 拉取委派列表（sessionId = 面板归属的会话；不传 = 沿用上次）。 */
+  refreshDispatches: (sessionId?: string | null) => Promise<void>;
   /** Answer an awaiting ask explicitly (inline reply in the dispatch panel). */
   reply: (dispatchId: string, text: string) => Promise<boolean>;
   /** 打个盹: instruct the pixie to rest; Host force-finalizes on refusal. */
@@ -51,6 +51,21 @@ type PixieViewState = {
   /** 重试：resume=原地续跑；redispatch=重派；缺省 Host 自动判定。 */
   retryDispatch: (dispatchId: string, mode?: "resume" | "redispatch") => Promise<boolean>;
 };
+
+/**
+ * 面板归属会话（最近一次 refreshDispatches 指定的那个）。放在模块级而不是
+ * zustand state：它只是请求参数，参与渲染毫无意义，改它也不该触发重渲。
+ */
+let panelSessionId: string | null = null;
+
+/** in-flight 期间归属又变了 → 落地后补拉一次（见 refreshDispatches）。 */
+let dispatchesRefreshPending = false;
+
+/** 测试用：清掉归属缓存，避免用例之间互相污染。 */
+export function resetPixiePanelSessionForTests(): void {
+  panelSessionId = null;
+  dispatchesRefreshPending = false;
+}
 
 export const usePixieViewStore = create<PixieViewState>((set, get) => ({
   current: null,
@@ -81,16 +96,30 @@ export const usePixieViewStore = create<PixieViewState>((set, get) => ({
     }
   },
 
-  refreshDispatches: async () => {
+  /**
+   * 拉取委派列表。
+   *
+   * 归属会话：默认取「用户当前打开的小精灵会话」——在会话弹窗里切换会话后
+   * 传新的 id 即可让面板立即跟随；不传则复用上次的归属（reply/interject/stop/
+   * retry 之后的无声刷新走这条路），首次调用前则为 null（Host 退回当前段指针）。
+   */
+  refreshDispatches: async (sessionId?: string | null) => {
     const host = useAppStore.getState().host;
     if (!host) return;
-    if (get().dispatchesLoading) return;
+    if (sessionId !== undefined) panelSessionId = sessionId?.trim() || null;
+    if (get().dispatchesLoading) {
+      // 上一笔请求还在飞：本次归属更新不能丢——请求体是发出时定格的旧归属，
+      // 等它落地后必须用新归属补拉一次，否则切会话最长要等一个轮询周期。
+      dispatchesRefreshPending = true;
+      return;
+    }
     set({ dispatchesLoading: true });
     try {
       const response = await hostClient.request(
         "pixie.dispatches",
         hostContext(host),
-        { limit: 50 },
+        // 面板语义：Host 按给定会话返回全量关联委派（活跃跨会话 + 该会话历史）。
+        { sessionId: panelSessionId },
         DISPATCHES_TIMEOUT_MS,
       );
       if (!response.ok) {
@@ -113,6 +142,11 @@ export const usePixieViewStore = create<PixieViewState>((set, get) => ({
         dispatchesLoaded: true,
         error: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      if (dispatchesRefreshPending) {
+        dispatchesRefreshPending = false;
+        void get().refreshDispatches();
+      }
     }
   },
 
@@ -182,7 +216,12 @@ export const usePixieViewStore = create<PixieViewState>((set, get) => ({
       const response = await hostClient.request(
         "pixie.interject",
         hostContext(host),
-        { dispatchId, text: text.trim(), mode, ...(mode === "checkpoint" && after ? { after } : {}) },
+        {
+          dispatchId,
+          text: text.trim(),
+          mode,
+          ...(mode === "checkpoint" && after ? { after } : {}),
+        },
         SEND_TIMEOUT_MS,
       );
       if (!response.ok) {

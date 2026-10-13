@@ -2159,6 +2159,12 @@ export type PixieDispatchRecord = {
   model: string | null;
   /** 当前生效的推理深度（off|minimal|low|medium|high|xhigh|max）；null = 会话默认。 */
   thinkingLevel: string | null;
+  /**
+   * 发起委派时小精灵所在的会话段 id：委派面板按当前段过滤的归属键。
+   * 活跃委派跨段仍可见（回调注入的是当前段）；null = 旧版记录无归属，
+   * 面板语义下全段可见。
+   */
+  originSessionId: string | null;
 };
 
 /** pixie.usage 结果：留存判定埋点（按天计数）。 */

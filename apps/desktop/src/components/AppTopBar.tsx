@@ -218,9 +218,26 @@ export function AppTopBar({
               aria-hidden="true"
             />
             <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              <h1 className="min-w-0 shrink-0 truncate text-base font-semibold leading-5">
-                {t("pixieTitle")}
-              </h1>
+              {subagentActive ? (
+                /* 子代理视图：标题降级为返回按钮（回小精灵主会话），
+                 * 后接 SubagentTitleMenu 的 run 面包屑——与 chat 分支
+                 * 同一套交互。 */
+                <button
+                  type="button"
+                  data-tauri-drag-region="false"
+                  data-back-to-main-session
+                  className="pointer-events-auto -mx-1.5 block max-w-full truncate rounded-md px-1.5 py-1 text-left leading-none transition-colors hover:bg-surface-overlay"
+                  title={t("chatBackToMainSession")}
+                  aria-label={t("chatBackToMainSession")}
+                  onClick={() => setActiveSubagent(null)}
+                >
+                  <span className="text-base font-semibold leading-5">{t("pixieTitle")}</span>
+                </button>
+              ) : (
+                <h1 className="min-w-0 shrink-0 truncate text-base font-semibold leading-5">
+                  {t("pixieTitle")}
+                </h1>
+              )}
               {/* Pixie liveness dot: green = thinking, muted = idle. */}
               <span
                 data-testid="pixie-running-dot"
@@ -229,6 +246,7 @@ export function AppTopBar({
                   pixieRunning ? "bg-success animate-pulse" : "bg-muted/40"
                 }`}
               />
+              <SubagentTitleMenu />
             </div>
           </div>
         ) : page === "settings" || page === "packages" ? (

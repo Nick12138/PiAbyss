@@ -1683,11 +1683,14 @@ export function validateRequestParams<M extends HostMethod>(
     case "pixie.ensureCurrent":
       return params === null ? ok(null) : fail("params must be null", { method });
     case "pixie.dispatches":
-      return exactObject(params, [], ["limit"]) &&
-        (params.limit === undefined ||
-          (typeof params.limit === "number" &&
-            Number.isSafeInteger(params.limit) &&
-            params.limit > 0))
+      // 面板语义：可选 sessionId =「用户当前打开的小精灵会话」；缺省则 Host
+      // 退回小精灵当前段指针。null 与缺省同义（前端拿不到会话时显式传 null）。
+      // null = 旧前端（无参数调用）：语义等于缺省，Host 退回当前段指针。
+      if (params === null) return ok(null);
+      return exactObject(params, [], ["sessionId"]) &&
+        (params.sessionId === undefined ||
+          params.sessionId === null ||
+          (typeof params.sessionId === "string" && params.sessionId.length <= 256))
         ? ok(params)
         : fail("invalid pixie.dispatches params", { method });
     case "pixie.reply":
