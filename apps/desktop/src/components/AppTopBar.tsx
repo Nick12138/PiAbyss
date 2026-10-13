@@ -11,6 +11,7 @@ import { MemoSyncHeaderActions } from "../features/memo/MemoSyncHeaderActions";
 import { MemoSyncStatusDot } from "../features/memo/memo-sync-status";
 import { SubagentTitleMenu } from "../features/subagents/SubagentTitleMenu";
 import { PixieNapButton } from "../features/pixie/PixieNapButton";
+import { PixieSessionsButton } from "../features/pixie/PixieSessionsButton";
 import { clampSessionTitleForDisplay } from "../lib/session-title-display";
 
 /** Single full-width app-level top bar replacing the three independent header
@@ -39,12 +40,9 @@ export function AppTopBar({
   const activeSubagentNodeId = useAppStore((s) => s.activeSubagentNodeId);
   const setActiveSubagent = useAppStore((s) => s.setActiveSubagent);
   const platform = resolveWindowControlsPlatform();
-  // Pixie header state: liveness/model come from the standard session channel.
+  // Pixie header state: liveness comes from the standard session channel.
   const pixieRunning = useAppStore((s) =>
     s.page === "pixie" && s.session ? !s.session.isIdle : false,
-  );
-  const pixieModelName = useAppStore((s) =>
-    s.page === "pixie" ? (s.session?.model?.name ?? null) : null,
   );
 
   const isNewConversation = Boolean(
@@ -198,7 +196,9 @@ export function AppTopBar({
               className="pointer-events-none shrink-0 text-muted"
               aria-hidden="true"
             />
-            <h1 className="min-w-0 shrink-0 truncate text-base font-semibold leading-5">{t("memoTitle")}</h1>
+            <h1 className="min-w-0 shrink-0 truncate text-base font-semibold leading-5">
+              {t("memoTitle")}
+            </h1>
             <span
               data-tauri-drag-region
               className="pointer-events-none hidden shrink-0 truncate text-xs leading-5 text-muted @2xl:block"
@@ -229,11 +229,6 @@ export function AppTopBar({
                   pixieRunning ? "bg-success animate-pulse" : "bg-muted/40"
                 }`}
               />
-              {pixieModelName && (
-                <span className="min-w-0 truncate text-xs leading-5 text-muted">
-                  {pixieModelName}
-                </span>
-              )}
             </div>
           </div>
         ) : page === "settings" || page === "packages" ? (
@@ -253,7 +248,13 @@ export function AppTopBar({
         ref={actionsSlotRef}
       >
         {page === "memo" && <MemoSyncHeaderActions />}
-        {page === "pixie" && <PixieNapButton />}
+        {page === "pixie" && (
+          <>
+            {/* 会话列表入口收进 pixie 页自己的顶栏动作区（弹窗选择/切换）。 */}
+            <PixieSessionsButton />
+            <PixieNapButton />
+          </>
+        )}
       </div>
 
       {/* Right segment: download-and-update (while an update is available) +

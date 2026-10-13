@@ -219,6 +219,12 @@ export function WorkspacePicker() {
   const currentCwd = workspace?.canonicalCwd ?? null;
   const requestedCwd = workspace?.cwd ?? null;
 
+  // 小精灵页会把活动工作区切到 pixie 工作区（会话机制依赖它），但侧边栏
+  // 不应该因此出现第二个“选中”目标——pixie 页期间抑制工作区行的选中视觉，
+  // 只保留顶栏 pixie 入口自己的选中态。行为不受影响：行仍可点、仍按真实
+  // 活动工作区禁用自身/隐藏移除按钮。
+  const onPixiePage = useAppStore((s) => s.page) === "pixie";
+
   // Self-heal: whatever workspace is active (restored, picked, or set by the
   // host) always appears in the persistent list. The telegram workspace is a
   // first-class row of its own, never a folder entry — keep it out.
@@ -480,14 +486,21 @@ export function WorkspacePicker() {
   // Collapsed-header summary of the current selection so the user can tell
   // which workspace is active without expanding the list. Matches the row
   // labels: folder rows use the folder name; the telegram row uses its
-  // display name (rename override > bot handle).
-  const collapsedActivePath = telegramActive ? telegramWorkspacePath : currentCwd;
-  const collapsedActiveName = telegramActive
-    ? (loadTelegramWorkspaceDisplayName() ??
-      (telegramProfile?.botUsername ? `@${telegramProfile.botUsername}` : "Telegram"))
-    : currentCwd
-      ? workspaceDisplayName(currentCwd)
-      : null;
+  // display name (rename override > bot handle). Suppressed on the pixie
+  // page — the summary would otherwise read as a second "selected pixie".
+  const collapsedActivePath = onPixiePage
+    ? null
+    : telegramActive
+      ? telegramWorkspacePath
+      : currentCwd;
+  const collapsedActiveName = onPixiePage
+    ? null
+    : telegramActive
+      ? (loadTelegramWorkspaceDisplayName() ??
+        (telegramProfile?.botUsername ? `@${telegramProfile.botUsername}` : "Telegram"))
+      : currentCwd
+        ? workspaceDisplayName(currentCwd)
+        : null;
   const collapseButtonTitle = collapsed
     ? collapsedActivePath
       ? `${t("workspacesExpand")}\n${collapsedActivePath}`
@@ -620,6 +633,11 @@ export function WorkspacePicker() {
               // Folders and the telegram workspace are single-select: while
               // the telegram view is active, folder rows show as inactive.
               const active = !telegramActive && Boolean(currentCwd && samePath(currentCwd, path));
+              // Selection visuals are suppressed on the pixie page (the
+              // active row there is the pixie workspace); behavior —
+              // disabled self-click, hidden remove button, status dots —
+              // still follows the real `active`.
+              const showActive = active && !onPixiePage;
               const activity = workspaceActivities[normalizedActivityKey(path)];
               // Priority: red (unacknowledged failure) > green (busy) > gray
               // (unacknowledged completion) > none. Returning to the sessions
@@ -638,7 +656,7 @@ export function WorkspacePicker() {
                 <li
                   key={path}
                   className={`interface-density-nav-row group flex h-9 items-center rounded-md text-[13px] ${
-                    active ? "bg-surface-overlay font-medium" : "hover:bg-surface-overlay/70"
+                    showActive ? "bg-surface-overlay font-medium" : "hover:bg-surface-overlay/70"
                   }`}
                   onContextMenu={(event) => openWorkspaceContextMenu(event, path)}
                 >
@@ -648,14 +666,14 @@ export function WorkspacePicker() {
                     disabled={!host || pending || active}
                     className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left disabled:cursor-default"
                     title={`${workspaceDisplayName(path)}\n${path}`}
-                    aria-current={active ? "true" : undefined}
+                    aria-current={showActive ? "true" : undefined}
                   >
                     {pending && switchTarget !== null && samePath(switchTarget, path) ? (
                       <LoaderCircle size={16} className="shrink-0 animate-spin text-muted" />
                     ) : (
                       <Folder
                         size={16}
-                        className={`shrink-0 ${active ? "text-accent" : "text-muted"}`}
+                        className={`shrink-0 ${showActive ? "text-accent" : "text-muted"}`}
                       />
                     )}
                     <span className="min-w-0 flex-1 truncate">{workspaceDisplayName(path)}</span>

@@ -2061,7 +2061,7 @@ export const en = {
   pixieKindDone: "Done",
   pixieKindError: "Failed",
   pixieKindAsk: "Waiting for you",
-  pixieSessionsButton: "Pixie sessions",
+  pixieSessionsButton: "Sessions",
   pixieSessionsTitle: "Pixie sessions",
   pixieUnavailable: "Pixie unavailable (host not ready or plugin disabled)",
   pixieRetryAcquire: "Retry",

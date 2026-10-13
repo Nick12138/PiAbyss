@@ -5,8 +5,7 @@
  * `pixie.ensureCurrent` 拿到锚点后走 `openSessionAcrossWorkspaces`（内部完成
  * workspace.setCurrent + session.open），此后转写/输入框/统计全部由标准
  * session.snapshot / agent.event 推送驱动——与普通会话同一套机制，仅展示不同：
- *   - 顶部动作（打个盹）在 AppTopBar；
- *   - 会话列表收进按钮 + 弹窗（Sidebar）；
+ *   - 顶部动作（打个盹 / 会话列表弹窗）在 AppTopBar；
  *   - 右侧保留委派面板（pixie.dispatches 轮询 + 回复/插话/叫停/重试）；
  *   - ask 待回复时把输入框发送改道 pixie.reply。
  * 卸载时恢复进入前的工作区（除非用户已手动跳走）。
@@ -60,7 +59,8 @@ function DispatchRow({
   const running = record.status === "dispatched";
   const queued = record.status === "queued";
   const paused = record.status === "paused";
-  const failed = record.status === "failed" || (record.status === "reported" && record.kind === "error");
+  const failed =
+    record.status === "failed" || (record.status === "reported" && record.kind === "error");
   const stopped = record.status === "stopped";
   const retriable = failed || stopped;
   const escalate = record.failCount >= 3;
@@ -250,7 +250,11 @@ function DispatchRow({
             value={interjectDraft}
             onChange={(event) => setInterjectDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.nativeEvent.isComposing && interjectDraft.trim()) {
+              if (
+                event.key === "Enter" &&
+                !event.nativeEvent.isComposing &&
+                interjectDraft.trim()
+              ) {
                 onInterject(record.id, interjectDraft.trim(), "append");
                 setInterjectDraft("");
                 setInterjectOpen(false);
@@ -279,14 +283,18 @@ function DispatchRow({
 
 export function PixiePage() {
   const t = useT();
-  const host = useAppStore((s) => s.host);
+  // 依赖 host 的“实例标识”而不是 host 对象：会话切换（session.open）会
+  // 更新 host 的 sessionId/sessionRevision 身份字段并产生新对象引用，若
+  // effect 依赖 host 对象，用户在小精灵页里手动切换会话会被 mount-acquire
+  // 立即拉回锚点会话（“切换无效”）。hostInstanceId 只在宿主实例真正变化
+  // （首次就绪 / 宿主重启）时改变。
+  const hostInstanceId = useAppStore((s) => s.host?.hostInstanceId ?? null);
   const workspace = useAppStore((s) => s.workspace);
   const session = useAppStore((s) => s.session);
   const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces ?? []);
   const current = usePixieViewStore((s) => s.current);
   const dispatches = usePixieViewStore((s) => s.dispatches);
   const error = usePixieViewStore((s) => s.error);
-  const ensureCurrent = usePixieViewStore((s) => s.ensureCurrent);
   const refreshDispatches = usePixieViewStore((s) => s.refreshDispatches);
   const reply = usePixieViewStore((s) => s.reply);
   const pushContext = usePixieViewStore((s) => s.pushContext);
@@ -329,9 +337,12 @@ export function PixiePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- push on identity change of the list
   }, [knownWorkspaces]);
 
-  // Mount acquisition (re-run if the Host wasn't ready at first mount).
+  // Mount acquisition (re-run if the Host wasn't ready at first mount, or when
+  // the Host instance is replaced). Same-instance session switches (the user
+  // picking a session in the sessions dialog) must NOT re-run this — they
+  // would yank the transcript back to the anchor session.
   useEffect(() => {
-    if (!host) return;
+    if (!hostInstanceId) return;
     if (prevCwdRef.current === null) {
       // 记录进入前的工作区；已是 pixie 工作区（如冷启动直落 pixie 页）则不恢复。
       const before = useAppStore.getState().workspace?.canonicalCwd ?? null;
@@ -339,7 +350,7 @@ export function PixiePage() {
       prevCwdRef.current = before && before !== pixieCwd ? before : null;
     }
     void acquire();
-  }, [host, acquire]);
+  }, [hostInstanceId, acquire]);
 
   // Leaving the pixie page: hand the active workspace back so the chat page
   // keeps showing whatever the user had before. Skipped when the user already
@@ -356,7 +367,7 @@ export function PixiePage() {
 
   // Callback/ask/stale events refresh the dispatch panel.
   useEffect(() => {
-    if (!host) return;
+    if (!hostInstanceId) return;
     return hostClient.onEvent((event) => {
       if (
         event.event === "pixie.reportReceived" ||
@@ -366,14 +377,14 @@ export function PixiePage() {
         void refreshDispatches();
       }
     });
-  }, [host, refreshDispatches]);
+  }, [hostInstanceId, refreshDispatches]);
 
   useEffect(() => {
-    if (!host) return;
+    if (!hostInstanceId) return;
     return hostClient.onEvent((event) => {
       if (event.event === "pixie.segmentChanged") void acquire();
     });
-  }, [host, acquire]);
+  }, [hostInstanceId, acquire]);
 
   // Dispatch polling: fast while anything is running, slow otherwise.
   const hasActiveDispatch = useMemo(
@@ -388,14 +399,14 @@ export function PixiePage() {
     [dispatches],
   );
   useEffect(() => {
-    if (!host) return;
+    if (!hostInstanceId) return;
     void refreshDispatches();
     const timer = setInterval(
       () => void refreshDispatches(),
       hasActiveDispatch ? DISPATCH_POLL_ACTIVE_MS : DISPATCH_POLL_IDLE_MS,
     );
     return () => clearInterval(timer);
-  }, [host, hasActiveDispatch, refreshDispatches]);
+  }, [hostInstanceId, hasActiveDispatch, refreshDispatches]);
 
   const awaitingDispatch = useMemo(
     () => dispatches.find((d) => d.status === "awaiting_user") ?? null,

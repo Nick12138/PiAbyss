@@ -91,6 +91,30 @@ function sessionGroupLabelKey(
       : "sessionsGroupEarlier";
 }
 
+/**
+ * flatByDate 模式的行内日期：同一天显示 HH:mm，同年显示 MM-DD，往年带年份；
+ * title 给完整时间。时间源与目录排序一致（createdAt ?? updatedAt），保证
+ * "看到的顺序 = 日期顺序"。
+ */
+function formatSessionListDate(entry: SessionCatalogEntry): { text: string; title: string } | null {
+  const ts = entry.createdAt ?? entry.updatedAt;
+  if (typeof ts !== "number" || !Number.isFinite(ts)) return null;
+  const date = new Date(ts);
+  if (Number.isNaN(date.getTime())) return null;
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const hm = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const md = `${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  const full = `${date.getFullYear()}-${md} ${hm}`;
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  if (sameDay) return { text: hm, title: full };
+  if (date.getFullYear() === now.getFullYear()) return { text: md, title: full };
+  return { text: `${date.getFullYear()}-${md}`, title: full };
+}
+
 function acknowledgeVisitedSession(sessionId: string): void {
   const current = useAppStore.getState();
   const workspaceId = current.workspace?.id;
@@ -112,12 +136,21 @@ export function SessionList({
   collapsed = false,
   onToggleCollapsed,
   keepPage = false,
+  onSessionOpened,
+  flatByDate = false,
+  hideHeader = false,
 }: {
   showCreateAction?: boolean;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
   /** 不因打开会话而跳回 chat 页（小精灵弹窗内嵌时用：留在 pixie 页）。 */
   keepPage?: boolean;
+  /** 会话被点选（含点当前会话）后回调一次；弹窗宿主用它自动收起。 */
+  onSessionOpened?: () => void;
+  /** 纯日期倒序平铺：不做时间分组、不置顶 pinned，行内显示日期（小精灵弹窗用）。 */
+  flatByDate?: boolean;
+  /** 隐藏整个头部行（标题/归档切换/新建）——弹窗宿主自带标题与操作（小精灵弹窗用）。 */
+  hideHeader?: boolean;
 }) {
   const t = useT();
   const host = useAppStore((s) => s.host);
@@ -369,6 +402,7 @@ export function SessionList({
       return;
     }
     if (!keepPage && current.page !== "chat") current.setPage("chat");
+    onSessionOpened?.();
     if (!sessionOpenQueue.current?.isRunning() && current.session?.sessionPath === path) {
       acknowledgeVisitedSession(current.session.sessionId);
       return;
@@ -786,9 +820,13 @@ export function SessionList({
     }
   }
 
-  const allItems = prioritizePinnedSessions(sessionCatalogItems(sessionCatalog), pinnedSessionIds);
+  const allItems = flatByDate
+    ? sessionCatalogItems(sessionCatalog)
+    : prioritizePinnedSessions(sessionCatalogItems(sessionCatalog), pinnedSessionIds);
   const visibleItems = filterSessionItems(allItems, filter);
-  const groupedItems = groupSessionItemsByTime(visibleItems);
+  const groupedItems: { group: SessionTimeGroup; items: SessionCatalogEntry[] }[] = flatByDate
+    ? []
+    : groupSessionItemsByTime(visibleItems);
 
   // ── 定位请求：归档会话打不开，改为在列表里把它找出来并点亮 ──────────────────
   useEffect(() => subscribeSessionReveal(setRevealRequest), []);
@@ -856,401 +894,402 @@ export function SessionList({
     Date.now(),
   );
 
+  /** 单条会话行：时间分组视图与 flatByDate 平铺视图共用。 */
+  const renderSessionRow = (item: SessionCatalogEntry) => {
+    const active = !item.archived && session?.sessionId === item.sessionId;
+    const editing = editingSessionId === item.sessionId;
+    const pinned = pinnedSessionIds.includes(item.sessionId);
+    const revealed = revealedSessionId === item.sessionId;
+    const canRename = canRenameSession(item, session);
+    const canDelete = canDeleteSession(item, session);
+    const canArchive = canArchiveSession(item, session);
+    const canExport = canExportSession(item, session);
+    const terminalState = item.archived
+      ? undefined
+      : sessionTerminalStates[workspace?.id ?? ""]?.[item.sessionId];
+    const statusDot = item.archived
+      ? null
+      : sessionStatusDotClass(item.runtimeState, terminalState);
+    const statusLabelKey = item.archived
+      ? null
+      : sessionStatusLabelKey(item.runtimeState, terminalState);
+    const statusLabel = statusLabelKey ? t(statusLabelKey) : null;
+    const date = flatByDate ? formatSessionListDate(item) : null;
+    const decisionWaiting = item.archived ? undefined : extensionUiWaitingBySession[item.sessionId];
+    const decisionWaitingLabel = decisionWaiting
+      ? t(
+          decisionWaiting.hasHighRisk
+            ? "sessionsDecisionWaitingHighRisk"
+            : "sessionsDecisionWaiting",
+          { count: decisionWaiting.count },
+        )
+      : undefined;
+    return (
+      <li
+        key={item.sessionId}
+        data-ui="nav-item"
+        data-state={active ? "active" : "inactive"}
+        data-session-id={item.sessionId}
+        data-session-revealed={revealed ? "true" : undefined}
+        className={`interface-density-nav-row group flex h-9 items-center rounded-md text-[13px] ${
+          active
+            ? "theme-nav-active bg-nav-active text-nav-active-foreground"
+            : "hover:bg-surface-overlay/70"
+        } ${revealed && !active ? "ring-1 ring-accent/70 ring-inset transition-shadow" : ""}`}
+        onContextMenu={(event) => {
+          if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
+          if (
+            event.target instanceof Element &&
+            event.target.closest("input, textarea, [contenteditable='true']")
+          ) {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          openContextMenu({
+            x: event.clientX,
+            y: event.clientY,
+            trigger: contextMenuTrigger(event.target),
+            items: [
+              {
+                id: "session.rename",
+                label: t("sessionsRename"),
+                icon: Pencil,
+                disabled: !canRename,
+                onSelect: () => beginRename(item),
+              },
+              {
+                id: "session.pin",
+                label: pinned ? t("sessionsUnpin") : t("sessionsPin"),
+                icon: pinned ? PinOff : Pin,
+                onSelect: () => togglePinnedSession(item),
+              },
+              {
+                id: "session.copyPath",
+                label: t("menuCopySessionPath"),
+                icon: Copy,
+                separatorBefore: true,
+                onSelect: async () => {
+                  try {
+                    await navigator.clipboard.writeText(item.sessionPath);
+                    pushNotification(t("sessionsPathCopied"), "info");
+                  } catch {
+                    pushNotification(t("sessionsCopyPathFailed"), "warning");
+                  }
+                },
+              },
+              {
+                id: "session.exportHtml",
+                label: t("statsExportHtml"),
+                icon: FileOutput,
+                disabled: !active && !canExport,
+                onSelect: () =>
+                  requestExport("html", {
+                    kind: "session",
+                    sessionId: item.sessionId,
+                    sessionPath: item.sessionPath,
+                  }),
+              },
+              {
+                id: "session.exportJsonl",
+                label: t("statsExportJsonl"),
+                icon: FileOutput,
+                disabled: !active && !canExport,
+                onSelect: () =>
+                  requestExport("jsonl", {
+                    kind: "session",
+                    sessionId: item.sessionId,
+                    sessionPath: item.sessionPath,
+                  }),
+              },
+              {
+                id: "session.delete",
+                label: t("commonDelete"),
+                icon: Trash2,
+                danger: true,
+                separatorBefore: true,
+                disabled: !canDelete,
+                onSelect: () => setConfirmAction({ kind: "delete", item }),
+              },
+            ],
+          });
+        }}
+      >
+        {editing ? (
+          <form
+            ref={renameFormRef}
+            className="flex min-w-0 flex-1 items-center gap-1 px-1.5 py-1"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void renameSession();
+            }}
+          >
+            <input
+              ref={renameInputRef}
+              aria-label={t("sessionsNameAria")}
+              value={nameDraft}
+              maxLength={120}
+              onChange={(event) => setNameDraft(event.target.value)}
+              onCompositionStart={ime.onCompositionStart}
+              onCompositionEnd={ime.onCompositionEnd}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && ime.isImeKey(event)) {
+                  event.preventDefault();
+                  return;
+                }
+                if (event.key === "Escape") cancelRename();
+              }}
+              className="h-7 min-w-0 flex-1 rounded border border-accent bg-surface px-1.5 text-xs text-foreground outline-none"
+            />
+            <button
+              type="submit"
+              title={t("sessionsSaveName")}
+              disabled={sessionMutationBlocked || !nameDraft.trim()}
+              className="rounded p-1 text-accent hover:bg-surface-overlay disabled:opacity-40"
+            >
+              <Check size={14} />
+            </button>
+            <button
+              type="button"
+              title={t("sessionsCancelRename")}
+              onClick={cancelRename}
+              disabled={sessionMutationBlocked}
+              className="rounded p-1 text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+            >
+              <X size={14} />
+            </button>
+          </form>
+        ) : (
+          <>
+            <button
+              type="button"
+              aria-current={active ? "page" : undefined}
+              onClick={() => openSession(item.sessionPath)}
+              disabled={
+                sessionMutationPending || sessionOpenBlocked || !item.sessionPath || item.archived
+              }
+              className="min-w-0 flex-1 px-2.5 py-2 text-left"
+              title={
+                item.runtimeState === "error" && item.lastError
+                  ? `${sessionDisplayName(item, t("sessionsUntitled"))} — ${item.lastError}`
+                  : sessionDisplayName(item, t("sessionsUntitled"))
+              }
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <span className={`min-w-0 flex-1 truncate ${active ? "font-medium" : ""}`}>
+                  {clampSessionTitleForDisplay(sessionDisplayName(item, t("sessionsUntitled")))}
+                </span>
+                {date ? (
+                  <span
+                    data-testid="session-row-date"
+                    className="shrink-0 text-[10px] text-muted tabular-nums"
+                    title={date.title}
+                  >
+                    {date.text}
+                  </span>
+                ) : null}
+                {decisionWaiting && decisionWaitingLabel ? (
+                  <span
+                    aria-label={decisionWaitingLabel}
+                    title={decisionWaitingLabel}
+                    data-session-decision-count={decisionWaiting.count}
+                    className={`ml-auto inline-flex h-5 shrink-0 items-center gap-1 rounded border px-1.5 text-[10px] tabular-nums ${
+                      decisionWaiting.hasHighRisk
+                        ? "border-warning/40 bg-warning/10 text-warning"
+                        : "border-border bg-surface text-muted"
+                    }`}
+                  >
+                    {decisionWaiting.hasHighRisk ? (
+                      <CircleAlert size={11} aria-hidden="true" />
+                    ) : (
+                      <MessageCircleQuestion size={11} aria-hidden="true" />
+                    )}
+                    <span aria-hidden="true">{decisionWaiting.count}</span>
+                  </span>
+                ) : null}
+              </div>
+            </button>
+            {pinned && (
+              <button
+                type="button"
+                title={t("sessionsUnpin")}
+                aria-label={t("sessionsUnpin")}
+                onClick={() => removePinnedSessions([item.sessionId])}
+                className="mr-1 flex size-[22px] shrink-0 items-center justify-center rounded text-muted transition-colors hover:bg-surface hover:text-foreground"
+              >
+                <Pin size={12} aria-hidden="true" />
+              </button>
+            )}
+            {/* A session showing any status dot (live green/yellow or
+              unacknowledged terminal red/gray) is not archivable
+              right now — hide the action instead of offering a
+              disabled button. Archived entries have no dot and
+              keep their restore action. */}
+            {statusDot ? null : (
+              <div className="relative mr-1 flex size-[22px] shrink-0 items-center justify-center">
+                <button
+                  type="button"
+                  title={
+                    item.archived
+                      ? t("sessionsRestoreTitle")
+                      : canArchive
+                        ? t("sessionsArchiveTitle")
+                        : t("sessionsArchiveWait")
+                  }
+                  aria-label={item.archived ? t("sessionsRestore") : t("sessionsArchive")}
+                  onClick={() =>
+                    void runSessionFileAction(
+                      item.archived ? "session.restore" : "session.archive",
+                      item,
+                    )
+                  }
+                  disabled={sessionMutationBlocked || (!item.archived && !canArchive)}
+                  className="pointer-events-none rounded p-1 text-muted opacity-0 transition-opacity hover:bg-surface hover:text-foreground group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:disabled:opacity-30 group-focus-within:disabled:opacity-30"
+                >
+                  {item.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+                </button>
+              </div>
+            )}
+            {/* The status dot is always pinned to the far right
+              edge of the row, so it sits in the same column
+              whether or not a pin/archive action is shown. */}
+            {statusDot && (
+              <span
+                className="mr-1.5 flex size-[9.2px] shrink-0 items-center justify-center"
+                aria-label={statusLabel ?? undefined}
+                title={statusLabel ?? undefined}
+              >
+                <span className={`size-[8.2px] rounded-full ${statusDot}`} />
+              </span>
+            )}
+          </>
+        )}
+      </li>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex h-8 items-center justify-between px-2">
-        {onToggleCollapsed ? (
-          <button
-            type="button"
-            onClick={onToggleCollapsed}
-            aria-expanded={!collapsed}
-            aria-controls="session-list-region"
-            title={collapsed ? t("sessionsExpand") : t("sessionsCollapse")}
-            className="group flex min-w-0 items-center gap-1 text-[13px] font-medium text-muted transition-colors hover:text-foreground"
-          >
-            <span>{t("sessionsRecent")}</span>
-            <ChevronDown
-              size={12}
-              className={`opacity-0 transition-all group-hover:opacity-100 ${
-                collapsed ? "rotate-180" : ""
-              }`}
-            />
-          </button>
-        ) : (
-          <span className="text-[13px] font-medium text-muted">{t("sessionsRecent")}</span>
-        )}
-        <div className="flex items-center gap-0.5">
-          {filter === "archived" && archivedCount > 0 && (
+      {/* 弹窗宿主（hideHeader）自带标题与操作行，这里不再渲染"最近会话"头。 */}
+      {!hideHeader && (
+        <div className="flex h-8 items-center justify-between px-2">
+          {onToggleCollapsed ? (
             <button
               type="button"
-              title={t("sessionsClearArchivedTitle", { count: archivedCount })}
-              aria-label={t("sessionsClearArchivedAria")}
-              className="rounded p-1 text-muted hover:bg-surface-overlay hover:text-danger"
-              onClick={() => setConfirmAction({ kind: "cleanup", count: archivedCount })}
-              disabled={sessionMutationBlocked}
+              onClick={onToggleCollapsed}
+              aria-expanded={!collapsed}
+              aria-controls="session-list-region"
+              title={collapsed ? t("sessionsExpand") : t("sessionsCollapse")}
+              className="group flex min-w-0 items-center gap-1 text-[13px] font-medium text-muted transition-colors hover:text-foreground"
             >
-              <Trash2 size={13} />
+              <span>{t("sessionsRecent")}</span>
+              <ChevronDown
+                size={12}
+                className={`opacity-0 transition-all group-hover:opacity-100 ${
+                  collapsed ? "rotate-180" : ""
+                }`}
+              />
             </button>
+          ) : (
+            <span className="text-[13px] font-medium text-muted">{t("sessionsRecent")}</span>
           )}
-          {showArchivedToggle && (
-            <button
-              type="button"
-              aria-pressed={filter === "archived"}
-              title={
-                filter === "archived"
-                  ? t("sessionsShowActiveTitle")
-                  : t("sessionsShowArchivedTitle", { count: archivedCount })
-              }
-              aria-label={
-                filter === "archived"
-                  ? t("sessionsShowActiveTitle")
-                  : t("sessionsShowArchivedTitle", { count: archivedCount })
-              }
-              className={`rounded p-1 transition-colors ${
-                filter === "archived"
-                  ? "bg-selection text-selection-foreground"
-                  : "text-muted hover:bg-surface-overlay hover:text-foreground"
-              }`}
-              onClick={() => setFilter(filter === "archived" ? "active" : "archived")}
-            >
-              <Archive size={13} />
-            </button>
-          )}
-          {showCreateAction && (
-            <button
-              type="button"
-              title={t("sessionsNew")}
-              className="rounded p-1 text-muted hover:bg-surface-overlay hover:text-foreground"
-              onClick={() => void createSession()}
-              disabled={!workspace?.servicesReady || sessionMutationBlocked}
-            >
-              <Plus size={14} />
-            </button>
-          )}
+          <div className="flex items-center gap-0.5">
+            {filter === "archived" && archivedCount > 0 && (
+              <button
+                type="button"
+                title={t("sessionsClearArchivedTitle", { count: archivedCount })}
+                aria-label={t("sessionsClearArchivedAria")}
+                className="rounded p-1 text-muted hover:bg-surface-overlay hover:text-danger"
+                onClick={() => setConfirmAction({ kind: "cleanup", count: archivedCount })}
+                disabled={sessionMutationBlocked}
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
+            {showArchivedToggle && (
+              <button
+                type="button"
+                aria-pressed={filter === "archived"}
+                title={
+                  filter === "archived"
+                    ? t("sessionsShowActiveTitle")
+                    : t("sessionsShowArchivedTitle", { count: archivedCount })
+                }
+                aria-label={
+                  filter === "archived"
+                    ? t("sessionsShowActiveTitle")
+                    : t("sessionsShowArchivedTitle", { count: archivedCount })
+                }
+                className={`rounded p-1 transition-colors ${
+                  filter === "archived"
+                    ? "bg-selection text-selection-foreground"
+                    : "text-muted hover:bg-surface-overlay hover:text-foreground"
+                }`}
+                onClick={() => setFilter(filter === "archived" ? "active" : "archived")}
+              >
+                <Archive size={13} />
+              </button>
+            )}
+            {showCreateAction && (
+              <button
+                type="button"
+                title={t("sessionsNew")}
+                className="rounded p-1 text-muted hover:bg-surface-overlay hover:text-foreground"
+                onClick={() => void createSession()}
+                disabled={!workspace?.servicesReady || sessionMutationBlocked}
+              >
+                <Plus size={14} />
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       <CollapsibleRegion open={!collapsed} id="session-list-region">
         <>
           {!workspace?.servicesReady && (
             <p className="px-1 text-xs text-muted">{t("sessionsSelectWorkspaceFirst")}</p>
           )}
           <div className="flex flex-col gap-2" ref={listContainerRef}>
-            {groupedItems.map(({ group, items }) =>
-              items.length === 0 ? null : (
-                <div key={group} className="flex flex-col gap-0.5">
-                  <button
-                    type="button"
-                    aria-expanded={!collapsedGroups.has(group)}
-                    aria-controls={`session-group-${group}`}
-                    title={
-                      collapsedGroups.has(group)
-                        ? t("sessionsGroupExpand")
-                        : t("sessionsGroupCollapse")
-                    }
-                    onClick={() => toggleGroupCollapsed(group)}
-                    className="group flex min-w-0 items-center gap-1 px-1 pb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted transition-colors hover:text-foreground"
-                  >
-                    <span>{t(sessionGroupLabelKey(group))}</span>
-                    <ChevronDown
-                      size={12}
-                      className={`opacity-0 transition-all group-hover:opacity-100 group-focus-within:opacity-100 ${
-                        collapsedGroups.has(group) ? "rotate-180" : ""
-                      }`}
-                    />
-                  </button>
-                  <CollapsibleRegion
-                    open={!collapsedGroups.has(group)}
-                    id={`session-group-${group}`}
-                  >
-                    <ul className="flex flex-col gap-0.5">
-                      {items.map((item) => {
-                        const active = !item.archived && session?.sessionId === item.sessionId;
-                        const editing = editingSessionId === item.sessionId;
-                        const pinned = pinnedSessionIds.includes(item.sessionId);
-                        const revealed = revealedSessionId === item.sessionId;
-                        const canRename = canRenameSession(item, session);
-                        const canDelete = canDeleteSession(item, session);
-                        const canArchive = canArchiveSession(item, session);
-                        const canExport = canExportSession(item, session);
-                        const terminalState = item.archived
-                          ? undefined
-                          : sessionTerminalStates[workspace?.id ?? ""]?.[item.sessionId];
-                        const statusDot = item.archived
-                          ? null
-                          : sessionStatusDotClass(item.runtimeState, terminalState);
-                        const statusLabelKey = item.archived
-                          ? null
-                          : sessionStatusLabelKey(item.runtimeState, terminalState);
-                        const statusLabel = statusLabelKey ? t(statusLabelKey) : null;
-                        const decisionWaiting = item.archived
-                          ? undefined
-                          : extensionUiWaitingBySession[item.sessionId];
-                        const decisionWaitingLabel = decisionWaiting
-                          ? t(
-                              decisionWaiting.hasHighRisk
-                                ? "sessionsDecisionWaitingHighRisk"
-                                : "sessionsDecisionWaiting",
-                              { count: decisionWaiting.count },
-                            )
-                          : undefined;
-                        return (
-                          <li
-                            key={item.sessionId}
-                            data-ui="nav-item"
-                            data-state={active ? "active" : "inactive"}
-                            data-session-id={item.sessionId}
-                            data-session-revealed={revealed ? "true" : undefined}
-                            className={`interface-density-nav-row group flex h-9 items-center rounded-md text-[13px] ${
-                              active
-                                ? "theme-nav-active bg-nav-active text-nav-active-foreground"
-                                : "hover:bg-surface-overlay/70"
-                            } ${
-                              revealed && !active
-                                ? "ring-1 ring-accent/70 ring-inset transition-shadow"
-                                : ""
-                            }`}
-                            onContextMenu={(event) => {
-                              if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
-                              if (
-                                event.target instanceof Element &&
-                                event.target.closest("input, textarea, [contenteditable='true']")
-                              ) {
-                                return;
-                              }
-                              event.preventDefault();
-                              event.stopPropagation();
-                              openContextMenu({
-                                x: event.clientX,
-                                y: event.clientY,
-                                trigger: contextMenuTrigger(event.target),
-                                items: [
-                                  {
-                                    id: "session.rename",
-                                    label: t("sessionsRename"),
-                                    icon: Pencil,
-                                    disabled: !canRename,
-                                    onSelect: () => beginRename(item),
-                                  },
-                                  {
-                                    id: "session.pin",
-                                    label: pinned ? t("sessionsUnpin") : t("sessionsPin"),
-                                    icon: pinned ? PinOff : Pin,
-                                    onSelect: () => togglePinnedSession(item),
-                                  },
-                                  {
-                                    id: "session.copyPath",
-                                    label: t("menuCopySessionPath"),
-                                    icon: Copy,
-                                    separatorBefore: true,
-                                    onSelect: async () => {
-                                      try {
-                                        await navigator.clipboard.writeText(item.sessionPath);
-                                        pushNotification(t("sessionsPathCopied"), "info");
-                                      } catch {
-                                        pushNotification(t("sessionsCopyPathFailed"), "warning");
-                                      }
-                                    },
-                                  },
-                                  {
-                                    id: "session.exportHtml",
-                                    label: t("statsExportHtml"),
-                                    icon: FileOutput,
-                                    disabled: !active && !canExport,
-                                    onSelect: () =>
-                                      requestExport("html", {
-                                        kind: "session",
-                                        sessionId: item.sessionId,
-                                        sessionPath: item.sessionPath,
-                                      }),
-                                  },
-                                  {
-                                    id: "session.exportJsonl",
-                                    label: t("statsExportJsonl"),
-                                    icon: FileOutput,
-                                    disabled: !active && !canExport,
-                                    onSelect: () =>
-                                      requestExport("jsonl", {
-                                        kind: "session",
-                                        sessionId: item.sessionId,
-                                        sessionPath: item.sessionPath,
-                                      }),
-                                  },
-                                  {
-                                    id: "session.delete",
-                                    label: t("commonDelete"),
-                                    icon: Trash2,
-                                    danger: true,
-                                    separatorBefore: true,
-                                    disabled: !canDelete,
-                                    onSelect: () => setConfirmAction({ kind: "delete", item }),
-                                  },
-                                ],
-                              });
-                            }}
-                          >
-                            {editing ? (
-                              <form
-                                ref={renameFormRef}
-                                className="flex min-w-0 flex-1 items-center gap-1 px-1.5 py-1"
-                                onSubmit={(event) => {
-                                  event.preventDefault();
-                                  void renameSession();
-                                }}
-                              >
-                                <input
-                                  ref={renameInputRef}
-                                  aria-label={t("sessionsNameAria")}
-                                  value={nameDraft}
-                                  maxLength={120}
-                                  onChange={(event) => setNameDraft(event.target.value)}
-                                  onCompositionStart={ime.onCompositionStart}
-                                  onCompositionEnd={ime.onCompositionEnd}
-                                  onKeyDown={(event) => {
-                                    if (event.key === "Enter" && ime.isImeKey(event)) {
-                                      event.preventDefault();
-                                      return;
-                                    }
-                                    if (event.key === "Escape") cancelRename();
-                                  }}
-                                  className="h-7 min-w-0 flex-1 rounded border border-accent bg-surface px-1.5 text-xs text-foreground outline-none"
-                                />
-                                <button
-                                  type="submit"
-                                  title={t("sessionsSaveName")}
-                                  disabled={sessionMutationBlocked || !nameDraft.trim()}
-                                  className="rounded p-1 text-accent hover:bg-surface-overlay disabled:opacity-40"
-                                >
-                                  <Check size={14} />
-                                </button>
-                                <button
-                                  type="button"
-                                  title={t("sessionsCancelRename")}
-                                  onClick={cancelRename}
-                                  disabled={sessionMutationBlocked}
-                                  className="rounded p-1 text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
-                                >
-                                  <X size={14} />
-                                </button>
-                              </form>
-                            ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  aria-current={active ? "page" : undefined}
-                                  onClick={() => openSession(item.sessionPath)}
-                                  disabled={
-                                    sessionMutationPending ||
-                                    sessionOpenBlocked ||
-                                    !item.sessionPath ||
-                                    item.archived
-                                  }
-                                  className="min-w-0 flex-1 px-2.5 py-2 text-left"
-                                  title={
-                                    item.runtimeState === "error" && item.lastError
-                                      ? `${sessionDisplayName(item, t("sessionsUntitled"))} — ${item.lastError}`
-                                      : sessionDisplayName(item, t("sessionsUntitled"))
-                                  }
-                                >
-                                  <div className="flex min-w-0 items-center gap-2">
-                                    <span
-                                      className={`min-w-0 flex-1 truncate ${active ? "font-medium" : ""}`}
-                                    >
-                                      {clampSessionTitleForDisplay(
-                                        sessionDisplayName(item, t("sessionsUntitled")),
-                                      )}
-                                    </span>
-                                    {decisionWaiting && decisionWaitingLabel ? (
-                                      <span
-                                        aria-label={decisionWaitingLabel}
-                                        title={decisionWaitingLabel}
-                                        data-session-decision-count={decisionWaiting.count}
-                                        className={`ml-auto inline-flex h-5 shrink-0 items-center gap-1 rounded border px-1.5 text-[10px] tabular-nums ${
-                                          decisionWaiting.hasHighRisk
-                                            ? "border-warning/40 bg-warning/10 text-warning"
-                                            : "border-border bg-surface text-muted"
-                                        }`}
-                                      >
-                                        {decisionWaiting.hasHighRisk ? (
-                                          <CircleAlert size={11} aria-hidden="true" />
-                                        ) : (
-                                          <MessageCircleQuestion size={11} aria-hidden="true" />
-                                        )}
-                                        <span aria-hidden="true">{decisionWaiting.count}</span>
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                </button>
-                                {pinned && (
-                                  <button
-                                    type="button"
-                                    title={t("sessionsUnpin")}
-                                    aria-label={t("sessionsUnpin")}
-                                    onClick={() => removePinnedSessions([item.sessionId])}
-                                    className="mr-1 flex size-[22px] shrink-0 items-center justify-center rounded text-muted transition-colors hover:bg-surface hover:text-foreground"
-                                  >
-                                    <Pin size={12} aria-hidden="true" />
-                                  </button>
-                                )}
-                                {/* A session showing any status dot (live green/yellow or
-                                  unacknowledged terminal red/gray) is not archivable
-                                  right now — hide the action instead of offering a
-                                  disabled button. Archived entries have no dot and
-                                  keep their restore action. */}
-                                {statusDot ? null : (
-                                  <div className="relative mr-1 flex size-[22px] shrink-0 items-center justify-center">
-                                    <button
-                                      type="button"
-                                      title={
-                                        item.archived
-                                          ? t("sessionsRestoreTitle")
-                                          : canArchive
-                                            ? t("sessionsArchiveTitle")
-                                            : t("sessionsArchiveWait")
-                                      }
-                                      aria-label={
-                                        item.archived ? t("sessionsRestore") : t("sessionsArchive")
-                                      }
-                                      onClick={() =>
-                                        void runSessionFileAction(
-                                          item.archived ? "session.restore" : "session.archive",
-                                          item,
-                                        )
-                                      }
-                                      disabled={
-                                        sessionMutationBlocked || (!item.archived && !canArchive)
-                                      }
-                                      className="pointer-events-none rounded p-1 text-muted opacity-0 transition-opacity hover:bg-surface hover:text-foreground group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:disabled:opacity-30 group-focus-within:disabled:opacity-30"
-                                    >
-                                      {item.archived ? (
-                                        <ArchiveRestore size={14} />
-                                      ) : (
-                                        <Archive size={14} />
-                                      )}
-                                    </button>
-                                  </div>
-                                )}
-                                {/* The status dot is always pinned to the far right
-                                  edge of the row, so it sits in the same column
-                                  whether or not a pin/archive action is shown. */}
-                                {statusDot && (
-                                  <span
-                                    className="mr-1.5 flex size-[9.2px] shrink-0 items-center justify-center"
-                                    aria-label={statusLabel ?? undefined}
-                                    title={statusLabel ?? undefined}
-                                  >
-                                    <span className={`size-[8.2px] rounded-full ${statusDot}`} />
-                                  </span>
-                                )}
-                              </>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </CollapsibleRegion>
-                </div>
-              ),
+            {flatByDate && visibleItems.length > 0 && (
+              <ul className="flex flex-col gap-0.5" data-testid="session-list-flat">
+                {visibleItems.map((item) => renderSessionRow(item))}
+              </ul>
             )}
+            {!flatByDate &&
+              groupedItems.map(({ group, items }) =>
+                items.length === 0 ? null : (
+                  <div key={group} className="flex flex-col gap-0.5">
+                    <button
+                      type="button"
+                      aria-expanded={!collapsedGroups.has(group)}
+                      aria-controls={`session-group-${group}`}
+                      title={
+                        collapsedGroups.has(group)
+                          ? t("sessionsGroupExpand")
+                          : t("sessionsGroupCollapse")
+                      }
+                      onClick={() => toggleGroupCollapsed(group)}
+                      className="group flex min-w-0 items-center gap-1 px-1 pb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted transition-colors hover:text-foreground"
+                    >
+                      <span>{t(sessionGroupLabelKey(group))}</span>
+                      <ChevronDown
+                        size={12}
+                        className={`opacity-0 transition-all group-hover:opacity-100 group-focus-within:opacity-100 ${
+                          collapsedGroups.has(group) ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+                    <CollapsibleRegion
+                      open={!collapsedGroups.has(group)}
+                      id={`session-group-${group}`}
+                    >
+                      <ul className="flex flex-col gap-0.5">
+                        {items.map((item) => renderSessionRow(item))}
+                      </ul>
+                    </CollapsibleRegion>
+                  </div>
+                ),
+              )}
           </div>
           {workspace?.servicesReady && allItems.length > 0 && visibleItems.length === 0 && (
             <p className="px-2 py-3 text-center text-xs text-muted">{t("sessionsNoMatch")}</p>

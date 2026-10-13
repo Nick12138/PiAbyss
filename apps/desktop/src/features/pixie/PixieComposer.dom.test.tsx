@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -154,7 +154,12 @@ afterEach(() => {
   useAppStore.getState().setWorkspace(null);
   useAppStore.getState().applySessionSnapshot(null);
   useAppStore.setState({ desktopSettings: null });
-  usePixieViewStore.setState({ current: null, dispatches: [], dispatchesLoaded: false, error: null });
+  usePixieViewStore.setState({
+    current: null,
+    dispatches: [],
+    dispatchesLoaded: false,
+    error: null,
+  });
 });
 
 function mockPixieHost() {
@@ -162,7 +167,11 @@ function mockPixieHost() {
     if (method === "pixie.ensureCurrent") {
       return {
         ok: true,
-        result: { cwd: PIXIE_CWD, sessionId: SESSION_ID, sessionPath: "/agent/sessions/pixie/x.jsonl" },
+        result: {
+          cwd: PIXIE_CWD,
+          sessionId: SESSION_ID,
+          sessionPath: "/agent/sessions/pixie/x.jsonl",
+        },
       } as never;
     }
     if (method === "pixie.dispatches") {
@@ -185,7 +194,14 @@ describe("PixiePage 复用共享 Composer（v5 标准通道）", () => {
     render(<PixiePage />);
 
     // 锚点请求先于一切。
-    await waitFor(() => expect(request).toHaveBeenCalledWith("pixie.ensureCurrent", expect.anything(), null, expect.anything()));
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "pixie.ensureCurrent",
+        expect.anything(),
+        null,
+        expect.anything(),
+      ),
+    );
 
     const input = await screen.findByTestId("pixie-input");
     await user.type(input, "你好");
@@ -222,6 +238,38 @@ describe("PixiePage 复用共享 Composer（v5 标准通道）", () => {
       ),
     );
     // 不应落到 agent.prompt。
-    expect(request).not.toHaveBeenCalledWith("agent.prompt", expect.anything(), expect.anything(), null);
+    expect(request).not.toHaveBeenCalledWith(
+      "agent.prompt",
+      expect.anything(),
+      expect.anything(),
+      null,
+    );
+  });
+
+  it("会话弹窗切到另一条会话后不被拉回锚点（host 身份字段更新不得触发 re-acquire）", async () => {
+    const request = mockPixieHost();
+    render(<PixiePage />);
+    await screen.findByTestId("pixie-input");
+
+    const ensureCalls = () =>
+      request.mock.calls.filter(([method]) => method === "pixie.ensureCurrent").length;
+    expect(ensureCalls()).toBe(1);
+
+    // 模拟用户在会话弹窗里打开另一条会话：session.open 成功后 store 收到的
+    // 正是这两笔更新（session 快照 + host 身份字段前进）。host 对象引用因此
+    // 改变，但 hostInstanceId 不变——mount-acquire 不应重跑把会话拉回锚点。
+    const OTHER_SESSION_ID = "44444444-4444-4444-8444-444444444444";
+    act(() => {
+      useAppStore
+        .getState()
+        .applySessionSnapshot(sessionSnapshot({ sessionId: OTHER_SESSION_ID, revision: 7 }));
+      useAppStore
+        .getState()
+        .setHost({ ...host(), sessionId: OTHER_SESSION_ID, sessionRevision: 7 });
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(ensureCalls()).toBe(1);
+    expect(useAppStore.getState().session?.sessionId).toBe(OTHER_SESSION_ID);
   });
 });

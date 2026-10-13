@@ -462,3 +462,96 @@ describe("SessionList actions", () => {
     expect(screen.queryByTitle("Done")).not.toBeInTheDocument();
   });
 });
+
+describe("SessionList flatByDate（小精灵弹窗平铺模式）", () => {
+  const oldSummary: SessionSummary = {
+    sessionId: "session-old",
+    sessionPath: "/sessions/old.jsonl",
+    name: "Ancient chat",
+    cwd: "/workspace",
+    updatedAt: 1000,
+    messageCount: 1,
+  };
+  const newSummary: SessionSummary = {
+    sessionId: "session-new",
+    sessionPath: "/sessions/new.jsonl",
+    name: "Fresh chat",
+    cwd: "/workspace",
+    updatedAt: Date.now(),
+    messageCount: 1,
+  };
+
+  // 自包含 setup：本 describe 不依赖外层 describe 的 hooks（顶层平级），
+  // store 初始化与 DOM 清理都要自己带，否则单跑（-t）与连跑行为不一致。
+  beforeEach(() => {
+    clearPendingSessionRevealForTest();
+    useAppStore.setState({
+      host,
+      workspace,
+      session: null,
+      connecting: false,
+      rehydrating: false,
+      desynchronized: false,
+      hostFatal: null,
+      sessionCatalog: { workspaceId: null, entries: {}, order: [], loaded: false },
+      sessionTerminalStates: {},
+      workspaceActivities: {},
+    });
+    useAppStore.getState().replaceSessionCatalog(workspace.id, [oldSummary, newSummary]);
+    // old 是 pinned：默认模式会置顶，flatByDate 模式不应置顶。
+    globalThis.localStorage.setItem(
+      "piabyss.sessions.pinned.workspace-1",
+      JSON.stringify(["session-old"]),
+    );
+    vi.spyOn(hostClient, "request").mockResolvedValue({
+      ok: true,
+      result: { items: [oldSummary, newSummary] },
+    } as never);
+  });
+
+  afterEach(() => {
+    cleanup();
+    closeContextMenu();
+    vi.restoreAllMocks();
+    globalThis.localStorage.removeItem("piabyss.sessions.pinned.workspace-1");
+  });
+
+  it("不分组、纯日期倒序（pinned 不置顶）、行内显示日期", () => {
+    const { container } = render(<SessionList flatByDate />);
+
+    // 无时间分组头。
+    expect(screen.queryByText("Today")).not.toBeInTheDocument();
+    expect(screen.queryByText("This week")).not.toBeInTheDocument();
+    expect(screen.queryByText("Earlier")).not.toBeInTheDocument();
+
+    // 最新在最前；pinned 的 old 仍按日期排在后面。
+    const order = Array.from(container.querySelectorAll("[data-session-id]")).map(
+      (el) => (el as HTMLElement).dataset.sessionId,
+    );
+    expect(order).toEqual(["session-new", "session-old"]);
+
+    // 行内日期：今天 HH:mm；1970 年带完整年份。
+    const dates = screen.getAllByTestId("session-row-date").map((el) => el.textContent);
+    expect(dates).toHaveLength(2);
+    expect(dates[0]).toMatch(/^\d{2}:\d{2}$/);
+    expect(dates[1]).toBe("1970-01-01");
+  });
+
+  it("默认分组模式不显示行内日期，分组头仍在", () => {
+    render(<SessionList />);
+    expect(screen.queryAllByTestId("session-row-date")).toHaveLength(0);
+    // 分组头仍在（确认默认行为未被 flat 分支影响）。
+    expect(screen.getByText("Today")).toBeInTheDocument();
+    expect(screen.getByText("Earlier")).toBeInTheDocument();
+    // 默认模式的新建按钮（"New session"）在头部行里。
+    expect(screen.getByTitle("New session")).toBeInTheDocument();
+  });
+
+  it("hideHeader 隐藏整个头部行（弹窗宿主自带标题与操作）", () => {
+    render(<SessionList flatByDate hideHeader />);
+    expect(screen.queryByText("Recent conversations")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("New session")).not.toBeInTheDocument();
+    // 列表行不受影响。
+    expect(screen.getByText("Fresh chat")).toBeInTheDocument();
+  });
+});
