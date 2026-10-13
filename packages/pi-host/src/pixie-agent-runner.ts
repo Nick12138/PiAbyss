@@ -1217,6 +1217,29 @@ function findCurrentRuntime(
   return null;
 }
 
+/**
+ * 给停驻的小精灵图补齐前台会话位（agentSession + sessionSnapshot）。
+ *
+ * 标准停驻图语义（曾经前台、被 park 的图）会把活动会话留在
+ * `graph.agentSession` + `graph.sessionSnapshot`——`commitReactivateRetainedGraph`
+ * 二者缺一就把整张图 dispose 重建。Runner 后台建的 pixie 图从未走过前台，
+ * 会话只存在于 backgroundSessions：不补位的话，每次前台切到 pixie 工作区
+ * 都会先销毁暖图、再走 pending shell，紧接着的 session.open 撞上未就绪的
+ * services 返回 AGENT_NOT_READY（前端不重试该错误码）——即「每次进小精灵
+ * 页都提示暂不可用，手动重试才好」。图在前台时这两个槽位归标准
+ * promote 路径（promoteBackgroundRuntime / session.open）管，不要碰。
+ */
+function markParkedForegroundSession(
+  factory: WorkspaceGraphFactory,
+  graph: WorkspaceGraph,
+  session: AgentSession,
+  snapshot: ReturnType<typeof buildSessionSnapshot>,
+): void {
+  if (factory.getGraph() === graph) return;
+  graph.agentSession = session;
+  graph.sessionSnapshot = snapshot;
+}
+
 /** 在小精灵工作区图里新建一个正式会话并驻留到 backgroundSessions。 */
 async function createPixieSessionInGraph(
   factory: WorkspaceGraphFactory,
@@ -1272,6 +1295,7 @@ async function createPixieSessionInGraph(
     extensionUiReplayState: null,
   };
   graph.backgroundSessions.set(session.sessionId, runtime);
+  markParkedForegroundSession(factory, graph, session, snapshot);
   return { sessionId: session.sessionId, sessionPath: session.sessionFile ?? "", runtime };
 }
 
@@ -1324,6 +1348,7 @@ async function openPixieSessionInGraph(
     extensionUiReplayState: null,
   };
   graph.backgroundSessions.set(session.sessionId, runtime);
+  markParkedForegroundSession(factory, graph, session, snapshot);
   return { sessionId: session.sessionId, sessionPath: session.sessionFile ?? sessionPath, runtime };
 }
 

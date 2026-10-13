@@ -169,7 +169,13 @@ describe("PixieBackToCurrentButton（回到最新会话）", () => {
         expect.anything(),
       ),
     );
-    expect(openSpy).toHaveBeenCalledWith({ cwd: PIXIE_CWD, sessionId: "live-1" });
+    expect(openSpy).toHaveBeenCalledWith({
+      cwd: PIXIE_CWD,
+      sessionId: "live-1",
+      sessionPath: `${PIXIE_CWD}/live-1.jsonl`,
+      optimistic: false,
+      quiet: true,
+    });
     expect(createSpy).not.toHaveBeenCalled();
   });
 

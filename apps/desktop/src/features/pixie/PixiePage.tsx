@@ -437,6 +437,11 @@ export function PixiePage() {
       cwd: pixie.cwd,
       sessionId: pixie.sessionId,
       sessionPath: pixie.sessionPath,
+      // 阻塞式切换：切完立刻 session.open，绝不能吃 optimistic 的 pending
+      // shell——shell 期 servicesReady=false，session.open 直接 AGENT_NOT_READY
+      // （该错误码前端不重试），就是「每次进小精灵页都提示暂不可用、手动
+      // 重试才好」的根因之一。等待期间本页本来就有加载态。
+      optimistic: false,
       quiet: true,
     });
     if (outcome.status === "opened" || outcome.status === "already-active") {
