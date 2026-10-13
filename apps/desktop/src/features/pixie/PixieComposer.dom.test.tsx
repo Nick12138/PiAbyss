@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   DesktopSettings,
   HostStatusSnapshot,
-  PixieAgentState,
-  PixieSessionRundown,
+  PixieDispatchRecord,
+  SessionSnapshot,
 } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -23,6 +23,7 @@ Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
 const HOST_ID = "11111111-1111-4111-8111-111111111111";
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
 const SESSION_ID = "33333333-3333-4333-8333-333333333333";
+const PIXIE_CWD = "/agent/workspace/pixie";
 
 function host(): HostStatusSnapshot {
   return {
@@ -42,31 +43,85 @@ function host(): HostStatusSnapshot {
   };
 }
 
-function pixieState(): PixieAgentState {
+function sessionSnapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
   return {
-    resident: true,
-    sessionPath: "/sessions/pixie/seg.jsonl",
-    running: false,
-    error: null,
+    sessionId: SESSION_ID,
+    cwd: PIXIE_CWD,
+    revision: 3,
+    isStreaming: false,
+    isIdle: true,
+    isCompacting: false,
+    isRetrying: false,
+    thinkingLevel: "off",
+    autoCompactionEnabled: true,
+    autoRetryEnabled: true,
+    steeringMode: "all",
+    followUpMode: "all",
+    pending: { revision: 1, steering: [], followUp: [] },
     messages: [],
-    segments: [],
-    askPending: false,
-    modelName: null,
-    dispatches: [],
+    tools: {
+      revision: 1,
+      workspaceId: WORKSPACE_ID,
+      sessionId: SESSION_ID,
+      sessionRevision: 3,
+      tools: [],
+      active: [],
+    },
+    ...overrides,
   };
 }
 
-function rundown(): PixieSessionRundown {
+/**
+ * v5：页面挂载后走 openSessionAcrossWorkspaces 完成跨工作区切换 + 会话打开。
+ * 测试里 mock 该模块：把 mock 的 pixie 工作区与会话写进 app store 并返回
+ * opened，使页面进入就绪态；activateWorkspaceAcrossWorkspaces（卸载恢复）
+ * 同样 mock 掉。
+ */
+vi.mock("../../lib/bridge/session-navigation", async () => {
+  const { useAppStore } = await import("../../lib/stores/app-store");
   return {
-    model: { provider: "muapi", id: "grok-4.5" },
-    thinkingLevel: "off",
-    availableThinkingLevels: ["off", "high"],
-    isStreaming: false,
-    isCompacting: false,
-    autoCompactionEnabled: true,
-    stats: null,
-    contextUsage: null,
+    openSessionAcrossWorkspaces: vi.fn(async (target: { cwd: string }) => {
+      useAppStore.getState().setWorkspace({
+        id: WORKSPACE_ID,
+        cwd: target.cwd,
+        canonicalCwd: target.cwd,
+        revision: 1,
+        servicesReady: true,
+      });
+      useAppStore.getState().applySessionSnapshot(sessionSnapshot());
+      return { status: "opened" } as const;
+    }),
+    activateWorkspaceAcrossWorkspaces: vi.fn(async () => ({ status: "opened" }) as const),
   };
+});
+
+const dispatchesMock: PixieDispatchRecord[] = [];
+
+function dispatchRecord(overrides: Partial<PixieDispatchRecord> = {}): PixieDispatchRecord {
+  return {
+    id: "d1",
+    cwd: "/other/ws",
+    sessionId: "s-other",
+    sessionPath: null,
+    task: "check bot",
+    status: "dispatched",
+    kind: null,
+    report: null,
+    question: null,
+    options: [],
+    failCount: 0,
+    createdAt: Date.now(),
+    startedAt: null,
+    lastActiveAt: null,
+    model: null,
+    thinkingLevel: null,
+    batchId: null,
+    progressSummary: null,
+    files: null,
+    stale: false,
+    staleNotified: false,
+    ...overrides,
+  } as PixieDispatchRecord;
 }
 
 beforeEach(() => {
@@ -83,40 +138,54 @@ beforeEach(() => {
       knownWorkspaces: [],
     } as unknown as DesktopSettings,
   });
-  usePixieViewStore.setState({ state: pixieState(), error: null });
+  dispatchesMock.length = 0;
+  usePixieViewStore.setState({
+    current: null,
+    dispatches: [],
+    dispatchesLoaded: false,
+    error: null,
+  });
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
   cleanup();
   useAppStore.getState().setHost(null);
+  useAppStore.getState().setWorkspace(null);
+  useAppStore.getState().applySessionSnapshot(null);
   useAppStore.setState({ desktopSettings: null });
-  usePixieViewStore.setState({ state: null, error: null });
+  usePixieViewStore.setState({ current: null, dispatches: [], dispatchesLoaded: false, error: null });
 });
 
 function mockPixieHost() {
   return vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
-    if (method === "pixie.state") return { ok: true, result: pixieState() } as never;
-    if (method === "pixie.rundown") return { ok: true, result: rundown() } as never;
-    if (method === "pixie.models") {
+    if (method === "pixie.ensureCurrent") {
       return {
         ok: true,
-        result: {
-          models: [{ provider: "muapi", id: "grok-4.5", label: "Grok 4.5" }],
-          current: { provider: "muapi", id: "grok-4.5" },
-        },
+        result: { cwd: PIXIE_CWD, sessionId: SESSION_ID, sessionPath: "/agent/sessions/pixie/x.jsonl" },
       } as never;
     }
-    if (method === "pixie.send") return { ok: true, result: { sessionId: SESSION_ID } } as never;
+    if (method === "pixie.dispatches") {
+      return { ok: true, result: { dispatches: [...dispatchesMock] } } as never;
+    }
+    if (method === "session.getCommands") {
+      return { ok: true, result: { commands: [] } } as never;
+    }
+    if (method === "model.list") {
+      return { ok: true, result: { models: [], current: null } } as never;
+    }
     return { ok: true, result: null } as never;
   });
 }
 
-describe("PixiePage 复用共享 Composer", () => {
-  it("在 textarea 上保留 data-testid=pixie-input，并按 Enter 发出 pixie.send", async () => {
+describe("PixiePage 复用共享 Composer（v5 标准通道）", () => {
+  it("挂载时先取锚点，textarea 保留 data-testid=pixie-input，按 Enter 发出 agent.prompt", async () => {
     const request = mockPixieHost();
     const user = userEvent.setup();
     render(<PixiePage />);
+
+    // 锚点请求先于一切。
+    await waitFor(() => expect(request).toHaveBeenCalledWith("pixie.ensureCurrent", expect.anything(), null, expect.anything()));
 
     const input = await screen.findByTestId("pixie-input");
     await user.type(input, "你好");
@@ -124,24 +193,35 @@ describe("PixiePage 复用共享 Composer", () => {
 
     await waitFor(() =>
       expect(request).toHaveBeenCalledWith(
-        "pixie.send",
-        expect.objectContaining({ expectedHostInstanceId: HOST_ID }),
+        "agent.prompt",
+        expect.objectContaining({ expectedSessionId: SESSION_ID }),
         { text: "你好" },
-        expect.anything(),
+        null,
       ),
     );
   });
 
-  it("复用模型控件（pixie.models）与 / 命令补全", async () => {
-    mockPixieHost();
+  it("有 ask 待回复时，发送改道 pixie.reply", async () => {
+    dispatchesMock.push(
+      dispatchRecord({ status: "awaiting_user", kind: "ask", question: "选哪个方案？" }),
+    );
+    const request = mockPixieHost();
     const user = userEvent.setup();
     render(<PixiePage />);
 
-    // 模型按钮显示 pixie.models 的当前模型。
-    expect(await screen.findByRole("button", { name: "Grok 4.5" })).toBeVisible();
+    const input = await screen.findByTestId("pixie-input");
+    await user.type(input, "方案 A");
+    await user.keyboard("{Enter}");
 
-    // 斜杠命令补全：小精灵只列出 /compact。
-    await user.type(await screen.findByTestId("pixie-input"), "/");
-    expect(await screen.findByText("/compact")).toBeVisible();
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "pixie.reply",
+        expect.objectContaining({ expectedHostInstanceId: HOST_ID }),
+        { dispatchId: "d1", text: "方案 A" },
+        expect.anything(),
+      ),
+    );
+    // 不应落到 agent.prompt。
+    expect(request).not.toHaveBeenCalledWith("agent.prompt", expect.anything(), expect.anything(), null);
   });
 });

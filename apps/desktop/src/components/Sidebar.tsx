@@ -15,6 +15,7 @@ import { WorkspacePicker } from "../features/workspaces/WorkspacePicker";
 import { TelegramSessionList } from "../features/telegram/TelegramSessionList";
 import { useTelegramWorkspaceActive } from "../features/telegram/telegram-view-store";
 import { PiMark } from "./PiMark";
+import { Dialog } from "./Dialog";
 import { sidebarPref, setSidebarPref } from "../lib/sidebar-prefs";
 import { evaluateSidebarAutoAction, sidebarFloorWindowWidth } from "../lib/sidebar-auto-collapse";
 import { classifyDragResize } from "../lib/layout-motion";
@@ -135,18 +136,50 @@ function NewSessionButton() {
 }
 
 export function Sidebar() {
+  const t = useT();
   const page = useAppStore((s) => s.page);
   const setPage = useAppStore((s) => s.setPage);
+  const [pixieSessionsOpen, setPixieSessionsOpen] = useState(false);
 
-  return <SidebarLayout page={page} setPage={setPage} />;
+  return (
+    <>
+      <SidebarLayout
+        page={page}
+        setPage={setPage}
+        pixieSessionsOpen={pixieSessionsOpen}
+        setPixieSessionsOpen={setPixieSessionsOpen}
+      />
+      {pixieSessionsOpen && (
+        <Dialog
+          title={t("pixieSessionsTitle")}
+          confirmLabel={t("commonClose")}
+          hideActions
+          showCloseIcon
+          maxWidthClass="max-w-md"
+          onCancel={() => setPixieSessionsOpen(false)}
+          onConfirm={() => setPixieSessionsOpen(false)}
+        >
+          {/* 弹窗内嵌标准会话列表：当前工作区就是 pixie 工作区，直接复用。 */}
+          <div className="-mx-1 max-h-[60vh] overflow-y-auto px-1">
+            <SessionList keepPage />
+          </div>
+        </Dialog>
+      )}
+    </>
+  );
 }
 
 export function SidebarLayout({
   page,
   setPage,
+  pixieSessionsOpen = false,
+  setPixieSessionsOpen,
 }: {
   page: NavPage;
   setPage: (page: NavPage) => void;
+  /** v5 小精灵页：会话列表收进弹窗，由 Sidebar 打开。 */
+  pixieSessionsOpen?: boolean;
+  setPixieSessionsOpen?: (open: boolean) => void;
 }) {
   const t = useT();
   const scheduleEnabled = useSchedulePluginEnabled();
@@ -482,7 +515,7 @@ export function SidebarLayout({
 
         {sidebarCollapsed ? null : (
           <>
-            {!telegramViewActive && (
+            {!telegramViewActive && page !== "pixie" && (
               <div className="px-2 pb-2 pt-[10px]">
                 <NewSessionButton />
               </div>
@@ -589,6 +622,16 @@ export function SidebarLayout({
             <div className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto px-2 pb-3">
               {telegramViewActive ? (
                 <TelegramSessionList />
+              ) : page === "pixie" ? (
+                <button
+                  type="button"
+                  data-testid="sidebar-pixie-sessions"
+                  onClick={() => setPixieSessionsOpen?.(true)}
+                  className="theme-nav-active flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] transition-colors text-foreground hover:bg-surface-overlay"
+                >
+                  <Sparkles size={18} className="shrink-0" />
+                  <span>{t("pixieSessionsButton")}</span>
+                </button>
               ) : (
                 <SessionList
                   showCreateAction={false}

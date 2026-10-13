@@ -1679,34 +1679,9 @@ export function validateRequestParams<M extends HostMethod>(
       return params === null ? ok(null) : fail("params must be null", { method });
     case "memo.syncNow":
       return params === null ? ok(null) : fail("params must be null", { method });
-    case "pixie.state":
-    case "pixie.abort":
     case "pixie.usage":
+    case "pixie.ensureCurrent":
       return params === null ? ok(null) : fail("params must be null", { method });
-    case "pixie.send":
-      return exactObject(params, ["text"], ["images", "attachmentIds"]) &&
-        isNonEmptyString(params.text) &&
-        params.text.trim().length > 0 &&
-        params.text.length <= 20_000 &&
-        validateImages(params.images) &&
-        validateAttachmentIds(params.attachmentIds)
-        ? ok(params)
-        : fail("invalid pixie.send params", { method });
-    case "pixie.continue":
-      return exactObject(params, ["sessionPath", "text"]) &&
-        isNonEmptyString(params.sessionPath) &&
-        params.sessionPath.length <= 1_024 &&
-        isNonEmptyString(params.text) &&
-        params.text.trim().length > 0 &&
-        params.text.length <= 20_000
-        ? ok(params)
-        : fail("invalid pixie.continue params", { method });
-    case "pixie.transcript":
-      return exactObject(params, ["sessionPath"]) &&
-        isNonEmptyString(params.sessionPath) &&
-        params.sessionPath.length <= 1_024
-        ? ok(params)
-        : fail("invalid pixie.transcript params", { method });
     case "pixie.dispatches":
       return exactObject(params, [], ["limit"]) &&
         (params.limit === undefined ||
@@ -1780,30 +1755,6 @@ export function validateRequestParams<M extends HostMethod>(
         params.cwd.length <= 1_024
         ? ok(params)
         : fail("invalid pixie.listSessions params", { method });
-    case "pixie.models":
-    case "pixie.rundown":
-    case "pixie.abortCompaction":
-      return params === null ? ok(null) : fail("params must be null", { method });
-    case "pixie.setModel":
-      return exactObject(params, ["model"], ["thinkingLevel"]) &&
-        (params.model === null || isNonEmptyString(params.model)) &&
-        (params.thinkingLevel === undefined ||
-          params.thinkingLevel === null ||
-          ["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(
-            String(params.thinkingLevel),
-          ))
-        ? ok(params)
-        : fail("invalid pixie.setModel params", { method });
-    case "pixie.compact":
-      return params === null ||
-        (exactObject(params, [], ["instructions"]) &&
-          (params.instructions === undefined || isString(params.instructions)))
-        ? ok(params)
-        : fail("invalid pixie.compact params", { method });
-    case "pixie.setAutoCompaction":
-      return exactObject(params, ["enabled"]) && isBoolean(params.enabled)
-        ? ok(params)
-        : fail("invalid pixie.setAutoCompaction params", { method });
     default:
       // Exhaustiveness guard: adding a HostMethod without a params validator
       // is a compile error here, not a silently-undefined result at runtime.

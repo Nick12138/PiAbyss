@@ -1,20 +1,22 @@
 /**
  * Composer 运行时适配器（ComposerRuntime）。
  *
- * 目标：让普通会话输入框（Composer）与「小精灵」页面复用同一套输入框 UI 与
- * 逻辑。Composer 及其兄弟组件（ModelControls / StatsPills / compaction-actions）
- * 不再各自直接读 app store，而是统一经 `useComposerRuntime()` 取数：
- *   - 有 `<ComposerRuntimeProvider>` 注入时用注入的实现（小精灵）；
- *   - 没有 Provider 时回落到「读 app store」的默认实现，逐字复刻普通会话
- *     既有行为（发送 → agent.prompt/steer/followUp，abort → agent.abort，
- *     模型 → model.list/model.setCurrent，统计/压缩 → compaction-actions）。
+ * 目标：让普通会话输入框复用同一套输入框 UI 与逻辑。Composer 及其兄弟组件
+ * （ModelControls / StatsPills / compaction-actions）不直接读 app store，而是
+ * 统一经 `useComposerRuntime()` 取数：有 `<ComposerRuntimeProvider>` 注入时
+ * 用注入的实现，没有 Provider 时回落到「读 app store」的默认实现，逐字复刻
+ * 普通会话既有行为（发送 → agent.prompt/steer/followUp，abort → agent.abort，
+ * 模型 → model.list/model.setCurrent，统计/压缩 → compaction-actions）。
+ *
+ * v5：小精灵页面也走标准通道（pixie 会话就是当前工作区的活动会话），因此
+ * 运行时不再有 pixie 变体；需要差异化行为的页面（如 ask 待回复时把发送改道
+ * pixie.reply）自行包一层 Provider 覆写 send 即可。
  */
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import type {
   HostStatusSnapshot,
   PixieModelOption,
   PixieModelSelection,
-  PixieSessionRundown,
   SerializableImage,
   SessionSnapshot,
 } from "@piabyss/protocol";
@@ -43,22 +45,18 @@ export type ComposerSendArgs = {
 export type ComposerSendResult = { ok: true } | { ok: false; error?: unknown };
 
 export type ComposerRuntime = {
-  /** 归属：普通会话 or 小精灵。决定个别宿主专属控件是否渲染。 */
-  variant: "session" | "pixie";
   host: HostStatusSnapshot | null;
   /** 供输入框显示"忙/压缩中/统计"等用的会话视图。 */
   session: SessionSnapshot | null;
-  /** 草稿键（普通会话来自 draftTargetFor，小精灵用固定键 "pixie"）。 */
+  /** 草稿键（普通会话来自 draftTargetFor）。 */
   draftKey: string | null;
   busySendBehavior?: "steer" | "followUp";
-  /** 附件创建、模型列举等 RPC 要用的 context。小精灵传 hostContext(host)。 */
+  /** 附件创建、模型列举等 RPC 要用的 context。 */
   rpcContext: unknown | null;
   send(args: ComposerSendArgs): Promise<ComposerSendResult>;
   abort(): Promise<void>;
-  /** 发送成功后把新快照写回（普通会话 = applySessionSnapshot；小精灵可 no-op）。 */
+  /** 发送成功后把新快照写回（applySessionSnapshot）。 */
   applySession(snapshot: SessionSnapshot): void;
-  /** 统计与压缩态数据源。普通会话返回 null（沿用 store），小精灵返回 pixie.rundown。 */
-  rundown(): Promise<PixieSessionRundown | null>;
   compact(instructions?: string): Promise<{ ok: boolean; error: string | null }>;
   abortCompaction(): Promise<void>;
   setAutoCompaction(enabled: boolean): Promise<void>;
@@ -117,7 +115,6 @@ function useStoreComposerRuntime(): ComposerRuntime {
 
   return useMemo<ComposerRuntime>(
     () => ({
-      variant: "session",
       host,
       session,
       draftKey,
@@ -172,10 +169,6 @@ function useStoreComposerRuntime(): ComposerRuntime {
       },
 
       applySession: (snapshot) => useAppStore.getState().applySessionSnapshot(snapshot),
-
-      // 普通会话的统计/压缩态沿用 store（session.getStats / agent.* 通道），
-      // rundown 只对「小精灵」有意义。
-      rundown: async () => null,
 
       compact: async (instructions) => ({ ok: await requestCompact(instructions), error: null }),
       abortCompaction: async () => {

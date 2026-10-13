@@ -2061,6 +2061,10 @@ export const en = {
   pixieKindDone: "Done",
   pixieKindError: "Failed",
   pixieKindAsk: "Waiting for you",
+  pixieSessionsButton: "Pixie sessions",
+  pixieSessionsTitle: "Pixie sessions",
+  pixieUnavailable: "Pixie unavailable (host not ready or plugin disabled)",
+  pixieRetryAcquire: "Retry",
 
   memoTitle: "Nook",
   memoTagline: "To-dos · quick notes · memos · collecting",

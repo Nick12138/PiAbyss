@@ -390,7 +390,7 @@ async function main(): Promise<void> {
     // v4.1 失联提醒：定时扫描 dispatches.json，超时未回调的委派推送
     // pixie.staleWarning（每条仅一次）。事件发射器在下方才接线，扫描在
     // 首个 60s tick 时触发，届时 emitter 早已就绪。
-    startPixieStaleWatcher(agentDir);
+    startPixieStaleWatcher(graphFactory);
   } catch (err) {
     // Non-fatal: the plugin's tools degrade to readable errors; everything
     // else keeps working.

@@ -1,137 +1,43 @@
 /**
- * Pixie (小精灵) conversation page — v4 workspace-ified single conversation
- * flow. The polled `pixie.state` segment timeline is rendered as ONE stream:
- * each segment's transcript goes through the shared projection pipeline
- * (`buildTranscriptRows` + `TranscriptRowView`), and consecutive segments are
- * separated only by a SleepChip — the user never sees session lists, names or
- * switch buttons. An awaiting ask flips the composer into reply mode; the
- * delegation panel shows the three callback kinds with inline reply.
+ * Pixie (小精灵) conversation page — v5 标准通道化主题视图。
+ *
+ * 小精灵当前会话就是 `<agentDir>/workspace/pixie` 工作区里的标准会话：挂载时
+ * `pixie.ensureCurrent` 拿到锚点后走 `openSessionAcrossWorkspaces`（内部完成
+ * workspace.setCurrent + session.open），此后转写/输入框/统计全部由标准
+ * session.snapshot / agent.event 推送驱动——与普通会话同一套机制，仅展示不同：
+ *   - 顶部动作（打个盹）在 AppTopBar；
+ *   - 会话列表收进按钮 + 弹窗（Sidebar）；
+ *   - 右侧保留委派面板（pixie.dispatches 轮询 + 回复/插话/叫停/重试）；
+ *   - ask 待回复时把输入框发送改道 pixie.reply。
+ * 卸载时恢复进入前的工作区（除非用户已手动跳走）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, Loader2, Sparkles } from "lucide-react";
-import type {
-  PixieAgentMessage,
-  PixieAgentState,
-  PixieDispatchRecord,
-  PixieSegmentView,
-  PixieSessionRundown,
-  SessionSnapshot,
-} from "@piabyss/protocol";
+import { Loader2, Sparkles } from "lucide-react";
+import type { PixieDispatchRecord } from "@piabyss/protocol";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
-import { hostContext } from "../../lib/bridge/host-context";
-import { formatTokenCount } from "../../lib/format-token-count";
-import { TranscriptRowView } from "../chat/Transcript";
-import { buildTranscriptRows, type TranscriptRow } from "../chat/transcript-model";
-import type { SerializableAgentContent, SerializableAgentMessage } from "@piabyss/protocol";
+import {
+  activateWorkspaceAcrossWorkspaces,
+  openSessionAcrossWorkspaces,
+} from "../../lib/bridge/session-navigation";
+import { Transcript } from "../chat/Transcript";
 import { Composer } from "../chat/Composer";
-import { ComposerRuntimeProvider, type ComposerRuntime } from "../chat/composer-runtime";
 import { SessionStatsPills } from "../chat/StatsPills";
+import {
+  ComposerRuntimeProvider,
+  useComposerRuntime,
+  type ComposerRuntime,
+} from "../chat/composer-runtime";
 import { usePixieViewStore } from "./pixie-store";
-import { SleepChip } from "./SleepChip";
 
-const POLL_IDLE_MS = 2_500;
-const POLL_ACTIVE_MS = 1_200;
-const RUNDOWN_TIMEOUT_MS = 30_000;
+const DISPATCH_POLL_IDLE_MS = 5_000;
+const DISPATCH_POLL_ACTIVE_MS = 2_000;
 
 /**
- * 把 pixie.state + pixie.rundown 合成为共享输入框可消费的会话视图。
- * 小精灵段没有会话级 host 通道，这里只填输入框真正会读的字段：
- * isIdle / isCompacting / thinkingLevel / model / contextUsage / autoCompaction。
- */
-function pixieSessionSnapshot(
-  state: PixieAgentState | null,
-  rundown: PixieSessionRundown | null,
-): SessionSnapshot | null {
-  if (!state) return null;
-  const sessionId = state.sessionPath ?? "pixie";
-  return {
-    sessionId,
-    cwd: "",
-    revision: 0,
-    isStreaming: state.running,
-    isIdle: !state.running,
-    isCompacting: rundown?.isCompacting ?? false,
-    isRetrying: false,
-    thinkingLevel: rundown?.thinkingLevel ?? "off",
-    autoCompactionEnabled: rundown?.autoCompactionEnabled ?? false,
-    autoRetryEnabled: false,
-    steeringMode: "all",
-    followUpMode: "all",
-    pending: { revision: 0, steering: [], followUp: [] },
-    messages: [],
-    tools: {
-      revision: 0,
-      workspaceId: "",
-      sessionId,
-      sessionRevision: 0,
-      tools: [],
-      active: [],
-    },
-    ...(rundown?.model
-      ? {
-          model: {
-            provider: rundown.model.provider,
-            modelId: rundown.model.id,
-            name: rundown.model.id,
-          },
-        }
-      : {}),
-    ...(rundown?.contextUsage ? { contextUsage: rundown.contextUsage } : {}),
-  };
-}
-
-/** Strip the `[pixie|channel]` marker so user messages read naturally. */
-function stripSourceMarker(text: string): string {
-  return text.replace(/^\[pixie\|[a-z]+\]\n?/, "");
-}
-
-/** Project one segment's transcript into shared transcript rows. */
-function projectSegmentMessages(
-  messages: PixieAgentMessage[],
-  turnActive: boolean,
-): TranscriptRow[] {
-  const projected: SerializableAgentMessage[] = [];
-  for (const message of messages) {
-    const isUser = message.role === "user";
-    let content = Array.isArray(message.content)
-      ? (message.content as SerializableAgentContent[])
-      : [];
-    if (isUser) {
-      content = content.map((block) => {
-        if (
-          block &&
-          typeof block === "object" &&
-          (block as { type?: string }).type === "text" &&
-          typeof (block as { text?: string }).text === "string"
-        ) {
-          return { ...block, text: stripSourceMarker((block as { text: string }).text) };
-        }
-        return block;
-      });
-    }
-    if (content.length === 0 && message.text) {
-      content = [
-        { type: "text" as const, text: isUser ? stripSourceMarker(message.text) : message.text },
-      ];
-    }
-    if (content.length === 0) continue;
-    projected.push({
-      role: message.role === "toolResult" ? "toolResult" : message.role,
-      content,
-      ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
-      ...(message.toolName ? { toolName: message.toolName } : {}),
-      ...(message.isError ? { isError: true } : {}),
-    } as SerializableAgentMessage);
-  }
-  return buildTranscriptRows(projected, { turnActive });
-}
-
-/**
- * One delegation row in the right-hand panel: status badge (v4.1 状态机),
- * progress summary, artifacts, batch tag, escalation marker, and the action
- * row — inline reply (ask), interject (running), stop, resume/redispatch.
+ * One delegation row in the right-hand panel: status badge (状态机), progress
+ * summary, artifacts, batch tag, escalation marker, and the action row —
+ * inline reply (ask), interject (running), stop, resume/redispatch.
  */
 function DispatchRow({
   record,
@@ -284,7 +190,7 @@ function DispatchRow({
           {record.report}
         </p>
       )}
-      {/* v4.1 action row */}
+      {/* action row */}
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         {(running || awaiting) && (
           <button
@@ -374,42 +280,46 @@ function DispatchRow({
 export function PixiePage() {
   const t = useT();
   const host = useAppStore((s) => s.host);
+  const workspace = useAppStore((s) => s.workspace);
+  const session = useAppStore((s) => s.session);
   const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces ?? []);
-  const state = usePixieViewStore((s) => s.state);
+  const current = usePixieViewStore((s) => s.current);
+  const dispatches = usePixieViewStore((s) => s.dispatches);
   const error = usePixieViewStore((s) => s.error);
-  const refresh = usePixieViewStore((s) => s.refresh);
+  const ensureCurrent = usePixieViewStore((s) => s.ensureCurrent);
+  const refreshDispatches = usePixieViewStore((s) => s.refreshDispatches);
   const reply = usePixieViewStore((s) => s.reply);
   const pushContext = usePixieViewStore((s) => s.pushContext);
   const interject = usePixieViewStore((s) => s.interject);
   const stopDispatch = usePixieViewStore((s) => s.stopDispatch);
   const retryDispatch = usePixieViewStore((s) => s.retryDispatch);
 
-  const [rundown, setRundown] = useState<PixieSessionRundown | null>(null);
-  const transcriptRef = useRef<HTMLDivElement>(null);
-  const userScrolledRef = useRef(false);
-  const lastCountRef = useRef(0);
-  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [acquiring, setAcquiring] = useState(true);
+  const [acquireFailed, setAcquireFailed] = useState(false);
+  /** 进入 pixie 页前的工作区 cwd；null = 之前没有活动工作区（卸载时不恢复）。 */
+  const prevCwdRef = useRef<string | null>(null);
 
-  const segments: PixieSegmentView[] = useMemo(() => state?.segments ?? [], [state]);
-  const running = state?.running ?? false;
-  const askPending = state?.askPending ?? false;
-  const dispatches = useMemo(() => state?.dispatches ?? [], [state]);
-  const awaitingDispatch = dispatches.find((d) => d.status === "awaiting_user") ?? null;
-
-  /** 拉取小精灵段实时统计（模型/推理深度/用量/压缩态），供共享输入框消费。 */
-  const refreshRundown = useCallback(async () => {
-    const currentHost = useAppStore.getState().host;
-    if (!currentHost) return;
-    try {
-      const res = await hostClient.request(
-        "pixie.rundown",
-        hostContext(currentHost),
-        null,
-        RUNDOWN_TIMEOUT_MS,
-      );
-      if (res.ok) setRundown(res.result);
-    } catch {
-      /* 统计为最佳努力，失败不清空上一帧 */
+  /**
+   * 锚点获取 + 会话打开。幂等：会话已激活时 openSessionAcrossWorkspaces 快速
+   * 返回 already-active；segmentChanged 事件（打盹切新会话）触发重跑即可。
+   */
+  const acquire = useCallback(async () => {
+    const pixie = await usePixieViewStore.getState().ensureCurrent();
+    if (!pixie) {
+      setAcquireFailed(true);
+      return;
+    }
+    setAcquireFailed(false);
+    const outcome = await openSessionAcrossWorkspaces({
+      cwd: pixie.cwd,
+      sessionId: pixie.sessionId,
+      sessionPath: pixie.sessionPath,
+      quiet: true,
+    });
+    if (outcome.status === "opened" || outcome.status === "already-active") {
+      setAcquiring(false);
+    } else {
+      setAcquireFailed(true);
     }
   }, []);
 
@@ -419,84 +329,106 @@ export function PixiePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- push on identity change of the list
   }, [knownWorkspaces]);
 
+  // Mount acquisition (re-run if the Host wasn't ready at first mount).
   useEffect(() => {
-    void refresh();
-    void refreshRundown();
-  }, [refresh, refreshRundown]);
+    if (!host) return;
+    if (prevCwdRef.current === null) {
+      // 记录进入前的工作区；已是 pixie 工作区（如冷启动直落 pixie 页）则不恢复。
+      const before = useAppStore.getState().workspace?.canonicalCwd ?? null;
+      const pixieCwd = usePixieViewStore.getState().current?.cwd;
+      prevCwdRef.current = before && before !== pixieCwd ? before : null;
+    }
+    void acquire();
+  }, [host, acquire]);
 
-  // Polling: fast while streaming (ScheduleAgentPage先例).
+  // Leaving the pixie page: hand the active workspace back so the chat page
+  // keeps showing whatever the user had before. Skipped when the user already
+  // navigated elsewhere themselves.
   useEffect(() => {
-    const timer = setInterval(
-      () => {
-        void refresh();
-        void refreshRundown();
-      },
-      running ? POLL_ACTIVE_MS : POLL_IDLE_MS,
-    );
-    return () => clearInterval(timer);
-  }, [refresh, refreshRundown, running]);
+    return () => {
+      const pixieCwd = usePixieViewStore.getState().current?.cwd;
+      const before = prevCwdRef.current;
+      if (!before || !pixieCwd) return;
+      if (useAppStore.getState().workspace?.canonicalCwd !== pixieCwd) return;
+      void activateWorkspaceAcrossWorkspaces(before, { quiet: true });
+    };
+  }, []);
 
-  // Instant refresh on callback/ask/segment/stale events.
+  // Callback/ask/stale events refresh the dispatch panel.
   useEffect(() => {
     if (!host) return;
     return hostClient.onEvent((event) => {
       if (
         event.event === "pixie.reportReceived" ||
         event.event === "pixie.askReceived" ||
-        event.event === "pixie.segmentChanged" ||
         event.event === "pixie.staleWarning"
       ) {
-        void refresh();
+        void refreshDispatches();
       }
     });
-  }, [host, refresh]);
-
-  // Auto-scroll: new messages, user send, or already near the bottom.
-  useEffect(() => {
-    const el = transcriptRef.current;
-    if (!el) return;
-    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-    const countIncreased = segments.length > lastCountRef.current;
-    lastCountRef.current = segments.length;
-    if (!userScrolledRef.current || isNearBottom || countIncreased) {
-      el.scrollTop = el.scrollHeight;
-      userScrolledRef.current = false;
-    }
-  }, [segments, running]);
+  }, [host, refreshDispatches]);
 
   useEffect(() => {
-    const el = transcriptRef.current;
-    if (!el) return;
-    const handleScroll = () => {
-      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-      if (!isNearBottom) {
-        userScrolledRef.current = true;
-        setShowScrollToBottom(true);
-      } else {
-        setShowScrollToBottom(false);
-      }
+    if (!host) return;
+    return hostClient.onEvent((event) => {
+      if (event.event === "pixie.segmentChanged") void acquire();
+    });
+  }, [host, acquire]);
+
+  // Dispatch polling: fast while anything is running, slow otherwise.
+  const hasActiveDispatch = useMemo(
+    () =>
+      dispatches.some(
+        (d) =>
+          d.status === "dispatched" ||
+          d.status === "queued" ||
+          d.status === "paused" ||
+          d.status === "awaiting_user",
+      ),
+    [dispatches],
+  );
+  useEffect(() => {
+    if (!host) return;
+    void refreshDispatches();
+    const timer = setInterval(
+      () => void refreshDispatches(),
+      hasActiveDispatch ? DISPATCH_POLL_ACTIVE_MS : DISPATCH_POLL_IDLE_MS,
+    );
+    return () => clearInterval(timer);
+  }, [host, hasActiveDispatch, refreshDispatches]);
+
+  const awaitingDispatch = useMemo(
+    () => dispatches.find((d) => d.status === "awaiting_user") ?? null,
+    [dispatches],
+  );
+
+  /**
+   * 输入框运行时：默认实现（读 app store → agent.prompt/steer）。唯一覆写：
+   * 有 ask 待回复时，发送改道 pixie.reply（与 v4 的 reply-mode 行为一致）。
+   */
+  const baseRuntime = useComposerRuntime();
+  const runtime = useMemo<ComposerRuntime>(() => {
+    if (!awaitingDispatch) return baseRuntime;
+    return {
+      ...baseRuntime,
+      send: async ({ text }) => {
+        const ok = await usePixieViewStore.getState().reply(awaitingDispatch.id, text);
+        return ok
+          ? { ok: true }
+          : { ok: false, error: usePixieViewStore.getState().error ?? "reply failed" };
+      },
     };
-    el.addEventListener("scroll", handleScroll, { passive: true });
-    return () => el.removeEventListener("scroll", handleScroll);
-  }, []);
+  }, [baseRuntime, awaitingDispatch]);
 
-  const rowsBySegment = useMemo(() => {
-    const map = new Map<string, TranscriptRow[]>();
-    for (let index = 0; index < segments.length; index += 1) {
-      const segment = segments[index]!;
-      const isLast = index === segments.length - 1;
-      map.set(segment.id, projectSegmentMessages(segment.messages, isLast && running));
-    }
-    return map;
-  }, [segments, running]);
-
-  const workingRowKey = useMemo(() => {
-    if (!running || segments.length === 0) return undefined;
-    const rows = rowsBySegment.get(segments[segments.length - 1]!.id) ?? [];
-    const tail = rows[rows.length - 1];
-    return tail?.role === "assistant" ? tail.key : undefined;
-  }, [rowsBySegment, segments, running]);
-
+  const staleCount = useMemo(
+    () =>
+      dispatches.filter(
+        (d) =>
+          d.stale &&
+          (d.status === "dispatched" || d.status === "paused" || d.status === "awaiting_user"),
+      ).length,
+    [dispatches],
+  );
   const activeDispatches = useMemo(
     () =>
       dispatches.filter(
@@ -509,123 +441,6 @@ export function PixiePage() {
       ),
     [dispatches],
   );
-  const staleCount = useMemo(
-    () => dispatches.filter((d) => d.stale && (d.status === "dispatched" || d.status === "paused" || d.status === "awaiting_user")).length,
-    [dispatches],
-  );
-
-  const isEmpty = segments.every((segment) => (rowsBySegment.get(segment.id) ?? []).length === 0);
-
-  /**
-   * 小精灵的 Composer 运行时：把共享输入框接到 pixie.* 通道上。发送复用
-   * usePixieViewStore().send（内部已实现"有 awaiting 委派就走 pixie.reply"），
-   * 其余能力一律走 HostContext 的 pixie.* RPC。
-   */
-  const pixieRuntime = useMemo<ComposerRuntime>(() => {
-    const rpcTimeout = RUNDOWN_TIMEOUT_MS;
-    return {
-      variant: "pixie",
-      host,
-      session: pixieSessionSnapshot(state, rundown),
-      draftKey: "pixie",
-      rpcContext: host ? hostContext(host) : null,
-
-      send: async ({ text, images, attachmentIds }) => {
-        const ok = await usePixieViewStore.getState().send(text, images, attachmentIds);
-        return ok ? { ok: true } : { ok: false, error: usePixieViewStore.getState().error };
-      },
-
-      abort: async () => {
-        const currentHost = useAppStore.getState().host;
-        if (!currentHost) return;
-        await hostClient.request("pixie.abort", hostContext(currentHost), null, rpcTimeout);
-      },
-
-      applySession: () => {
-        /* 小精灵段由 Host 持有，前端不写回会话快照。 */
-      },
-
-      rundown: async () => {
-        const currentHost = useAppStore.getState().host;
-        if (!currentHost) return null;
-        const res = await hostClient.request(
-          "pixie.rundown",
-          hostContext(currentHost),
-          null,
-          rpcTimeout,
-        );
-        return res.ok ? res.result : null;
-      },
-
-      compact: async (instructions) => {
-        const currentHost = useAppStore.getState().host;
-        if (!currentHost) return { ok: false, error: null };
-        const res = await hostClient.request(
-          "pixie.compact",
-          hostContext(currentHost),
-          instructions ? { instructions } : null,
-          rpcTimeout,
-        );
-        if (!res.ok) return { ok: false, error: res.error?.message ?? null };
-        const { tokensBefore, tokensAfter } = res.result;
-        if (typeof tokensBefore === "number" && typeof tokensAfter === "number") {
-          useAppStore
-            .getState()
-            .pushNotification(
-              t("notifCompacted", {
-                before: formatTokenCount(tokensBefore),
-                after: formatTokenCount(tokensAfter),
-              }),
-              "info",
-            );
-        } else {
-          useAppStore.getState().pushNotification(t("notifCompactedPlain"), "info");
-        }
-        void refreshRundown();
-        return { ok: res.result.ok, error: res.result.error };
-      },
-
-      abortCompaction: async () => {
-        const currentHost = useAppStore.getState().host;
-        if (!currentHost) return;
-        await hostClient.request("pixie.abortCompaction", hostContext(currentHost), null, rpcTimeout);
-        void refreshRundown();
-      },
-
-      setAutoCompaction: async (enabled) => {
-        const currentHost = useAppStore.getState().host;
-        if (!currentHost) return;
-        await hostClient.request(
-          "pixie.setAutoCompaction",
-          hostContext(currentHost),
-          { enabled },
-          rpcTimeout,
-        );
-        void refreshRundown();
-      },
-
-      listModels: async () => {
-        const currentHost = useAppStore.getState().host;
-        if (!currentHost) return null;
-        const res = await hostClient.request("pixie.models", hostContext(currentHost), null, rpcTimeout);
-        return res.ok ? res.result : null;
-      },
-
-      setModel: async (model, thinkingLevel) => {
-        const currentHost = useAppStore.getState().host;
-        if (!currentHost) return { ok: false, error: null };
-        const res = await hostClient.request(
-          "pixie.setModel",
-          hostContext(currentHost),
-          { model, ...(thinkingLevel !== undefined ? { thinkingLevel } : {}) },
-          rpcTimeout,
-        );
-        if (!res.ok) return { ok: false, error: res.error?.message ?? null };
-        void refreshRundown();
-        return { ok: res.result.ok, error: res.result.error };
-      },
-    };
-  }, [host, state, rundown, refreshRundown, t]);
 
   function handleReplyInline(dispatchId: string, text: string) {
     if (!text) return;
@@ -645,98 +460,67 @@ export function PixiePage() {
     void retryDispatch(dispatchId, mode);
   }
 
-  function scrollToBottom() {
-    const el = transcriptRef.current;
-    if (el) {
-      el.scrollTop = el.scrollHeight;
-      userScrolledRef.current = false;
-      setShowScrollToBottom(false);
-    }
+  // 标准会话视图的就绪条件：锚点拿到且活动工作区确实是 pixie 工作区。
+  const ready =
+    !acquiring &&
+    !acquireFailed &&
+    current !== null &&
+    workspace?.canonicalCwd === current.cwd &&
+    session !== null;
+
+  if (acquireFailed) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+        <Sparkles size={20} className="text-primary" />
+        <p className="text-sm text-danger">{error ?? t("pixieUnavailable")}</p>
+        <button
+          type="button"
+          className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-surface-overlay"
+          onClick={() => {
+            setAcquiring(true);
+            setAcquireFailed(false);
+            void acquire();
+          }}
+        >
+          {t("pixieRetryAcquire")}
+        </button>
+      </div>
+    );
   }
+
+  if (acquiring || !ready) {
+    return (
+      <div className="flex flex-1 items-center justify-center text-muted">
+        <Loader2 size={18} className="animate-spin" />
+      </div>
+    );
+  }
+
+  const isNewConversation = Boolean(session && session.messages.length === 0 && session.isIdle);
 
   return (
     <div className="@container flex h-full min-w-0 flex-col" data-pixie-page>
       <div className="flex min-h-0 flex-1 flex-col @3xl:flex-row">
         {/* Conversation (70%) */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col @3xl:flex-[7]">
-          <div className="relative isolate min-h-0 flex-1">
-            <div
-              ref={transcriptRef}
-              className="scrollbar-subtle h-full overflow-y-auto px-3 py-4 sm:px-6 sm:py-5"
-            >
-              <div className="conversation-content-width mx-auto flex flex-col gap-5 sm:gap-6">
-                {isEmpty && !error && (
-                  <div className="flex flex-col items-center gap-2 py-10 text-center">
-                    <Sparkles size={20} className="text-primary" />
-                    <p className="text-sm font-medium">{t("pixieEmptyTitle")}</p>
-                    <p className="max-w-sm text-xs text-muted">{t("pixieEmptyHint")}</p>
-                  </div>
-                )}
-                {segments.map((segment, index) => {
-                  const rows = rowsBySegment.get(segment.id) ?? [];
-                  const archived = segment.endedAt === null && rows.length === 0;
-                  return (
-                    <div key={segment.id} className="flex flex-col gap-5 sm:gap-6">
-                      {rows.length === 0 && archived && (
-                        <p className="text-center text-[11px] text-muted">
-                          {t("pixieSegmentArchived")}
-                        </p>
-                      )}
-                      {rows.map((row) => (
-                        <div className="transcript-row" data-row-key={row.key} key={row.key}>
-                          <TranscriptRowView
-                            row={row}
-                            mode={row.key === workingRowKey ? "streaming" : "static"}
-                            showCaret={row.key === workingRowKey}
-                            working={row.key === workingRowKey}
-                            retryableTurn={undefined}
-                            retryVisible={false}
-                            goOnVisible={false}
-                            onRetry={async () => undefined}
-                            readOnly
-                            userCollapsible={false}
-                            userExpanded={false}
-                            onToggleUser={undefined}
-                          />
-                        </div>
-                      ))}
-                      {(running || rows.some((row) => row.key === workingRowKey)) &&
-                        index === segments.length - 1 &&
-                        !workingRowKey && (
-                          <div className="flex items-center gap-1.5 px-1 text-xs text-muted">
-                            <Loader2 size={12} className="animate-spin" />
-                            {t("pixieThinking")}
-                          </div>
-                        )}
-                      {segment.endedAt !== null && <SleepChip segment={segment} />}
-                    </div>
-                  );
-                })}
-              </div>
+          {isNewConversation ? (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+              <Sparkles size={20} className="text-primary" />
+              <p className="text-sm font-medium">{t("pixieEmptyTitle")}</p>
+              <p className="max-w-sm text-xs text-muted">{t("pixieEmptyHint")}</p>
             </div>
-            {showScrollToBottom && (
-              <button
-                type="button"
-                onClick={scrollToBottom}
-                className="absolute bottom-3 left-1/2 z-10 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-surface-raised text-muted shadow-md transition-colors hover:bg-surface-overlay hover:text-foreground"
-                title={t("transcriptScrollToBottom")}
-                aria-label={t("transcriptScrollToBottom")}
-              >
-                <ArrowDown size={15} />
-              </button>
-            )}
-          </div>
+          ) : (
+            <Transcript />
+          )}
           <div className="shrink-0 px-3 pb-3 pt-2 sm:px-6 sm:pb-5">
             {error && <p className="mb-2 text-xs text-danger">{error}</p>}
-            {askPending && awaitingDispatch && (
+            {awaitingDispatch && (
               <p className="mb-1.5 flex items-center gap-1.5 text-xs text-primary">
                 ❓ {t("pixieAskPendingBanner")}
               </p>
             )}
-            <ComposerRuntimeProvider runtime={pixieRuntime}>
-              {/* 共享输入框：模型切换 / 附件 / 命令补全 / 发送-停止。运行中禁发。 */}
-              <Composer disabled={running} inputTestId="pixie-input" />
-              {/* 速度 / 缓存 / 上下文用量 + 压缩入口（数据源为 pixie.rundown）。 */}
+            <ComposerRuntimeProvider runtime={runtime}>
+              <Composer inputTestId="pixie-input" />
               <SessionStatsPills />
             </ComposerRuntimeProvider>
           </div>
@@ -748,7 +532,10 @@ export function PixiePage() {
             {t("pixieDispatchPanelTitle")}
           </div>
           {staleCount > 0 && (
-            <div className="shrink-0 border-b border-warning/30 bg-warning/10 px-3 py-1.5 text-[11px] text-warning" data-testid="pixie-stale-banner">
+            <div
+              className="shrink-0 border-b border-warning/30 bg-warning/10 px-3 py-1.5 text-[11px] text-warning"
+              data-testid="pixie-stale-banner"
+            >
               ⚠️ {t("pixieStaleBanner", { count: staleCount })}
             </div>
           )}

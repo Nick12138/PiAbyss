@@ -41,6 +41,7 @@ import {
   diffPromptCacheFingerprints,
   type PromptCacheFingerprint,
 } from "./prompt-cache-contract.js";
+import { maybeWrapPixiePrompt } from "./pixie-agent-runner.js";
 
 /** Protocol images ({mediaType,data}) → SDK ImageContent ({type,mimeType,data}). */
 export function toSdkImages(images: SerializableImage[] | undefined): ImageContent[] | undefined {
@@ -562,6 +563,9 @@ export function createAgentHandlers(
         operationLock.release(ctx.id);
         return { error: attachmentHostError(error) };
       }
+      // 小精灵首条用户消息：包上 <pixie-context> 前导（runner 判定，非小精灵
+      // 工作区时原样返回）。
+      prompt.text = maybeWrapPixiePrompt(factory, g.canonicalCwd, prompt.text);
       const promptImages =
         toSdkImages(params.images) ??
         (params.attachQueuedImages ? takeQueuedImages(g.agentSession, params.text) : undefined);

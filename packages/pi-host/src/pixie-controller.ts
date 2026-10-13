@@ -25,7 +25,6 @@ import { join } from "node:path";
 import {
   createHostError,
   type PixieDispatchRecord,
-  type PixieSessionRundown,
   type PixieStopAction,
   type PixieWorkspaceSessionSummary,
   type SerializableImage,
@@ -43,14 +42,13 @@ import {
 } from "./pixie-session-cache.js";
 import type { MethodHandler } from "./server.js";
 import {
-  abortPixie,
   activateDispatch,
   askDispatch,
   cancelQueuedDispatch,
   classifyError,
   configurePixieTerminalSettleHook,
   deliverDispatchCallback,
-  ensureCurrentSegment,
+  ensurePixieCurrent,
   failDispatch,
   findDispatchById,
   findDispatchBySession,
@@ -58,15 +56,6 @@ import {
   injectPixieMessage,
   liveDispatchFor,
   listDispatches,
-  pixieAbortCompaction,
-  pixieCompact,
-  pixieCurrentModel,
-  pixieModelOptions,
-  pixieRundown,
-  pixieSetAutoCompaction,
-  pixieSetModel,
-  pixieState,
-  pixieTranscriptFrom,
   progressDispatch,
   queuedDispatchesFor,
   reactivateDispatchAfterReply,
@@ -76,7 +65,6 @@ import {
   requestPixieRest,
   requestPixieSegment,
   resumePausedDispatch,
-  sendPixieMessage,
   settleDispatch,
   setPixieContext,
   stopSettleDispatch,
@@ -84,7 +72,7 @@ import {
 } from "./pixie-agent-runner.js";
 import { getEnabledProviderIds, getProviderModelAllowLists } from "./provider-models-config.js";
 import type { PixieControlPlaneDeps } from "./pixie-control-plane.js";
-import { recordPixieDispatch, recordPixieInteraction, readPixieUsage } from "./pixie-usage.js";
+import { recordPixieDispatch, readPixieUsage } from "./pixie-usage.js";
 import { createHostAgentSession } from "./agent-session-factory.js";
 import {
   buildPromptWithAttachments,
@@ -94,18 +82,6 @@ import {
 import { attachmentHostError } from "./attachment-controller.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
 import { isRepoPluginEnabled, PIXIE_PLUGIN_ENTRY_FILE } from "./plugin-gate.js";
-
-/** pixie.rundown 在无驻留段时返回的空值快照（stats/contextUsage 皆 null）。 */
-const EMPTY_PIXIE_RUNDOWN: PixieSessionRundown = {
-  model: null,
-  thinkingLevel: null,
-  availableThinkingLevels: [],
-  isStreaming: false,
-  isCompacting: false,
-  autoCompactionEnabled: false,
-  stats: null,
-  contextUsage: null,
-};
 
 /** Error returned for every pixie.* call while the pi-pixie plugin is off. */
 function pixiePluginDisabledError() {
@@ -498,7 +474,7 @@ function watchDispatchTurn(
       if (errorMessage) {
         const settled = failDispatch(dispatchId, `委派执行出错：${errorMessage}`, agentDir);
         if (settled) {
-          void deliverDispatchCallback({
+          void deliverDispatchCallback(factory, {
             agentDir,
             record: settled,
             kind: "error",
@@ -514,7 +490,7 @@ function watchDispatchTurn(
       if (!summary) {
         const settled = failDispatch(dispatchId, "回合结束但没有产出可转述的结果", agentDir);
         if (settled) {
-          void deliverDispatchCallback({
+          void deliverDispatchCallback(factory, {
             agentDir,
             record: settled,
             kind: "error",
@@ -527,7 +503,7 @@ function watchDispatchTurn(
       }
       const settled = settleDispatch(dispatchId, summary, "done", agentDir);
       if (settled) {
-        void deliverDispatchCallback({
+        void deliverDispatchCallback(factory, {
           agentDir,
           record: settled,
           kind: "done",
@@ -547,7 +523,7 @@ function watchDispatchTurn(
       if (!record || record.status !== "dispatched" || !envelopeSeen) return;
       const settled = failDispatch(dispatchId, "被用户中断", agentDir);
       if (settled) {
-        void deliverDispatchCallback({
+        void deliverDispatchCallback(factory, {
           agentDir,
           record: settled,
           kind: "error",
@@ -600,7 +576,7 @@ async function activateQueuedDispatch(
       agentDir,
     );
     if (settled) {
-      void deliverDispatchCallback({
+      void deliverDispatchCallback(factory, {
         agentDir,
         record: settled,
         kind: "error",
@@ -624,7 +600,7 @@ async function activateQueuedDispatch(
       dispatchedSessions.delete(dispatchId);
       const settled = failDispatch(dispatchId, applied.error, agentDir);
       if (settled) {
-        void deliverDispatchCallback({
+        void deliverDispatchCallback(factory, {
           agentDir,
           record: settled,
           kind: "error",
@@ -645,7 +621,7 @@ async function activateQueuedDispatch(
         dispatchedSessions.delete(dispatchId);
         const settled = failDispatch(dispatchId, `委派执行失败：${message}`, agentDir);
         if (settled) {
-          void deliverDispatchCallback({
+          void deliverDispatchCallback(factory, {
             agentDir,
             record: settled,
             kind: "error",
@@ -854,7 +830,7 @@ async function dispatchPixieTask(
       dispatchedSessions.delete(dispatch.id);
       const settled = failDispatch(dispatch.id, applied.error, agentDir);
       if (settled) {
-        void deliverDispatchCallback({
+        void deliverDispatchCallback(factory, {
           agentDir,
           record: settled,
           kind: "error",
@@ -891,7 +867,7 @@ async function dispatchPixieTask(
     dispatchedSessions.delete(dispatch.id);
     const settled = failDispatch(dispatch.id, `委派执行失败：${message}`, agentDir);
     if (settled) {
-      void deliverDispatchCallback({
+      void deliverDispatchCallback(factory, {
         agentDir,
         record: settled,
         kind: "error",
@@ -1104,7 +1080,7 @@ async function stopDispatchById(
   if (record.status === "queued") {
     const cancelled = cancelQueuedDispatch(dispatchId, agentDir);
     if (!cancelled) return { ok: true, action: "already-stopped" };
-    void deliverDispatchCallback({
+    void deliverDispatchCallback(factory, {
       agentDir,
       record: cancelled,
       kind: "stopped",
@@ -1125,7 +1101,7 @@ async function stopDispatchById(
   const stopped =
     stopSettleDispatch(dispatchId, agentDir) ?? findDispatchById(dispatchId) ?? record;
   if (!session) {
-    void deliverDispatchCallback({
+    void deliverDispatchCallback(factory, {
       agentDir,
       record: stopped,
       kind: "stopped",
@@ -1133,7 +1109,7 @@ async function stopDispatchById(
     });
     return { ok: true, action: "already-stopped" };
   }
-  void deliverDispatchCallback({
+  void deliverDispatchCallback(factory, {
     agentDir,
     record: stopped,
     kind: "stopped",
@@ -1308,7 +1284,7 @@ export function createPixieControlPlaneDeps(factory: WorkspaceGraphFactory): Pix
           args.pause === true,
         );
         if (!updated) return { ok: false, error: "委派记录不存在或已结束，进度汇报被忽略" };
-        return deliverDispatchCallback({
+        return deliverDispatchCallback(factory, {
           agentDir,
           record: updated,
           kind: "progress",
@@ -1321,7 +1297,7 @@ export function createPixieControlPlaneDeps(factory: WorkspaceGraphFactory): Pix
         ? settleDispatch(args.dispatchId, args.summary, "done", agentDir)
         : failDispatch(args.dispatchId, args.summary, agentDir);
       if (!settled) return { ok: false, error: "委派记录不存在或已结束" };
-      return deliverDispatchCallback({
+      return deliverDispatchCallback(factory, {
         agentDir,
         record: settled,
         kind: success ? "done" : "error",
@@ -1332,7 +1308,7 @@ export function createPixieControlPlaneDeps(factory: WorkspaceGraphFactory): Pix
     ask: async (args) => {
       const record = askDispatch(args.dispatchId, args.question, args.options ?? [], agentDir);
       if (!record) return { ok: false, error: "委派记录不存在或已结束" };
-      return deliverDispatchCallback({
+      return deliverDispatchCallback(factory, {
         agentDir,
         record,
         kind: "ask",
@@ -1359,9 +1335,9 @@ export function createPixieControlPlaneDeps(factory: WorkspaceGraphFactory): Pix
       return listPixieSessions(agentDir, cwd);
     },
     rest: async (args) =>
-      requestPixieRest({ agentDir, phrase: args.phrase, handoff: args.handoff }),
+      requestPixieRest(factory, { agentDir, phrase: args.phrase, handoff: args.handoff }),
     inject: async (args) =>
-      injectPixieMessage({
+      injectPixieMessage(factory, {
         agentDir,
         text: args.text,
         source: args.source === "tg" ? "tg" : "system",
@@ -1390,78 +1366,14 @@ export function createPixieHandlers(
   // library takes effect without a Host restart.
   const gate = (): boolean => isRepoPluginEnabled(agentDir, PIXIE_PLUGIN_ENTRY_FILE);
   return {
-    "pixie.state": async () => {
+    "pixie.ensureCurrent": async () => {
       if (!gate()) return { error: pixiePluginDisabledError() };
-      // Host 重启后按时间线把当前段重建回内存，再读状态：resident /
-      // running / messages 都依赖内存里的那个段。不做这一步，时间线里
-      // 那段明明还开着（endedAt=null），界面也会认为"没有驻留段"，顶栏的
-      // 「打个盹」按钮就被 disabled 卡死（它门禁在 resident 上）。
-      // 幂等且廉价：有段直接返回，恢复失败只记一次 resumeFailed，不重试。
-      await ensureCurrentSegment(agentDir);
-      return { result: pixieState(agentDir) };
-    },
-
-    "pixie.send": async (ctx) => {
-      if (!gate()) return { error: pixiePluginDisabledError() };
-      const params = ctx.params as {
-        text: string;
-        images?: SerializableImage[];
-        attachmentIds?: string[];
-      };
-      // 附件解析与 agent.prompt 完全一致：附件存储挂在 WorkspaceGraphFactory 上
-      // （runner 拿不到），所以在 controller 侧按同一 sessionId（活动会话）解析成
-      // 随消息发送的文本引用块；图片则透传给 session.prompt/steer。
-      const server = factory.getServer();
-      const attachmentSessionId = server?.identity.sessionId ?? null;
-      let text = params.text;
-      let resolvedAttachmentIds: string[] = [];
-      if (params.attachmentIds?.length) {
-        if (!attachmentSessionId) {
-          return { error: createHostError("AGENT_NOT_READY", "Attachment service is not ready") };
-        }
-        try {
-          const prompt = await buildPromptWithAttachments({
-            factory,
-            sessionId: attachmentSessionId,
-            text: params.text,
-            attachmentIds: params.attachmentIds,
-          });
-          text = prompt.text;
-          resolvedAttachmentIds = prompt.attachmentIds;
-        } catch (error) {
-          return { error: attachmentHostError(error) };
-        }
-      }
-      const images = toSdkImages(params.images);
-      const out = await sendPixieMessage({ agentDir, text, images });
-      if (!out.ok) return { error: createHostError("AGENT_BUSY", out.error, { retryable: true }) };
-      if (attachmentSessionId && resolvedAttachmentIds.length) {
-        commitPromptAttachments(factory, attachmentSessionId, resolvedAttachmentIds);
-      }
-      recordPixieInteraction(agentDir);
-      return { result: { sessionId: out.sessionId } };
-    },
-
-    "pixie.continue": async () => {
-      if (!gate()) return { error: pixiePluginDisabledError() };
-      return {
-        error: createHostError(
-          "RESOURCE_NOT_FOUND",
-          "pixie.continue 已废弃：小精灵会话由时间线接管，直接向小精灵发消息即可。",
-        ),
-      };
-    },
-
-    "pixie.abort": async () => {
-      if (!gate()) return { error: pixiePluginDisabledError() };
-      return { result: { ok: abortPixie() } };
-    },
-
-    "pixie.transcript": async (ctx) => {
-      if (!gate()) return { error: pixiePluginDisabledError() };
-      const params = ctx.params as { sessionPath: string };
-      const messages = pixieTranscriptFrom(params.sessionPath);
-      return { result: { found: messages.length > 0, messages } };
+      // 页面入口：确保小精灵工作区图与当前会话存在（含每日打盹懒判定），
+      // 返回前端应当 workspace.setCurrent + session.open 的会话。
+      const out = await ensurePixieCurrent(factory, agentDir);
+      return out.ok
+        ? { result: { cwd: out.cwd, sessionId: out.sessionId, sessionPath: out.sessionPath } }
+        : { error: createHostError("RESOURCE_NOT_FOUND", out.error) };
     },
 
     "pixie.dispatches": async (ctx) => {
@@ -1493,7 +1405,7 @@ export function createPixieHandlers(
 
     "pixie.newSegment": async () => {
       if (!gate()) return { error: pixiePluginDisabledError() };
-      await requestPixieSegment({ agentDir });
+      await requestPixieSegment(factory, { agentDir });
       return { result: { ok: true as const } };
     },
 
@@ -1531,48 +1443,6 @@ export function createPixieHandlers(
       if (!gate()) return { error: pixiePluginDisabledError() };
       const params = ctx.params as { cwd: string };
       return { result: { sessions: listWorkspaceSessions(factory, params.cwd) } };
-    },
-
-    "pixie.models": async () => {
-      if (!gate()) return { error: pixiePluginDisabledError() };
-      // 读操作：恢复/复用当前段即可，不新建段（无段时 current 为 null）。
-      await ensureCurrentSegment(agentDir);
-      return {
-        result: {
-          models: await pixieModelOptions(agentDir),
-          current: pixieCurrentModel(agentDir),
-        },
-      };
-    },
-
-    "pixie.setModel": async (ctx) => {
-      if (!gate()) return { error: pixiePluginDisabledError() };
-      const params = ctx.params as { model: string | null; thinkingLevel?: string | null };
-      return { result: await pixieSetModel(agentDir, params.model, params.thinkingLevel) };
-    },
-
-    "pixie.rundown": async () => {
-      if (!gate()) return { error: pixiePluginDisabledError() };
-      // 读操作：无驻留段时返回空值快照（stats/contextUsage 均为 null），不新建段。
-      const rundown = await pixieRundown(agentDir);
-      return { result: rundown ?? EMPTY_PIXIE_RUNDOWN };
-    },
-
-    "pixie.compact": async (ctx) => {
-      if (!gate()) return { error: pixiePluginDisabledError() };
-      const params = (ctx.params ?? {}) as { instructions?: string } | null;
-      return { result: await pixieCompact(agentDir, params?.instructions) };
-    },
-
-    "pixie.abortCompaction": async () => {
-      if (!gate()) return { error: pixiePluginDisabledError() };
-      return { result: { ok: pixieAbortCompaction(agentDir) } };
-    },
-
-    "pixie.setAutoCompaction": async (ctx) => {
-      if (!gate()) return { error: pixiePluginDisabledError() };
-      const params = ctx.params as { enabled: boolean };
-      return { result: await pixieSetAutoCompaction(agentDir, params.enabled) };
     },
   };
 }

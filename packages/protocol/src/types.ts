@@ -2101,26 +2101,6 @@ export type PixieWorkspaceSessionSummary = {
   summary: string;
 };
 
-/** 小精灵会话段（时间线指针；消息经 pixie.state 的段视图携带）。 */
-export type PixieSegment = {
-  id: string;
-  sessionId: string;
-  sessionPath: string;
-  startedAt: number;
-  endedAt: number | null;
-  /** 段结束时小精灵自选的睡觉短语（分隔符文案）。 */
-  separator: string | null;
-  /** 换段原因：agent 自睡 / 用户请求 / 轮数自动换段 / 每日自动打盹（v4.4）。 */
-  reason: "agent" | "user" | "rollover" | "daily" | null;
-  /** 小精灵写给下一段自己的交接摘要。 */
-  handoff: string | null;
-};
-
-/** pixie.state 携带的段视图：时间线指针 + 该段消息投影（记录已归档时 messages 为空）。 */
-export type PixieSegmentView = PixieSegment & {
-  messages: PixieAgentMessage[];
-};
-
 /** 小精灵会话的流式消息，形状与 schedule agent 的投影一致。 */
 export type PixieAgentMessage = {
   role: string;
@@ -2181,26 +2161,6 @@ export type PixieDispatchRecord = {
   thinkingLevel: string | null;
 };
 
-/** pixie.state 结果：会话段时间线 + 委派列表。 */
-export type PixieAgentState = {
-  /** 当前段会话是否在宿主内存中（宿主重启后首次访问时按时间线重建）。 */
-  resident: boolean;
-  /** 当前段会话文件路径（无会话时 null）。 */
-  sessionPath: string | null;
-  running: boolean;
-  error: string | null;
-  /** 当前段消息（兼容旧前端的单对话投影）。 */
-  messages: PixieAgentMessage[];
-  /** 会话段时间线（含各段消息投影）。 */
-  segments: PixieSegmentView[];
-  /** 是否有待用户答复的询问回调（composer 切换回复模式）。 */
-  askPending: boolean;
-  /** 当前段使用的模型名（展示用；未知为 null）。 */
-  modelName: string | null;
-  /** 进行中/最近完成的委派（按创建时间倒序，上限 20 条）。 */
-  dispatches: PixieDispatchRecord[];
-};
-
 /** pixie.usage 结果：留存判定埋点（按天计数）。 */
 export type PixieUsageStats = {
   /** 按天（本地日期 YYYY-MM-DD）计数，仅保留最近 30 天。 */
@@ -2216,22 +2176,6 @@ export type PixieModelOption = {
   providerName?: string;
   id: string;
   label: string;
-};
-
-/** 小精灵段会话的实时统计与运行态。 */
-export type PixieSessionRundown = {
-  /** 当前模型选择；未知为 null（= 跟随全局默认）。 */
-  model: PixieModelSelection | null;
-  thinkingLevel: string | null;
-  /** 可选推理深度；空数组表示当前模型不支持思考。 */
-  availableThinkingLevels: string[];
-  isStreaming: boolean;
-  isCompacting: boolean;
-  autoCompactionEnabled: boolean;
-  /** 复用既有类型：整段历史聚合（速度/缓存/成本）。 */
-  stats: SessionStatsSnapshot | null;
-  /** 复用既有类型：上下文用量环。 */
-  contextUsage: SessionContextUsage | null;
 };
 
 /** 备忘录状态：待处理 / 进行中 / 已完成。 */

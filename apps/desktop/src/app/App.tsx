@@ -1418,13 +1418,16 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    // 小精灵页会把活动工作区临时切到 workspace/pixie，不把那个位置当
+    // 「最近位置」持久化（否则重启后会落在 pixie 工作区的 chat 页上）。
+    if (page === "pixie") return;
     if (connecting || rehydrating || desynchronized || !desktopSettings || !workspacePath) {
       return;
     }
     void persistRecentDesktopLocation(workspacePath, activeSessionPath ?? null).catch(
       notifyDesktopSettingsSaveFailure,
     );
-  }, [connecting, rehydrating, desynchronized, desktopSettings, workspacePath, activeSessionPath]);
+  }, [page, connecting, rehydrating, desynchronized, desktopSettings, workspacePath, activeSessionPath]);
 
   // The sidebar collapse toggle moved into AppTopBar, so App owns the
   // sidebar.toggle command bus subscription that previously lived in Sidebar.

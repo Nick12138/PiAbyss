@@ -108,7 +108,6 @@ import type {
   ScheduleAgentSessionSummary,
   ScheduleAgentEditJob,
   ScheduleAgentState,
-  PixieAgentState,
   PixieAgentMessage,
   PixieDispatchKind,
   PixieDispatchRecord,
@@ -118,7 +117,6 @@ import type {
   PixieWorkspaceSessionSummary,
   PixieModelSelection,
   PixieModelOption,
-  PixieSessionRundown,
   ScheduleAgentTranscript,
   MemoNote,
   MemoNoteStatus,
@@ -299,13 +297,9 @@ export type HostContextMap = {
   "memo.getSyncConfig": HostContext;
   "memo.testSync": HostContext;
   "memo.syncNow": HostContext;
-  "pixie.state": HostContext;
-  "pixie.send": HostContext;
-  "pixie.continue": HostContext;
-  "pixie.abort": HostContext;
-  "pixie.transcript": HostContext;
   "pixie.dispatches": HostContext;
   "pixie.usage": HostContext;
+  "pixie.ensureCurrent": HostContext;
   "pixie.reply": HostContext;
   "pixie.setContext": HostContext;
   "pixie.newSegment": HostContext;
@@ -313,12 +307,6 @@ export type HostContextMap = {
   "pixie.stopDispatch": HostContext;
   "pixie.retryDispatch": HostContext;
   "pixie.listSessions": HostContext;
-  "pixie.models": HostContext;
-  "pixie.setModel": HostContext;
-  "pixie.rundown": HostContext;
-  "pixie.compact": HostContext;
-  "pixie.abortCompaction": HostContext;
-  "pixie.setAutoCompaction": HostContext;
 };
 
 export type HostRequestParams = {
@@ -598,13 +586,9 @@ export type HostRequestParams = {
   "memo.getSyncConfig": null;
   "memo.testSync": null;
   "memo.syncNow": null;
-  "pixie.state": null;
-  "pixie.send": { text: string; images?: SerializableImage[]; attachmentIds?: string[] };
-  "pixie.continue": { sessionPath: string; text: string };
-  "pixie.abort": null;
-  "pixie.transcript": { sessionPath: string };
   "pixie.dispatches": { limit?: number };
   "pixie.usage": null;
+  "pixie.ensureCurrent": null;
   /** 用户对 ask 询问的答复：路由回被委派会话（followUp）。 */
   "pixie.reply": { dispatchId: string; text: string };
   /** 前端推送已知工作区列表（新段 <pixie-context> 注入用）。 */
@@ -633,17 +617,6 @@ export type HostRequestParams = {
   /** 按工作区列出历史会话（找回旧会话继续派活）。 */
   "pixie.listSessions": { cwd: string };
   /** 可选模型列表 + 当前段生效的模型选择（与普通会话 model.list 同源）。 */
-  "pixie.models": null;
-  /** 切换当前段模型（"provider/id"；null=清除选择回落全局默认）与推理深度。 */
-  "pixie.setModel": { model: string | null; thinkingLevel?: string | null };
-  /** 当前段会话的实时统计与运行态（无段时返回空值快照）。 */
-  "pixie.rundown": null;
-  /** 手动压缩当前段上下文（可选自定义指令）。 */
-  "pixie.compact": { instructions?: string } | null;
-  /** 中止正在进行的手动压缩。 */
-  "pixie.abortCompaction": null;
-  /** 开关当前段的自动压缩。 */
-  "pixie.setAutoCompaction": { enabled: boolean };
 };
 
 export type HostResultMap = {
@@ -894,13 +867,9 @@ export type HostResultMap = {
     bytes: number;
     at: number;
   };
-  "pixie.state": PixieAgentState;
-  "pixie.send": { sessionId: string };
-  "pixie.continue": { sessionId: string; sessionPath: string };
-  "pixie.abort": { ok: boolean };
-  "pixie.transcript": { found: boolean; messages: PixieAgentMessage[] };
   "pixie.dispatches": { dispatches: PixieDispatchRecord[] };
   "pixie.usage": PixieUsageStats;
+  "pixie.ensureCurrent": { cwd: string; sessionId: string; sessionPath: string };
   "pixie.reply": { ok: boolean };
   "pixie.setContext": { ok: true };
   "pixie.newSegment": { ok: true };
@@ -908,21 +877,6 @@ export type HostResultMap = {
   "pixie.stopDispatch": { ok: boolean; action: PixieStopAction };
   "pixie.retryDispatch": { ok: boolean; dispatchId: string | null; error: string | null };
   "pixie.listSessions": { sessions: PixieWorkspaceSessionSummary[] };
-  "pixie.models": { models: PixieModelOption[]; current: PixieModelSelection | null };
-  "pixie.setModel": {
-    ok: boolean;
-    error: string | null;
-    current: PixieModelSelection | null;
-  };
-  "pixie.rundown": PixieSessionRundown;
-  "pixie.compact": {
-    ok: boolean;
-    error: string | null;
-    tokensBefore: number | null;
-    tokensAfter: number | null;
-  };
-  "pixie.abortCompaction": { ok: boolean };
-  "pixie.setAutoCompaction": { ok: boolean; enabled: boolean };
 };
 
 export type HostEventPayloadMap = {

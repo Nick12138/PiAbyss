@@ -1168,43 +1168,6 @@ function isPixieModelSelection(value: unknown): boolean {
   );
 }
 
-/** 小精灵可选模型项。 */
-function isPixieModelOption(value: unknown): boolean {
-  return (
-    isPlainObject(value) &&
-    hasExactKeys(value, ["provider", "id", "label"], ["providerName"]) &&
-    isNonEmptyString(value.provider) &&
-    isNonEmptyString(value.id) &&
-    isNonEmptyString(value.label) &&
-    isOptionalString(value.providerName)
-  );
-}
-
-/** 小精灵段会话实时统计与运行态。 */
-function isPixieSessionRundown(value: unknown): boolean {
-  return (
-    isPlainObject(value) &&
-    hasExactKeys(value, [
-      "model",
-      "thinkingLevel",
-      "availableThinkingLevels",
-      "isStreaming",
-      "isCompacting",
-      "autoCompactionEnabled",
-      "stats",
-      "contextUsage",
-    ]) &&
-    (value.model === null || isPixieModelSelection(value.model)) &&
-    (value.thinkingLevel === null || isString(value.thinkingLevel)) &&
-    isStringArray(value.availableThinkingLevels) &&
-    isBoolean(value.isStreaming) &&
-    isBoolean(value.isCompacting) &&
-    isBoolean(value.autoCompactionEnabled) &&
-    (value.stats === null || isSessionStatsSnapshot(value.stats)) &&
-    (value.contextUsage === null || isSessionContextUsage(value.contextUsage))
-  );
-}
-
 function isSerializableCompactionResult(value: unknown): boolean {
   return (
     isPlainObject(value) &&
@@ -2851,42 +2814,6 @@ function isPixieDispatchRecord(value: unknown): boolean {
   );
 }
 
-/** 小精灵会话段视图的 DTO 校验（时间线指针 + 消息投影）。 */
-function isPixieSegmentView(value: unknown): boolean {
-  return (
-    isPlainObject(value) &&
-    hasExactKeys(value, [
-      "id",
-      "sessionId",
-      "sessionPath",
-      "startedAt",
-      "endedAt",
-      "separator",
-      "reason",
-      "handoff",
-      "messages",
-    ]) &&
-    isString(value.id) &&
-    value.id.length > 0 &&
-    isString(value.sessionId) &&
-    value.sessionId.length > 0 &&
-    isString(value.sessionPath) &&
-    typeof value.startedAt === "number" &&
-    Number.isSafeInteger(value.startedAt) &&
-    (value.endedAt === null ||
-      (typeof value.endedAt === "number" && Number.isSafeInteger(value.endedAt))) &&
-    (value.separator === null || isString(value.separator)) &&
-    (value.reason === null ||
-      value.reason === "agent" ||
-      value.reason === "user" ||
-      value.reason === "rollover" ||
-      value.reason === "daily") &&
-    (value.handoff === null || isString(value.handoff)) &&
-    Array.isArray(value.messages) &&
-    value.messages.every(isScheduleAgentMessage)
-  );
-}
-
 /** 备忘录图片引用的 DTO 校验。 */
 function isMemoImage(value: unknown): boolean {
   return (
@@ -3935,60 +3862,6 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         Number.isSafeInteger(result.at)
         ? null
         : "invalid memo.syncNow result";
-    case "pixie.state":
-      return isPlainObject(result) &&
-        hasExactKeys(result, [
-          "resident",
-          "sessionPath",
-          "running",
-          "error",
-          "messages",
-          "segments",
-          "askPending",
-          "modelName",
-          "dispatches",
-        ]) &&
-        typeof result.resident === "boolean" &&
-        (result.sessionPath === null || isString(result.sessionPath)) &&
-        typeof result.running === "boolean" &&
-        (result.error === null || isString(result.error)) &&
-        Array.isArray(result.messages) &&
-        result.messages.every(isScheduleAgentMessage) &&
-        Array.isArray(result.segments) &&
-        result.segments.every(isPixieSegmentView) &&
-        typeof result.askPending === "boolean" &&
-        (result.modelName === null || isString(result.modelName)) &&
-        Array.isArray(result.dispatches) &&
-        result.dispatches.every(isPixieDispatchRecord)
-        ? null
-        : "invalid pixie.state result";
-    case "pixie.send":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["sessionId"]) &&
-        isString(result.sessionId) &&
-        result.sessionId.length > 0
-        ? null
-        : "invalid pixie.send result";
-    case "pixie.continue":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["sessionId", "sessionPath"]) &&
-        isString(result.sessionId) &&
-        result.sessionId.length > 0 &&
-        isString(result.sessionPath)
-        ? null
-        : "invalid pixie.continue result";
-    case "pixie.abort":
-      return isPlainObject(result) && hasExactKeys(result, ["ok"]) && typeof result.ok === "boolean"
-        ? null
-        : "invalid pixie.abort result";
-    case "pixie.transcript":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["found", "messages"]) &&
-        typeof result.found === "boolean" &&
-        Array.isArray(result.messages) &&
-        result.messages.every(isScheduleAgentMessage)
-        ? null
-        : "invalid pixie.transcript result";
     case "pixie.dispatches":
       return isPlainObject(result) &&
         hasExactKeys(result, ["dispatches"]) &&
@@ -4014,6 +3887,15 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         })
         ? null
         : "invalid pixie.usage result";
+    case "pixie.ensureCurrent":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["cwd", "sessionId", "sessionPath"]) &&
+        isString(result.cwd) &&
+        isString(result.sessionId) &&
+        result.sessionId.length > 0 &&
+        isString(result.sessionPath)
+        ? null
+        : "invalid pixie.ensureCurrent result";
     case "pixie.reply":
       return isPlainObject(result) && hasExactKeys(result, ["ok"]) && typeof result.ok === "boolean"
         ? null
@@ -4076,46 +3958,6 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         })
         ? null
         : "invalid pixie.listSessions result";
-    case "pixie.models":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["models", "current"]) &&
-        Array.isArray(result.models) &&
-        result.models.every(isPixieModelOption) &&
-        (result.current === null || isPixieModelSelection(result.current))
-        ? null
-        : "invalid pixie.models result";
-    case "pixie.setModel":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["ok", "error", "current"]) &&
-        typeof result.ok === "boolean" &&
-        (result.error === null || isString(result.error)) &&
-        (result.current === null || isPixieModelSelection(result.current))
-        ? null
-        : "invalid pixie.setModel result";
-    case "pixie.rundown":
-      return isPixieSessionRundown(result) ? null : "invalid pixie.rundown result";
-    case "pixie.compact":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["ok", "error", "tokensBefore", "tokensAfter"]) &&
-        typeof result.ok === "boolean" &&
-        (result.error === null || isString(result.error)) &&
-        (result.tokensBefore === null || isFiniteNumber(result.tokensBefore)) &&
-        (result.tokensAfter === null || isFiniteNumber(result.tokensAfter))
-        ? null
-        : "invalid pixie.compact result";
-    case "pixie.abortCompaction":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["ok"]) &&
-        typeof result.ok === "boolean"
-        ? null
-        : "invalid pixie.abortCompaction result";
-    case "pixie.setAutoCompaction":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["ok", "enabled"]) &&
-        typeof result.ok === "boolean" &&
-        typeof result.enabled === "boolean"
-        ? null
-        : "invalid pixie.setAutoCompaction result";
     case "model.list":
       return isPlainObject(result) &&
         hasExactKeys(

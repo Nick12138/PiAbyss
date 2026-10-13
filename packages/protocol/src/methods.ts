@@ -169,13 +169,9 @@ export const HOST_METHODS = [
   "memo.getSyncConfig",
   "memo.testSync",
   "memo.syncNow",
-  "pixie.state",
-  "pixie.send",
-  "pixie.continue",
-  "pixie.abort",
-  "pixie.transcript",
   "pixie.dispatches",
   "pixie.usage",
+  "pixie.ensureCurrent",
   "pixie.reply",
   "pixie.setContext",
   "pixie.newSegment",
@@ -183,12 +179,6 @@ export const HOST_METHODS = [
   "pixie.stopDispatch",
   "pixie.retryDispatch",
   "pixie.listSessions",
-  "pixie.models",
-  "pixie.setModel",
-  "pixie.rundown",
-  "pixie.compact",
-  "pixie.abortCompaction",
-  "pixie.setAutoCompaction",
 ] as const;
 
 export type HostMethod = (typeof HOST_METHODS)[number];
@@ -295,13 +285,9 @@ export type HostOnlyMethod =
   | "schedule.agentTranscript"
   | "schedule.agentAbort"
   | "schedule.agentDelete"
-  | "pixie.state"
-  | "pixie.send"
-  | "pixie.continue"
-  | "pixie.abort"
-  | "pixie.transcript"
   | "pixie.dispatches"
   | "pixie.usage"
+  | "pixie.ensureCurrent"
   | "pixie.reply"
   | "pixie.setContext"
   | "pixie.newSegment"
@@ -309,12 +295,7 @@ export type HostOnlyMethod =
   | "pixie.stopDispatch"
   | "pixie.retryDispatch"
   | "pixie.listSessions"
-  | "pixie.models"
-  | "pixie.setModel"
-  | "pixie.rundown"
-  | "pixie.compact"
-  | "pixie.abortCompaction"
-  | "pixie.setAutoCompaction";
+;
 export type WorkspaceOnlyMethod =
   | "workspace.setCurrent"
   | "workspace.getCurrent"
@@ -608,13 +589,9 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "memo.getSyncConfig": "host",
   "memo.testSync": "host",
   "memo.syncNow": "host",
-  "pixie.state": "host",
-  "pixie.send": "host",
-  "pixie.continue": "host",
-  "pixie.abort": "host",
-  "pixie.transcript": "host",
   "pixie.dispatches": "host",
   "pixie.usage": "host",
+  "pixie.ensureCurrent": "host",
   "pixie.reply": "host",
   "pixie.setContext": "host",
   "pixie.newSegment": "host",
@@ -622,12 +599,6 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "pixie.stopDispatch": "host",
   "pixie.retryDispatch": "host",
   "pixie.listSessions": "host",
-  "pixie.models": "host",
-  "pixie.setModel": "host",
-  "pixie.rundown": "host",
-  "pixie.compact": "host",
-  "pixie.abortCompaction": "host",
-  "pixie.setAutoCompaction": "host",
   "extensionUi.respond": "sessionTarget",
   "extensionUi.customInput": "sessionTarget",
   "extensionUi.customResize": "sessionTarget",

@@ -1,114 +1,118 @@
 /**
- * Pixie workspace view store — shared state for the single-conversation
- * PixiePage (v4 工作区化): segment timeline + delegation registry + the
- * ask-pending reply mode, with thin actions over the pixie.* host methods.
- * Modeled after telegram-view-store (zustand + hostClient).
+ * Pixie workspace view store — v5 标准通道化之后的前端残余状态。
+ *
+ * 会话本体（转写/发送/统计/模型）全部走标准 session 通道（app-store 的
+ * workspace/session + agent.* RPC），这里只保留小精灵专属的三块：
+ *   1. `ensureCurrent` — 取当前 pixie 会话锚点（cwd/sessionId/sessionPath），
+ *      页面挂载时据此完成 workspace.setCurrent + session.open；
+ *   2. `dispatches` — 委派注册表（pixie.dispatches）+ 回复/插话/叫停/重试；
+ *   3. `nap` — 打盹（pixie.newSegment，切新会话）与已知工作区推送。
  */
 import { create } from "zustand";
-import type { PixieAgentState, SerializableImage } from "@piabyss/protocol";
+import type { PixieDispatchRecord } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
 
-const STATE_TIMEOUT_MS = 60_000;
 const SEND_TIMEOUT_MS = 30_000;
+const DISPATCHES_TIMEOUT_MS = 30_000;
+
+export type PixieCurrent = {
+  cwd: string;
+  sessionId: string;
+  sessionPath: string;
+};
 
 type PixieViewState = {
-  loaded: boolean;
-  loading: boolean;
+  current: PixieCurrent | null;
+  dispatches: PixieDispatchRecord[];
+  dispatchesLoaded: boolean;
+  dispatchesLoading: boolean;
   error: string | null;
-  state: PixieAgentState | null;
-  refresh: () => Promise<void>;
-  /** Send a user message to the current segment (auto pixie.reply when an
-   *  ask is pending — the composer switches to reply mode). */
-  send: (
-    text: string,
-    images?: SerializableImage[],
-    attachmentIds?: string[],
-  ) => Promise<boolean>;
+  /** 取当前 pixie 会话锚点（幂等；Host 侧单飞保证不重复建会话）。 */
+  ensureCurrent: () => Promise<PixieCurrent | null>;
+  /** 拉取委派列表。 */
+  refreshDispatches: () => Promise<void>;
   /** Answer an awaiting ask explicitly (inline reply in the dispatch panel). */
   reply: (dispatchId: string, text: string) => Promise<boolean>;
   /** 打个盹: instruct the pixie to rest; Host force-finalizes on refusal. */
   nap: () => Promise<boolean>;
   /** Push the known-workspace list (mount + knownWorkspaces changes). */
   pushContext: (workspaces: string[]) => Promise<void>;
-  /** v4.1 插话：向进行中委派补充/修正（append）或要进度检查点（checkpoint）。 */
+  /** 插话：向进行中委派补充/修正（append）或要进度检查点（checkpoint）。 */
   interject: (
     dispatchId: string,
     text: string,
     mode?: "append" | "checkpoint",
     after?: "continue" | "wait",
   ) => Promise<boolean>;
-  /** v4.1 叫停：运行中中断 / 排队中取消，回执明确。 */
+  /** 叫停：运行中中断 / 排队中取消，回执明确。 */
   stopDispatch: (dispatchId: string) => Promise<boolean>;
-  /** v4.1 重试：resume=原地续跑；redispatch=重派；缺省 Host 自动判定。 */
+  /** 重试：resume=原地续跑；redispatch=重派；缺省 Host 自动判定。 */
   retryDispatch: (dispatchId: string, mode?: "resume" | "redispatch") => Promise<boolean>;
 };
 
 export const usePixieViewStore = create<PixieViewState>((set, get) => ({
-  loaded: false,
-  loading: false,
+  current: null,
+  dispatches: [],
+  dispatchesLoaded: false,
+  dispatchesLoading: false,
   error: null,
-  state: null,
 
-  refresh: async () => {
+  ensureCurrent: async () => {
+    const host = useAppStore.getState().host;
+    if (!host) return null;
+    try {
+      const response = await hostClient.request(
+        "pixie.ensureCurrent",
+        hostContext(host),
+        null,
+        SEND_TIMEOUT_MS,
+      );
+      if (!response.ok) {
+        set({ error: response.error?.message ?? "pixie unavailable" });
+        return null;
+      }
+      set({ current: response.result, error: null });
+      return response.result;
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error) });
+      return null;
+    }
+  },
+
+  refreshDispatches: async () => {
     const host = useAppStore.getState().host;
     if (!host) return;
-    if (get().loading) return;
-    set({ loading: true });
+    if (get().dispatchesLoading) return;
+    set({ dispatchesLoading: true });
     try {
-      const response = await hostClient.request("pixie.state", hostContext(host), null, STATE_TIMEOUT_MS);
+      const response = await hostClient.request(
+        "pixie.dispatches",
+        hostContext(host),
+        { limit: 50 },
+        DISPATCHES_TIMEOUT_MS,
+      );
       if (!response.ok) {
         set({
-          loading: false,
-          loaded: true,
+          dispatchesLoading: false,
+          dispatchesLoaded: true,
           error: response.error?.message ?? "pixie unavailable",
         });
         return;
       }
-      set({ loading: false, loaded: true, error: null, state: response.result });
+      set({
+        dispatchesLoading: false,
+        dispatchesLoaded: true,
+        error: null,
+        dispatches: response.result.dispatches,
+      });
     } catch (error) {
       set({
-        loading: false,
-        loaded: true,
+        dispatchesLoading: false,
+        dispatchesLoaded: true,
         error: error instanceof Error ? error.message : String(error),
       });
-    }
-  },
-
-  send: async (text, images, attachmentIds) => {
-    const host = useAppStore.getState().host;
-    if (!host || !text.trim()) return false;
-    const current = get().state;
-    // Reply-mode: an ask is awaiting the user's answer — route to pixie.reply.
-    const awaiting = current?.dispatches.find((d) => d.status === "awaiting_user");
-    try {
-      const response = awaiting
-        ? await hostClient.request(
-            "pixie.reply",
-            hostContext(host),
-            { dispatchId: awaiting.id, text: text.trim() },
-            SEND_TIMEOUT_MS,
-          )
-        : await hostClient.request(
-            "pixie.send",
-            hostContext(host),
-            {
-              text: text.trim(),
-              ...(images && images.length > 0 ? { images } : {}),
-              ...(attachmentIds && attachmentIds.length > 0 ? { attachmentIds } : {}),
-            },
-            SEND_TIMEOUT_MS,
-          );
-      if (!response.ok) {
-        set({ error: response.error?.message ?? "pixie send failed" });
-        return false;
-      }
-      void get().refresh();
-      return true;
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error) });
-      return false;
     }
   },
 
@@ -126,7 +130,7 @@ export const usePixieViewStore = create<PixieViewState>((set, get) => ({
         set({ error: response.error?.message ?? "pixie reply failed" });
         return false;
       }
-      void get().refresh();
+      void get().refreshDispatches();
       return true;
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error) });
@@ -138,12 +142,17 @@ export const usePixieViewStore = create<PixieViewState>((set, get) => ({
     const host = useAppStore.getState().host;
     if (!host) return false;
     try {
-      const response = await hostClient.request("pixie.newSegment", hostContext(host), null, SEND_TIMEOUT_MS);
+      const response = await hostClient.request(
+        "pixie.newSegment",
+        hostContext(host),
+        null,
+        SEND_TIMEOUT_MS,
+      );
       if (!response.ok) {
         set({ error: response.error?.message ?? "pixie nap failed" });
         return false;
       }
-      void get().refresh();
+      void get().refreshDispatches();
       return true;
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error) });
@@ -155,7 +164,12 @@ export const usePixieViewStore = create<PixieViewState>((set, get) => ({
     const host = useAppStore.getState().host;
     if (!host) return;
     try {
-      await hostClient.request("pixie.setContext", hostContext(host), { workspaces }, SEND_TIMEOUT_MS);
+      await hostClient.request(
+        "pixie.setContext",
+        hostContext(host),
+        { workspaces },
+        SEND_TIMEOUT_MS,
+      );
     } catch {
       /* context push is best-effort */
     }
@@ -181,7 +195,7 @@ export const usePixieViewStore = create<PixieViewState>((set, get) => ({
         set({ error: result.error ?? "插话未送达" });
         return false;
       }
-      void get().refresh();
+      void get().refreshDispatches();
       return true;
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error) });
@@ -203,7 +217,7 @@ export const usePixieViewStore = create<PixieViewState>((set, get) => ({
         set({ error: response.error?.message ?? "pixie stop failed" });
         return false;
       }
-      void get().refresh();
+      void get().refreshDispatches();
       return true;
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error) });
@@ -230,7 +244,7 @@ export const usePixieViewStore = create<PixieViewState>((set, get) => ({
         set({ error: result.error ?? "重试失败" });
         return false;
       }
-      void get().refresh();
+      void get().refreshDispatches();
       return true;
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error) });

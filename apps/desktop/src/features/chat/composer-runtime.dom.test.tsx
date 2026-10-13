@@ -88,9 +88,8 @@ describe("useComposerRuntime 默认实现（无 Provider）", () => {
     useAppStore.getState().applySessionSnapshot(null);
   });
 
-  it("回落到 session 变体并暴露 store 的草稿键", () => {
+  it("回落到默认实现并暴露 store 的草稿键", () => {
     const { result } = renderHook(() => useComposerRuntime());
-    expect(result.current.variant).toBe("session");
     expect(result.current.draftKey).toBe("new:/workspace");
     expect(result.current.host?.hostInstanceId).toBe(HOST_ID);
   });

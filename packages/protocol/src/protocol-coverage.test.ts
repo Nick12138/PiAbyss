@@ -355,13 +355,9 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "memo.getSyncConfig": null,
   "memo.testSync": null,
   "memo.syncNow": null,
-  "pixie.state": null,
-  "pixie.send": { text: "今天有什么工作需要做？" },
-  "pixie.continue": { sessionPath: "C:/s.jsonl", text: "继续" },
-  "pixie.abort": null,
-  "pixie.transcript": { sessionPath: "C:/s.jsonl" },
   "pixie.dispatches": { limit: 20 },
   "pixie.usage": null,
+  "pixie.ensureCurrent": null,
   "pixie.reply": { dispatchId: "pix_abc", text: "选方案 A" },
   "pixie.setContext": { workspaces: ["C:/work/alpha"] },
   "pixie.newSegment": null,
@@ -376,12 +372,6 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "pixie.stopDispatch": { dispatchId: "pix_abc" },
   "pixie.retryDispatch": { dispatchId: "pix_abc", mode: "resume" },
   "pixie.listSessions": { cwd: "C:/work/alpha" },
-  "pixie.models": null,
-  "pixie.setModel": { model: "anthropic/claude-sonnet-4-5", thinkingLevel: "high" },
-  "pixie.rundown": null,
-  "pixie.compact": { instructions: "保留关键决策" },
-  "pixie.abortCompaction": null,
-  "pixie.setAutoCompaction": { enabled: true },
 };
 
 function contextFor(method: HostMethod): Record<string, unknown> {
@@ -690,25 +680,10 @@ function invalidParams(method: HostMethod): unknown {
     case "memo.getSyncConfig":
     case "memo.testSync":
     case "memo.syncNow":
-    case "pixie.state":
-    case "pixie.abort":
     case "pixie.usage":
-    case "pixie.models":
-    case "pixie.rundown":
-    case "pixie.abortCompaction":
       return { unexpected: true };
-    case "pixie.send":
-      return { text: "   " };
-    case "pixie.setModel":
-      return { model: 42 };
-    case "pixie.compact":
-      return { instructions: 42 };
-    case "pixie.setAutoCompaction":
-      return { enabled: "yes" };
-    case "pixie.continue":
-      return { sessionPath: "", text: "x" };
-    case "pixie.transcript":
-      return { sessionPath: "" };
+    case "pixie.ensureCurrent":
+      return { cwd: "", sessionId: "", sessionPath: "" };
     case "pixie.dispatches":
       return { limit: 0 };
     case "pixie.reply":

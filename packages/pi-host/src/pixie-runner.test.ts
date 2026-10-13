@@ -1,22 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   askDispatch,
-  configurePixieRuntime,
-  ensureCurrentSegment,
   ensurePixiePersonaFile,
   failDispatch,
   findDispatchBySession,
   hasActiveDispatchFor,
   listDispatches,
   parsePixieModelRef,
-  pixieRundown,
-  pixieSetModel,
-  pixieState,
   reactivateDispatchAfterReply,
   registerDispatch,
   resetPixieStateForTests,
   resolvePixieWorkspacePath,
-  sendPixieMessage,
   settleDispatch,
   pixieStaleMs,
   pixieSegmentMaxTurns,
@@ -27,11 +21,7 @@ import {
 import { buildDispatchTaskPrompt } from "./pixie-controller.js";
 import { buildPromptWithAttachments, toSdkImages } from "./agent-controller.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
-import type { ImageContent } from "@earendil-works/pi-ai";
 import { localDayKey } from "./pixie-usage.js";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp-agent.js";
-import { createTestModelServices } from "./test-helpers/model-runtime.js";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -41,11 +31,8 @@ function freshAgentDir(): string {
   return mkdtempSync(join(tmpdir(), "pixie-test-"));
 }
 
-const layouts: TempAgentLayout[] = [];
-
 afterEach(() => {
   resetPixieStateForTests();
-  for (const layout of layouts.splice(0)) layout.cleanup();
   delete process.env.PIABYSS_PIXIE_WORKSPACE;
   delete process.env.PIABYSS_PIXIE_STALE_MS;
   delete process.env.PIABYSS_PIXIE_MAX_TURNS;
@@ -88,33 +75,9 @@ describe("pixie delegation registry", () => {
     // Double-settle protection: both mutators reject an already-settled record.
     expect(failDispatch(record.id, "boom", agentDir)).toBeNull();
     expect(settleDispatch(record.id, "late report", "done", agentDir)).toBeNull();
-    // Backdate so the stale sweep (triggered by later pixieState calls) cannot
+    // Backdate so the stale sweep (triggered by later listDispatches calls) cannot
     // poison the ordering assertion below.
     (record as { createdAt: number }).createdAt = Date.now() - pixieStaleMs() - 60_000;
-  });
-
-  it("marks stale dispatches after the configured threshold", () => {
-    const agentDir = freshAgentDir();
-    const record = registerDispatch({
-      cwd: "C:/ws",
-      sessionId: "s3",
-      sessionPath: null,
-      task: "t",
-      agentDir,
-    });
-    // v4.1: the stale clock reads lastActiveAt ?? startedAt ?? createdAt.
-    const backdated = Date.now() - pixieStaleMs() - 1_000;
-    const mutable = record as unknown as {
-      createdAt: number;
-      startedAt: number | null;
-      lastActiveAt: number | null;
-    };
-    mutable.createdAt = backdated;
-    mutable.startedAt = backdated;
-    mutable.lastActiveAt = backdated;
-    const state = pixieState(agentDir);
-    const stale = state.dispatches.find((d) => d.id === record.id);
-    expect(stale?.stale).toBe(true);
   });
 
   it("lists dispatches newest first with a bound", async () => {
@@ -152,10 +115,32 @@ describe("pixie delegation registry", () => {
     settleDispatch(record.id, "done!", "done", agentDir);
     // Simulate a fresh Host process: wipe memory, reload from disk.
     resetPixieStateForTests();
-    const state = pixieState(agentDir);
-    const reloaded = state.dispatches.find((d) => d.id === record.id);
+    const reloaded = listDispatches(50, agentDir).find((d) => d.id === record.id);
     expect(reloaded?.status).toBe("reported");
     expect(reloaded?.report).toBe("done!");
+  });
+
+  it("marks stale dispatches after the configured threshold", () => {
+    const agentDir = freshAgentDir();
+    const record = registerDispatch({
+      cwd: "C:/ws",
+      sessionId: "s3",
+      sessionPath: null,
+      task: "t",
+      agentDir,
+    });
+    // v4.1: the stale clock reads lastActiveAt ?? startedAt ?? createdAt.
+    const backdated = Date.now() - pixieStaleMs() - 1_000;
+    const mutable = record as unknown as {
+      createdAt: number;
+      startedAt: number | null;
+      lastActiveAt: number | null;
+    };
+    mutable.createdAt = backdated;
+    mutable.startedAt = backdated;
+    mutable.lastActiveAt = backdated;
+    const stale = listDispatches(50, agentDir).find((d) => d.id === record.id);
+    expect(stale?.stale).toBe(true);
   });
 
   it("routes ask → awaiting_user → user reply → dispatched", () => {
@@ -173,12 +158,8 @@ describe("pixie delegation registry", () => {
     expect(asked?.question).toBe("选哪个方案？");
     expect(asked?.options).toEqual(["方案 A", "方案 B"]);
 
-    const state = pixieState(agentDir);
-    expect(state.askPending).toBe(true);
-
     const reply = reactivateDispatchAfterReply(record.id, "方案 A", agentDir);
     expect("record" in reply && reply.record.status).toBe("dispatched");
-    expect(pixieState(agentDir).askPending).toBe(false);
 
     // Reply on a non-awaiting record fails.
     expect("error" in reactivateDispatchAfterReply(record.id, "again", agentDir)).toBe(true);
@@ -243,19 +224,6 @@ describe("dispatch task prompt template", () => {
     expect(prompt).toContain("以用户指令为准");
     expect(prompt).toContain("不再等待用户输入");
     expect(prompt).toContain("需要用户决策");
-  });
-});
-
-describe("pixie timeline placeholder", () => {
-  it("renders an archived segment with empty messages instead of crashing", () => {
-    const agentDir = freshAgentDir();
-    // No sessions were ever created: the timeline is empty and the state is
-    // the neutral pre-first-message shape.
-    const state = pixieState(agentDir);
-    expect(state.resident).toBe(false);
-    expect(state.segments).toEqual([]);
-    expect(state.askPending).toBe(false);
-    expect(state.messages).toEqual([]);
   });
 });
 
@@ -326,229 +294,8 @@ describe("pixie persona file bootstrap", () => {
   });
 });
 
-describe("pixie restart resume", () => {
-  /**
-   * Write the timeline a running Host leaves behind: one OPEN segment pointer
-   * (endedAt=null) to a session file that is still on disk. `pixie.state`
-   * counts as resident only while that segment is actually back in memory.
-   */
-  function writeOpenSegment(agentDir: string, sessionPath: string): void {
-    const dir = join(agentDir, "piabyss", "pixie");
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, "timeline.json"),
-      JSON.stringify({
-        version: 1,
-        segments: [
-          {
-            id: "seg_restart",
-            sessionId: "sess_restart",
-            sessionPath,
-            startedAt: Date.now() - 60_000,
-            endedAt: null,
-            separator: null,
-            reason: null,
-            handoff: null,
-          },
-        ],
-      }),
-      "utf8",
-    );
-  }
-
-  it("宿主重启后按时间线重建当前段，resident 由 false 变 true", async () => {
-    const layout = createTempAgentLayout("piabyss-pixie-resume-");
-    layouts.push(layout);
-    const { modelRuntime } = await createTestModelServices(layout.agentDir);
-    configurePixieRuntime(modelRuntime);
-
-    // 重启前留下的现场：段会话真的写盘过（含一条用户消息）。
-    const pixieCwd = resolvePixieWorkspacePath(layout.agentDir);
-    mkdirSync(pixieCwd, { recursive: true });
-    const sessionManager = SessionManager.create(
-      pixieCwd,
-      join(layout.agentDir, "sessions", "pixie-test"),
-    );
-    sessionManager.appendMessage({
-      role: "user",
-      content: "重启前的一句话",
-      timestamp: Date.now(),
-    });
-    const sessionPath = sessionManager.getSessionFile();
-    expect(sessionPath).toBeTruthy();
-    resetPixieStateForTests(); // Host 重启：内存里的段没了，磁盘还在
-
-    writeOpenSegment(layout.agentDir, sessionPath!);
-
-    // 纯快照路径不重建（这就是「打个盹」按钮曾经被卡死的那个值）。
-    expect(pixieState(layout.agentDir).resident).toBe(false);
-    expect(pixieState(layout.agentDir).segments[0]?.messages[0]?.text).toBe("重启前的一句话");
-
-    const resumed = await ensureCurrentSegment(layout.agentDir);
-    expect(resumed).not.toBeNull();
-    const state = pixieState(layout.agentDir);
-    expect(state.resident).toBe(true);
-    expect(state.sessionPath).toBe(sessionPath);
-    expect(resumed!.record.id).toBe("seg_restart");
-    resumed!.session.dispose();
-  });
-
-  it("已经是内存里的段时直接返回，不重复打开", async () => {
-    const layout = createTempAgentLayout("piabyss-pixie-resident-");
-    layouts.push(layout);
-    const { modelRuntime } = await createTestModelServices(layout.agentDir);
-    configurePixieRuntime(modelRuntime);
-
-    const pixieCwd = resolvePixieWorkspacePath(layout.agentDir);
-    mkdirSync(pixieCwd, { recursive: true });
-    const sessionManager = SessionManager.create(
-      pixieCwd,
-      join(layout.agentDir, "sessions", "pixie-test"),
-    );
-    sessionManager.appendMessage({ role: "user", content: "hi", timestamp: Date.now() });
-    writeOpenSegment(layout.agentDir, sessionManager.getSessionFile()!);
-
-    const first = await ensureCurrentSegment(layout.agentDir);
-    const second = await ensureCurrentSegment(layout.agentDir);
-    expect(second).toBe(first);
-    first!.session.dispose();
-  });
-
-  it("恢复失败退化为归档占位，且不在每次轮询里重试", async () => {
-    const agentDir = freshAgentDir();
-    // 段指针指向一个写坏的会话文件（截断/半截落盘的现场）：open 必然抛错。
-    const broken = join(agentDir, "broken-session.jsonl");
-    writeFileSync(broken, "这不是一个合法的 pi 会话\n", "utf8");
-    writeOpenSegment(agentDir, broken);
-
-    await expect(ensureCurrentSegment(agentDir)).resolves.toBeNull();
-    expect(pixieState(agentDir).resident).toBe(false);
-    expect(pixieState(agentDir).segments[0]?.messages).toEqual([]);
-    // 第二次直接短路（resumeFailed 记住段 id），不会每次轮询都去开一遍文件。
-    await expect(ensureCurrentSegment(agentDir)).resolves.toBeNull();
-    expect(pixieState(agentDir).resident).toBe(false);
-  });
-
-  it("并发调用只打开一次会话（单飞）", async () => {
-    const layout = createTempAgentLayout("piabyss-pixie-singleflight-");
-    layouts.push(layout);
-    const { modelRuntime } = await createTestModelServices(layout.agentDir);
-    configurePixieRuntime(modelRuntime);
-
-    const pixieCwd = resolvePixieWorkspacePath(layout.agentDir);
-    mkdirSync(pixieCwd, { recursive: true });
-    const sessionManager = SessionManager.create(
-      pixieCwd,
-      join(layout.agentDir, "sessions", "pixie-test"),
-    );
-    sessionManager.appendMessage({ role: "user", content: "hi", timestamp: Date.now() });
-    writeOpenSegment(layout.agentDir, sessionManager.getSessionFile()!);
-    resetPixieStateForTests();
-
-    // 轮询与发送同时撞上来：两次调用拿到的必须是同一个运行时。
-    const [first, second] = await Promise.all([
-      ensureCurrentSegment(layout.agentDir),
-      ensureCurrentSegment(layout.agentDir),
-    ]);
-    expect(first).not.toBeNull();
-    expect(second).toBe(first);
-    first!.session.dispose();
-  });
-});
-
-describe("pixie rundown（pixie.rundown）", () => {
-  it("无驻留段时返回 null —— 读操作绝不为了统计而建段", async () => {
-    const agentDir = freshAgentDir();
-    await expect(pixieRundown(agentDir)).resolves.toBeNull();
-    const state = pixieState(agentDir);
-    expect(state.resident).toBe(false);
-    expect(state.segments).toEqual([]);
-  });
-});
-
-describe("pixie 段落模型选择（pixie.setModel）", () => {
-  async function layoutWithRuntime(prefix: string) {
-    const layout = createTempAgentLayout(prefix);
-    layouts.push(layout);
-    const { modelRuntime } = await createTestModelServices(layout.agentDir);
-    configurePixieRuntime(modelRuntime);
-    return layout;
-  }
-
-  it("非法格式（无斜杠 / 空 provider / 空 id）⇒ 明确报错，不落到 SDK", async () => {
-    const layout = await layoutWithRuntime("piabyss-pixie-setmodel-bad-");
-    for (const bad of ["gpt-4o", "/nope", "openai/"]) {
-      const out = await pixieSetModel(layout.agentDir, bad);
-      expect(out.ok).toBe(false);
-      expect(out.error).toContain("provider/id");
-    }
-    (await ensureCurrentSegment(layout.agentDir))?.session.dispose();
-  });
-
-  it("null 清除当前段模型选择（回落全局默认），current 归 null", async () => {
-    const layout = await layoutWithRuntime("piabyss-pixie-setmodel-clear-");
-    // 首次写操作会懒建一个段，这正是 clearModel 的作用对象。
-    const out = await pixieSetModel(layout.agentDir, null);
-    expect(out.ok).toBe(true);
-    expect(out.error).toBeNull();
-    expect(out.current).toBeNull();
-    (await ensureCurrentSegment(layout.agentDir))?.session.dispose();
-  });
-
-  it("格式合法但 Provider 未启用 ⇒ ok=false 且保留当前选择", async () => {
-    const layout = await layoutWithRuntime("piabyss-pixie-setmodel-disabled-");
-    const out = await pixieSetModel(layout.agentDir, "no-such-provider/some-model");
-    expect(out.ok).toBe(false);
-    expect(out.error).toBeTruthy();
-    (await ensureCurrentSegment(layout.agentDir))?.session.dispose();
-  });
-});
-
-describe("pixie 发送附件（pixie.send）", () => {
-  it("图片按 SDK ImageContent 透传到 session.prompt 的 images 选项", async () => {
-    const layout = createTempAgentLayout("piabyss-pixie-send-img-");
-    layouts.push(layout);
-    const { modelRuntime } = await createTestModelServices(layout.agentDir);
-    configurePixieRuntime(modelRuntime);
-
-    // 先懒建一个段（写操作），再把同一个运行时的 prompt 换成 spy。
-    await pixieSetModel(layout.agentDir, null);
-    const runtime = await ensureCurrentSegment(layout.agentDir);
-    expect(runtime).not.toBeNull();
-    const promptSpy = vi.fn(async () => undefined);
-    (runtime!.session as unknown as { prompt: unknown }).prompt = promptSpy;
-
-    const image: ImageContent = { type: "image", data: "aGVsbG8=", mimeType: "image/png" };
-    const out = await sendPixieMessage({ agentDir: layout.agentDir, text: "看看这张图", images: [image] });
-    expect(out.ok).toBe(true);
-    expect(promptSpy).toHaveBeenCalledTimes(1);
-    const [promptText, options] = promptSpy.mock.calls[0] as unknown as [
-      string,
-      { images?: unknown[] } | undefined,
-    ];
-    expect(promptText).toContain("看看这张图");
-    expect(options?.images).toEqual([image]);
-    runtime!.session.dispose();
-  });
-
-  it("不带图片时不传 images 选项（保持既有 prompt 调用形态）", async () => {
-    const layout = createTempAgentLayout("piabyss-pixie-send-plain-");
-    layouts.push(layout);
-    const { modelRuntime } = await createTestModelServices(layout.agentDir);
-    configurePixieRuntime(modelRuntime);
-
-    await pixieSetModel(layout.agentDir, null);
-    const runtime = await ensureCurrentSegment(layout.agentDir);
-    const promptSpy = vi.fn(async () => undefined);
-    (runtime!.session as unknown as { prompt: unknown }).prompt = promptSpy;
-
-    await sendPixieMessage({ agentDir: layout.agentDir, text: "只有文字" });
-    const [, options] = promptSpy.mock.calls[0] as unknown as [string, unknown];
-    expect(options).toBeUndefined();
-    runtime!.session.dispose();
-  });
-
-  it("toSdkImages 把协议图片映射成 SDK ImageContent（与 agent.prompt 同一转换）", () => {
+describe("agent prompt attachments（与 agent.prompt 共用）", () => {
+  it("toSdkImages 把协议图片映射成 SDK ImageContent", () => {
     expect(toSdkImages([{ mediaType: "image/png", data: "aGk=" }])).toEqual([
       { type: "image", mimeType: "image/png", data: "aGk=" },
     ]);
@@ -556,7 +303,7 @@ describe("pixie 发送附件（pixie.send）", () => {
     expect(toSdkImages(undefined)).toBeUndefined();
   });
 
-  it("buildPromptWithAttachments 把 attachmentIds 解析成引用块（与 agent.prompt 同一实现）", async () => {
+  it("buildPromptWithAttachments 把 attachmentIds 解析成引用块", async () => {
     const factory = {
       deps: {
         attachmentStore: {

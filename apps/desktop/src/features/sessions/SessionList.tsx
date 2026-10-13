@@ -111,10 +111,13 @@ export function SessionList({
   showCreateAction = true,
   collapsed = false,
   onToggleCollapsed,
+  keepPage = false,
 }: {
   showCreateAction?: boolean;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
+  /** 不因打开会话而跳回 chat 页（小精灵弹窗内嵌时用：留在 pixie 页）。 */
+  keepPage?: boolean;
 }) {
   const t = useT();
   const host = useAppStore((s) => s.host);
@@ -365,7 +368,7 @@ export function SessionList({
     if (!current.host || !current.workspace || sessionMutationPending || sessionOpenBlocked) {
       return;
     }
-    if (current.page !== "chat") current.setPage("chat");
+    if (!keepPage && current.page !== "chat") current.setPage("chat");
     if (!sessionOpenQueue.current?.isRunning() && current.session?.sessionPath === path) {
       acknowledgeVisitedSession(current.session.sessionId);
       return;

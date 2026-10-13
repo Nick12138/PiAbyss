@@ -11,7 +11,6 @@ import { MemoSyncHeaderActions } from "../features/memo/MemoSyncHeaderActions";
 import { MemoSyncStatusDot } from "../features/memo/memo-sync-status";
 import { SubagentTitleMenu } from "../features/subagents/SubagentTitleMenu";
 import { PixieNapButton } from "../features/pixie/PixieNapButton";
-import { usePixieViewStore } from "../features/pixie/pixie-store";
 import { clampSessionTitleForDisplay } from "../lib/session-title-display";
 
 /** Single full-width app-level top bar replacing the three independent header
@@ -40,10 +39,13 @@ export function AppTopBar({
   const activeSubagentNodeId = useAppStore((s) => s.activeSubagentNodeId);
   const setActiveSubagent = useAppStore((s) => s.setActiveSubagent);
   const platform = resolveWindowControlsPlatform();
-  // Pixie header state, hoisted here when the page stopped drawing its own
-  // header (title + liveness dot + model name now live in this bar).
-  const pixieRunning = usePixieViewStore((s) => s.state?.running ?? false);
-  const pixieModelName = usePixieViewStore((s) => s.state?.modelName ?? null);
+  // Pixie header state: liveness/model come from the standard session channel.
+  const pixieRunning = useAppStore((s) =>
+    s.page === "pixie" && s.session ? !s.session.isIdle : false,
+  );
+  const pixieModelName = useAppStore((s) =>
+    s.page === "pixie" ? (s.session?.model?.name ?? null) : null,
+  );
 
   const isNewConversation = Boolean(
     session && session.messages.length === 0 && session.isIdle && !sessionTreeNavigated,

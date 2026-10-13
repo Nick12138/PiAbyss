@@ -361,10 +361,7 @@ function looksBinary(text: string): boolean {
 
 type CompletionItem = { insert: string; label: string; detail?: string };
 
-function builtinCompletionItems(
-  t: Translate,
-  variant: "session" | "pixie" = "session",
-): CompletionItem[] {
+function builtinCompletionItems(t: Translate): CompletionItem[] {
   const descriptions = {
     compact: "composerBuiltinCompact",
     session: "composerBuiltinSession",
@@ -372,12 +369,7 @@ function builtinCompletionItems(
     export: "composerBuiltinExport",
     login: "composerBuiltinLogin",
   } as const;
-  // 小精灵只有 /compact 有对应动作；其余内建命令是会话专属，不在此列出。
-  const commands =
-    variant === "pixie"
-      ? BUILTIN_COMMANDS.filter((command) => command.name === "compact")
-      : BUILTIN_COMMANDS;
-  return commands.map((command) => ({
+  return BUILTIN_COMMANDS.map((command) => ({
     insert: `/${command.name} `,
     label: `/${command.name}`,
     detail: [
@@ -452,7 +444,6 @@ export function Composer({
   const t = useT();
   const locale = useLocale();
   const runtime = useComposerRuntime();
-  const sessionVariant = runtime.variant === "session";
   const host = runtime.host;
   const session = runtime.session;
   const workspace = useAppStore((s) => s.workspace);
@@ -464,7 +455,7 @@ export function Composer({
   );
   const extensionUiRequest = useAppStore((s) => s.extensionUiRequest);
   const extensionDecisionGroups = useAppStore((s) => s.extensionDecisionGroups);
-  const draftTarget = sessionVariant ? draftTargetFor(workspace, session) : null;
+  const draftTarget = draftTargetFor(workspace, session);
   const draftKey = runtime.draftKey;
   const text = useAppStore((s) => (draftKey ? (s.draftTexts[draftKey] ?? "") : ""));
   // Injected prompt references (memo "handle now"): rendered as `@` chips and
@@ -546,10 +537,12 @@ export function Composer({
   const ime = useImeComposition();
   const busy = session ? !session.isIdle : false;
   const sessionId = session?.sessionId ?? null;
-  // 扩展 UI 决策拦截仅对普通会话生效：小精灵页不渲染任何扩展控件。
-  const decisionBlocked =
-    sessionVariant &&
-    isExtensionDecisionBlockingSession(extensionUiRequest, extensionDecisionGroups, sessionId);
+  // 扩展 UI 决策拦截。
+  const decisionBlocked = isExtensionDecisionBlockingSession(
+    extensionUiRequest,
+    extensionDecisionGroups,
+    sessionId,
+  );
   const blockedSessionId = decisionBlocked ? sessionId : null;
 
   const dismissCompletion = useCallback(() => {
@@ -558,8 +551,7 @@ export function Composer({
   }, []);
 
   /**
-   * 写入当前草稿文本：普通会话走 draft-target 持久化；小精灵落到固定内存键
-   * （不参与 draft-target 持久化），保证共享输入框两条路径行为一致。
+   * 写入当前草稿文本：走 draft-target 持久化。
    */
   function writeDraft(value: string) {
     if (draftTarget) {
@@ -788,10 +780,9 @@ export function Composer({
     items: CompletionItem[];
   }> {
     if (!host || !workspace || !session) {
-      // 小精灵没有会话作用域的 host 命令源，仍提供内建命令补全。
       return {
         cacheKey: null,
-        items: sessionVariant ? [] : builtinCompletionItems(t, runtime.variant),
+        items: builtinCompletionItems(t),
       };
     }
     const key = `${locale}:${session.sessionId}:${session.revision}`;
@@ -803,7 +794,7 @@ export function Composer({
       activeSessionContext(host, workspace, session),
       null,
     );
-    const builtins = builtinCompletionItems(t, runtime.variant);
+    const builtins = builtinCompletionItems(t);
     if (!res.ok) return { cacheKey: null, items: builtins };
     const kindLabel = {
       template: t("composerCommandKindPrompt"),
@@ -1574,8 +1565,7 @@ export function Composer({
 
   async function send() {
     if (!host || disabled || decisionBlocked) return;
-    // 普通会话需要完整的 workspace/draft-target；小精灵两者都没有。
-    if (sessionVariant && (!workspace || !session || !draftTarget)) return;
+    if (!workspace || !session || !draftTarget) return;
     if (
       documents.some((document) => !isDocumentSendable(document.status)) ||
       (!text.trim() &&
@@ -1610,7 +1600,7 @@ export function Composer({
       }
       return;
     }
-    if (sessionVariant) {
+    {
       if (builtin?.name === "session") {
         if (draftTarget) deleteDraft(draftTarget);
         dismissCompletion();
@@ -1663,9 +1653,6 @@ export function Composer({
     if (draftTarget) {
       setDraftAttachmentSnapshot(draftTarget, []);
       setDraftReferences(draftTarget, []);
-    } else {
-      // 小精灵：草稿是固定内存键，发送后即清空。
-      writeDraft("");
     }
     const attachmentBlocks: string[] = sentFiles.map((f) =>
       f.kind === "path"
@@ -1762,24 +1749,24 @@ export function Composer({
         return;
       }
 
-      // 优化回显仅对普通会话有意义（小精灵的转写来自 pixie.state）。
-      if (sessionVariant) appendOptimisticMessage();
+      // 优化回显：立即展示用户气泡，不等 Host 回显 message_start。
+      appendOptimisticMessage();
       const res = await runtime.send({
         text: outgoingText,
         images: imagesPayload,
         attachmentIds,
       });
       if (!res.ok) {
-        if (sessionVariant) removeOptimisticMessage();
+        removeOptimisticMessage();
         failWith(res.error);
       } else {
         if (sendReceipt) commitDraftSend(sendReceipt);
         bindSentMemoHandoffs();
         // An accepted prompt means credentials resolved; drop any stale banner.
-        if (sessionVariant) setAuthBlocked(null);
+        setAuthBlocked(null);
       }
     } catch (error) {
-      if (sessionVariant) removeOptimisticMessage();
+      removeOptimisticMessage();
       notifyOperationFailure(error, t("composerSendFailed"));
       restoreDraft();
     }
@@ -1787,7 +1774,7 @@ export function Composer({
 
   async function abort() {
     if (!host) return;
-    if (sessionVariant && (!workspace || !session)) return;
+    if (!workspace || !session) return;
     await runtime.abort();
   }
 
@@ -1821,14 +1808,14 @@ export function Composer({
           <p className="h-4" aria-hidden />
         </div>
       )}
-      {sessionVariant && <ShellJobsBar />}
-      {sessionVariant && <QueuePanel />}
+      <ShellJobsBar />
+      <QueuePanel />
       <div
         ref={extensionWidgetAnchorRef}
         className="conversation-content-width relative mx-auto w-full"
         data-extension-widget-anchor
       >
-        {sessionVariant && <ExtensionStatusStrip />}
+        <ExtensionStatusStrip />
         <div
           className={`chat-composer-surface rounded-xl border-[1.5px] bg-surface-raised p-2 shadow-sm transition-colors ${
             dragOver ? "border-accent" : "border-border"
@@ -2268,12 +2255,10 @@ export function Composer({
             >
               <Paperclip size={14} />
             </button>
-            {sessionVariant && <TodoPopoverButton />}
-            {sessionVariant && (
-              <ExtensionWidgetsButton open={extensionWidgetsOpen} onToggle={toggleExtensionWidgets} />
-            )}
+            <TodoPopoverButton />
+            <ExtensionWidgetsButton open={extensionWidgetsOpen} onToggle={toggleExtensionWidgets} />
             <div className="ml-auto flex items-center gap-2.5">
-              {sessionVariant && isNewConversation && <ComposerToolsPicker />}
+              {isNewConversation && <ComposerToolsPicker />}
               <ModelControls />
               {busy ? (
                 canSend ? (
@@ -2314,19 +2299,15 @@ export function Composer({
             </div>
           </div>
         </div>
-        {sessionVariant && (
-          <ExtensionWidgetsPopover
-            anchorRef={extensionWidgetAnchorRef}
-            open={extensionWidgetsOpen}
-            onClose={closeExtensionWidgets}
-          />
-        )}
-        {sessionVariant && (
-          <>
-            <SessionStatsModal open={statsOpen} onClose={() => setStatsOpen(false)} />
-            <ForkModal open={forkOpen} onClose={() => setForkOpen(false)} />
-          </>
-        )}
+        <ExtensionWidgetsPopover
+          anchorRef={extensionWidgetAnchorRef}
+          open={extensionWidgetsOpen}
+          onClose={closeExtensionWidgets}
+        />
+        <>
+          <SessionStatsModal open={statsOpen} onClose={() => setStatsOpen(false)} />
+          <ForkModal open={forkOpen} onClose={() => setForkOpen(false)} />
+        </>
       </div>
     </div>
   );
