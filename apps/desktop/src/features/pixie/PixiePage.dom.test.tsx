@@ -76,10 +76,12 @@ describe("Pixie 打个盹按钮（顶部栏，v5 标准通道）", () => {
     expect(napButton()).toBeDisabled();
   });
 
-  it("宿主就绪 + 会话空闲时可点，提示是常规的换段说明", () => {
+  it("宿主就绪 + 会话有内容且空闲时可点，提示是常规的换段说明", () => {
     useAppStore.setState({
       host: { hostInstanceId: "h1" } as never,
-      session: sessionSnapshot(),
+      session: sessionSnapshot({
+        messages: [{ role: "user", content: "hi" } as never],
+      }),
     });
     render(<PixieNapButton />);
     expect(napButton()).not.toBeDisabled();
@@ -96,9 +98,10 @@ describe("Pixie 打个盹按钮（顶部栏，v5 标准通道）", () => {
     expect(napButton()).toHaveAttribute("title", t("pixieNapHintBusy"));
   });
 
-  it("没有活动会话但宿主就绪时可点（newSegment 本身幂等）", () => {
+  it("空会话（新建会话界面）禁用——没有可收尾的内容", () => {
     useAppStore.setState({ host: { hostInstanceId: "h1" } as never, session: null });
     render(<PixieNapButton />);
-    expect(napButton()).not.toBeDisabled();
+    expect(napButton()).toBeDisabled();
+    expect(napButton()).toHaveAttribute("title", t("pixieNapHintEmpty"));
   });
 });

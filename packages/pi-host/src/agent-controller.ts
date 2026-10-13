@@ -41,7 +41,7 @@ import {
   diffPromptCacheFingerprints,
   type PromptCacheFingerprint,
 } from "./prompt-cache-contract.js";
-import { maybeWrapPixiePrompt } from "./pixie-agent-runner.js";
+import { isPixieWorkspaceCwd, maybeWrapPixiePrompt } from "./pixie-agent-runner.js";
 
 /** Protocol images ({mediaType,data}) → SDK ImageContent ({type,mimeType,data}). */
 export function toSdkImages(images: SerializableImage[] | undefined): ImageContent[] | undefined {
@@ -151,6 +151,11 @@ function startDetachedPrompt(args: {
   text: string;
   images?: ImageContent[];
   streamingBehavior?: "steer" | "followUp";
+  /**
+   * 小精灵会话传 true：段名不在首条消息时自动起（误差大），统一等打盹
+   * 收尾时按整段内容定（pixie-agent-runner 的 segmentSessionName）。
+   */
+  suppressProvisionalTitle?: boolean;
 }): string {
   let runStatePublished = false;
   let detachedTaskStarted = false;
@@ -189,7 +194,7 @@ function startDetachedPrompt(args: {
     const runIdentity = args.server.getIdentity();
     const visibleText = stripAttachmentReferenceBlocks(args.text);
     const provisionalTitle =
-      args.session.sessionName?.trim() || !visibleText.trim()
+      args.suppressProvisionalTitle || args.session.sessionName?.trim() || !visibleText.trim()
         ? null
         : createProvisionalSessionTitle(visibleText);
     const titleSessionId = args.server.identity.sessionId;
@@ -578,6 +583,8 @@ export function createAgentHandlers(
         text: prompt.text,
         images: promptImages,
         streamingBehavior: params.streamingBehavior,
+        // 小精灵段名不打首条消息上——等打盹收尾时再定。
+        suppressProvisionalTitle: isPixieWorkspaceCwd(factory, g.canonicalCwd),
       });
       commitPromptAttachments(factory, server.identity.sessionId!, prompt.attachmentIds);
 
@@ -1021,6 +1028,10 @@ export function createAgentHandlers(
               operationLock,
               text: item,
               images: promptImages,
+              suppressProvisionalTitle: isPixieWorkspaceCwd(
+                factory,
+                factory.getGraph()?.canonicalCwd ?? "",
+              ),
             });
           } catch (error) {
             operationLock.release(ctx.id);

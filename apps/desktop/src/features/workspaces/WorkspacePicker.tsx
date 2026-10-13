@@ -44,6 +44,8 @@ import { TelegramWorkspaceRow } from "../telegram/TelegramWorkspaceRow";
 import { useTelegramViewStore, useTelegramWorkspaceActive } from "../telegram/telegram-view-store";
 import { isSameTelegramPath } from "../../lib/telegram-path";
 import { loadTelegramWorkspaceDisplayName } from "../telegram/telegram-view-store";
+import { usePixieViewStore } from "../pixie/pixie-store";
+import { isSamePixiePath } from "../../lib/pixie-path";
 
 export function workspaceDisplayName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? "Workspace";
@@ -131,6 +133,8 @@ export function WorkspacePicker() {
   const telegramWorkspacePath = useTelegramViewStore((s) => s.workspacePath);
   const telegramProfileConfigured = useTelegramViewStore((s) => s.profile?.configured ?? false);
   const telegramProfile = useTelegramViewStore((s) => s.profile);
+  // 小精灵工作区路径（pixie.ensureCurrent 之后可用；自启动让它在启动期就有值）。
+  const pixieWorkspacePath = usePixieViewStore((s) => s.current?.cwd ?? null);
   const workspace = useAppStore((s) => s.workspace);
   const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces ?? NO_WORKSPACES);
   const switchTarget = useAppStore((s) => s.workspaceSwitchTarget);
@@ -227,10 +231,13 @@ export function WorkspacePicker() {
 
   // Self-heal: whatever workspace is active (restored, picked, or set by the
   // host) always appears in the persistent list. The telegram workspace is a
-  // first-class row of its own, never a folder entry — keep it out.
+  // first-class row of its own, never a folder entry — keep it out. The pixie
+  // workspace likewise never joins the regular list (it is entered only via
+  // the pixie page, and the picker must not select anything while on it).
   useEffect(() => {
     if (!currentCwd) return;
     if (isSameTelegramPath(currentCwd, telegramWorkspacePath)) return;
+    if (isSamePixiePath(currentCwd, pixieWorkspacePath)) return;
     const next = replaceKnownWorkspace(knownWorkspaces, requestedCwd ?? currentCwd, currentCwd);
     if (
       next.length === knownWorkspaces.length &&
@@ -241,7 +248,18 @@ export function WorkspacePicker() {
     void persistDesktopSettings({
       knownWorkspaces: next,
     }).catch(notifyDesktopSettingsSaveFailure);
-  }, [currentCwd, knownWorkspaces, requestedCwd, telegramWorkspacePath]);
+  }, [currentCwd, knownWorkspaces, requestedCwd, telegramWorkspacePath, pixieWorkspacePath]);
+
+  // 清理历史遗留：旧版本曾把 pixie 工作区持久化进 knownWorkspaces，
+  // 路径已知后随时把它摘掉（自启动后启动期即可知）。
+  useEffect(() => {
+    if (!pixieWorkspacePath) return;
+    const stale = knownWorkspaces.find((entry) => isSamePixiePath(entry, pixieWorkspacePath));
+    if (!stale) return;
+    void persistDesktopSettings({
+      knownWorkspaces: removeKnownWorkspace(knownWorkspaces, stale),
+    }).catch(notifyDesktopSettingsSaveFailure);
+  }, [knownWorkspaces, pixieWorkspacePath]);
 
   // Live activity for every workspace Host in the pool, including background
   // ones whose stdout is not routed to the renderer. Refetch on mount, on
@@ -478,22 +496,29 @@ export function WorkspacePicker() {
   }
 
   // Render the active workspace even before self-heal persists it. The
-  // telegram workspace is rendered by its own row, so folder rows exclude it.
+  // telegram workspace is rendered by its own row and the pixie workspace is
+  // never a regular entry (its presence would read as a second "selected
+  // pixie" while the pixie page holds the foreground), so folder rows exclude
+  // both.
   const listed = (
     currentCwd ? addKnownWorkspace(knownWorkspaces, currentCwd) : knownWorkspaces
-  ).filter((path) => !isSameTelegramPath(path, telegramWorkspacePath));
+  )
+    .filter((path) => !isSameTelegramPath(path, telegramWorkspacePath))
+    .filter((path) => !isSamePixiePath(path, pixieWorkspacePath));
 
   // Collapsed-header summary of the current selection so the user can tell
   // which workspace is active without expanding the list. Matches the row
   // labels: folder rows use the folder name; the telegram row uses its
-  // display name (rename override > bot handle). Suppressed on the pixie
-  // page — the summary would otherwise read as a second "selected pixie".
-  const collapsedActivePath = onPixiePage
+  // display name (rename override > bot handle). Suppressed while the pixie
+  // page (or the pixie workspace itself) holds the foreground — the summary
+  // would otherwise read as a second "selected pixie".
+  const pixieForeground = onPixiePage || isSamePixiePath(currentCwd, pixieWorkspacePath);
+  const collapsedActivePath = pixieForeground
     ? null
     : telegramActive
       ? telegramWorkspacePath
       : currentCwd;
-  const collapsedActiveName = onPixiePage
+  const collapsedActiveName = pixieForeground
     ? null
     : telegramActive
       ? (loadTelegramWorkspaceDisplayName() ??

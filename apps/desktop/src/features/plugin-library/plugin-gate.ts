@@ -10,6 +10,22 @@ const PACKAGE_LIST_TIMEOUT_MS = 60_000;
 
 type PluginStatus = "enabled" | "disabled" | "not-installed" | "unknown";
 
+/** A status backed by loaded catalog + package data — never a loading gap. */
+type DefinitivePluginStatus = Exclude<PluginStatus, "unknown">;
+
+/**
+ * Sticky record of the last definitive status per plugin, scoped to the host
+ * instance. The package snapshot is workspace-scoped: switching workspaces
+ * (and the pixie page's own foreground switch) drops `packages` to null for
+ * a window, which used to flip `usePluginEnabled` to false mid-switch — the
+ * App-level guard then kicked the user off the pixie page and the unmount
+ * cleanup switched the workspace right back (the "pixie 打不开 + 工作区来回
+ * 跳" bug). A transient "unknown" (catalog/packages still loading) must not
+ * regress an already-observed definitive answer; definitive answers always
+ * overwrite (toggling a plugin in the library takes effect immediately).
+ */
+let stickyStatuses: { hostId: string; statuses: Map<string, DefinitivePluginStatus> } | null = null;
+
 /** Pure derivation: the feature entry shows only while the plugin is
  *  installed AND all of its extension resources are enabled. */
 function pluginStatus(
@@ -104,8 +120,29 @@ export function usePluginCatalogData(): {
  *
  * Used to hide sidebar entries whose backing protocol handlers the Host gates
  * on the same plugin state (memo, pixie, schedule).
+ *
+ * Transient "unknown" windows (catalog or packages still loading — e.g. the
+ * package snapshot drop while switching workspaces) fall back to the last
+ * definitive status observed for this host instance, so the entry (and any
+ * page guard consuming this) stays stable across the switch instead of
+ * flickering off and on.
  */
 export function usePluginEnabled(pluginId: string): boolean {
   const { catalog, packages } = usePluginCatalogData();
-  return pluginStatus(pluginId, catalog, packages) === "enabled";
+  const hostId = useAppStore((s) => s.host?.hostInstanceId ?? null);
+  const status = pluginStatus(pluginId, catalog, packages);
+
+  // Record definitive answers at commit time (render stays pure).
+  useEffect(() => {
+    if (hostId === null || status === "unknown") return;
+    if (stickyStatuses?.hostId !== hostId) stickyStatuses = { hostId, statuses: new Map() };
+    stickyStatuses.statuses.set(pluginId, status);
+  }, [hostId, pluginId, status]);
+
+  const sticky =
+    hostId !== null && stickyStatuses?.hostId === hostId
+      ? stickyStatuses.statuses.get(pluginId)
+      : undefined;
+  const resolved = status !== "unknown" ? status : sticky;
+  return resolved === "enabled";
 }

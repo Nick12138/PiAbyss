@@ -21,6 +21,7 @@ import { MemoPage } from "../features/memo/MemoPage";
 import { requestMemoReveal } from "../features/memo/memo-reveal";
 import { openMemoWithAgentById } from "../features/memo/memo-agent";
 import { PixiePage } from "../features/pixie/PixiePage";
+import { startPixieAutostart } from "../features/pixie/pixie-autostart";
 import { usePluginEnabled } from "../features/plugin-library/plugin-gate";
 
 /** The plugin-library entries backing the Memo and Pixie pages. */
@@ -1435,6 +1436,11 @@ export function App() {
 
   // App-level schedule push: polls the plugin's notify-queue on every page.
   useEffect(() => startSchedulePushPolling(), []);
+
+  // 小精灵自启动：宿主就绪后后台确保 pixie 工作区图与会话段就绪并驻留
+  // （插件启用才真正生效，Host 侧门控；宿主重启后自动重新拉起）。
+  // 点击「小精灵」因此不再依赖先切工作区冷启动。见 pixie-autostart.ts。
+  useEffect(() => startPixieAutostart(), []);
 
   return (
     <div

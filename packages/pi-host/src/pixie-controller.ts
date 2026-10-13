@@ -1339,7 +1339,12 @@ export function createPixieControlPlaneDeps(factory: WorkspaceGraphFactory): Pix
       return listPixieSessions(agentDir, cwd);
     },
     rest: async (args) =>
-      requestPixieRest(factory, { agentDir, phrase: args.phrase, handoff: args.handoff }),
+      requestPixieRest(factory, {
+        agentDir,
+        phrase: args.phrase,
+        handoff: args.handoff,
+        title: args.title,
+      }),
     inject: async (args) =>
       injectPixieMessage(factory, {
         agentDir,

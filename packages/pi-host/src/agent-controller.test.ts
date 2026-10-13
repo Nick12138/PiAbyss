@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Model } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createAgentHandlers, summarizeModel } from "./agent-controller.js";
+import { resetPixieStateForTests, resolvePixieWorkspacePath } from "./pixie-agent-runner.js";
 import { AgentOperationLock, TryMutex } from "./locks.js";
 import { GraphOperationRegistry } from "./operation-lifecycle.js";
 import type { PiHostServer } from "./server.js";
@@ -448,6 +452,37 @@ describe("agent.prompt startup", () => {
     expect(fixture.factory.currentRunId).toBeNull();
     expect(fixture.server.getPhase()).toBe("ready");
     expect(fixture.session.prompt).not.toHaveBeenCalled();
+  });
+
+  it("pixie 会话不走「新建即自动起名」：段名等打盹收尾再定", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "pixie-title-test-"));
+    try {
+      const fixture = stableHandlerFixture(Promise.resolve());
+      (fixture.session as unknown as { sessionName?: string }).sessionName = undefined;
+      // 把 fixture 工厂指向小精灵工作区：deps.agentDir + 恒等 canonicalizeCwd，
+      // 图的 canonicalCwd 精确等于 resolvePixieWorkspacePath(agentDir)。
+      const factory = fixture.factory as unknown as Record<string, unknown>;
+      factory.deps = { agentDir };
+      factory.canonicalizeCwd = (cwd: string) => cwd;
+      fixture.graph.canonicalCwd = resolvePixieWorkspacePath(agentDir);
+      const handler = createAgentHandlers(fixture.factory)["agent.prompt"]!;
+
+      const outcome = await handler({
+        id: "prompt-pixie-no-autotitle",
+        context: {},
+        params: { text: "你好，小精灵" },
+      } as never);
+
+      expect("error" in outcome).toBe(false);
+      await vi.waitFor(() => expect(fixture.session.prompt).toHaveBeenCalledOnce());
+      // 不在首条消息上起临时标题，也没有后续的 LLM 精修——段名由打盹
+      // 收尾（rotateToNewSession → segmentSessionName）按整段内容定。
+      expect(fixture.factory.setActiveSessionName).not.toHaveBeenCalled();
+      expect(fixture.factory.refineActiveSessionName).not.toHaveBeenCalled();
+    } finally {
+      resetPixieStateForTests();
+      rmSync(agentDir, { recursive: true, force: true });
+    }
   });
 
   it("keeps the phase agentBusy when the active run settles but a parked workspace still runs", async () => {

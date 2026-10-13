@@ -16,6 +16,7 @@ import {
   pixieStaleMs,
   pixieSegmentMaxTurns,
   pixieTranscriptFrom,
+  segmentSessionName,
   setPixieContext,
   getKnownWorkspaces,
 } from "./pixie-agent-runner.js";
@@ -471,5 +472,26 @@ describe("agent prompt attachments（与 agent.prompt 共用）", () => {
     expect(out.text).toContain('<piabyss-attachments version="1">');
     expect(out.text).toContain("manual.pdf");
     expect(out.attachmentIds).toEqual(["44444444-4444-4444-8444-444444444444"]);
+  });
+});
+
+describe("segmentSessionName（打盹归档名）", () => {
+  it("title 优先于 handoff，handoff 优先于睡觉短语；空串视同缺省", () => {
+    expect(segmentSessionName("整理三站价格表", "下一段继续对价", "打个盹~")).toBe(
+      "整理三站价格表",
+    );
+    expect(segmentSessionName(null, "上一段在改 OKXBot 前端", "打个盹~")).toBe(
+      "上一段在改 OKXBot 前端",
+    );
+    expect(segmentSessionName("  ", "", "我先打个盹~")).toBe("我先打个盹~");
+    expect(segmentSessionName(null, null, "  小憩片刻 💤  ")).toBe("小憩片刻 💤");
+  });
+
+  it("压成单行并按 40 字截断（超出加省略号）", () => {
+    expect(segmentSessionName("多\n行\r\n标  题", null, "短语")).toBe("多 行 标 题");
+    const long = "很长".repeat(30); // 60 字
+    expect(segmentSessionName(long, null, "短语")).toBe(`${"很长".repeat(20)}…`);
+    const fits = "刚好".repeat(20); // 40 字
+    expect(segmentSessionName(fits, null, "短语")).toBe(fits);
   });
 });

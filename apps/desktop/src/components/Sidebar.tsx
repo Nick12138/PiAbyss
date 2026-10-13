@@ -591,9 +591,8 @@ export function SidebarLayout({
             <div className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto px-2 pb-3">
               {telegramViewActive ? (
                 <TelegramSessionList />
-              ) : page === "pixie" ? /* 小精灵页：会话列表收进页面自己的顶栏按钮 + 弹窗（见
-                    PixieSessionsButton），侧边栏底部不再出现任何选中态。 */
-              null : (
+              ) : page === "pixie" /* 小精灵页：会话列表收进页面自己的顶栏按钮 + 点击浮层（见
+                    PixieSessionsButton），侧边栏底部不再出现任何选中态。 */ ? null : (
                 <SessionList
                   showCreateAction={false}
                   collapsed={sessionsCollapsed}

@@ -179,8 +179,9 @@ describe("pixie control-plane endpoints", () => {
     }
   });
 
-  it("POST /api/pixie/rest forwards optional phrase/handoff", async () => {
-    const seen: Array<{ phrase?: string | null; handoff?: string | null }> = [];
+  it("POST /api/pixie/rest forwards optional title/phrase/handoff", async () => {
+    const seen: Array<{ phrase?: string | null; handoff?: string | null; title?: string | null }> =
+      [];
     const d = deps({
       rest: async (args) => {
         seen.push(args);
@@ -194,11 +195,11 @@ describe("pixie control-plane endpoints", () => {
       d,
       "POST",
       PIXIE_REST_PATH,
-      JSON.stringify({ phrase: "先睡啦", handoff: "交接" }),
+      JSON.stringify({ title: "整理三站价格表", phrase: "先睡啦", handoff: "交接" }),
     );
     expect(full.status).toBe(200);
     expect(full.body).toEqual({ ok: true });
-    expect(seen).toEqual([{}, { phrase: "先睡啦", handoff: "交接" }]);
+    expect(seen).toEqual([{}, { title: "整理三站价格表", phrase: "先睡啦", handoff: "交接" }]);
   });
 
   it("POST /api/pixie/inject forwards source/text (gateway预留)", async () => {
@@ -490,6 +491,11 @@ describe("pixie control-plane body parsers", () => {
       args: { phrase: "睡" },
     });
     expect(parseRestBody(JSON.stringify({ phrase: 42 })).ok).toBe(false);
+    expect(parseRestBody(JSON.stringify({ title: "整理价格表" }))).toEqual({
+      ok: true,
+      args: { title: "整理价格表" },
+    });
+    expect(parseRestBody(JSON.stringify({ title: 42 })).ok).toBe(false);
   });
 
   it("parseInjectBody validates the source enum", () => {

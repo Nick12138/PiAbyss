@@ -1958,8 +1958,11 @@ export const zh: Record<MessageKey, string> = {
   pixieNapButton: "打个盹",
   pixieNapHint: "结束当前会话段，小精灵会写一句交接后开启新段",
   pixieNapHintBusy: "她正在回复，等这一轮说完再打盹",
+  pixieNapHintEmpty: "空会话没什么可打盹的，先聊点什么吧",
   pixieNapHintAsleep:
     "当前没有进行中的会话段（她正睡着）；发一条消息就会开新段，点这里也能请她收尾",
+  pixieBackToCurrentButton: "回到最新",
+  pixieBackToCurrentTitle: "返回小精灵正在进行的会话段；没有活段则新建会话",
   pixieSleepPhraseFallback: "打个盹~",
   pixieSleepReasonAgent: "小精灵自己打了个盹",
   pixieSleepReasonUser: "你请她打了个盹",

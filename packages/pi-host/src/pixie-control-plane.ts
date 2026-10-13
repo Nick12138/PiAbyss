@@ -119,6 +119,8 @@ export type PixieControlPlaneDeps = {
   rest: (args: {
     phrase?: string | null;
     handoff?: string | null;
+    /** 小精灵自拟的本段标题（打盹后作为旧段的归档会话名）。 */
+    title?: string | null;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** 统一注入入口（网关预留，最小实装）。 */
   inject: (args: {
@@ -358,11 +360,11 @@ export function parseAskBody(
   };
 }
 
-/** 解析并强校验 rest 请求体；phrase/handoff 均可省略。 */
+/** 解析并强校验 rest 请求体；phrase/handoff/title 均可省略。 */
 export function parseRestBody(
   raw: string | null,
 ):
-  | { ok: true; args: { phrase?: string | null; handoff?: string | null } }
+  | { ok: true; args: { phrase?: string | null; handoff?: string | null; title?: string | null } }
   | { ok: false; error: string } {
   if (raw === null) return { ok: true, args: {} };
   let value: unknown;
@@ -378,11 +380,15 @@ export function parseRestBody(
   if (value.handoff !== undefined && value.handoff !== null && typeof value.handoff !== "string") {
     return { ok: false, error: "handoff 必须是字符串" };
   }
+  if (value.title !== undefined && value.title !== null && typeof value.title !== "string") {
+    return { ok: false, error: "title 必须是字符串" };
+  }
   return {
     ok: true,
     args: {
       ...(value.phrase !== undefined ? { phrase: value.phrase as string | null } : {}),
       ...(value.handoff !== undefined ? { handoff: value.handoff as string | null } : {}),
+      ...(value.title !== undefined ? { title: value.title as string | null } : {}),
     },
   };
 }

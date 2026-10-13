@@ -43,6 +43,7 @@ import {
   type ComposerRuntime,
 } from "../chat/composer-runtime";
 import { usePixieViewStore } from "./pixie-store";
+import { isSamePixiePath } from "../../lib/pixie-path";
 
 const DISPATCH_POLL_IDLE_MS = 5_000;
 const DISPATCH_POLL_ACTIVE_MS = 2_000;
@@ -461,7 +462,7 @@ export function PixiePage() {
       // 记录进入前的工作区；已是 pixie 工作区（如冷启动直落 pixie 页）则不恢复。
       const before = useAppStore.getState().workspace?.canonicalCwd ?? null;
       const pixieCwd = usePixieViewStore.getState().current?.cwd;
-      prevCwdRef.current = before && before !== pixieCwd ? before : null;
+      prevCwdRef.current = before && !isSamePixiePath(before, pixieCwd) ? before : null;
     }
     void acquire();
   }, [hostInstanceId, acquire]);
@@ -480,7 +481,7 @@ export function PixiePage() {
       const pixieCwd = usePixieViewStore.getState().current?.cwd;
       const before = prevCwdRef.current;
       if (!before || !pixieCwd) return;
-      if (useAppStore.getState().workspace?.canonicalCwd !== pixieCwd) return;
+      if (!isSamePixiePath(useAppStore.getState().workspace?.canonicalCwd, pixieCwd)) return;
       void activateWorkspaceAcrossWorkspaces(before, { quiet: true });
     };
   }, []);
@@ -588,7 +589,7 @@ export function PixiePage() {
     !acquiring &&
     !acquireFailed &&
     current !== null &&
-    workspace?.canonicalCwd === current.cwd &&
+    isSamePixiePath(workspace?.canonicalCwd, current.cwd) &&
     session !== null;
 
   if (acquireFailed) {

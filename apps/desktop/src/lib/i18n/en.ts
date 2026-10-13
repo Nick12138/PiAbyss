@@ -2047,8 +2047,12 @@ export const en = {
   pixieNapButton: "Take a nap",
   pixieNapHint: "End the current segment; the pixie leaves a handoff note and starts fresh",
   pixieNapHintBusy: "She is still replying — take a nap once this turn settles",
+  pixieNapHintEmpty: "Nothing to nap on yet — say something first",
   pixieNapHintAsleep:
     "No segment is open (she is asleep); sending a message starts a new one — this still asks her to wrap up",
+  pixieBackToCurrentButton: "Back to latest",
+  pixieBackToCurrentTitle:
+    "Return to the pixie's live conversation segment; falls back to a new session when there is none",
   pixieSleepPhraseFallback: "Taking a nap~",
   pixieSleepReasonAgent: "The pixie dozed off on her own",
   pixieSleepReasonUser: "You asked her to nap",

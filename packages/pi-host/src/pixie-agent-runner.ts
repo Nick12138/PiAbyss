@@ -75,11 +75,6 @@ import {
 } from "./pixie-daily-nap.js";
 import { logger } from "./logger.js";
 
-/** Default pixie workspace directory relative to the agent dir. */
-const PIXIE_WORKSPACE_SEGMENT = join("workspace", "pixie");
-/** Session name so each segment is recognizable in transcripts. */
-const PIXIE_SESSION_NAME = "🧚 小精灵";
-
 /** 小精灵工作区的人格文件名（SDK context files 候选之一，见下）。 */
 const PIXIE_PERSONA_FILE = "CLAUDE.md";
 
@@ -160,6 +155,26 @@ const SLEEP_PHRASES = [
   "打个哈欠……这一段先存档啦",
   "小憩片刻 💤",
 ];
+
+/** 换段归档名长度上限（超出截断加省略号；列表本身也会 truncate）。 */
+const SEGMENT_NAME_MAX_LENGTH = 40;
+
+/**
+ * 换段时给旧会话起的段名：title（小精灵自拟的本段标题）> handoff（交接
+ * 摘要）> 睡觉短语，压成单行并截断。会话名不再带「🧚 小精灵」前缀——
+ * 全列表本就只含小精灵会话，前缀只会让每行看起来一模一样。
+ */
+export function segmentSessionName(
+  title: string | null | undefined,
+  handoff: string | null | undefined,
+  phrase: string,
+): string {
+  const raw = title?.trim() || handoff?.trim() || phrase.trim();
+  const oneLine = raw.replace(/\s+/g, " ").trim();
+  return oneLine.length > SEGMENT_NAME_MAX_LENGTH
+    ? `${oneLine.slice(0, SEGMENT_NAME_MAX_LENGTH)}…`
+    : oneLine;
+}
 
 /** Registry bound: in-memory cap (matches the V1 bound). */
 const MAX_DISPATCHES = 50;
@@ -1000,6 +1015,8 @@ type PixieRunner = {
   pendingRest: {
     phrase: string | null;
     handoff: string | null;
+    /** 小精灵自拟的本段标题（换段归档名首选；见 segmentSessionName）。 */
+    title: string | null;
     reason: PixieSegmentReason;
   } | null;
   /** 打个盹 requested while the pixie decides; forced finalize on settle. */
@@ -1025,10 +1042,6 @@ type PixieParkedRuntime =
   WorkspaceGraph["backgroundSessions"] extends Map<string, infer R> ? R : never;
 
 let runner: PixieRunner | null = null;
-
-function randomId(prefix: string): string {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
 
 function randomSleepPhrase(): string {
   return SLEEP_PHRASES[Math.floor(Math.random() * SLEEP_PHRASES.length)]!;
@@ -1227,11 +1240,9 @@ async function createPixieSessionInGraph(
     modelRef: parsePixieModelRef(process.env.PIABYSS_PIXIE_MODEL),
   });
   const session = created.session;
-  try {
-    session.setSessionName(PIXIE_SESSION_NAME);
-  } catch {
-    /* cosmetic */
-  }
+  // 会话名不在新建时写入——刚建段看不出内容，定了也全是误差。段名统一在
+  // 打盹收尾（rotateToNewSession）时按本段内容起（pixie_rest 的 title /
+  // handoff），见 segmentSessionName。
   // v4.3 会话缓存：小精灵自己的工作区会话也登记（role=pixie），供交代与查会话。
   rememberPixieSegmentSession(agentDir, pixieCwd, session);
   const snapshot = buildSessionSnapshot({
@@ -1335,7 +1346,9 @@ function subscribeSettle(
     saveRunnerState(state);
     const pending =
       state.pendingRest ??
-      (state.pendingUserRest ? { phrase: null, handoff: null, reason: "user" as const } : null);
+      (state.pendingUserRest
+        ? { phrase: null, handoff: null, title: null, reason: "user" as const }
+        : null);
     state.pendingRest = null;
     state.pendingUserRest = false;
     if (pending) {
@@ -1343,6 +1356,7 @@ function subscribeSettle(
         reason: pending.reason,
         phrase: pending.phrase,
         handoff: pending.handoff,
+        title: pending.title,
         oldSession: session,
       });
       return;
@@ -1352,6 +1366,7 @@ function subscribeSettle(
         reason: "rollover",
         phrase: null,
         handoff: null,
+        title: null,
         oldSession: session,
       });
     }
@@ -1359,9 +1374,10 @@ function subscribeSettle(
 }
 
 /**
- * 换段：旧会话以睡觉短语改名归档，图内新建会话并接任当前指针。
- * 前台图时提升为活动会话（promoteBackgroundRuntime → 快照推送，前端自动跟随，
- * 即「打盹 = 切换新会话」的产品语义）；后台图时只更新指针，页面下次打开时
+ * 换段：旧会话按本段内容起名归档（title/handoff > 睡觉短语，见
+ * segmentSessionName），图内新建会话并接任当前指针。前台图时提升为活动
+ * 会话（promoteBackgroundRuntime → 快照推送，前端自动跟随，即「打盹 =
+ * 切换新会话」的产品语义）；后台图时只更新指针，页面下次打开时
  * ensurePixieCurrent 会拿到新会话。
  */
 async function rotateToNewSession(
@@ -1371,6 +1387,7 @@ async function rotateToNewSession(
     reason: PixieSegmentReason;
     phrase: string | null;
     handoff: string | null;
+    title: string | null;
     oldSession: AgentSession | null;
   },
 ): Promise<boolean> {
@@ -1386,7 +1403,7 @@ async function rotateToNewSession(
     const phrase = args.phrase?.trim() || randomSleepPhrase();
     if (args.oldSession) {
       try {
-        args.oldSession.setSessionName(`${PIXIE_SESSION_NAME} · ${phrase}`);
+        args.oldSession.setSessionName(segmentSessionName(args.title, args.handoff, phrase));
       } catch {
         /* cosmetic */
       }
@@ -1535,6 +1552,7 @@ function maybeDailyNap(
     reason: "daily",
     phrase: dailyNapPhrase(Date.now()),
     handoff,
+    title: null,
     oldSession: session,
   });
   logger.info("Pixie daily nap rotation started", { hadHandoff: handoff !== null });
@@ -1723,11 +1741,14 @@ export async function requestPixieSegment(
   const state = ensureRunner(args.agentDir);
   const acquired = await acquireCurrentSession(factory, args.agentDir);
   if (!acquired) return { ok: true }; // nothing open: the next message starts fresh
+  // 新建会话界面（还没说过一句话的空会话）不支持打盹：没有可收尾的内容，
+  // 段名也无从谈起——直接 no-op（与"没有打开会话"同一语义）。
+  if (messagesOf(acquired.session).length === 0) return { ok: true };
   state.pendingUserRest = true;
   const instruction = [
     "[pixie|ui]",
     "<pixie-nap-request>",
-    "用户请你打个盹。请调用 pixie_rest 工具收尾本段：phrase 填你喜欢的睡觉短语，handoff 用一句话写给下一段自己的交接摘要。",
+    "用户请你打个盹。请调用 pixie_rest 工具收尾本段：title 用几个词概括本段会话聊了什么（打盹后它会成为本段的归档会话名），phrase 填你喜欢的睡觉短语，handoff 用一句话写给下一段自己的交接摘要。",
     "</pixie-nap-request>",
   ].join("\n");
   const session = acquired.session;
@@ -1746,6 +1767,7 @@ export async function requestPixieRest(
     agentDir: string;
     phrase?: string | null;
     handoff?: string | null;
+    title?: string | null;
   },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const state = ensureRunner(args.agentDir);
@@ -1754,6 +1776,7 @@ export async function requestPixieRest(
   state.pendingRest = {
     phrase: args.phrase?.trim() || null,
     handoff: args.handoff?.trim() || null,
+    title: args.title?.trim() || null,
     reason: "agent",
   };
   state.pendingUserRest = false;
@@ -1796,10 +1819,24 @@ export async function ensurePixieCurrent(
   notePixieActivity(state, Date.now());
   return {
     ok: true,
-    cwd: resolvePixieWorkspacePath(agentDir),
+    // 返回 canonicalize 后的路径：前端拿它与 workspace.canonicalCwd 严格比较
+    // （ready 门控 / already-active 判定），避免原始拼接串与 Host 归一化结果
+    // 的差异（盘符大小写、symlink 等）让页面卡在加载态。
+    cwd: factory.canonicalizeCwd(resolvePixieWorkspacePath(agentDir)),
     sessionId: acquired.sessionId,
     sessionPath: acquired.sessionPath,
   };
+}
+
+/**
+ * 会话是否属于小精灵工作区（防御性：测试桩/非常规工厂按非小精灵处理）。
+ * agent-controller 用它把小精灵会话从「新建即自动起名」的路径摘出来——
+ * 段名统一等打盹收尾时再定（见 segmentSessionName）。
+ */
+export function isPixieWorkspaceCwd(factory: WorkspaceGraphFactory, sessionCwd: string): boolean {
+  const agentDir = factory?.deps?.agentDir;
+  if (!agentDir || typeof factory?.canonicalizeCwd !== "function") return false;
+  return sessionCwd === factory.canonicalizeCwd(resolvePixieWorkspacePath(agentDir));
 }
 
 /**
@@ -1815,8 +1852,7 @@ export function maybeWrapPixiePrompt(
   const agentDir = factory?.deps?.agentDir;
   if (!agentDir || typeof factory?.canonicalizeCwd !== "function") return text;
   const state = runner && runner.agentDir === agentDir ? runner : ensureRunner(agentDir);
-  const pixieCwd = factory.canonicalizeCwd(resolvePixieWorkspacePath(agentDir));
-  if (sessionCwd !== pixieCwd) return text;
+  if (!isPixieWorkspaceCwd(factory, sessionCwd)) return text;
   if (!state.needsPreamble) return text;
   state.needsPreamble = false;
   saveRunnerState(state);
