@@ -32,6 +32,7 @@ import {
   subscribeCreateSessionPending,
 } from "../lib/commands/actions";
 import { createNewSessionFromPixiePage } from "../features/pixie/pixie-previous-workspace";
+import { usePixieSidebarSnapshot } from "../features/pixie/pixie-sidebar-snapshot";
 
 const SIDEBAR_WIDTH_KEY = "piabyss.sidebar.width.v1";
 const DEFAULT_SIDEBAR_WIDTH = 268;
@@ -164,6 +165,8 @@ export function SidebarLayout({
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const sidebarAutoInstant = useAppStore((s) => s.sidebarAutoInstant);
   const telegramViewActive = useTelegramWorkspaceActive();
+  // 小精灵页的侧边栏冻结快照（进入小精灵前的工作区目录 + 选中会话）。
+  const pixieSidebarSnapshot = usePixieSidebarSnapshot((s) => s.snapshot);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(() =>
     sidebarPref("piabyss.sidebar.sessionsCollapsed"),
   );
@@ -599,10 +602,21 @@ export function SidebarLayout({
 
             {/* Collapsed or not, the header row stays in place below Workspaces. */}
             <div className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+              {/* 小精灵页：会话列表渲染「冻结快照」（进入小精灵前的工作区
+                  目录 + 选中会话），上一个会话的选中态保留，点击行 = 离开
+                  小精灵切回该工作区并打开；无快照（冷启动直落 pixie）才为空。 */}
               {telegramViewActive ? (
                 <TelegramSessionList />
-              ) : page === "pixie" /* 小精灵页：会话列表收进页面自己的顶栏按钮 + 点击浮层（见
-                    PixieSessionsButton），侧边栏底部不再出现任何选中态。 */ ? null : (
+              ) : page === "pixie" ? (
+                pixieSidebarSnapshot ? (
+                  <SessionList
+                    showCreateAction={false}
+                    collapsed={sessionsCollapsed}
+                    onToggleCollapsed={toggleSessionsCollapsed}
+                    frozen={pixieSidebarSnapshot}
+                  />
+                ) : null
+              ) : (
                 <SessionList
                   showCreateAction={false}
                   collapsed={sessionsCollapsed}

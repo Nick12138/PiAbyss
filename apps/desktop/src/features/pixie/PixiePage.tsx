@@ -44,9 +44,10 @@ import {
 } from "../chat/composer-runtime";
 import { usePixieViewStore } from "./pixie-store";
 import {
-  clearPixiePreviousWorkspace,
   rememberPixiePreviousWorkspace,
 } from "./pixie-previous-workspace";
+import { usePixieSidebarSnapshot } from "./pixie-sidebar-snapshot";
+import { sessionCatalogItems } from "../../lib/stores/session-catalog";
 import { isSamePixiePath } from "../../lib/pixie-path";
 
 const DISPATCH_POLL_IDLE_MS = 5_000;
@@ -487,6 +488,19 @@ export function PixiePage() {
       // 同步给侧边栏「新会话」分支（见 pixie-previous-workspace.ts）：
       // 小精灵页的「新会话」要作用于这个工作区，而不是 pixie 工作区。
       rememberPixiePreviousWorkspace(prevCwdRef.current);
+      // 冻结侧边栏：小精灵页期间，侧边栏会话列表继续显示进入前的工作区
+      // 目录与选中会话（见 pixie-sidebar-snapshot.ts）。必须在 acquire 切
+      // 工作区/换会话目录之前捕获。
+      const app = useAppStore.getState();
+      if (prevCwdRef.current !== null && app.workspace) {
+        usePixieSidebarSnapshot.getState().capture({
+          workspace: app.workspace,
+          items: sessionCatalogItems(app.sessionCatalog),
+          activeSessionId: app.session?.sessionId ?? null,
+        });
+      } else {
+        usePixieSidebarSnapshot.getState().clear();
+      }
     }
     void acquire();
   }, [hostInstanceId, acquire]);
@@ -504,8 +518,14 @@ export function PixiePage() {
       }
       const pixieCwd = usePixieViewStore.getState().current?.cwd;
       const before = prevCwdRef.current;
-      // 交接数据随之清掉：离开小精灵页后侧边栏按钮回到普通路径。
-      clearPixiePreviousWorkspace();
+      // 注意：这里**不**清 previousWorkspace / 侧边栏冻结快照。dev 的
+      // StrictMode 会「挂载 → 模拟卸载 → 重放挂载」，重放被
+      // acquiredHostInstanceRef 守卫跳过（避免双重 acquire），若在这里
+      // 清掉镜像，重放不会重新捕获，小精灵页期间侧边栏就永远是空——
+      // 只能在生产复现不了的 dev 必现 bug。残留也无风险：两个镜像的
+      // 消费方（侧边栏 pixie 分支、createNewSessionFromPixiePage）都以
+      // page === "pixie" 为门，离开小精灵页后不可达；下次进 pixie 是
+      // 新的 PixiePage 实例，挂载必重新捕获。
       if (!before || !pixieCwd) return;
       if (!isSamePixiePath(useAppStore.getState().workspace?.canonicalCwd, pixieCwd)) return;
       void activateWorkspaceAcrossWorkspaces(before, { quiet: true });

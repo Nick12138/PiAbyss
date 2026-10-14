@@ -14,6 +14,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import type { WorkspaceSnapshot } from "@piabyss/protocol";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { tCurrent, useT } from "../../lib/i18n/use-t";
@@ -43,6 +44,7 @@ import {
 } from "../../lib/bridge/session-open-request";
 import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import { sessionCatalogItems, type SessionCatalogEntry } from "../../lib/stores/session-catalog";
+import { openSessionAcrossWorkspaces } from "../../lib/bridge/session-navigation";
 import { workspaceActivityFor } from "../../lib/workspace-activity";
 import { useImeComposition } from "../../lib/use-ime-composition";
 import { createNewSession } from "../../lib/commands/actions";
@@ -131,6 +133,18 @@ function acknowledgeVisitedSession(sessionId: string): void {
   void acknowledgeSessionTerminal(canonicalCwd, sessionId);
 }
 
+/**
+ * 冻结模式数据：小精灵页期间侧边栏会话列表渲染进入小精灵前的快照
+ * （上一个工作区的目录 + 选中会话），见 pixie-sidebar-snapshot.ts。
+ * 冻结期间不刷新目录，禁用会话 RPC（改名/归档/删除/导出/清理），
+ * 点击行 = 离开小精灵切回该工作区并打开该会话。
+ */
+export type SessionListFrozenData = {
+  workspace: WorkspaceSnapshot;
+  items: SessionCatalogEntry[];
+  activeSessionId: string | null;
+};
+
 export function SessionList({
   showCreateAction = true,
   collapsed = false,
@@ -139,6 +153,7 @@ export function SessionList({
   onSessionOpened,
   flatByDate = false,
   hideHeader = false,
+  frozen = null,
 }: {
   showCreateAction?: boolean;
   collapsed?: boolean;
@@ -151,6 +166,8 @@ export function SessionList({
   flatByDate?: boolean;
   /** 隐藏整个头部行（标题/归档切换/新建）——弹窗宿主自带标题与操作（小精灵弹窗用）。 */
   hideHeader?: boolean;
+  /** 冻结模式（小精灵页的侧边栏）：渲染给定快照而不读活动工作区。 */
+  frozen?: SessionListFrozenData | null;
 }) {
   const t = useT();
   const host = useAppStore((s) => s.host);
@@ -173,6 +190,10 @@ export function SessionList({
   const sessionTerminalStates = useAppStore((s) => s.sessionTerminalStates);
   const acknowledgeSessionTerminalState = useAppStore((s) => s.acknowledgeSessionTerminalState);
   const removeSessionTerminalStates = useAppStore((s) => s.removeSessionTerminalStates);
+
+  // 冻结模式（小精灵页的侧边栏）：列表/选中来自快照而非活动工作区；
+  // pinned 与终端标记都以快照工作区的 id 为键（正是进入小精灵前的那个）。
+  const pinsWorkspaceId = frozen?.workspace.id ?? workspace?.id;
   const [sessionMutationPending, setSessionMutationPending] = useState(false);
   const [sessionOpenPending, setSessionOpenPending] = useState(false);
   const [filter, setFilter] = useState<SessionFilter>("active");
@@ -185,7 +206,9 @@ export function SessionList({
   const [extensionUiExpiryTick, setExtensionUiExpiryTick] = useState(0);
   const ime = useImeComposition();
   const [pinnedSessionIds, setPinnedSessionIds] = useState<string[]>(() =>
-    readPinnedSessionIds(useAppStore.getState().workspace?.id),
+    readPinnedSessionIds(
+      frozen?.workspace.id ?? useAppStore.getState().workspace?.id,
+    ),
   );
   // 「定位到某条会话」（归档会话打不开，只能把用户带到它在列表里的位置）。
   const [revealRequest, setRevealRequest] = useState<SessionRevealRequest | null>(null);
@@ -260,10 +283,13 @@ export function SessionList({
   }, [clearSessionCatalog, replaceSessionCatalog]);
 
   useEffect(() => {
+    // 冻结模式不刷新目录：保持进入小精灵前的快照，别把 pixie 的目录写进来。
+    if (frozen) return;
     void refresh();
   }, [
     connecting,
     desynchronized,
+    frozen,
     host?.hostInstanceId,
     refresh,
     rehydrating,
@@ -287,7 +313,7 @@ export function SessionList({
     workspace?.canonicalCwd,
   );
   useEffect(() => {
-    if (!activeWorkspaceActivity) return;
+    if (!activeWorkspaceActivity || frozen) return;
     const catalog = useAppStore.getState().sessionCatalog;
     const unknownReferencedSession = Object.keys(activeWorkspaceActivity.terminalSessions).some(
       (sessionId) => !catalog.entries[sessionId],
@@ -301,7 +327,7 @@ export function SessionList({
           entry.runtimeState === "queued",
       );
     if (unknownReferencedSession || busyWithoutEntry) void refresh();
-  }, [activeWorkspaceActivity, refresh]);
+  }, [activeWorkspaceActivity, refresh, frozen]);
 
   useEffect(() => {
     mounted.current = true;
@@ -320,10 +346,10 @@ export function SessionList({
 
   useEffect(() => {
     sessionOpenQueue.current?.clearPending();
-    setPinnedSessionIds(readPinnedSessionIds(workspace?.id));
+    setPinnedSessionIds(readPinnedSessionIds(pinsWorkspaceId));
     setEditingSessionId(null);
     setNameDraft("");
-  }, [workspace?.id]);
+  }, [pinsWorkspaceId]);
 
   // Returning to a session acknowledges its terminal (done/error) marker so it
   // stops showing in the sidebar. Error without a recorded marker (e.g. the app
@@ -331,8 +357,10 @@ export function SessionList({
   // The Host pool is told as well so the workspace row's dot downgrades
   // (red → green → gray → none) as the user works through the sessions.
   useEffect(() => {
+    // 冻结模式下活动会话是小精灵的：不得把它的访问当成「回来看过」。
+    if (frozen) return;
     if (session?.sessionId) acknowledgeVisitedSession(session.sessionId);
-  }, [session?.sessionId, workspace?.id, acknowledgeSessionTerminalState]);
+  }, [session?.sessionId, workspace?.id, frozen, acknowledgeSessionTerminalState]);
 
   useEffect(() => {
     const now = Date.now();
@@ -350,6 +378,9 @@ export function SessionList({
   }, [extensionUiExpiryTick, extensionUiQueue, extensionUiRequest]);
 
   async function createSession() {
+    // 冻结模式不建会话：那是小精灵页侧边栏，新建走「新会话」按钮的
+    // 专属分支（pixie-previous-workspace.ts），这里不能在 pixie 工作区里建。
+    if (frozen) return;
     if (!host || !workspace || sessionMutationBlocked) return;
     const request = ++mutationRequest.current;
     setSessionMutationPending(true);
@@ -398,6 +429,32 @@ export function SessionList({
 
   function openSession(path: string) {
     const current = useAppStore.getState();
+    if (frozen) {
+      // 冻结模式（小精灵页）：离开小精灵，切回快照工作区并打开该会话。
+      // 先导航后落页：等切换落地后 setPage("chat") 卸载 PixiePage，其
+      // 卸载清理的「恢复之前工作区」带非 pixie 守卫，不会二次激活。
+      if (sessionOpenBlocked || !path) return;
+      onSessionOpened?.();
+      void (async () => {
+        const outcome = await openSessionAcrossWorkspaces({
+          cwd: frozen.workspace.canonicalCwd,
+          sessionPath: path,
+          // 阻塞式：紧跟着的 session.open 需要 serviceGraphLock 释放。
+          optimistic: false,
+        });
+        if (
+          outcome.status === "opened" ||
+          outcome.status === "already-active" ||
+          outcome.status === "archived"
+        ) {
+          if (!keepPage && useAppStore.getState().page !== "chat") {
+            useAppStore.getState().setPage("chat");
+          }
+        }
+        // blocked/failed：openSessionAcrossWorkspaces 已自行上报，留在原地。
+      })();
+      return;
+    }
     if (!current.host || !current.workspace || sessionMutationPending || sessionOpenBlocked) {
       return;
     }
@@ -510,7 +567,8 @@ export function SessionList({
   }
 
   function beginRename(item: SessionCatalogEntry) {
-    if (item.archived || !canRenameSession(item, session) || sessionMutationBlocked) return;
+    if (frozen || item.archived || !canRenameSession(item, session) || sessionMutationBlocked)
+      return;
     setEditingSessionId(item.sessionId);
     setNameDraft(sessionDisplayName(item, t("sessionsUntitled")));
   }
@@ -604,22 +662,22 @@ export function SessionList({
   }
 
   function togglePinnedSession(item: SessionCatalogEntry) {
-    if (!workspace) return;
+    if (!pinsWorkspaceId) return;
     setPinnedSessionIds((current) => {
       const next = current.includes(item.sessionId)
         ? current.filter((sessionId) => sessionId !== item.sessionId)
         : [...current, item.sessionId];
-      writePinnedSessionIds(workspace.id, next);
+      writePinnedSessionIds(pinsWorkspaceId, next);
       return next;
     });
   }
 
   function removePinnedSessions(sessionIds: readonly string[]) {
-    if (!workspace || sessionIds.length === 0) return;
+    if (!pinsWorkspaceId || sessionIds.length === 0) return;
     const removed = new Set(sessionIds);
     setPinnedSessionIds((current) => {
       const next = current.filter((sessionId) => !removed.has(sessionId));
-      writePinnedSessionIds(workspace.id, next);
+      writePinnedSessionIds(pinsWorkspaceId, next);
       return next;
     });
   }
@@ -820,9 +878,13 @@ export function SessionList({
     }
   }
 
+  // 冻结模式下就绪门控看快照工作区（进入小精灵前它必然已就绪），
+  // 不看活动工作区（小精灵图在建时会误报「先选工作区」）。
+  const listWorkspace = frozen?.workspace ?? workspace;
+  const catalogItems = frozen ? frozen.items : sessionCatalogItems(sessionCatalog);
   const allItems = flatByDate
-    ? sessionCatalogItems(sessionCatalog)
-    : prioritizePinnedSessions(sessionCatalogItems(sessionCatalog), pinnedSessionIds);
+    ? catalogItems
+    : prioritizePinnedSessions(catalogItems, pinnedSessionIds);
   const visibleItems = filterSessionItems(allItems, filter);
   const groupedItems: { group: SessionTimeGroup; items: SessionCatalogEntry[] }[] = flatByDate
     ? []
@@ -833,10 +895,10 @@ export function SessionList({
 
   // 目标归档与否决定要先切到哪个分组（「已归档」/「活动」），否则它在列表里根本不渲染。
   useEffect(() => {
-    if (!revealRequest || !workspace) return;
+    if (!revealRequest || !workspace || frozen) return;
     if (revealRequest.workspaceId && revealRequest.workspaceId !== workspace.id) return;
     setFilter(revealRequest.archived ? "archived" : "active");
-  }, [revealRequest, workspace]);
+  }, [revealRequest, workspace, frozen]);
 
   const revealTarget = revealRequest
     ? (allItems.find((item) => item.sessionId === revealRequest.sessionId) ?? null)
@@ -896,17 +958,23 @@ export function SessionList({
 
   /** 单条会话行：时间分组视图与 flatByDate 平铺视图共用。 */
   const renderSessionRow = (item: SessionCatalogEntry) => {
-    const active = !item.archived && session?.sessionId === item.sessionId;
+    // 冻结模式下选中态来自快照（进入小精灵时选中的那条），
+    // 不看当前会话（那是小精灵的会话）。
+    const active =
+      !item.archived &&
+      (frozen ? frozen.activeSessionId === item.sessionId : session?.sessionId === item.sessionId);
     const editing = editingSessionId === item.sessionId;
     const pinned = pinnedSessionIds.includes(item.sessionId);
     const revealed = revealedSessionId === item.sessionId;
-    const canRename = canRenameSession(item, session);
-    const canDelete = canDeleteSession(item, session);
-    const canArchive = canArchiveSession(item, session);
-    const canExport = canExportSession(item, session);
+    // 冻结模式禁用一切会话 RPC：活动工作区是小精灵的，请求会打着错误的
+    // 工作区上下文发出去（右键只剩 pin/复制路径这两个纯本地动作）。
+    const canRename = frozen ? false : canRenameSession(item, session);
+    const canDelete = frozen ? false : canDeleteSession(item, session);
+    const canArchive = frozen ? false : canArchiveSession(item, session);
+    const canExport = frozen ? false : canExportSession(item, session);
     const terminalState = item.archived
       ? undefined
-      : sessionTerminalStates[workspace?.id ?? ""]?.[item.sessionId];
+      : sessionTerminalStates[pinsWorkspaceId ?? ""]?.[item.sessionId];
     const statusDot = item.archived
       ? null
       : sessionStatusDotClass(item.runtimeState, terminalState);
@@ -982,7 +1050,7 @@ export function SessionList({
                 id: "session.exportHtml",
                 label: t("statsExportHtml"),
                 icon: FileOutput,
-                disabled: !active && !canExport,
+                disabled: Boolean(frozen) || (!active && !canExport),
                 onSelect: () =>
                   requestExport("html", {
                     kind: "session",
@@ -994,7 +1062,7 @@ export function SessionList({
                 id: "session.exportJsonl",
                 label: t("statsExportJsonl"),
                 icon: FileOutput,
-                disabled: !active && !canExport,
+                disabled: Boolean(frozen) || (!active && !canExport),
                 onSelect: () =>
                   requestExport("jsonl", {
                     kind: "session",
@@ -1124,8 +1192,10 @@ export function SessionList({
               unacknowledged terminal red/gray) is not archivable
               right now — hide the action instead of offering a
               disabled button. Archived entries have no dot and
-              keep their restore action. */}
-            {statusDot ? null : (
+              keep their restore action. Frozen rows never offer
+              archive/restore: those are workspace RPCs and the
+              active workspace here is the pixie one. */}
+            {statusDot || frozen ? null : (
               <div className="relative mr-1 flex size-[22px] shrink-0 items-center justify-center">
                 <button
                   type="button"
@@ -1194,7 +1264,7 @@ export function SessionList({
             <span className="text-[13px] font-medium text-muted">{t("sessionsRecent")}</span>
           )}
           <div className="flex items-center gap-0.5">
-            {filter === "archived" && archivedCount > 0 && (
+            {filter === "archived" && archivedCount > 0 && !frozen && (
               <button
                 type="button"
                 title={t("sessionsClearArchivedTitle", { count: archivedCount })}
@@ -1246,7 +1316,7 @@ export function SessionList({
       )}
       <CollapsibleRegion open={!collapsed} id="session-list-region">
         <>
-          {!workspace?.servicesReady && (
+          {!listWorkspace?.servicesReady && (
             <p className="px-1 text-xs text-muted">{t("sessionsSelectWorkspaceFirst")}</p>
           )}
           <div className="flex flex-col gap-2" ref={listContainerRef}>
@@ -1291,7 +1361,7 @@ export function SessionList({
                 ),
               )}
           </div>
-          {workspace?.servicesReady && allItems.length > 0 && visibleItems.length === 0 && (
+          {listWorkspace?.servicesReady && allItems.length > 0 && visibleItems.length === 0 && (
             <p className="px-2 py-3 text-center text-xs text-muted">{t("sessionsNoMatch")}</p>
           )}
           {confirmAction &&

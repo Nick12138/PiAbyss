@@ -7,6 +7,8 @@ import type { DesktopSettings, HostStatusSnapshot, WorkspaceSnapshot } from "@pi
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
 import { usePixieViewStore } from "./pixie-store";
+import { usePixieSidebarSnapshot, resetPixieSidebarSnapshotForTests } from "./pixie-sidebar-snapshot";
+import { getPixiePreviousWorkspace, resetPixiePreviousWorkspaceForTests } from "./pixie-previous-workspace";
 import { PixiePage } from "./PixiePage";
 
 /**
@@ -82,6 +84,8 @@ beforeEach(() => {
     } as unknown as DesktopSettings,
   });
   usePixieViewStore.setState({ current: null, dispatches: [], error: null });
+  resetPixieSidebarSnapshotForTests();
+  resetPixiePreviousWorkspaceForTests();
 });
 
 afterEach(() => {
@@ -90,6 +94,8 @@ afterEach(() => {
   useAppStore.getState().setHost(null);
   useAppStore.getState().setWorkspace(null);
   usePixieViewStore.setState({ current: null, dispatches: [], error: null });
+  resetPixieSidebarSnapshotForTests();
+  resetPixiePreviousWorkspaceForTests();
 });
 
 describe("PixiePage 锚定获取（acquire）", () => {
@@ -113,5 +119,46 @@ describe("PixiePage 锚定获取（acquire）", () => {
       quiet: true,
     });
     expect(document.body.textContent ?? "").not.toContain("暂不可用");
+  });
+
+  it("StrictMode 重放不清掉侧边栏冻结快照（dev 下会话列表不消失）", async () => {
+    // 进入小精灵前：普通工作区 + 目录里有一条选中的会话。挂载锚定时冻结
+    // 进快照；若卸载清理清掉它而重放（被 acquiredHostInstanceRef 拦住）
+    // 不重捕获，dev 下侧边栏会话列表就永远是空——正是本回归要钉住的行为。
+    useAppStore.setState({
+      session: {
+        sessionId: "prev-session",
+        messages: [],
+        isIdle: true,
+        pending: { steering: [], followUp: [] },
+      } as never,
+    });
+    useAppStore.getState().replaceSessionCatalog(otherWorkspace.id, [
+      {
+        sessionId: "prev-session",
+        sessionPath: `${OTHER_CWD}/prev-session.jsonl`,
+        name: "Previous session",
+        cwd: OTHER_CWD,
+        updatedAt: 1,
+        messageCount: 3,
+      },
+    ]);
+
+    render(
+      <StrictMode>
+        <PixiePage />
+      </StrictMode>,
+    );
+
+    await waitFor(() => expect(openSpy).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    const snapshot = usePixieSidebarSnapshot.getState().snapshot;
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.workspace.canonicalCwd).toBe(OTHER_CWD);
+    expect(snapshot?.activeSessionId).toBe("prev-session");
+    expect(snapshot?.items.map((item) => item.sessionId)).toEqual(["prev-session"]);
+    // 「新会话」分支的镜像同样不能被重放卸载清掉。
+    expect(getPixiePreviousWorkspace()).toBe(OTHER_CWD);
   });
 });
