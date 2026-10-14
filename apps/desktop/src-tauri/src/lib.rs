@@ -8,6 +8,7 @@ mod pi_host;
 #[cfg(test)]
 mod pi_host_tests;
 mod shell_terminal;
+mod splash;
 mod system_autostart;
 mod system_notification;
 mod system_tray;
@@ -18,6 +19,7 @@ use draft_store::DraftStore;
 use pi_host::{HostTransportFrame, PiHostPool};
 use shell_terminal::ShellTerminalManager;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 use tauri::{Emitter, Listener, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tokio::sync::Mutex;
@@ -28,6 +30,16 @@ pub struct AppState {
     pub drafts: Mutex<DraftStore>,
     pub hosts: Mutex<PiHostPool>,
     pub terminals: Mutex<ShellTerminalManager>,
+    /// 启动开屏是否已完成交接。前端上报与看门狗都可能触发，靠它做幂等。
+    pub splash_finished: AtomicBool,
+    /// 开屏**真正显示**的时刻（`splash_ready` 时写入）。保底停留从这一刻起算，
+    /// 而不是从进程启动算——否则慢机器上窗口还没显示，保底时间就已经耗完了。
+    pub splash_shown_at: Mutex<Option<Instant>>,
+    /// 当前启动阶段。开屏 JS 加载完成前广播的阶段会丢事件，所以这里留一份
+    /// 供 `splash_context` 拉取。
+    pub splash_stage: Mutex<String>,
+    /// 登录项后台启动：不建开屏，且交接时保持主窗口隐藏，等用户从托盘唤起。
+    pub start_hidden: AtomicBool,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -59,7 +71,11 @@ pub fn run() {
             if let Err(error) = system_autostart::configure(settings.settings.auto_start_on_boot) {
                 eprintln!("[piabyss] failed to configure startup launch: {error}");
             }
-            if system_autostart::was_launched_at_login() {
+            // 登录项后台启动：不建开屏，主窗口保持隐藏，等用户从托盘唤起。
+            // 主窗口在 tauri.conf.json 里本来就是 `visible: false`，这里只是把
+            // 同一事实记进 AppState，供 splash::finish 决定要不要上屏。
+            let start_hidden = system_autostart::was_launched_at_login();
+            if start_hidden {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.hide();
                 }
@@ -72,11 +88,29 @@ pub fn run() {
                 drafts: Mutex::new(drafts),
                 hosts: Mutex::new(hosts),
                 terminals: Mutex::new(ShellTerminalManager::new()),
+                splash_finished: AtomicBool::new(false),
+                splash_shown_at: Mutex::new(None),
+                splash_stage: Mutex::new(splash::SPLASH_INITIAL_STAGE.to_string()),
+                start_hidden: AtomicBool::new(start_hidden),
             });
+
+            // 开屏必须在起 Host 之前建好，让 Host 启动的耗时被开屏完整覆盖。
+            // 建窗失败不是致命错误——退化成「直接进主界面」：主窗口照样会在
+            // 前端 bootstrap 结束后由 splash::finish 上屏。
+            if !start_hidden {
+                if let Err(error) = splash::create(app.handle()) {
+                    eprintln!("[piabyss] failed to create splash window: {error}");
+                } else {
+                    splash::spawn_watchdog(app.handle());
+                }
+            }
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let state = handle.state::<AppState>();
+                // 开屏文案先切到「正在启动 Pi Host」，再去等 Host 就绪。
+                // 这一段是启动里最不可控的耗时，用户需要知道它在动。
+                splash::set_stage(&handle, "starting-host").await;
                 let host = state.hosts.lock().await.active_manager();
                 // start_unlocked never holds the host mutex across the ready-wait,
                 // so IPC commands and app exit stay responsive during startup.
@@ -182,6 +216,10 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            splash::splash_ready,
+            splash::splash_stage,
+            splash::splash_finish,
+            splash::splash_context,
             commands::desktop_settings_get,
             commands::desktop_settings_patch,
             commands::desktop_drafts_get,

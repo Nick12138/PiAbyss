@@ -15,6 +15,33 @@
 - Reimplement Pi Package install, filtering, or resource discovery.
 - Parse `pi list` text or own Pi `settings.json`.
 
+## Startup splash and main-window handoff
+
+Startup renders in two windows, not one:
+
+- `splash` — a small frameless window created programmatically in `setup()`
+  (`src-tauri/src/splash.rs`) loading the `splash.html` entry. It is created
+  **before** the Host is spawned so the Host's startup cost is fully covered.
+  It is skipped entirely when the app was launched at login.
+- `main` — configured `visible: false`; it loads and runs the whole bootstrap
+  (settings → Host → workspace → session) off-screen.
+
+The splash shows only narrative rotating copy (`src/splash/splash-copy.ts`) — no
+technical stage text like "Starting Pi Host". The startup stage is still tracked
+because it drives two things: the sweep bar fills and stops on `ready`, and the
+rotation halts so the last line holds. Rust reports `preparing` / `starting-host`,
+then `main` pushes its own `resolveStartupStage` result for the rest. Because the
+splash bundle loads *after* Rust's first broadcasts, the current stage also lives
+in `AppState.splash_stage` and is pulled once via `splash_context` before the
+`splash-stage` event stream takes over.
+
+`main` calls `splash_finish` once `startupSettled` flips true — including the
+terminal Host-failure path, so the Host-unavailable panel is reachable. Rust
+then waits out a 3 s minimum display (measured from the splash's *first paint*,
+not from process start), shows and focuses `main`, and closes `splash` 260 ms
+later. A 45 s watchdog force-completes the handoff if the renderer never
+reports, so a broken renderer can never leave an unclosable splash on screen.
+
 ## Node Pi Host
 
 **Owns**

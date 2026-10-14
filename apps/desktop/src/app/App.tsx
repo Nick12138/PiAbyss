@@ -59,6 +59,7 @@ import { ActivityNotificationObserver, activityPathKey } from "../lib/activity-n
 import { summarizeHostFailure } from "../lib/host-failure-message";
 import { getAppVersion } from "../lib/app-version";
 import { checkForAppUpdate } from "../lib/updater";
+import { finishSplash, reportSplashStage } from "../lib/splash-bridge";
 import { applyLanguage } from "../lib/i18n";
 import { tCurrent, useT } from "../lib/i18n/use-t";
 import { StartupScreen, resolveStartupStage, useInitialStartupScreen } from "./StartupScreen";
@@ -795,6 +796,20 @@ export function App() {
     rehydrating,
     desynchronized,
   });
+
+  // 启动开屏小窗（splash）：主窗口此刻还没上屏（配置文件里是 visible:false），
+  // 开屏是用户唯一能看到的界面。所以这里做两件事——把阶段实时推过去，并在
+  // bootstrap 真正完成后通知宿主交接（显示主窗口、关闭开屏）。
+  // Rust 侧只报得到 `starting-host` 为止，之后的工作区 / 会话恢复只有前端知道。
+  useEffect(() => {
+    if (!nativeWindowAvailable) return;
+    void reportSplashStage(startupStage).catch(() => undefined);
+  }, [nativeWindowAvailable, startupStage]);
+
+  useEffect(() => {
+    if (!nativeWindowAvailable || !startupSettled) return;
+    void finishSplash().catch(() => undefined);
+  }, [nativeWindowAvailable, startupSettled]);
 
   useEffect(() => {
     let unsub = () => {};

@@ -77,11 +77,14 @@ export default defineConfig({
     target: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari13",
     minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
-    // 桌面备忘速记小窗的独立轻量入口：不打包 xterm/katex/streamdown 等重资源。
+    // 两个独立轻量入口，都不打包 xterm/katex/streamdown 等重资源：
+    //   widget —— 桌面备忘速记小窗；
+    //   splash —— 启动开屏小窗，必须在 Host 起来之前完成首帧。
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL("./index.html", import.meta.url)),
         widget: fileURLToPath(new URL("./widget.html", import.meta.url)),
+        splash: fileURLToPath(new URL("./splash.html", import.meta.url)),
       },
     },
   },

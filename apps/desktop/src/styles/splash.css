@@ -1,0 +1,211 @@
+/* 开屏小窗（splash）的样式。
+   配色直接取主窗口的品牌调色板（styles/index.css 的 @theme 与 html.light）：
+   强调色是 PiAbyss 的暖橙，不是另起一套冷色。
+   刻意不引 styles/index.css（Tailwind + 整套主题变量）：开屏只需要下面这
+   几十行，包体越小首帧越快。深浅两态由 bootstrap-theme.ts 写在 html 上的
+   .light / .dark 决定。 */
+
+:root {
+  /* 与 index.css @theme 的深色默认值一致 */
+  --splash-surface: #17171b;
+  --splash-edge: rgb(255 255 255 / 9%);
+  --splash-foreground: #e2e3e6;
+  --splash-accent: #df6b35;
+  --splash-glow: rgb(223 107 53 / 22%);
+  --splash-track: rgb(255 255 255 / 8%);
+  color-scheme: dark;
+}
+
+html.light {
+  /* 与 index.css html.light 一致 */
+  --splash-surface: #ffffff;
+  --splash-edge: rgb(0 0 0 / 8%);
+  --splash-foreground: #1b1c1f;
+  --splash-accent: #d45d2d;
+  --splash-glow: rgb(212 93 45 / 14%);
+  --splash-track: rgb(0 0 0 / 7%);
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  color: var(--splash-foreground);
+  font-family:
+    "PiAbyss HarmonyOS Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  cursor: default;
+  user-select: none;
+}
+
+/* 透明窗口 + 圆角卡片：让开屏看起来是桌面上的一块圆角浮层，
+   而不是一个直角矩形窗（与 memo-widget 同一套做法）。 */
+.splash-card {
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  overflow: hidden;
+  border: 1px solid var(--splash-edge);
+  border-radius: 14px;
+  background: var(--splash-surface);
+  animation: splash-in 240ms ease-out;
+}
+
+/* 标背后一团极淡的暖色辉光。纯色卡片否则像一块死板的色块，
+   这层光让「深渊里也留着一点光」这句文案和画面是同一件事。 */
+.splash-card::before {
+  content: "";
+  position: absolute;
+  top: -74px;
+  left: 50%;
+  width: 260px;
+  height: 210px;
+  transform: translateX(-50%);
+  background: radial-gradient(closest-side, var(--splash-glow), transparent);
+  pointer-events: none;
+}
+
+/* 内容压住辉光。 */
+.splash-card > * {
+  position: relative;
+}
+
+@keyframes splash-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.splash-mark {
+  position: relative;
+  width: 52px;
+  height: 52px;
+}
+
+.splash-mark img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* 与 index.css 的 .pi-mark-light / .pi-mark-dark 同义：深色用 dark 标，
+   浅色用 light 标。 */
+.splash-mark-light {
+  display: none;
+}
+
+.splash-mark-dark {
+  display: block;
+}
+
+html.light .splash-mark-light {
+  display: block;
+}
+
+html.light .splash-mark-dark {
+  display: none;
+}
+
+.splash-wordmark {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 1;
+}
+
+.splash-bar {
+  position: relative;
+  width: 148px;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--splash-track);
+  /* 高亮条宽 / 轨道宽。下面的 translateX(238%) 由这个值推导而来，
+     改这里必须同步改 keyframes —— splash-css.test.ts 会盯住这层关系。 */
+  --splash-bar-fill: 42%;
+}
+
+/* 一趟的时间。1800ms 走 210px（≈117px/s）：慢到能看清，又不至于显得迟钝。
+   注意这条进度条是**不确定指示器**——它只表达「还在动」，不表达真实进度，
+   别按百分比读它。真正跟启动状态挂钩的只有 ready 时高亮走满停住那一下。 */
+.splash-bar span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--splash-bar-fill);
+  border-radius: inherit;
+  background: var(--splash-accent);
+  /* 对称缓动：进左边界和出右边界都是慢的，循环接缝处没有速度跳变。
+     （曾用 cubic-bezier(.4,0,.2,1)「起步快、尾段减速」，接缝一来一回
+      一顿一慢，肉眼能看出来。） */
+  animation: splash-sweep 1800ms cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+/* 从「完全在左边界外」到「左缘正好落在右边界上」。
+   位移 = 高亮宽 + 轨道宽 = 142% 轨道宽 = 238% 自身宽度（= 100% / 42%）。
+   终点必须**刚好**是 238%：写大了（比如 340%）高亮会整个冲出右边界外，
+   被 overflow:hidden 裁掉，一个周期里有 400+ms 轨道上什么都没有——
+   看起来就是「扫过去 → 愣一下 → 才重新出现」。起点 -100% 同理：高亮
+   右缘正好贴在左边界上，第一帧不会从空白里冒出来。 */
+@keyframes splash-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(238%);
+  }
+}
+
+/* 叙事文案：开屏唯一的文字，也是主角。固定 min-height 保证换句时不跳版。 */
+.splash-narrative {
+  margin: 0;
+  min-height: 20px;
+  color: var(--splash-foreground);
+  font-size: 14px;
+  line-height: 20px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  /* 时长必须与 splash-copy.ts 的 NARRATIVE_FADE_MS 一致。 */
+  transition: opacity 420ms ease;
+}
+
+.splash-narrative[data-switching="true"] {
+  opacity: 0;
+}
+
+/* 就绪：进度条走满停住，给「可以进主界面了」一个收束感。 */
+.splash-card[data-splash-stage="ready"] .splash-bar span {
+  width: 100%;
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-card {
+    animation: none;
+  }
+  .splash-narrative {
+    transition-duration: 0ms;
+  }
+  .splash-bar span {
+    animation-duration: 3600ms;
+  }
+}
