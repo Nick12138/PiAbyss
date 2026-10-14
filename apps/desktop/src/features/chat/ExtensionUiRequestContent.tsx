@@ -135,6 +135,26 @@ function SubmitLabel({ label, submitting }: { label: string; submitting: boolean
   );
 }
 
+/**
+ * `[Header] Question` → `Question`.
+ *
+ * The questionnaire bakes its own header into the title for hosts that have no
+ * slot for it. This card shows the question number instead, so both the expanded
+ * header and the folded summary strip that bracketed prefix rather than
+ * printing the same words twice. Requests without `questionHeader` come back
+ * untouched.
+ */
+export function questionDisplayTitle(
+  request: { title?: string; questionHeader?: string },
+  fallback: string,
+): string {
+  const rawTitle = request.title ?? fallback;
+  const headerPrefix = request.questionHeader ? `[${request.questionHeader}] ` : "";
+  return headerPrefix && rawTitle.startsWith(headerPrefix)
+    ? rawTitle.slice(headerPrefix.length)
+    : rawTitle;
+}
+
 export function ExtensionUiRequestContent({
   request,
   controller,
@@ -194,23 +214,30 @@ export function ExtensionUiRequestContent({
   const isMultiSelect =
     request.kind === "input" && request.multiSelect === true && allOptions.length > 0;
   const hasChoiceList = isSelect || isMultiSelect;
-  /**
-   * The extension prefixes the header into the title as well, so that hosts
-   * without a chip slot still show it. Now that the chip exists, drop the
-   * duplicate.
-   */
-  const headerPrefix = request.questionHeader ? `[${request.questionHeader}] ` : "";
-  const rawTitle = request.title ?? t("extUiDefaultTitle");
-  const displayTitle =
-    headerPrefix && rawTitle.startsWith(headerPrefix)
-      ? rawTitle.slice(headerPrefix.length)
-      : rawTitle;
+  const displayTitle = questionDisplayTitle(request, t("extUiDefaultTitle"));
   // The built-in questionnaire always comes from the same plugin, so repeating
   // its name on every question is noise. Other extensions keep the row — for
   // them, knowing who is asking is the point of it.
   const showSource =
     Boolean(sourceLabel) &&
     !(request.origin?.invocationKind === "tool" && request.origin.toolName === "ask_user_question");
+  /**
+   * The question number is a progress mark, so it is read in the action row next
+   * to "answered N" rather than above the title. The questionnaire's own header
+   * and the multi-select hint were pure repetition — the title already carries
+   * the first and the checkboxes speak for themselves.
+   */
+  const questionOrdinal =
+    typeof request.questionIndex === "number" ? (
+      <span className="rounded-full bg-surface-overlay px-2 py-0.5 text-[11px] text-muted">
+        {request.questionCount && request.questionCount > 1
+          ? t("extUiQuestionProgress", {
+              index: request.questionIndex,
+              total: request.questionCount,
+            })
+          : t("extUiQuestionOrdinal", { index: request.questionIndex })}
+      </span>
+    ) : null;
   /** Any question past the first can send the user back to the previous one. */
   const canRewind = typeof request.questionIndex === "number" && request.questionIndex > 1;
   const hasFreeformText = input.trim().length > 0;
@@ -584,6 +611,7 @@ export function ExtensionUiRequestContent({
 
   const footerActions = (
     <div className="flex flex-wrap items-center gap-2" data-extension-ui-actions="true">
+      {questionOrdinal}
       {answeredCount && answeredCount > 0 ? (
         <span className="flex min-w-0 items-center gap-1 text-[11px] text-muted">
           <Check className="size-3 shrink-0 text-success" aria-hidden="true" />
@@ -665,46 +693,33 @@ export function ExtensionUiRequestContent({
   const titleClassName = `break-words font-semibold ${
     variant === "modal" ? "text-base" : "text-sm"
   }`;
-  const chipsRow =
-    request.questionIndex || request.questionHeader || isMultiSelect || highRisk ? (
-      <div className="mb-1 flex flex-wrap items-center gap-1.5">
-        {request.questionIndex ? (
-          <span className="rounded-full bg-surface-overlay px-2 py-0.5 text-[11px] text-muted">
-            {request.questionCount && request.questionCount > 1
-              ? t("extUiQuestionProgress", {
-                  index: request.questionIndex,
-                  total: request.questionCount,
-                })
-              : t("extUiQuestionOrdinal", { index: request.questionIndex })}
-          </span>
-        ) : null}
-        {request.questionHeader ? (
-          <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-foreground/70">
-            {request.questionHeader}
-          </span>
-        ) : null}
-        {isMultiSelect ? (
-          <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-foreground/70">
-            {t("extUiMultiSelectHint")}
-          </span>
-        ) : null}
-        {highRisk ? (
-          <span className="text-[11px] font-medium text-warning">{t("extUiHighRisk")}</span>
-        ) : null}
-      </div>
-    ) : null;
+  /**
+   * A high-risk warning keeps its own row above the title: it is a caution, not
+   * a label the user can scan past.
+   */
+  const riskNote = highRisk ? (
+    <div className="mb-1 flex flex-wrap items-center gap-1.5">
+      <span className="text-[11px] font-medium text-warning">{t("extUiHighRisk")}</span>
+    </div>
+  ) : null;
 
   /** The header doubles as the fold control; the chevron in the corner remains. */
   const canFold = typeof onToggleFold === "function";
+  /**
+   * The icon and the fold chevron sit on the header's centre line: a request can
+   * carry a caution row above the title, and pinning them to the top tied them
+   * to that row rather than to the header as a whole. Centring is what puts them
+   * on the same axis as the card's own folded summary row.
+   */
   const headerRegion = (
     <>
       {highRisk ? (
-        <CircleAlert size={17} className="mt-0.5 shrink-0 text-warning" />
+        <CircleAlert size={17} className="shrink-0 text-warning" />
       ) : (
-        <MessageCircleQuestion size={17} className="mt-0.5 shrink-0 text-foreground/75" />
+        <MessageCircleQuestion size={17} className="shrink-0 text-foreground/75" />
       )}
       <div className="min-w-0 flex-1">
-        {chipsRow}
+        {riskNote}
         <h2
           ref={titleRef}
           id={titleId}
@@ -716,13 +731,11 @@ export function ExtensionUiRequestContent({
       {/* Decoration only — the whole header above is the actual control, so
           this must not be a second focusable element with the same name. */}
       {canFold ? (
-        <ChevronUp size={14} className="mt-0.5 shrink-0 text-muted" aria-hidden="true" />
+        <ChevronUp size={14} className="shrink-0 text-muted" aria-hidden="true" />
       ) : null}
     </>
   );
-  const headerClassName = `flex min-w-0 items-start gap-2.5 rounded-md ${
-    variant === "inline" ? "pr-7" : ""
-  }`;
+  const headerClassName = "flex min-w-0 items-center gap-2.5 rounded-md";
 
   return (
     <div

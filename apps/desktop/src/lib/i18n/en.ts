@@ -1661,7 +1661,6 @@ export const en = {
   extUiCollapseTitle: "Collapse title",
   extUiMoreOptions: "More below",
   extUiFreeformPlaceholder: "Or answer this question in your own words…",
-  extUiMultiSelectHint: "Multi-select",
   extUiSelectThenConfirm: "Select, then press Enter to continue",
   extUiSelected: "Selected",
   extUiBackToPrevious: "Change previous answer",

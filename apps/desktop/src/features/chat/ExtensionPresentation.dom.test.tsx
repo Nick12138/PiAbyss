@@ -584,7 +584,7 @@ describe("Extension presentation surfaces", () => {
     );
   });
 
-  it("shows the questionnaire ordinal, the header chip and the rewound preselect", () => {
+  it("shows the questionnaire ordinal in the action row and the rewound preselect", () => {
     act(() => {
       useAppStore.getState().setExtensionUiRequest(
         extensionRequest({
@@ -604,7 +604,9 @@ describe("Extension presentation surfaces", () => {
     renderRequestSurfaces();
 
     expect(screen.getByText("Question 2 of 3")).toBeVisible();
-    expect(screen.getByText("Layout")).toBeVisible();
+    // The extension's own header and the multi-select hint are not labels the
+    // card repeats any more; only the progress mark survives.
+    expect(screen.queryByText("Layout")).not.toBeInTheDocument();
     // A rewind pre-selects the option rather than seeding the free-text box.
     expect(screen.getByRole("button", { name: "Keep" })).toHaveAttribute(
       "data-option-selected",
@@ -612,7 +614,7 @@ describe("Extension presentation surfaces", () => {
     );
   });
 
-  it("drops the extension's bracketed header from the title now that a chip exists", () => {
+  it("drops the extension's bracketed header from the title", () => {
     act(() => {
       useAppStore.getState().setExtensionUiRequest(
         extensionRequest({
@@ -627,7 +629,7 @@ describe("Extension presentation surfaces", () => {
     renderRequestSurfaces();
 
     expect(screen.getByRole("region", { name: "Which shape?" })).toBeVisible();
-    expect(screen.getByText("Layout")).toBeVisible();
+    expect(screen.queryByText("Layout")).not.toBeInTheDocument();
     expect(screen.queryByText("[Layout] Which shape?")).not.toBeInTheDocument();
   });
 
@@ -657,7 +659,10 @@ describe("Extension presentation surfaces", () => {
     const user = userEvent.setup();
     renderRequestSurfaces();
 
-    expect(screen.getByText("Multi-select")).toBeVisible();
+    // Neither the header nor a "multi-select" hint is shown any more: the
+    // checkbox list itself is the affordance.
+    expect(screen.queryByText("Multi-select")).not.toBeInTheDocument();
+    expect(screen.getByText("Question 3 of 3")).toBeVisible();
     // The numbered list the extension sends for option-less hosts is replaced
     // by the checkbox list, so showing both would just duplicate it.
     expect(screen.queryByText(/1\. Alpha — first/)).not.toBeInTheDocument();
@@ -997,6 +1002,28 @@ describe("Extension presentation surfaces", () => {
     expect(screen.getByRole("button", { name: "Confirm" })).toBeVisible();
   });
 
+  it("folds a question without repeating the extension's own header", async () => {
+    const groupKey = "tool:ask-user-question-fold-header";
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        embeddedQuestionRequest({
+          groupKey,
+          title: "[Layout] Which shape?",
+          questionHeader: "Layout",
+        }),
+      );
+    });
+    const user = userEvent.setup();
+    renderRequestSurfaces();
+
+    await user.click(screen.getByRole("button", { name: "Collapse question" }));
+
+    // The summary row reads the same title as the expanded header, so the
+    // bracketed header is stripped there too rather than printed on its own.
+    expect(screen.getByRole("button", { name: /Which shape\?/ })).toBeVisible();
+    expect(screen.queryByText(/\[Layout\]/)).not.toBeInTheDocument();
+  });
+
   it("keeps the action row a sibling of the scroll region in one unbroken flex column", () => {
     act(() => {
       useAppStore.getState().setExtensionUiRequest(
@@ -1037,7 +1064,7 @@ describe("Extension presentation surfaces", () => {
     expect(node).not.toBeNull();
   });
 
-  it("shows the answered count at the bottom of the card, left-most", async () => {
+  it("shows the progress mark and the answered count at the bottom of the card", async () => {
     vi.spyOn(hostClient, "request").mockResolvedValue({ ok: true, result: null } as never);
     useAppStore.setState({
       session: {
@@ -1070,12 +1097,15 @@ describe("Extension presentation surfaces", () => {
     expect(waitingBadge.closest('[role="button"]')).not.toBeNull();
 
     // Once the next question is up it moves into the action row at the very
-    // bottom, as that row's left-most item — no strip above the question.
+    // bottom — the question's own progress mark leads that row, the count
+    // follows it, and nothing about either sits above the question.
     act(() => useAppStore.getState().setExtensionUiRequest(questionRequest(2)));
     const actions = view.container.querySelector("[data-extension-ui-actions]");
     const badge = screen.getByText("1 answered");
+    const ordinal = screen.getByText("Question 2 of 2");
     expect(actions?.contains(badge)).toBe(true);
-    expect(actions?.firstElementChild?.contains(badge)).toBe(true);
+    expect(actions?.firstElementChild?.contains(ordinal)).toBe(true);
+    expect(view.container.querySelector("h2")?.textContent).not.toMatch(/Question 2 of 2/);
   });
 
   it("keeps the custom answer scoped to its own question", async () => {

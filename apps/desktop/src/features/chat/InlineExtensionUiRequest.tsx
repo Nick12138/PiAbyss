@@ -2,7 +2,7 @@ import { Check, ChevronDown, CircleAlert, LoaderCircle, MessageCircleQuestion } 
 import { useEffect, useId, useState } from "react";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
-import { ExtensionUiRequestContent } from "./ExtensionUiRequestContent";
+import { ExtensionUiRequestContent, questionDisplayTitle } from "./ExtensionUiRequestContent";
 import { useExtensionUiResponse } from "./use-extension-ui-response";
 
 function isEmbeddedQuestionRequest(request: {
@@ -160,13 +160,16 @@ export function InlineExtensionUiRequest() {
               />
             )}
             {/* Two lines instead of one: folding is also how the user reads a
-                long question in full without expanding the card. */}
+                long question in full without expanding the card. The clamp box
+                keeps its minimum height, so the text is centred inside it by a
+                wrapper — a single line inside `min-h-6` would otherwise sit at
+                the top of the box while the icon and badge beside it are
+                centred on the row. */}
             {request ? (
-              <span
-                id={collapsedTitleId}
-                className="min-h-6 min-w-0 flex-1 line-clamp-2 text-xs font-semibold"
-              >
-                {request.title ?? t("extUiDefaultTitle")}
+              <span id={collapsedTitleId} className="flex min-h-6 min-w-0 flex-1 items-center">
+                <span className="line-clamp-2 min-w-0 text-xs font-semibold">
+                  {questionDisplayTitle(request, t("extUiDefaultTitle"))}
+                </span>
               </span>
             ) : (
               <span className="min-w-0 flex-1 truncate text-xs">{t("extUiGroupWaiting")}</span>

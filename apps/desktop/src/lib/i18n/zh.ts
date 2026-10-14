@@ -1585,7 +1585,6 @@ export const zh: Record<MessageKey, string> = {
   extUiCollapseTitle: "收起标题",
   extUiMoreOptions: "下方还有更多",
   extUiFreeformPlaceholder: "或直接写本题的回答…",
-  extUiMultiSelectHint: "可多选",
   extUiSelectThenConfirm: "选中后按 Enter 继续",
   extUiSelected: "已选中",
   extUiBackToPrevious: "修改上一题",
