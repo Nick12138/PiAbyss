@@ -31,9 +31,25 @@ export function useExtensionUiResponse(
   const requestRef = useRef(request);
   requestRef.current = request;
 
-  const clearIfCurrent = useCallback(
+  /**
+   * Remove a settled request from wherever it lives — active slot or queue.
+   *
+   * A session switch while the respond RPC is in flight demotes the request
+   * from the active slot into the queue (`alignExtensionUiToSession`). If we
+   * only closed it when it was still active, the settled request would stay
+   * queued forever and later be promoted back — the questionnaire card would
+   * "rewind" to a question the user already answered. `closeRequest` is a
+   * no-op when the requestId is nowhere, so calling it unconditionally is
+   * safe; the return value says whether the request was found at all.
+   */
+  const settleRequest = useCallback(
     (requestId: string, outcome: ExtensionDecisionStepOutcome): boolean => {
-      if (useAppStore.getState().extensionUiRequest?.requestId !== requestId) return false;
+      const state = useAppStore.getState();
+      const wasActive = state.extensionUiRequest?.requestId === requestId;
+      const wasQueued = state.extensionUiQueue.some(
+        (queued) => queued.requestId === requestId,
+      );
+      if (!wasActive && !wasQueued) return false;
       closeRequest(requestId, outcome);
       return true;
     },
@@ -59,19 +75,19 @@ export function useExtensionUiResponse(
     const requestId = request.requestId;
     const timer = window.setTimeout(
       () => {
-        if (!clearIfCurrent(requestId, "expired")) return;
+        if (!settleRequest(requestId, "expired")) return;
         pushNotification(t("extUiExpired"), "warning");
       },
       Math.max(0, request.expiresAt - Date.now()),
     );
     return () => window.clearTimeout(timer);
-  }, [request?.requestId, request?.expiresAt, clearIfCurrent, pushNotification, t]);
+  }, [request?.requestId, request?.expiresAt, settleRequest, pushNotification, t]);
 
   const respond = useCallback(
     async (status: "resolved" | "cancelled", value?: JsonValue): Promise<boolean> => {
       if (!request || submittingRef.current) return false;
       if (isExtensionUiRequestExpired(request)) {
-        if (clearIfCurrent(request.requestId, "expired")) {
+        if (settleRequest(request.requestId, "expired")) {
           pushNotification(t("extUiExpired"), "warning");
         }
         return false;
@@ -89,6 +105,14 @@ export function useExtensionUiResponse(
           { requestId, status, value },
         );
         if (!response.ok) {
+          // STALE_REVISION means the Host no longer knows this requestId — it
+          // was settled by another path (session rebuild, identity migration,
+          // disposal). Keeping the card on screen as "pending" would strand the
+          // user on a zombie request, so settle it locally and drop the card.
+          if (response.error?.code === "STALE_REVISION") {
+            settleRequest(requestId, "stale");
+            return false;
+          }
           const message = response.error?.message ?? t("extUiRespondFailed");
           if (useAppStore.getState().extensionUiRequest?.requestId === requestId) {
             setError(message);
@@ -96,7 +120,7 @@ export function useExtensionUiResponse(
           }
           return false;
         }
-        clearIfCurrent(requestId, status === "resolved" ? "answered" : "cancelled");
+        settleRequest(requestId, status === "resolved" ? "answered" : "cancelled");
         return true;
       } catch (caught) {
         // Host-epoch rejections abort the respond call with an internal
@@ -115,7 +139,7 @@ export function useExtensionUiResponse(
         }
       }
     },
-    [request, clearIfCurrent, pushNotification, t],
+    [request, settleRequest, pushNotification, t],
   );
 
   const setInput = useCallback((value: string) => {
