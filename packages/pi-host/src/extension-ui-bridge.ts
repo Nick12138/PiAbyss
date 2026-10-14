@@ -715,7 +715,12 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
         },
         dialogOpts,
       );
-      return typeof value === "string" ? prepared.responseValues.get(value) : undefined;
+      if (typeof value !== "string") return undefined;
+      // A `select` card that declares `allowFreeform` resolves with the text the
+      // user typed into its answer box — a string that is not any option id.
+      // Falling back to the raw value keeps that a custom answer; only a
+      // non-string settlement still means cancellation.
+      return prepared.responseValues.get(value) ?? value;
     },
     confirm: async (title, message, dialogOpts) => {
       const value = await requestBlocking(

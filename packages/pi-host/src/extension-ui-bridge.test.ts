@@ -165,6 +165,26 @@ describe("extension-ui-bridge", () => {
     await expect(p).resolves.toBe("beta");
   });
 
+  it("returns freeform select text as a custom answer instead of cancelling", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    // The questionnaire card declares `allowFreeform`, so the Desktop resolves
+    // the select with the text typed into its answer box — not an option id.
+    // That text must come back unchanged; mapping it through the option table
+    // used to yield undefined, which the questionnaire read as a cancellation.
+    const pendingSelect = ui.select("Pick", ["alpha", "beta"], {
+      piabyss: { allowFreeform: true },
+    } as never);
+    const request = events.find((event) => event.e === "extensionUi.request")!.p as {
+      requestId: string;
+    };
+    respondExtensionUi(request.requestId, "resolved", "\u6211\u9009\u81ea\u5b9a\u4e49", id);
+    await expect(pendingSelect).resolves.toBe("\u6211\u9009\u81ea\u5b9a\u4e49");
+  });
+
   it("bounds blocking payloads while preserving selected SDK option values", async () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
     const ui = createExtensionUiContext({
