@@ -187,7 +187,11 @@ function applyAgentEventToDraft(
     case "message_start": {
       const msg = normalizeMessage(ev.message);
       if (msg) {
-        if (msg.role !== "user" || !replaceOptimisticUserMessageInPlace(next.messages, msg)) {
+        if (
+          msg.role !== "user" ||
+          (!replaceOptimisticUserMessageInPlace(next.messages, msg) &&
+            !replaceSnapshotEchoedUserMessageInPlace(next.messages, msg))
+        ) {
           next.messages.push(
             msg.role === "assistant"
               ? {
@@ -532,6 +536,30 @@ function replaceOptimisticUserMessageInPlace(
   if (index === -1) return false;
   const { _optimisticKey: _dropped, ...authoritative } = incoming;
   messages[index] = authoritative;
+  return true;
+}
+
+/**
+ * Idempotence guard for a user message_start whose optimistic row is already
+ * gone: an authoritative snapshot that already contained this user message
+ * may be applied BEFORE the late message_start event (the snapshot and the
+ * event stream arrive on separate channels and are not ordered against each
+ * other; mergeOptimisticMessages correctly dropped the echo once the
+ * fingerprint matched). Pushing again would duplicate the bubble until the
+ * session is reloaded, so a trailing user row with identical content is
+ * upgraded in place instead. Assistant messages are excluded: their
+ * message_start legitimately opens a NEW row mid-turn (multi-step replies),
+ * and identical assistant text there means a genuine retry, not a duplicate.
+ */
+function replaceSnapshotEchoedUserMessageInPlace(
+  messages: SerializableAgentMessage[],
+  incoming: SerializableAgentMessage,
+): boolean {
+  const last = messages[messages.length - 1];
+  if (!last || last.role !== "user" || typeof last._optimisticKey === "string") return false;
+  if (!messagesMatchByContent(last, incoming)) return false;
+  const { _optimisticKey: _dropped, ...authoritative } = incoming;
+  messages[messages.length - 1] = authoritative;
   return true;
 }
 

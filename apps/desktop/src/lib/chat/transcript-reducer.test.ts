@@ -1233,4 +1233,67 @@ describe("optimistic user echo", () => {
 
     expect(s.messages).toHaveLength(2);
   });
+
+  it("does not duplicate when a snapshot already echoed the user message before message_start", () => {
+    // Race: an authoritative snapshot containing this user message is applied
+    // (mergeOptimisticMessages drops the echo because the fingerprint matches)
+    // BEFORE the late message_start event arrives. The start must upgrade the
+    // trailing snapshot row in place instead of pushing a second bubble.
+    let s = baseSession();
+    s.messages = [
+      { role: "user", content: "earlier q", timestamp: 1 },
+      { role: "assistant", content: "earlier a", timestamp: 2 },
+      // The echo is already gone; the authoritative row arrived via snapshot.
+      { role: "user", content: "> quoted line\n\n接着这个说", timestamp: 3 },
+    ];
+
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_start",
+        message: { role: "user", content: "> quoted line\n\n接着这个说", timestamp: 4 },
+      },
+    })!;
+
+    const userRows = s.messages.filter((m) => m.role === "user");
+    expect(userRows).toHaveLength(2);
+  });
+
+  it("still opens a new user row when the snapshot row differs from the start payload", () => {
+    let s = baseSession();
+    s.messages = [{ role: "user", content: "a different message", timestamp: 1 }];
+
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_start",
+        message: { role: "user", content: "the new prompt", timestamp: 2 },
+      },
+    })!;
+
+    const userRows = s.messages.filter((m) => m.role === "user");
+    expect(userRows).toHaveLength(2);
+  });
+
+  it("pushes a repeated identical user message when the trailing row is an assistant reply", () => {
+    // Genuinely repeated prompt: [user X, assistant X-answer] then the user
+    // sends X again. The trailing row is the assistant reply, so this is a new
+    // turn and must push, not claim the older identical user row.
+    let s = baseSession();
+    s.messages = [
+      { role: "user", content: "same text", timestamp: 1 },
+      { role: "assistant", content: "answer", timestamp: 2 },
+    ];
+
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_start",
+        message: { role: "user", content: "same text", timestamp: 3 },
+      },
+    })!;
+
+    const userRows = s.messages.filter((m) => m.role === "user");
+    expect(userRows).toHaveLength(2);
+  });
 });
