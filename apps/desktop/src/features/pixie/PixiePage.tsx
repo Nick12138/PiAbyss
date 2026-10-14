@@ -43,6 +43,10 @@ import {
   type ComposerRuntime,
 } from "../chat/composer-runtime";
 import { usePixieViewStore } from "./pixie-store";
+import {
+  clearPixiePreviousWorkspace,
+  rememberPixiePreviousWorkspace,
+} from "./pixie-previous-workspace";
 import { isSamePixiePath } from "../../lib/pixie-path";
 
 const DISPATCH_POLL_IDLE_MS = 5_000;
@@ -480,6 +484,9 @@ export function PixiePage() {
       const before = useAppStore.getState().workspace?.canonicalCwd ?? null;
       const pixieCwd = usePixieViewStore.getState().current?.cwd;
       prevCwdRef.current = before && !isSamePixiePath(before, pixieCwd) ? before : null;
+      // 同步给侧边栏「新会话」分支（见 pixie-previous-workspace.ts）：
+      // 小精灵页的「新会话」要作用于这个工作区，而不是 pixie 工作区。
+      rememberPixiePreviousWorkspace(prevCwdRef.current);
     }
     void acquire();
   }, [hostInstanceId, acquire]);
@@ -497,6 +504,8 @@ export function PixiePage() {
       }
       const pixieCwd = usePixieViewStore.getState().current?.cwd;
       const before = prevCwdRef.current;
+      // 交接数据随之清掉：离开小精灵页后侧边栏按钮回到普通路径。
+      clearPixiePreviousWorkspace();
       if (!before || !pixieCwd) return;
       if (!isSamePixiePath(useAppStore.getState().workspace?.canonicalCwd, pixieCwd)) return;
       void activateWorkspaceAcrossWorkspaces(before, { quiet: true });

@@ -31,6 +31,7 @@ import {
   isCreateSessionPending,
   subscribeCreateSessionPending,
 } from "../lib/commands/actions";
+import { createNewSessionFromPixiePage } from "../features/pixie/pixie-previous-workspace";
 
 const SIDEBAR_WIDTH_KEY = "piabyss.sidebar.width.v1";
 const DEFAULT_SIDEBAR_WIDTH = 268;
@@ -121,8 +122,15 @@ function NewSessionButton() {
     <button
       type="button"
       onClick={() => {
+        const state = useAppStore.getState();
+        if (state.page === "pixie") {
+          // 小精灵页的「新会话」作用于进入小精灵前的工作区（先切回再建），
+          // 不在 pixie 工作区里误建小精灵会话。见 pixie-previous-workspace.ts。
+          void createNewSessionFromPixiePage();
+          return;
+        }
         // Creating a session from Settings/Packages should land on the chat page.
-        if (useAppStore.getState().page !== "chat") useAppStore.getState().setPage("chat");
+        if (state.page !== "chat") useAppStore.getState().setPage("chat");
         void createNewSession();
       }}
       disabled={!workspace?.servicesReady || pending}
@@ -484,8 +492,10 @@ export function SidebarLayout({
 
         {sidebarCollapsed ? null : (
           <>
-            {!telegramViewActive && page !== "pixie" && (
+            {!telegramViewActive && (
               <div className="px-2 pb-2 pt-[10px]">
+                {/* 小精灵页也保留「新会话」：点击时作用于进入小精灵前的工作区
+                    （NewSessionButton 内部分流，pixie 工作区不会因此建会话）。 */}
                 <NewSessionButton />
               </div>
             )}
