@@ -1576,6 +1576,27 @@ export type ExtensionUiRequest = {
   routeReason?: ExtensionUiRouteReason;
   groupKey?: string;
   allowFreeform?: boolean;
+  /**
+   * 1-based ordinal of this question inside a multi-question questionnaire.
+   * Lets the Desktop card show "Question 2 of 3" instead of relying on the
+   * extension to bake the numbering into the title.
+   */
+  questionIndex?: number;
+  /** Total questions in the same questionnaire. */
+  questionCount?: number;
+  /**
+   * Short chip label for this question (the extension's `header`). Carried
+   * separately so the card can render it as a chip rather than receiving it
+   * pre-concatenated into `title`.
+   */
+  questionHeader?: string;
+  /**
+   * `kind: "input"` requests that carry `options` may set this to ask the
+   * Desktop for a checkbox list instead of a free-text field. The Desktop
+   * returns the chosen 1-based positions joined with commas (e.g. `"1,3"`),
+   * which is the same shape the extension's numeric multi-select parser expects.
+   */
+  multiSelect?: boolean;
   origin?: ExtensionUiOrigin;
 };
 

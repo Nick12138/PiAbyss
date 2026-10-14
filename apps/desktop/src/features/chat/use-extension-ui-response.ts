@@ -42,10 +42,17 @@ export function useExtensionUiResponse(
 
   useEffect(() => {
     submittingRef.current = false;
-    setInputState(request?.defaultValue ?? "");
+    // Only the free-text kinds seed their field from `defaultValue`. A
+    // multi-select question is a checkbox list whose previous answer arrives as
+    // a `"1,3"` position string — filling the free-text box with that would both
+    // look wrong and make the action button submit the positions as if the user
+    // had typed them.
+    const seedsField =
+      (request?.kind === "input" || request?.kind === "editor") && request?.multiSelect !== true;
+    setInputState(seedsField ? (request?.defaultValue ?? "") : "");
     setSubmitting(false);
     setError(null);
-  }, [request?.requestId, request?.defaultValue]);
+  }, [request?.requestId, request?.defaultValue, request?.kind, request?.multiSelect]);
 
   useEffect(() => {
     if (!request?.expiresAt) return;

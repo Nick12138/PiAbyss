@@ -9,6 +9,8 @@ import {
   MAX_EXTENSION_UI_OPTION_LABEL_LENGTH,
   MAX_EXTENSION_UI_OPTION_PREVIEW_LENGTH,
   MAX_EXTENSION_UI_OPTIONS,
+  MAX_EXTENSION_UI_QUESTION_COUNT,
+  MAX_EXTENSION_UI_QUESTION_HEADER_LENGTH,
   MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH,
   MAX_EXTENSION_UI_TITLE_LENGTH,
   MAX_EXTENSION_MESSAGE_RENDER_CHARACTERS,
@@ -2092,6 +2094,10 @@ function isExtensionUiRequest(value: unknown): boolean {
         "routeReason",
         "groupKey",
         "allowFreeform",
+        "questionIndex",
+        "questionCount",
+        "questionHeader",
+        "multiSelect",
         "origin",
       ],
     ) &&
@@ -2139,7 +2145,21 @@ function isExtensionUiRequest(value: unknown): boolean {
       ].includes(String(value.routeReason))) &&
     (value.groupKey === undefined || isBoundedNonEmptyString(value.groupKey, 256)) &&
     (value.allowFreeform === undefined || isBoolean(value.allowFreeform)) &&
+    isOptionalQuestionOrdinal(value.questionIndex) &&
+    isOptionalQuestionOrdinal(value.questionCount) &&
+    isOptionalBoundedString(value.questionHeader, MAX_EXTENSION_UI_QUESTION_HEADER_LENGTH) &&
+    (value.multiSelect === undefined || isBoolean(value.multiSelect)) &&
     (value.origin === undefined || isExtensionUiOrigin(value.origin))
+  );
+}
+
+/** Questionnaire ordinals are 1-based and bounded; anything else is rejected. */
+function isOptionalQuestionOrdinal(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Number.isInteger(value) &&
+      (value as number) >= 1 &&
+      (value as number) <= MAX_EXTENSION_UI_QUESTION_COUNT)
   );
 }
 

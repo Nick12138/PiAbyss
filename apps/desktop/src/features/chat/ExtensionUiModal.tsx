@@ -88,7 +88,7 @@ export function ExtensionUiModal() {
         aria-busy={controller.submitting}
         tabIndex={-1}
         onKeyDown={handleDialogKeyDown}
-        className="theme-floating-surface max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-lg border border-border bg-surface-raised p-5 shadow-xl focus-visible:outline focus-visible:outline-[1.5px] focus-visible:outline-focus"
+        className="theme-floating-surface flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-border bg-surface-raised p-5 shadow-xl focus-visible:outline focus-visible:outline-[1.5px] focus-visible:outline-focus"
         data-extension-ui-surface="modal"
       >
         <ExtensionUiRequestContent

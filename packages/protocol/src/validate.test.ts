@@ -14,6 +14,8 @@ import {
   MAX_EXTENSION_UI_OPTION_ID_LENGTH,
   MAX_EXTENSION_UI_OPTION_LABEL_LENGTH,
   MAX_EXTENSION_UI_OPTIONS,
+  MAX_EXTENSION_UI_QUESTION_COUNT,
+  MAX_EXTENSION_UI_QUESTION_HEADER_LENGTH,
   MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH,
   MAX_EXTENSION_UI_TITLE_LENGTH,
   MAX_EXTENSION_MESSAGE_RENDER_LINE_LENGTH,
@@ -964,6 +966,30 @@ describe("deep result/event validation (C3)", () => {
         groupKey: "x".repeat(257),
       }).ok,
     ).toBe(false);
+  });
+
+  it("carries questionnaire ordinals and the header chip on a select request", () => {
+    const request = (overrides: Record<string, unknown>) =>
+      validateEventPayload("extensionUi.request", {
+        requestId: EXTENSION_REQUEST_ID,
+        kind: "select",
+        ...overrides,
+      }).ok;
+    expect(request({ questionIndex: 2, questionCount: 3, questionHeader: "Layout" })).toBe(true);
+    // A multi-select question is an `input` request that also carries options.
+    expect(request({ multiSelect: true, options: [{ id: "a", label: "a" }] })).toBe(true);
+    expect(request({ multiSelect: "yes" })).toBe(false);
+    expect(request({ questionHeader: "h".repeat(MAX_EXTENSION_UI_QUESTION_HEADER_LENGTH) })).toBe(
+      true,
+    );
+    expect(
+      request({ questionHeader: "h".repeat(MAX_EXTENSION_UI_QUESTION_HEADER_LENGTH + 1) }),
+    ).toBe(false);
+    // Ordinals are 1-based; 0, negatives, fractions and overshoot are rejected.
+    for (const bad of [0, -1, 1.5, MAX_EXTENSION_UI_QUESTION_COUNT + 1, "2", null]) {
+      expect(request({ questionIndex: bad })).toBe(false);
+      expect(request({ questionCount: bad })).toBe(false);
+    }
   });
 
   it("enforces blocking Extension UI request bounds", () => {

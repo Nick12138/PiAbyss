@@ -23,6 +23,12 @@ export type ExtensionDecisionGroupState = {
     requestId: string;
     kind: ExtensionUiRequest["kind"];
     status: "active" | ExtensionDecisionStepOutcome;
+    /**
+     * Which question of a multi-question questionnaire this step was. Verifies a
+     * rewind: the plugin re-asks the same question with a *new* request id, so
+     * the count has to be keyed by the question rather than the request.
+     */
+    questionIndex?: number;
   }>;
   status: "active" | ExtensionUiGroupStatus;
 };
@@ -33,6 +39,26 @@ export type ExtensionUiWaitingSummary = {
 };
 
 const MAX_EXTENSION_DECISION_GROUP_STEPS = 100;
+
+/**
+ * How many questions the group has already answered.
+ *
+ * Questionnaire steps are counted by question index so that rewinding and
+ * answering again does not inflate the number — the user sees how many of the
+ * questions are done, not how many responses were posted.
+ */
+function countAnsweredSteps(
+  steps: ReadonlyArray<{ status: string; questionIndex?: number }>,
+): number {
+  const indices = new Set<number>();
+  let anonymous = 0;
+  for (const step of steps) {
+    if (step.status !== "answered") continue;
+    if (step.questionIndex === undefined) anonymous += 1;
+    else indices.add(step.questionIndex);
+  }
+  return indices.size + anonymous;
+}
 
 function sameDecisionGroupSession(
   left: SessionTargetContext,
@@ -54,12 +80,20 @@ export function registerDecisionGroupRequest(
   const existing = groups[request.groupKey];
   const current =
     existing && sameDecisionGroupSession(existing.context, request.context) ? existing : undefined;
-  const stepIndex = current?.steps.findIndex((step) => step.requestId === request.requestId) ?? -1;
+  // A re-asked question arrives with a new request id but the same question
+  // index; supersede the old step in place instead of appending, or the group
+  // would accumulate one entry per re-answer.
+  const questionIndex = request.questionIndex;
   const steps = current ? [...current.steps] : [];
+  const stepIndex =
+    questionIndex === undefined
+      ? steps.findIndex((step) => step.requestId === request.requestId)
+      : steps.findIndex((step) => step.questionIndex === questionIndex);
   const step = {
     requestId: request.requestId,
     kind: request.kind,
     status: "active" as const,
+    ...(questionIndex !== undefined ? { questionIndex } : {}),
   };
   if (stepIndex >= 0) steps[stepIndex] = step;
   else steps.push(step);
@@ -72,7 +106,9 @@ export function registerDecisionGroupRequest(
       presentation: request.presentation ?? "modal",
       risk: request.risk ?? "normal",
       activeRequestId: request.requestId,
-      answeredCount: current?.answeredCount ?? 0,
+      // Recomputed, not carried over: a rewind flips the question it goes back
+      // to out of "answered", and the badge must follow.
+      answeredCount: countAnsweredSteps(steps),
       steps: steps.slice(-MAX_EXTENSION_DECISION_GROUP_STEPS),
       status: "active",
     },
@@ -87,17 +123,13 @@ export function settleDecisionGroupRequest(
   if (!request.groupKey) return groups;
   const group = groups[request.groupKey];
   if (!group || !sameDecisionGroupSession(group.context, request.context)) return groups;
-  const previousStep = group.steps.find((step) => step.requestId === request.requestId);
   const steps = group.steps.map((step) =>
     step.requestId === request.requestId ? { ...step, status: outcome } : step,
   );
   const next = {
     ...group,
     activeRequestId: group.activeRequestId === request.requestId ? null : group.activeRequestId,
-    answeredCount:
-      outcome === "answered" && previousStep?.status !== "answered"
-        ? group.answeredCount + 1
-        : group.answeredCount,
+    answeredCount: countAnsweredSteps(steps),
     steps,
   };
   if (next.status !== "active" && next.activeRequestId === null) {

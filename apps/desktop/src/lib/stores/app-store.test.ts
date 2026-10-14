@@ -326,8 +326,65 @@ describe("app-store epoch wiring", () => {
 
     const group = useAppStore.getState().extensionDecisionGroups[groupKey];
     expect(group?.steps).toHaveLength(100);
-    expect(group?.answeredCount).toBe(105);
+    // The count is derived from the retained steps: once the log evicts the
+    // first five, they can no longer be counted. Questionnaires never reach the
+    // cap (at most four questions), so this only affects anonymous tool groups.
+    expect(group?.answeredCount).toBe(100);
     expect(group?.steps[0]?.requestId).toBe("request-5");
+  });
+
+  it("answers a question once even when the user rewinds and re-answers it", () => {
+    const context = {
+      expectedHostInstanceId: "h1",
+      expectedWorkspaceId: "w1",
+      expectedWorkspaceRevision: 1,
+      expectedSessionId: "s1",
+      expectedSessionRevision: 1,
+    };
+    const groupKey = "tool:rewind";
+    const request = (questionIndex: number, requestId: string) => ({
+      requestId,
+      kind: "select" as const,
+      groupKey,
+      presentation: "inline" as const,
+      questionIndex,
+      questionCount: 3,
+      context,
+    });
+    const state = () => useAppStore.getState().extensionDecisionGroups[groupKey];
+
+    useAppStore
+      .getState()
+      .setExtensionUiRequest(request(1, "11111111-1111-4111-8111-111111111111"));
+    useAppStore
+      .getState()
+      .closeExtensionUiRequest("11111111-1111-4111-8111-111111111111", "answered");
+    useAppStore
+      .getState()
+      .setExtensionUiRequest(request(2, "22222222-2222-4222-8222-222222222222"));
+    useAppStore
+      .getState()
+      .closeExtensionUiRequest("22222222-2222-4222-8222-222222222222", "answered");
+    expect(state()?.answeredCount).toBe(2);
+
+    // Rewinding re-asks question 2 under a brand-new request id; the badge must
+    // drop to the questions that are still answered, not accumulate.
+    useAppStore
+      .getState()
+      .setExtensionUiRequest(request(2, "33333333-3333-4333-8333-333333333333"));
+    expect(state()?.answeredCount).toBe(1);
+    expect(state()?.steps).toHaveLength(2);
+    expect(state()?.steps?.[1]).toMatchObject({
+      requestId: "33333333-3333-4333-8333-333333333333",
+      questionIndex: 2,
+      status: "active",
+    });
+
+    useAppStore
+      .getState()
+      .closeExtensionUiRequest("33333333-3333-4333-8333-333333333333", "answered");
+    expect(state()?.answeredCount).toBe(2);
+    expect(state()?.steps).toHaveLength(2);
   });
 
   it("keeps concurrent decision groups isolated", () => {

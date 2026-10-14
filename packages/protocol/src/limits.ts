@@ -61,6 +61,9 @@ export const MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH = 2_048;
 export const MAX_EXTENSION_UI_OPTION_PREVIEW_LENGTH = 16_384;
 export const MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH = 120;
 export const MAX_EXTENSION_UI_CORRELATION_ID_LENGTH = 256;
+/** Upper bound for the questionnaire ordinal fields (`questionIndex`/`Count`). */
+export const MAX_EXTENSION_UI_QUESTION_COUNT = 1_000;
+export const MAX_EXTENSION_UI_QUESTION_HEADER_LENGTH = 120;
 
 /** Bounds for one Host-rendered Extension message snapshot. */
 export const MAX_EXTENSION_MESSAGE_RENDER_LINES = 500;

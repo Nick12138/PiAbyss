@@ -343,6 +343,116 @@ describe("extension-ui-bridge", () => {
     await expect(pendingSelect).resolves.toBeUndefined();
   });
 
+  it("carries questionnaire ordinals, the header chip and a rewind preselect", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const pendingSelect = ui.select("Second question?", ["keep", "delete"], {
+      piabyss: {
+        questionIndex: 2,
+        questionCount: 3,
+        questionHeader: "\u001b[31mLayout\u001b[0m",
+        defaultValue: "keep",
+        optionDetails: [{ id: "keep", description: "Keep it" }],
+      },
+    } as never);
+
+    const request = events.find((event) => event.e === "extensionUi.request")?.p as {
+      requestId: string;
+      questionIndex?: number;
+      questionCount?: number;
+      questionHeader?: string;
+      defaultValue?: string;
+    };
+    expect(request).toMatchObject({
+      questionIndex: 2,
+      questionCount: 3,
+      questionHeader: "Layout",
+      defaultValue: "keep",
+    });
+    respondExtensionUi(request.requestId, "cancelled", undefined, id);
+    await expect(pendingSelect).resolves.toBeUndefined();
+  });
+
+  it("turns option details into a checkbox list for multi-select inputs", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    // `ui.input` has no options parameter, so the choices can only arrive as
+    // piabyss metadata; the Host rebuilds the list the Desktop renders.
+    const pendingInput = ui.input("Pick several", "1. Alpha — first", {
+      piabyss: {
+        multiSelect: true,
+        questionIndex: 3,
+        optionDetails: [
+          { id: "Alpha", description: "first" },
+          { id: "Beta", description: "second" },
+        ],
+      },
+    } as never);
+
+    const request = events.find((event) => event.e === "extensionUi.request")?.p as {
+      requestId: string;
+      kind: string;
+      multiSelect?: boolean;
+      questionIndex?: number;
+      options?: Array<{ id: string; label: string; description?: string }>;
+    };
+    expect(request.kind).toBe("input");
+    expect(request.multiSelect).toBe(true);
+    expect(request.questionIndex).toBe(3);
+    expect(request.options).toEqual([
+      { id: "Alpha", label: "Alpha", description: "first" },
+      { id: "Beta", label: "Beta", description: "second" },
+    ]);
+    respondExtensionUi(request.requestId, "resolved", "1,2", id);
+    await expect(pendingInput).resolves.toBe("1,2");
+  });
+
+  it("leaves a plain input without options when multi-select was not requested", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const pendingInput = ui.input("Branch name", "main", {
+      piabyss: { optionDetails: [{ id: "Alpha", description: "first" }] },
+    } as never);
+
+    const request = events.find((event) => event.e === "extensionUi.request")?.p as {
+      requestId: string;
+      options?: unknown;
+    };
+    expect(request.options).toBeUndefined();
+    respondExtensionUi(request.requestId, "cancelled", undefined, id);
+    await expect(pendingInput).resolves.toBeUndefined();
+  });
+
+  it("drops out-of-range questionnaire ordinals instead of publishing them", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const pendingSelect = ui.select("Pick", ["keep"], {
+      piabyss: { questionIndex: 0, questionCount: -3 },
+    } as never);
+
+    const request = events.find((event) => event.e === "extensionUi.request")?.p as {
+      requestId: string;
+      questionIndex?: number;
+      questionCount?: number;
+    };
+    expect(request.questionIndex).toBeUndefined();
+    expect(request.questionCount).toBeUndefined();
+    respondExtensionUi(request.requestId, "cancelled", undefined, id);
+    await expect(pendingSelect).resolves.toBeUndefined();
+  });
+
   it("routes an ordinary active tool inline in auto mode", async () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
     const activeInvocation: ExtensionInvocationContext = {

@@ -1,11 +1,4 @@
-import {
-  Check,
-  ChevronDown,
-  ChevronUp,
-  CircleAlert,
-  LoaderCircle,
-  MessageCircleQuestion,
-} from "lucide-react";
+import { Check, ChevronDown, CircleAlert, LoaderCircle, MessageCircleQuestion } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -67,19 +60,6 @@ export function InlineExtensionUiRequest() {
   const answeredCount = group?.answeredCount ?? 0;
   const highRisk = (request?.risk ?? group?.risk) === "high";
   const titleId = collapsed ? collapsedTitleId : contentTitleId;
-  const collapseButton = (
-    <button
-      type="button"
-      aria-expanded={true}
-      aria-controls={contentId}
-      aria-label={t("extUiCollapseQuestion")}
-      title={t("extUiCollapseQuestion")}
-      className="inline-flex size-6 shrink-0 items-center justify-center self-center rounded text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
-      onClick={() => setCollapsed(true)}
-    >
-      <ChevronUp size={14} aria-hidden="true" />
-    </button>
-  );
 
   return (
     <section
@@ -89,7 +69,7 @@ export function InlineExtensionUiRequest() {
       data-extension-ui-surface="inline"
     >
       <div
-        className={`conversation-content-width mx-auto w-full rounded-md border bg-surface-raised px-3.5 py-3 shadow-sm ${
+        className={`conversation-content-width relative mx-auto flex max-h-[min(32rem,50dvh)] w-full flex-col overflow-hidden rounded-md border bg-surface-raised px-3.5 py-3 shadow-sm ${
           highRisk
             ? "border-warning/40"
             : collapsed && request
@@ -99,27 +79,47 @@ export function InlineExtensionUiRequest() {
         data-extension-ui-group={group?.groupKey}
         data-extension-ui-collapsed={collapsed ? "true" : undefined}
       >
+        {/* Fold/unfold is driven by the header inside the content (the whole
+            top row is the hit target) and by the summary row below. */}
+        {/* One flex chain from the card down to the scroll region, with
+            `min-h-0` at every step and no percentage heights — a `height:100%`
+            wrapper resolves to `auto` inside a max-height-clamped flex column,
+            which silently stops the body from shrinking and lets the action row
+            fall outside `overflow-hidden`. Hidden with an inline style rather
+            than the `hidden` attribute: Tailwind's `.flex` utility would beat
+            the preflight `[hidden]` rule and never hide the content at all. */}
         <div
           id={contentId}
-          hidden={collapsed}
-          className="max-h-[min(32rem,50dvh)] overflow-y-auto overscroll-contain"
+          className="flex min-h-0 flex-1 flex-col"
+          style={{ display: collapsed ? "none" : undefined }}
         >
-          {group && answeredCount > 0 ? (
-            <div className="mb-3 flex min-h-6 items-center gap-1.5 border-b border-border pb-2 text-xs text-muted">
-              <Check className="size-3.5 shrink-0 text-success" aria-hidden="true" />
-              <span>{t("extUiGroupAnswered", { count: answeredCount })}</span>
-            </div>
-          ) : null}
           {request ? (
             <ExtensionUiRequestContent
               request={request}
               controller={controller}
               titleId={contentTitleId}
               variant="inline"
-              headerAction={collapseButton}
+              onToggleFold={() => setCollapsed(true)}
+              foldExpanded={!collapsed}
+              answeredCount={group?.answeredCount}
             />
           ) : (
-            <div className="flex min-h-20 items-center gap-2 text-sm text-muted">
+            <div
+              role="button"
+              tabIndex={0}
+              aria-expanded={!collapsed}
+              aria-controls={contentId}
+              aria-label={t("extUiCollapseQuestion")}
+              title={t("extUiCollapseQuestion")}
+              data-extension-ui-fold-toggle="true"
+              className="flex min-h-20 cursor-pointer items-center gap-2 rounded-md pr-7 text-sm text-muted transition-colors hover:bg-surface-overlay/60"
+              onClick={() => setCollapsed(true)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                setCollapsed(true);
+              }}
+            >
               <div
                 id={contentTitleId}
                 className="flex min-w-0 flex-1 items-center gap-2"
@@ -132,7 +132,12 @@ export function InlineExtensionUiRequest() {
                 />
                 <span>{t("extUiGroupWaiting")}</span>
               </div>
-              {collapseButton}
+              {answeredCount > 0 ? (
+                <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted">
+                  <Check className="size-3 shrink-0 text-success" aria-hidden="true" />
+                  <span>{t("extUiGroupAnswered", { count: answeredCount })}</span>
+                </span>
+              ) : null}
             </div>
           )}
         </div>
@@ -154,9 +159,18 @@ export function InlineExtensionUiRequest() {
                 aria-hidden="true"
               />
             )}
-            <span id={collapsedTitleId} className="min-w-0 flex-1 truncate text-xs font-semibold">
-              {request ? (request.title ?? t("extUiDefaultTitle")) : t("extUiGroupWaiting")}
-            </span>
+            {/* Two lines instead of one: folding is also how the user reads a
+                long question in full without expanding the card. */}
+            {request ? (
+              <span
+                id={collapsedTitleId}
+                className="min-h-6 min-w-0 flex-1 line-clamp-2 text-xs font-semibold"
+              >
+                {request.title ?? t("extUiDefaultTitle")}
+              </span>
+            ) : (
+              <span className="min-w-0 flex-1 truncate text-xs">{t("extUiGroupWaiting")}</span>
+            )}
             {request ? (
               <span className="shrink-0 text-[10px] font-medium text-accent">
                 {t("extUiAwaitingAnswer")}

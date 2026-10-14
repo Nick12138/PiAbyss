@@ -34,6 +34,8 @@ import {
   MAX_EXTENSION_UI_OPTION_LABEL_LENGTH,
   MAX_EXTENSION_UI_OPTION_PREVIEW_LENGTH,
   MAX_EXTENSION_UI_OPTIONS,
+  MAX_EXTENSION_UI_QUESTION_COUNT,
+  MAX_EXTENSION_UI_QUESTION_HEADER_LENGTH,
   MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH,
   MAX_EXTENSION_UI_TITLE_LENGTH,
   type ExtensionDecisionPresentation,
@@ -202,8 +204,42 @@ type NormalizedPiAbyssDialogMetadata = {
   correlationId?: string;
   riskHint?: "normal" | "high";
   allowFreeform?: boolean;
+  /** Preselect / prefill hint for the current question (e.g. after a rewind). */
+  defaultValue?: string;
+  questionIndex?: number;
+  questionCount?: number;
+  questionHeader?: string;
+  /** Ask the Desktop to render `optionDetails` as a checkbox list. */
+  multiSelect?: boolean;
   optionDetails: Map<string, PiAbyssDialogOptionDetails>;
 };
+
+/**
+ * `ui.input` has no `options` parameter, so a multi-select extension can only
+ * ship its choices through `piabyss.optionDetails`. Rebuild the option list the
+ * Desktop needs from that map, preserving insertion order (the positions the
+ * Desktop sends back are 1-based indexes into this list).
+ */
+function optionsFromOptionDetails(
+  optionDetails: Map<string, PiAbyssDialogOptionDetails>,
+): Array<{
+  id: string;
+  label: string;
+  description?: string;
+  preview?: string;
+  destructive?: boolean;
+}> {
+  return [...optionDetails].map(([id, details]) => ({ id, label: id, ...details }));
+}
+
+/** 1-based questionnaire ordinals; anything outside the bound is dropped. */
+function positiveQuestionOrdinal(value: unknown): number | undefined {
+  return Number.isInteger(value) &&
+    (value as number) >= 1 &&
+    (value as number) <= MAX_EXTENSION_UI_QUESTION_COUNT
+    ? (value as number)
+    : undefined;
+}
 
 function plainRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -291,6 +327,23 @@ function normalizePiAbyssDialogMetadata(value: unknown): NormalizedPiAbyssDialog
   }
   if (typeof source.allowFreeform === "boolean") {
     normalized.allowFreeform = source.allowFreeform;
+  }
+  const defaultValue = boundedSanitizedString(
+    source.defaultValue,
+    MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH,
+  );
+  if (defaultValue) normalized.defaultValue = defaultValue;
+  const questionIndex = positiveQuestionOrdinal(source.questionIndex);
+  if (questionIndex !== undefined) normalized.questionIndex = questionIndex;
+  const questionCount = positiveQuestionOrdinal(source.questionCount);
+  if (questionCount !== undefined) normalized.questionCount = questionCount;
+  const questionHeader = boundedSanitizedString(
+    source.questionHeader,
+    MAX_EXTENSION_UI_QUESTION_HEADER_LENGTH,
+  );
+  if (questionHeader) normalized.questionHeader = questionHeader;
+  if (typeof source.multiSelect === "boolean") {
+    normalized.multiSelect = source.multiSelect;
   }
   if (Array.isArray(source.optionDetails)) {
     for (const rawItem of source.optionDetails.slice(0, MAX_EXTENSION_UI_OPTIONS)) {
@@ -512,8 +565,16 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
     const origin: ExtensionUiOrigin = invocation?.origin ?? {
       invocationKind: "unknown",
     };
-    const { optionDetails, presentationHint, riskHint, ...requestMetadata } =
-      normalizePiAbyssDialogMetadata(payload.piabyss);
+    const {
+      optionDetails,
+      presentationHint,
+      riskHint,
+      defaultValue: metadataDefaultValue,
+      ...requestMetadata
+    } = normalizePiAbyssDialogMetadata(payload.piabyss);
+    // `ui.select` has no defaultValue parameter, so the preselect hint can only
+    // arrive through the Extension's piabyss metadata. Explicit payload wins.
+    const requestDefaultValue = payload.defaultValue ?? metadataDefaultValue;
     const options = Array.isArray(payload.options)
       ? payload.options.slice(0, MAX_EXTENSION_UI_OPTIONS).map((option) => {
           const item = option as { id?: unknown; label?: unknown; metadataId?: unknown };
@@ -617,9 +678,9 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
               : boundedSanitizedText(payload.message, MAX_EXTENSION_UI_MESSAGE_LENGTH),
           options,
           defaultValue:
-            payload.defaultValue === undefined
+            requestDefaultValue === undefined
               ? undefined
-              : boundedSanitizedText(payload.defaultValue, MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH),
+              : boundedSanitizedText(requestDefaultValue, MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH),
           ...(timeoutMs === undefined ? {} : { timeoutMs }),
           origin,
           ...requestMetadata,
@@ -665,13 +726,20 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
       return value === true;
     },
     input: async (title, placeholder, dialogOpts) => {
+      const rawMetadata = piAbyssMetadataFromDialogOptions(dialogOpts);
+      const metadata = normalizePiAbyssDialogMetadata(rawMetadata);
       const value = await requestBlocking(
         "input",
         {
           title,
           message: placeholder,
           defaultValue: "",
-          piabyss: piAbyssMetadataFromDialogOptions(dialogOpts),
+          piabyss: rawMetadata,
+          // A checkbox list only makes sense when the extension actually
+          // described its options; otherwise this stays a plain text field.
+          ...(metadata.multiSelect && metadata.optionDetails.size > 0
+            ? { options: optionsFromOptionDetails(metadata.optionDetails) }
+            : {}),
         },
         dialogOpts,
       );

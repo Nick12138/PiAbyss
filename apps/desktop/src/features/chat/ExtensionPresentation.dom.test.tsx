@@ -409,7 +409,9 @@ describe("Extension presentation surfaces", () => {
   });
 
   it("keeps select progress on the option that is being submitted", async () => {
-    vi.spyOn(hostClient, "request").mockImplementation(() => new Promise(() => {}) as never);
+    const hostRequest = vi
+      .spyOn(hostClient, "request")
+      .mockImplementation(() => new Promise(() => {}) as never);
     act(() => {
       useAppStore.getState().setExtensionUiRequest(
         extensionRequest({
@@ -433,12 +435,17 @@ describe("Extension presentation surfaces", () => {
     const option = screen.getByRole("button", {
       name: "Apply the recommendation. Use shared semantics.",
     });
+    // First click only selects — a stray click must not commit an answer.
     await user.click(option);
+    expect(option).toHaveAttribute("data-option-selected", "true");
+    expect(hostRequest).not.toHaveBeenCalled();
 
+    await user.click(screen.getByRole("button", { name: "Continue" }));
     expect(option).toBeDisabled();
     expect(option).toHaveTextContent("Submitting…");
     expect(screen.getByRole("status")).toHaveTextContent("Submitting…");
-    expect(screen.getByRole("button", { name: "Send response" })).toBeDisabled();
+    // One action button only: it carries the in-flight state for every source.
+    expect(screen.getByRole("button", { name: "Submitting…" })).toBeDisabled();
   });
 
   it("filters a virtualized large option list and submits the original option ID", async () => {
@@ -471,6 +478,7 @@ describe("Extension presentation surfaces", () => {
     ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Option 149. Description 149" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() => expect(hostRequest).toHaveBeenCalledOnce());
     expect(hostRequest).toHaveBeenCalledWith(
       "extensionUi.respond",
@@ -501,6 +509,310 @@ describe("Extension presentation surfaces", () => {
     );
     await user.click(screen.getByRole("button", { name: "Clear option search" }));
     expect(screen.getByRole("button", { name: "Option 0" })).toBeVisible();
+  });
+
+  it("absorbs the extension's freeform sentinel row into the card's own input", () => {
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "select",
+          allowFreeform: true,
+          options: [
+            { id: "keep", label: "Keep" },
+            { id: "Type something.", label: "Type something." },
+          ],
+        }),
+      );
+    });
+    renderRequestSurfaces();
+
+    expect(screen.getByRole("button", { name: "Keep" })).toBeVisible();
+    // One free-text entry point only: the row is not offered as a choice.
+    expect(screen.queryByRole("button", { name: "Type something." })).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Or answer this question in your own words…")).toBeVisible();
+  });
+
+  it("keeps the sentinel row when the host has no freeform input of its own", () => {
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "select",
+          options: [
+            { id: "keep", label: "Keep" },
+            { id: "Type something.", label: "Type something." },
+          ],
+        }),
+      );
+    });
+    renderRequestSurfaces();
+
+    expect(screen.getByRole("button", { name: "Type something." })).toBeVisible();
+    expect(
+      screen.queryByPlaceholderText("Or answer this question in your own words…"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders the extension's rewind row as a footer action", async () => {
+    const hostRequest = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue({ ok: true, result: null } as never);
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "select",
+          options: [
+            { id: "keep", label: "Keep" },
+            { id: "↩ 修改上一题", label: "↩ 修改上一题" },
+          ],
+        }),
+      );
+    });
+    const user = userEvent.setup();
+    renderRequestSurfaces();
+
+    // The rewind row is an action, not an answer — it never joins the options.
+    expect(screen.queryByRole("button", { name: "↩ 修改上一题" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Change previous answer" }));
+    await waitFor(() => expect(hostRequest).toHaveBeenCalledOnce());
+    expect(hostRequest).toHaveBeenCalledWith(
+      "extensionUi.respond",
+      CONTEXT,
+      expect.objectContaining({ status: "resolved", value: "↩ 修改上一题" }),
+    );
+  });
+
+  it("shows the questionnaire ordinal, the header chip and the rewound preselect", () => {
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "select",
+          questionIndex: 2,
+          questionCount: 3,
+          questionHeader: "Layout",
+          defaultValue: "keep",
+          options: [
+            { id: "keep", label: "Keep" },
+            { id: "drop", label: "Drop" },
+          ],
+        }),
+      );
+    });
+    renderRequestSurfaces();
+
+    expect(screen.getByText("Question 2 of 3")).toBeVisible();
+    expect(screen.getByText("Layout")).toBeVisible();
+    // A rewind pre-selects the option rather than seeding the free-text box.
+    expect(screen.getByRole("button", { name: "Keep" })).toHaveAttribute(
+      "data-option-selected",
+      "true",
+    );
+  });
+
+  it("drops the extension's bracketed header from the title now that a chip exists", () => {
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "select",
+          title: "[Layout] Which shape?",
+          questionHeader: "Layout",
+          options: [{ id: "keep", label: "Keep" }],
+        }),
+      );
+    });
+    renderRequestSurfaces();
+
+    expect(screen.getByRole("region", { name: "Which shape?" })).toBeVisible();
+    expect(screen.getByText("Layout")).toBeVisible();
+    expect(screen.queryByText("[Layout] Which shape?")).not.toBeInTheDocument();
+  });
+
+  it("renders a multi-select question as checkboxes and returns the chosen positions", async () => {
+    const hostRequest = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue({ ok: true, result: null } as never);
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "input",
+          multiSelect: true,
+          questionIndex: 3,
+          questionCount: 3,
+          title: "Which directions?",
+          message: "1. Alpha — first\n2. Beta — second\n3. Gamma — third",
+          allowFreeform: true,
+          options: [
+            { id: "Alpha", label: "Alpha", description: "first" },
+            { id: "Beta", label: "Beta", description: "second" },
+            { id: "Gamma", label: "Gamma", description: "third" },
+          ],
+        }),
+      );
+    });
+    const user = userEvent.setup();
+    renderRequestSurfaces();
+
+    expect(screen.getByText("Multi-select")).toBeVisible();
+    // The numbered list the extension sends for option-less hosts is replaced
+    // by the checkbox list, so showing both would just duplicate it.
+    expect(screen.queryByText(/1\. Alpha — first/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Alpha. first" }));
+    await user.click(screen.getByRole("button", { name: "Gamma. third" }));
+    // Last question of the questionnaire: the action commits the whole thing.
+    await user.click(screen.getByRole("button", { name: "Confirm and send" }));
+    await waitFor(() => expect(hostRequest).toHaveBeenCalledOnce());
+    expect(hostRequest).toHaveBeenCalledWith(
+      "extensionUi.respond",
+      CONTEXT,
+      expect.objectContaining({ status: "resolved", value: "1,3" }),
+    );
+  });
+
+  it("commits a typed answer through the single action button", async () => {
+    const hostRequest = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue({ ok: true, result: null } as never);
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "select",
+          questionIndex: 1,
+          questionCount: 2,
+          allowFreeform: true,
+          options: [{ id: "keep", label: "Keep" }],
+        }),
+      );
+    });
+    const user = userEvent.setup();
+    renderRequestSurfaces();
+
+    // The free-text box has no send button of its own; the action row commits it.
+    expect(screen.queryByRole("button", { name: "Send response" })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("Custom response"), "my own answer");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(hostRequest).toHaveBeenCalledOnce());
+    expect(hostRequest).toHaveBeenCalledWith(
+      "extensionUi.respond",
+      CONTEXT,
+      expect.objectContaining({ status: "resolved", value: "my own answer" }),
+    );
+  });
+
+  it("keeps a typed answer and a picked option mutually exclusive", async () => {
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "select",
+          allowFreeform: true,
+          options: [
+            { id: "keep", label: "Keep" },
+            { id: "drop", label: "Drop" },
+          ],
+        }),
+      );
+    });
+    const user = userEvent.setup();
+    renderRequestSurfaces();
+
+    await user.type(screen.getByLabelText("Custom response"), "typed");
+    await user.click(screen.getByRole("button", { name: "Keep" }));
+    expect(screen.getByRole("button", { name: "Keep" })).toHaveAttribute("aria-pressed", "true");
+    // Picking a choice clears the typed answer, so only one can ever be sent.
+    expect(screen.getByLabelText("Custom response")).toHaveValue("");
+
+    await user.type(screen.getByLabelText("Custom response"), "typed again");
+    expect(screen.getByRole("button", { name: "Keep" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("labels the last question's action as the final send", () => {
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "select",
+          questionIndex: 2,
+          questionCount: 2,
+          options: [{ id: "keep", label: "Keep" }],
+        }),
+      );
+    });
+    renderRequestSurfaces();
+
+    expect(screen.getByRole("button", { name: "Confirm and send" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Continue" })).not.toBeInTheDocument();
+  });
+
+  it("offers the rewind action on questions that carry no rewind row", async () => {
+    const hostRequest = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue({ ok: true, result: null } as never);
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "input",
+          multiSelect: true,
+          questionIndex: 3,
+          questionCount: 3,
+          title: "Which directions?",
+          options: [{ id: "Alpha", label: "Alpha" }],
+        }),
+      );
+    });
+    const user = userEvent.setup();
+    renderRequestSurfaces();
+
+    await user.click(screen.getByRole("button", { name: "Change previous answer" }));
+    await waitFor(() => expect(hostRequest).toHaveBeenCalledOnce());
+    expect(hostRequest).toHaveBeenCalledWith(
+      "extensionUi.respond",
+      CONTEXT,
+      expect.objectContaining({ status: "resolved", value: "↩ 修改上一题" }),
+    );
+  });
+
+  it("keeps the rewind action off the first question", () => {
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "select",
+          questionIndex: 1,
+          questionCount: 3,
+          options: [{ id: "keep", label: "Keep" }],
+        }),
+      );
+    });
+    renderRequestSurfaces();
+
+    expect(
+      screen.queryByRole("button", { name: "Change previous answer" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("omits the source row on the built-in questionnaire card", () => {
+    act(() => {
+      useAppStore
+        .getState()
+        .setExtensionUiRequest(
+          embeddedQuestionRequest({ groupKey: "tool:ask-source", title: "Pick a mode" }),
+        );
+    });
+    renderRequestSurfaces();
+
+    expect(screen.getByRole("region", { name: "Pick a mode" })).toBeVisible();
+    // The questionnaire always comes from the same plugin — repeating its name
+    // on every question is noise, so the row is suppressed for this origin only.
+    expect(screen.queryByText("PiAbyss")).not.toBeInTheDocument();
+    expect(screen.queryByText("From")).not.toBeInTheDocument();
   });
 
   it("submits a labeled input from the keyboard", async () => {
@@ -685,6 +997,228 @@ describe("Extension presentation surfaces", () => {
     expect(screen.getByRole("button", { name: "Confirm" })).toBeVisible();
   });
 
+  it("keeps the action row a sibling of the scroll region in one unbroken flex column", () => {
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          groupKey: "tool:ask-flex-chain",
+          kind: "input",
+          multiSelect: true,
+          questionIndex: 3,
+          questionCount: 3,
+          title: "Which directions?",
+          allowFreeform: true,
+          options: Array.from({ length: 8 }, (_, index) => ({
+            id: `o-${index}`,
+            label: `Option ${index}`,
+          })),
+        }),
+      );
+    });
+    const view = renderRequestSurfaces();
+
+    const scroller = view.container.querySelector<HTMLElement>("[data-extension-ui-scroll]");
+    const primary = screen.getByRole("button", { name: "Confirm and send" });
+    expect(scroller).not.toBeNull();
+    // The regression this guards: the scroll region and the action row must sit
+    // in the same flex column, with every ancestor allowed to shrink. A
+    // `height: 100%` wrapper in the chain resolves to `auto` inside a
+    // max-height-clamped flex column, the body then never overflows, and the
+    // action row falls outside the card's `overflow-hidden`.
+    expect(scroller!.parentElement?.contains(primary)).toBe(true);
+
+    let node: HTMLElement | null = scroller;
+    while (node && node.dataset.extensionUiGroup === undefined) {
+      expect(node.className).not.toMatch(/\bh-(full|\[)/);
+      if (node.classList.contains("flex")) expect(node.classList.contains("min-h-0")).toBe(true);
+      node = node.parentElement;
+    }
+    expect(node).not.toBeNull();
+  });
+
+  it("shows the answered count at the bottom of the card, left-most", async () => {
+    vi.spyOn(hostClient, "request").mockResolvedValue({ ok: true, result: null } as never);
+    useAppStore.setState({
+      session: {
+        sessionId: CONTEXT.expectedSessionId,
+        revision: CONTEXT.expectedSessionRevision,
+      } as never,
+    });
+    const groupKey = "tool:ask-answered-badge";
+    const questionRequest = (questionIndex: number) =>
+      extensionRequest({
+        kind: "select",
+        presentation: "inline",
+        groupKey,
+        questionIndex,
+        questionCount: 2,
+        options: [{ id: `o-${questionIndex}`, label: `Option ${questionIndex}` }],
+      });
+    act(() => useAppStore.getState().setExtensionUiRequest(questionRequest(1)));
+    const user = userEvent.setup();
+    const view = renderRequestSurfaces();
+
+    await user.click(screen.getByRole("button", { name: "Option 1" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Waiting for the next question"),
+    );
+
+    // During the wait it sits on the waiting row, so the count never vanishes.
+    const waitingBadge = screen.getByText("1 answered");
+    expect(waitingBadge.closest('[role="button"]')).not.toBeNull();
+
+    // Once the next question is up it moves into the action row at the very
+    // bottom, as that row's left-most item — no strip above the question.
+    act(() => useAppStore.getState().setExtensionUiRequest(questionRequest(2)));
+    const actions = view.container.querySelector("[data-extension-ui-actions]");
+    const badge = screen.getByText("1 answered");
+    expect(actions?.contains(badge)).toBe(true);
+    expect(actions?.firstElementChild?.contains(badge)).toBe(true);
+  });
+
+  it("keeps the custom answer scoped to its own question", async () => {
+    const hostRequest = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue({ ok: true, result: null } as never);
+    useAppStore.setState({
+      session: {
+        sessionId: CONTEXT.expectedSessionId,
+        revision: CONTEXT.expectedSessionRevision,
+      } as never,
+    });
+    const groupKey = "tool:ask-custom-per-question";
+    const questionRequest = (questionIndex: number) =>
+      extensionRequest({
+        kind: "select",
+        presentation: "inline",
+        groupKey,
+        questionIndex,
+        questionCount: 2,
+        allowFreeform: true,
+        options: [{ id: `o-${questionIndex}`, label: `Option ${questionIndex}` }],
+      });
+    act(() => useAppStore.getState().setExtensionUiRequest(questionRequest(1)));
+    const user = userEvent.setup();
+    renderRequestSurfaces();
+
+    await user.type(screen.getByLabelText("Custom response"), "my own answer");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Waiting for the next question"),
+    );
+    expect(hostRequest).toHaveBeenCalledWith(
+      "extensionUi.respond",
+      CONTEXT,
+      expect.objectContaining({ status: "resolved", value: "my own answer" }),
+    );
+
+    act(() => useAppStore.getState().setExtensionUiRequest(questionRequest(2)));
+
+    // The next question opens with an empty box and nothing selected: the typed
+    // text was consumed by question 1 and must not follow the user along.
+    expect(screen.getByLabelText("Custom response")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Option 2" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("needs an explicit click, not a bare Enter, to commit a questionnaire answer", async () => {
+    const hostRequest = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue({ ok: true, result: null } as never);
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "select",
+          allowFreeform: true,
+          options: [{ id: "keep", label: "Keep" }],
+        }),
+      );
+    });
+    const user = userEvent.setup();
+    renderRequestSurfaces();
+
+    await user.type(screen.getByLabelText("Custom response"), "draft answer");
+    await user.keyboard("{Enter}");
+    // Enter belongs to the textarea here — the action button is the commitment.
+    expect(hostRequest).not.toHaveBeenCalled();
+
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    await waitFor(() => expect(hostRequest).toHaveBeenCalledOnce());
+    expect(hostRequest).toHaveBeenCalledWith(
+      "extensionUi.respond",
+      CONTEXT,
+      expect.objectContaining({ status: "resolved", value: "draft answer" }),
+    );
+  });
+
+  it("does not seed a multi-select rewind's positions into the custom answer box", () => {
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "input",
+          multiSelect: true,
+          questionIndex: 2,
+          questionCount: 2,
+          defaultValue: "1,3",
+          allowFreeform: true,
+          options: [
+            { id: "Alpha", label: "Alpha", description: "first" },
+            { id: "Beta", label: "Beta" },
+            { id: "Gamma", label: "Gamma" },
+          ],
+        }),
+      );
+    });
+    renderRequestSurfaces();
+
+    // The rewind's answer belongs to the checkboxes, never to the text field.
+    expect(screen.getByLabelText("Custom response")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Alpha. first" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Gamma" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Beta" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("folds from the whole header rather than only a corner chevron", async () => {
+    vi.spyOn(hostClient, "request").mockResolvedValue({ ok: true, result: null } as never);
+    useAppStore.setState({
+      session: {
+        sessionId: CONTEXT.expectedSessionId,
+        revision: CONTEXT.expectedSessionRevision,
+      } as never,
+    });
+    const groupKey = "tool:ask-user-question-header-fold";
+    act(() => {
+      useAppStore
+        .getState()
+        .setExtensionUiRequest(embeddedQuestionRequest({ groupKey, title: "Pick a mode" }));
+    });
+    const user = userEvent.setup();
+    const view = renderRequestSurfaces();
+    const card = view.container.querySelector(`[data-extension-ui-group="${groupKey}"]`);
+
+    // Exactly one control, and it is the header itself.
+    const toggle = screen.getByRole("button", { name: "Collapse question" });
+    expect(toggle).toHaveAttribute("data-extension-ui-fold-toggle", "true");
+    expect(toggle).toContainElement(screen.getByRole("heading", { name: "Pick a mode" }));
+    await user.click(toggle);
+    expect(card).toHaveAttribute("data-extension-ui-collapsed", "true");
+
+    // …and it is reachable without a mouse.
+    await user.click(screen.getByRole("button", { name: /Pick a mode/ }));
+    screen.getByRole("button", { name: "Collapse question" }).focus();
+    await user.keyboard("{Enter}");
+    expect(card).toHaveAttribute("data-extension-ui-collapsed", "true");
+  });
+
   it("keeps the folded questionnaire folded while the same group asks the next question", async () => {
     vi.spyOn(hostClient, "request").mockResolvedValue({ ok: true, result: null } as never);
     useAppStore.setState({
@@ -794,6 +1328,7 @@ describe("Extension presentation surfaces", () => {
 
     expect(view.container.querySelector(`[data-extension-ui-group="${groupKey}"]`)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Alpha" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent("Waiting for the next question"),
     );
