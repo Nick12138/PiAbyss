@@ -16,6 +16,7 @@ import type {
 } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
+import { usePixieViewStore } from "../pixie/pixie-store";
 import { SkillsSettings } from "./SkillsSettings";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -613,6 +614,7 @@ describe("SkillsSettings", () => {
 
     afterEach(() => {
       useAppStore.getState().setDesktopSettings(null);
+      usePixieViewStore.setState({ current: null });
     });
 
     async function selectWorkspace(user: ReturnType<typeof userEvent.setup>, label: string) {
@@ -638,6 +640,33 @@ describe("SkillsSettings", () => {
       expect(request.mock.calls.find(([method]) => method === "prompt.list")?.[2]).toEqual({
         targetWorkspaceCwd: "C:/other",
       });
+    });
+
+    it("exposes the pixie workspace as its own chip without persisting it into knownWorkspaces", async () => {
+      // 小精灵工作区永不进 knownWorkspaces，但路径自启动后即可知：
+      // 管理范围行应出现专属 chip，选中后请求带 target 指向它。
+      usePixieViewStore.setState({
+        current: {
+          cwd: "C:/agent/workspace/pixie",
+          sessionId: "pixie-s1",
+          sessionPath: "C:/agent/workspace/pixie/pixie-s1.jsonl",
+        },
+      });
+      const user = userEvent.setup();
+      render(<SkillsSettings />);
+      await screen.findByText("Global (user)");
+      request.mockClear();
+      await selectWorkspace(user, "pixie");
+      await waitFor(() => {
+        expect(request.mock.calls.find(([method]) => method === "skill.list")?.[2]).toEqual({
+          targetWorkspaceCwd: "C:/agent/workspace/pixie",
+        });
+      });
+      // 不落盘：knownWorkspaces 不因 chip 而变化。
+      expect(useAppStore.getState().desktopSettings?.knownWorkspaces).toEqual([
+        "C:/workspace",
+        "C:/other",
+      ]);
     });
 
     it("adds a skill directory into the selected workspace's settings", async () => {

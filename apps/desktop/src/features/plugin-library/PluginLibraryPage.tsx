@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Send,
   Settings2,
+  Sparkles,
   Tag,
   User,
 } from "lucide-react";
@@ -42,6 +43,7 @@ import {
 } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
 import { isSameTelegramPath } from "../../lib/telegram-path";
+import { isSamePixiePath } from "../../lib/pixie-path";
 import { useT } from "../../lib/i18n/use-t";
 import {
   buildPluginEnvPatch,
@@ -70,6 +72,7 @@ import {
 } from "./plugin-library-model";
 import { takePluginConfigDeepLink } from "./plugin-config-deeplink";
 import { useTelegramViewStore } from "../telegram/telegram-view-store";
+import { usePixieViewStore } from "../pixie/pixie-store";
 import {
   notifyDesktopSettingsSaveFailure,
   persistDesktopSettings,
@@ -648,6 +651,10 @@ export function PluginLibraryPage() {
   const knownWorkspaces = useAppStore(
     (state) => state.desktopSettings?.knownWorkspaces ?? NO_WORKSPACES,
   );
+  // 小精灵工作区不进 knownWorkspaces（设计决策），但它的 project-scope 插件
+  // 仍需要在此管理：路径自启动后即可知，追加为专属 chip（Sparkles 徽标），
+  // 不落盘、不污染持久化列表。与技能管理页同款。
+  const pixieWorkspacePath = usePixieViewStore((state) => state.current?.cwd ?? null);
 
   const [catalog, setCatalog] = useState<PluginLibraryCatalog | null>(null);
   const [catalogState, setCatalogState] = useState<LoadState>("idle");
@@ -734,6 +741,12 @@ export function PluginLibraryPage() {
       activeCwd && !knownWorkspaces.some((path) => path === activeCwd)
         ? [activeCwd, ...knownWorkspaces]
         : [...knownWorkspaces];
+    // Pixie workspace: never persisted into knownWorkspaces by design, yet
+    // its project scope stays manageable here — append it as its own chip
+    // once the autostart has resolved its path (same as SkillsSettings).
+    if (pixieWorkspacePath && !paths.some((path) => isSamePixiePath(path, pixieWorkspacePath))) {
+      paths.push(pixieWorkspacePath);
+    }
     if (activeCwd) {
       paths.sort((left, right) => (left === activeCwd ? -1 : right === activeCwd ? 1 : 0));
     }
@@ -744,6 +757,7 @@ export function PluginLibraryPage() {
         basename: t("pluginsScopeGlobalChip"),
         isActive: false,
         isTelegram: false,
+        isPixie: false,
         isGlobal: true,
       },
       ...paths.map((path) => ({
@@ -753,6 +767,7 @@ export function PluginLibraryPage() {
         basename: workspaceBasename(path),
         isActive: path === activeCwd,
         isTelegram: isSameTelegramPath(path, telegramWorkspacePath),
+        isPixie: isSamePixiePath(path, pixieWorkspacePath),
         isGlobal: false,
       })),
     ];
@@ -1229,9 +1244,11 @@ export function PluginLibraryPage() {
               >
                 {chip.isGlobal ? (
                   <User size={12} className="shrink-0 text-muted" aria-hidden />
-                ) : (
-                  chip.isTelegram && <Send size={12} className="shrink-0 text-muted" aria-hidden />
-                )}
+                ) : chip.isTelegram ? (
+                  <Send size={12} className="shrink-0 text-muted" aria-hidden />
+                ) : chip.isPixie ? (
+                  <Sparkles size={12} className="shrink-0 text-muted" aria-hidden />
+                ) : null}
                 <span className="max-w-48 truncate">{chip.basename}</span>
                 {chip.isActive && !chip.isGlobal && (
                   <span

@@ -16,6 +16,7 @@ import type {
 } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
+import { usePixieViewStore } from "../pixie/pixie-store";
 import { PluginLibraryPage } from "./PluginLibraryPage";
 import { resetPluginLibraryUpdatesCache } from "./plugin-updates";
 
@@ -471,6 +472,7 @@ describe("PluginLibraryPage DOM workflows", () => {
 
   afterEach(() => {
     request.mockRestore();
+    usePixieViewStore.setState({ current: null });
     cleanup();
   });
 
@@ -1233,6 +1235,42 @@ describe("PluginLibraryPage DOM workflows", () => {
     // A cached snapshot renders immediately on return; this switch is already
     // present before a new target fetch is needed to complete.
     expect(within(browserCard).queryByRole("button", { name: "Install…" })).toBeNull();
+  });
+
+  it("exposes the pixie workspace as its own chip and targets it without persisting it", async () => {
+    // 小精灵工作区永不进 knownWorkspaces，但路径自启动后即可知：
+    // 范围行应出现专属 chip，选中后 package.list 带 target 指向它。
+    usePixieViewStore.setState({
+      current: {
+        cwd: "C:/agent/workspace/pixie",
+        sessionId: "pixie-s1",
+        sessionPath: "C:/agent/workspace/pixie/pixie-s1.jsonl",
+      },
+    });
+    currentSnapshot = snapshotWithRepo(true);
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    const pixieChip = await screen.findByRole("button", { name: "pixie" });
+    await user.click(pixieChip);
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "package.list",
+        expect.objectContaining({ expectedWorkspaceId: "w1" }),
+        {
+          scope: "all",
+          includeResources: true,
+          targetWorkspaceCwd: "C:/agent/workspace/pixie",
+        },
+        expect.any(Number),
+      ),
+    );
+    // 不落盘：knownWorkspaces 不因 chip 而变化。
+    expect(useAppStore.getState().desktopSettings?.knownWorkspaces).toEqual([
+      "C:/workspace",
+      "C:/other-project",
+    ]);
   });
 
   it("manages another workspace's plugins without switching to it", async () => {

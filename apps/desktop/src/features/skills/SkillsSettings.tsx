@@ -10,6 +10,7 @@ import {
   Plus,
   RefreshCw,
   Send,
+  Sparkles,
   Trash2,
   User,
 } from "lucide-react";
@@ -38,8 +39,10 @@ import {
 } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
 import { isSameTelegramPath } from "../../lib/telegram-path";
+import { isSamePixiePath } from "../../lib/pixie-path";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 import { useTelegramViewStore } from "../telegram/telegram-view-store";
+import { usePixieViewStore } from "../pixie/pixie-store";
 import { SkillPreviewModal } from "./SkillPreviewModal";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -173,6 +176,10 @@ export function SkillsSettings() {
   const knownWorkspaces = useAppStore(
     (state) => state.desktopSettings?.knownWorkspaces ?? NO_WORKSPACES,
   );
+  // 小精灵工作区被刻意排除在 knownWorkspaces 之外（不进常规工作区交互），
+  // 但它的 project-scope 技能仍需要在此管理：路径自启动后即可知，追加为
+  // 专属 chip（Sparkles 徽标），不落盘、不污染持久化列表。
+  const pixieWorkspacePath = usePixieViewStore((state) => state.current?.cwd ?? null);
 
   const [snapshot, setSnapshot] = useState<SkillSnapshot | null>(null);
   const [promptSnapshot, setPromptSnapshot] = useState<PromptSnapshot | null>(null);
@@ -259,6 +266,12 @@ export function SkillsSettings() {
       activeCwd && !knownWorkspaces.some((path) => path === activeCwd)
         ? [activeCwd, ...knownWorkspaces]
         : [...knownWorkspaces];
+    // Pixie workspace: never persisted into knownWorkspaces by design, yet
+    // its project scope stays manageable here — append it as its own chip
+    // once the autostart has resolved its path.
+    if (pixieWorkspacePath && !paths.some((path) => isSamePixiePath(path, pixieWorkspacePath))) {
+      paths.push(pixieWorkspacePath);
+    }
     if (activeCwd) {
       paths.sort((left, right) => (left === activeCwd ? -1 : right === activeCwd ? 1 : 0));
     }
@@ -269,6 +282,7 @@ export function SkillsSettings() {
       basename: workspaceBasename(path),
       isActive: path === activeCwd,
       isTelegram: isSameTelegramPath(path, telegramWorkspacePath),
+      isPixie: isSamePixiePath(path, pixieWorkspacePath),
     }));
   }
 
@@ -596,6 +610,9 @@ export function SkillsSettings() {
                 >
                   {chip.isTelegram && (
                     <Send size={12} className="shrink-0 text-muted" aria-hidden />
+                  )}
+                  {chip.isPixie && (
+                    <Sparkles size={12} className="shrink-0 text-muted" aria-hidden />
                   )}
                   <span className="max-w-48 truncate">{chip.basename}</span>
                   {chip.isActive && (
