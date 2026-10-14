@@ -455,4 +455,45 @@ describe("openSessionAcrossWorkspaces", () => {
     expect(outcome.status).toBe("failed");
     expect(useAppStore.getState().notifications.length).toBeGreaterThan(0);
   });
+
+  it("lets two concurrent switches to the same cwd both settle (no bogus blocked)", async () => {
+    // React StrictMode replays mount effects in dev, so the pixie page fires two
+    // acquires at once: both run workspace.setCurrent for the same cwd and share
+    // the workspaceSwitchTarget slot. The slower one used to be read as
+    // superseded ("blocked"), which flipped the page to 「暂不可用」 even though
+    // nothing had actually replaced the switch.
+    useAppStore.getState().setHost(host());
+    useAppStore.getState().setWorkspace(workspace());
+    useAppStore.getState().applySessionSnapshot(session());
+    let setCurrentCalls = 0;
+    vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+      if (method === "workspace.setCurrent") {
+        setCurrentCalls += 1;
+        if (setCurrentCalls === 1) {
+          return {
+            ...envelope("workspace.setCurrent", null),
+            ok: false,
+            error: { code: "SERVICE_GRAPH_BUSY", message: "busy", retryable: true },
+          } as never;
+        }
+        return {
+          ...envelope("workspace.setCurrent", {
+            workspace: otherWorkspaceSnapshot(),
+            session: null,
+          }),
+        } as never;
+      }
+      return envelope("session.open", openedSession({ cwd: "/proj/other" })) as never;
+    });
+
+    const target = { cwd: "/proj/other", sessionPath: "/sessions/other/target.jsonl" };
+    const [first, second] = await Promise.all([
+      openSessionAcrossWorkspaces(target),
+      openSessionAcrossWorkspaces(target),
+    ]);
+
+    expect(first.status).not.toBe("blocked");
+    expect(second.status).not.toBe("blocked");
+    expect([first.status, second.status]).toContain("opened");
+  });
 });

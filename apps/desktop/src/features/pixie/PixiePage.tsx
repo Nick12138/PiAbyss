@@ -421,6 +421,15 @@ export function PixiePage() {
   const [acquireFailed, setAcquireFailed] = useState(false);
   /** 进入 pixie 页前的工作区 cwd；null = 之前没有活动工作区（卸载时不恢复）。 */
   const prevCwdRef = useRef<string | null>(null);
+  /**
+   * 已为其发起过锚定获取的宿主实例。React StrictMode 在 dev 下会「挂载 effect →
+   * 立即清理 → 再跑一次」，于是进 pixie 页会并发跑两次 acquire：两次都发
+   * workspace.setCurrent（同一 cwd），宿主侧必然撞一次 SERVICE_GRAPH_BUSY，前端
+   * workspaceSwitchTarget 槽位又互相踩，慢的那次报 blocked → 页面闪「暂不可用」。
+   * 生产构建没有这次重放，所以该症状只在 dev 复现。重放携带同一个 hostInstanceId，
+   * 据此跳过；宿主重启（id 变化）时照常重新锚定。
+   */
+  const acquiredHostInstanceRef = useRef<string | null>(null);
 
   /**
    * 锚点获取 + 会话打开。幂等：会话已激活时 openSessionAcrossWorkspaces 快速
@@ -463,6 +472,9 @@ export function PixiePage() {
   // would yank the transcript back to the anchor session.
   useEffect(() => {
     if (!hostInstanceId) return;
+    // Skip the StrictMode effect replay (see acquiredHostInstanceRef).
+    if (acquiredHostInstanceRef.current === hostInstanceId) return;
+    acquiredHostInstanceRef.current = hostInstanceId;
     if (prevCwdRef.current === null) {
       // 记录进入前的工作区；已是 pixie 工作区（如冷启动直落 pixie 页）则不恢复。
       const before = useAppStore.getState().workspace?.canonicalCwd ?? null;

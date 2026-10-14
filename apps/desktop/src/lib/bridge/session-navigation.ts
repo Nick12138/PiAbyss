@@ -108,12 +108,25 @@ export async function activateWorkspaceAcrossWorkspaces(
           60_000,
         ),
       undefined,
-      () => useAppStore.getState().workspaceSwitchTarget === cwd,
+      // Only a *different* cwd seizing the slot supersedes this switch. A
+      // cleared slot just means the sibling activation finished — not that
+      // anyone replaced us. Two activations of the same cwd are legitimate
+      // (React StrictMode replays mount effects in dev, so the pixie page
+      // acquires twice) and must both settle; otherwise the slower one
+      // reports a bogus "blocked" and the page flashes 「暂不可用」.
+      () => {
+        const target = useAppStore.getState().workspaceSwitchTarget;
+        return target === null || target === cwd;
+      },
     );
     if (!attempted) return { status: "blocked" };
     switched = attempted;
   } finally {
-    useAppStore.getState().setWorkspaceSwitchTarget(null);
+    // Release the slot only while it is still ours: a newer activation for a
+    // different cwd may have claimed it during the retry window.
+    if (useAppStore.getState().workspaceSwitchTarget === cwd) {
+      useAppStore.getState().setWorkspaceSwitchTarget(null);
+    }
   }
   if (!switched.ok) {
     // A busy rejection cannot be resolved by another Host (there is none) —
