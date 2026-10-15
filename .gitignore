@@ -39,3 +39,7 @@ artifacts/
 # Local agent planning and scratch files
 /.zcode/
 .claude/plans/myagents/
+
+# workbuddy
+.workbuddy/
+.workbuddy-ai/
