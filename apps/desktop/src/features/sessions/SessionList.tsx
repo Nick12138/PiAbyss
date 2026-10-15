@@ -206,9 +206,7 @@ export function SessionList({
   const [extensionUiExpiryTick, setExtensionUiExpiryTick] = useState(0);
   const ime = useImeComposition();
   const [pinnedSessionIds, setPinnedSessionIds] = useState<string[]>(() =>
-    readPinnedSessionIds(
-      frozen?.workspace.id ?? useAppStore.getState().workspace?.id,
-    ),
+    readPinnedSessionIds(frozen?.workspace.id ?? useAppStore.getState().workspace?.id),
   );
   // 「定位到某条会话」（归档会话打不开，只能把用户带到它在列表里的位置）。
   const [revealRequest, setRevealRequest] = useState<SessionRevealRequest | null>(null);
@@ -439,8 +437,6 @@ export function SessionList({
         const outcome = await openSessionAcrossWorkspaces({
           cwd: frozen.workspace.canonicalCwd,
           sessionPath: path,
-          // 阻塞式：紧跟着的 session.open 需要 serviceGraphLock 释放。
-          optimistic: false,
         });
         if (
           outcome.status === "opened" ||

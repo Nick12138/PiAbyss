@@ -41,12 +41,11 @@ export function PixieBackToCurrentButton() {
           if (latest?.sessionId) {
             // sessionPath 必传：只给 sessionId 而无 resolveSessionPath 时
             // openSessionAcrossWorkspaces 会直接返回 blocked（导航静默失效）。
-            // optimistic:false 同 PixiePage.acquire——锚点打开要阻塞到图就绪。
+            // 切换的阻塞式（等图构建完）由 openSessionAcrossWorkspaces 自己保证。
             await openSessionAcrossWorkspaces({
               cwd: latest.cwd,
               sessionId: latest.sessionId,
               sessionPath: latest.sessionPath,
-              optimistic: false,
               quiet: true,
             });
             // 委派面板的归属段跟随切换（与浮窗选会话同一条路径）。

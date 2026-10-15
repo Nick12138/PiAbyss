@@ -7,8 +7,14 @@ import type { DesktopSettings, HostStatusSnapshot, WorkspaceSnapshot } from "@pi
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
 import { usePixieViewStore } from "./pixie-store";
-import { usePixieSidebarSnapshot, resetPixieSidebarSnapshotForTests } from "./pixie-sidebar-snapshot";
-import { getPixiePreviousWorkspace, resetPixiePreviousWorkspaceForTests } from "./pixie-previous-workspace";
+import {
+  usePixieSidebarSnapshot,
+  resetPixieSidebarSnapshotForTests,
+} from "./pixie-sidebar-snapshot";
+import {
+  getPixiePreviousWorkspace,
+  resetPixiePreviousWorkspaceForTests,
+} from "./pixie-previous-workspace";
 import { PixiePage } from "./PixiePage";
 
 /**
@@ -22,6 +28,7 @@ import { PixiePage } from "./PixiePage";
 const HOST_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_CWD = "/workspace/other";
 const PIXIE_CWD = "/agent/workspace/pixie";
+const PICKED_CWD = "/workspace/picked";
 
 const host: HostStatusSnapshot = {
   protocolVersion: 1,
@@ -44,6 +51,14 @@ const otherWorkspace: WorkspaceSnapshot = {
   cwd: OTHER_CWD,
   canonicalCwd: OTHER_CWD,
   revision: 1,
+  servicesReady: true,
+};
+
+const pixieWorkspace: WorkspaceSnapshot = {
+  id: "44444444-4444-4444-8444-444444444444",
+  cwd: PIXIE_CWD,
+  canonicalCwd: PIXIE_CWD,
+  revision: 2,
   servicesReady: true,
 };
 
@@ -77,6 +92,7 @@ beforeEach(() => {
     desynchronized: false,
     hostFatal: null,
     activeSubagentNodeId: null,
+    workspaceSwitchTarget: null,
     desktopSettings: {
       theme: "system",
       language: "zh",
@@ -115,7 +131,6 @@ describe("PixiePage 锚定获取（acquire）", () => {
       cwd: PIXIE_CWD,
       sessionId: "live-1",
       sessionPath: `${PIXIE_CWD}/live-1.jsonl`,
-      optimistic: false,
       quiet: true,
     });
     expect(document.body.textContent ?? "").not.toContain("暂不可用");
@@ -160,5 +175,42 @@ describe("PixiePage 锚定获取（acquire）", () => {
     expect(snapshot?.items.map((item) => item.sessionId)).toEqual(["prev-session"]);
     // 「新会话」分支的镜像同样不能被重放卸载清掉。
     expect(getPixiePreviousWorkspace()).toBe(OTHER_CWD);
+  });
+
+  it("用户点了别的工作区时不再抢发第二次切换", async () => {
+    // 复现「切到小精灵后点其他工作区弹界面状态已过期」的时序：WorkspacePicker
+    // 先占 workspaceSwitchTarget，再 setPage("chat") 卸载本页；它的
+    // workspace.setCurrent 此刻还没落地，store 里仍是小精灵工作区，所以卸载
+    // 清理的「非 pixie」守卫拦不住，只有让位给已在途的那一次。
+    const { unmount } = render(
+      <StrictMode>
+        <PixiePage />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(openSpy).toHaveBeenCalled());
+
+    useAppStore.getState().setWorkspace(pixieWorkspace);
+    useAppStore.getState().setWorkspaceSwitchTarget(PICKED_CWD);
+    unmount();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    // 两次并发 setCurrent 各自生成新 workspaceId 并 bump revision，后提交的一方
+    // 会让先提交那方的身份立刻过期，宿主还会用后来者取消在飞的构建。
+    expect(activateSpy).not.toHaveBeenCalled();
+  });
+
+  it("没有其它切换在途时仍把工作区还给用户", async () => {
+    const { unmount } = render(
+      <StrictMode>
+        <PixiePage />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(openSpy).toHaveBeenCalled());
+
+    useAppStore.getState().setWorkspace(pixieWorkspace);
+    unmount();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(activateSpy).toHaveBeenCalledWith(OTHER_CWD, { quiet: true });
   });
 });

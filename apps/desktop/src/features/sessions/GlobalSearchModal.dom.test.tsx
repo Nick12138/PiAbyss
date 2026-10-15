@@ -250,7 +250,10 @@ describe("GlobalSearchModal", () => {
       expect(methods).toContain("workspace.setCurrent");
     });
     const setCurrentCall = request.mock.calls.find((call) => call[0] === "workspace.setCurrent");
-    expect(setCurrentCall?.[2]).toEqual({ cwd: "/proj/other", optimistic: true });
+    // A session jump blocks its workspace switch: `session.open` cannot run
+    // against an optimistic pending shell (AGENT_NOT_READY), so neither can the
+    // archived branch that stops after the switch.
+    expect(setCurrentCall?.[2]).toEqual({ cwd: "/proj/other", optimistic: false });
     // The archived result switches the workspace but does not open the session.
     const methods = request.mock.calls.map((call) => call[0]);
     expect(methods).not.toContain("session.open");

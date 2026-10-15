@@ -1,9 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  HostResponseEnvelope,
-  SessionSnapshot,
-  WorkspaceSnapshot,
-} from "@piabyss/protocol";
+import type { HostResponseEnvelope, SessionSnapshot, WorkspaceSnapshot } from "@piabyss/protocol";
 import { hostClient } from "./host-client";
 import { useAppStore } from "../stores/app-store";
 import { openSessionAcrossWorkspaces } from "./session-navigation";
@@ -326,7 +322,7 @@ describe("openSessionAcrossWorkspaces", () => {
     ).toBe(true);
   });
 
-  it("switches workspace in place via workspace.setCurrent", async () => {
+  it("switches workspace in place, blocking so the following session.open can run", async () => {
     useAppStore.getState().setHost(host());
     useAppStore.getState().setWorkspace(workspace());
     useAppStore.getState().applySessionSnapshot(session());
@@ -354,10 +350,13 @@ describe("openSessionAcrossWorkspaces", () => {
     });
 
     expect(outcome.status).toBe("opened");
+    // optimistic:false is the contract: the Host rejects session.open while an
+    // optimistic switch still holds a pending shell (AGENT_NOT_READY
+    // "Workspace services not ready"), so a session jump must wait for the build.
     expect(request).toHaveBeenCalledWith(
       "workspace.setCurrent",
       expect.objectContaining({ hostInstanceId: HOST_ID }),
-      { cwd: "/proj/other", optimistic: true },
+      { cwd: "/proj/other", optimistic: false },
       60_000,
     );
     expect(useAppStore.getState().workspace?.id).toBe(OTHER_WORKSPACE_ID);
@@ -495,5 +494,55 @@ describe("openSessionAcrossWorkspaces", () => {
     expect(first.status).not.toBe("blocked");
     expect(second.status).not.toBe("blocked");
     expect([first.status, second.status]).toContain("opened");
+  });
+
+  it("re-sends a stale workspace switch with the identity that beat it", async () => {
+    // 两次并发 workspace.setCurrent（例如小精灵页的「归还工作区」与用户的选择器
+    // 点击）各自生成新 workspaceId 并 bump revision，后到的一方被 STALE_REVISION
+    // 拒绝。Host 不会重放已提交的变化，所以该错误码是 retryable:false；但 UI 可以
+    // 重发：获胜那次已经通过 workspace.changed 把新身份交给 store。
+    useAppStore.getState().setHost(host());
+    useAppStore.getState().setWorkspace(workspace());
+    useAppStore.getState().applySessionSnapshot(session());
+    const notificationsBefore = useAppStore.getState().notifications.length;
+
+    const winner = otherWorkspaceSnapshot();
+    const contexts: unknown[] = [];
+    let setCurrentCalls = 0;
+    vi.spyOn(hostClient, "request").mockImplementation(async (method: string, context: unknown) => {
+      if (method === "workspace.setCurrent") {
+        setCurrentCalls += 1;
+        contexts.push(context);
+        if (setCurrentCalls === 1) {
+          useAppStore.getState().applyWorkspaceSnapshot(winner);
+          return {
+            ...envelope("workspace.setCurrent", null),
+            ok: false,
+            error: {
+              code: "STALE_REVISION",
+              message: "Workspace id mismatch",
+              retryable: false,
+            },
+          } as never;
+        }
+        return {
+          ...envelope("workspace.setCurrent", { workspace: winner, session: null }),
+        } as never;
+      }
+      return envelope("session.open", openedSession({ cwd: "/proj/other" })) as never;
+    });
+
+    const outcome = await openSessionAcrossWorkspaces({
+      cwd: "/proj/other",
+      sessionPath: "/sessions/other/target.jsonl",
+    });
+
+    expect(outcome.status).toBe("opened");
+    expect(setCurrentCalls).toBe(2);
+    // 重发必须带 store 里刚吸收的身份，而不是点击时捕获的那一份。
+    expect(contexts[0]).toEqual(expect.objectContaining({ id: WORKSPACE_ID, revision: 1 }));
+    expect(contexts[1]).toEqual(expect.objectContaining({ id: OTHER_WORKSPACE_ID, revision: 4 }));
+    // 自愈的竞态不该变成一条「界面状态已过期」提示。
+    expect(useAppStore.getState().notifications).toHaveLength(notificationsBefore);
   });
 });

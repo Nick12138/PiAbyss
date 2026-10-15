@@ -1,5 +1,6 @@
 import { hostClient } from "./host-client";
 import { rebindActiveWorkspaceHost } from "./tauri-transport";
+import type { HostResponseEnvelope, HostStatusSnapshot } from "@piabyss/protocol";
 import { mergeHostIdentity, workspaceContext } from "./host-context";
 import { requestSessionOpenWithRetry, SESSION_OPEN_TIMEOUT_MS } from "./session-open-request";
 import { hostErrorLevel, localizeHostError } from "./localize-host-error";
@@ -19,14 +20,6 @@ export type SessionNavigationTarget = {
   /** Present without sessionPath for cross-workspace system notifications. */
   sessionId?: string;
   archived?: boolean;
-  /**
-   * Optimistic switches hand the service-graph lock to a background build and
-   * return immediately (snappy picker UX). Callers that need to run graph
-   * operations right after the switch (e.g. session.create) must opt out so
-   * the switch blocks until the build settles and the lock is released.
-   * Defaults to true.
-   */
-  optimistic?: boolean;
   /**
    * Suppress the toast notifications this navigation normally surfaces on
    * failure — for callers that retry the navigation on a longer window and
@@ -64,6 +57,52 @@ export type WorkspaceActivationOutcome = Extract<
   { status: "opened" | "already-active" | "blocked" | "failed" }
 >;
 
+/** A workspace switch may build a cold service graph; the picker documents a
+ *  build that can exceed 10s (cold tsx compile), so the request stays patient. */
+const WORKSPACE_SWITCH_TIMEOUT_MS = 60_000;
+
+/** The switch that beat us committed before rejecting this request and published
+ *  its identity in the same tick, so this wait only has to outlive the pipe. */
+const STALE_IDENTITY_RETRY_DELAY_MS = 200;
+
+/**
+ * `workspace.setCurrent` for both the workspace picker and every cross-workspace
+ * activation, with the two identity hazards behind
+ * 「界面状态已过期，该操作未生效，请重试。」 handled:
+ *
+ * 1. The context is rebuilt from the store on every attempt. The Host compares a
+ *    request against its already COMMITTED generation, so re-sending a context
+ *    captured before the request only reproduces the same rejection.
+ * 2. A `STALE_REVISION` rejection gets one silent re-attempt. The Host reports it
+ *    as retryable:false because it never replays a committed mutation, but the UI
+ *    can recover: the winning switch has by now published its own identity, so
+ *    the re-attempt lands instead of asking the user to click again.
+ *
+ * Returns null when `isCurrent` reports this request was superseded.
+ */
+export async function requestWorkspaceSwitch(
+  cwd: string,
+  fallbackHost: HostStatusSnapshot,
+  options: { optimistic: boolean; isCurrent?: () => boolean; delays?: readonly number[] },
+): Promise<HostResponseEnvelope<"workspace.setCurrent"> | null> {
+  const isCurrent = options.isCurrent ?? (() => true);
+  const send = () => {
+    const latest = useAppStore.getState();
+    return hostClient.request(
+      "workspace.setCurrent",
+      workspaceContext(latest.host ?? fallbackHost, latest.workspace),
+      { cwd, optimistic: options.optimistic },
+      WORKSPACE_SWITCH_TIMEOUT_MS,
+    );
+  };
+  const attempted = await requestWithRetry(send, undefined, isCurrent, options.delays);
+  if (!attempted) return null;
+  if (attempted.ok || attempted.error?.code !== "STALE_REVISION") return attempted;
+  await new Promise((resolve) => setTimeout(resolve, STALE_IDENTITY_RETRY_DELAY_MS));
+  // One heal only: if a third switch beat us again, the caller surfaces it.
+  return await requestWithRetry(send, undefined, isCurrent, options.delays);
+}
+
 /**
  * Cross-workspace "make this cwd the active workspace" request shared by the
  * session jump navigation and the memo agent handoff. One shared Host serves
@@ -99,26 +138,19 @@ export async function activateWorkspaceAcrossWorkspaces(
     // Transient SERVICE_GRAPH_BUSY collisions (an in-flight read holding
     // the serviceGraphLock) are retryable by design; give the switch a
     // short retry window instead of surfacing a one-off busy toast.
-    const attempted = await requestWithRetry(
-      () =>
-        hostClient.request(
-          "workspace.setCurrent",
-          workspaceContext(host, state.workspace),
-          { cwd, optimistic: options.optimistic !== false },
-          60_000,
-        ),
-      undefined,
+    const attempted = await requestWorkspaceSwitch(cwd, host, {
+      optimistic: options.optimistic !== false,
       // Only a *different* cwd seizing the slot supersedes this switch. A
       // cleared slot just means the sibling activation finished — not that
       // anyone replaced us. Two activations of the same cwd are legitimate
       // (React StrictMode replays mount effects in dev, so the pixie page
       // acquires twice) and must both settle; otherwise the slower one
       // reports a bogus "blocked" and the page flashes 「暂不可用」.
-      () => {
+      isCurrent: () => {
         const target = useAppStore.getState().workspaceSwitchTarget;
         return target === null || target === cwd;
       },
-    );
+    });
     if (!attempted) return { status: "blocked" };
     switched = attempted;
   } finally {
@@ -199,9 +231,14 @@ export async function openSessionAcrossWorkspaces(
   }
 
   // Cross-workspace activation (in-place setCurrent); the helper owns the
-  // retry window and busy-surface policy.
+  // retry window and busy-surface policy. Always blocking here: every path
+  // below either opens a session or stops, and the Host refuses
+  // `session.open`/`session.create` while an optimistic switch still holds a
+  // pending shell (AGENT_NOT_READY "Workspace services not ready"). A jump is
+  // only useful once the target conversation is actually open, so the switch
+  // must wait for the graph instead of handing the user a half-built workspace.
   const activation = await activateWorkspaceAcrossWorkspaces(target.cwd, {
-    optimistic: target.optimistic,
+    optimistic: false,
     quiet: target.quiet,
   });
   if (activation.status === "already-active") {

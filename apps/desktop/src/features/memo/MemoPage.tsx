@@ -749,7 +749,6 @@ export function MemoPage() {
           cwd,
           sessionId: note.result.sessionId,
           sessionPath: note.result.sessionPath,
-          optimistic: false,
           quiet: true,
         });
         opened = outcome.status === "opened" || outcome.status === "already-active";

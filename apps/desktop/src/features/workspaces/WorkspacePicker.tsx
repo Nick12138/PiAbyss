@@ -14,7 +14,7 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { useAppStore } from "../../lib/stores/app-store";
-import { hostClient } from "../../lib/bridge/host-client";
+import { requestWorkspaceSwitch } from "../../lib/bridge/session-navigation";
 import {
   fetchHostActivity,
   hostActivityCwds,
@@ -26,7 +26,6 @@ import type { WorkspaceActivity } from "../../lib/stores/app-store";
 import { normalizedActivityKey } from "../../lib/workspace-activity";
 import type { SessionTerminalSnapshot } from "../../lib/session-terminal-states";
 import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
-import { requestWithRetry } from "../../lib/bridge/request-retry";
 import {
   notifyDesktopSettingsSaveFailure,
   persistDesktopSettings,
@@ -35,7 +34,6 @@ import { sidebarPref, setSidebarPref } from "../../lib/sidebar-prefs";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import { useT } from "../../lib/i18n/use-t";
-import { workspaceContext } from "../../lib/bridge/host-context";
 import { TelegramAddDialog } from "../bot/TelegramAddDialog";
 import { loadBotGateways, removeGateway, type BotGateway } from "../bot/gateway-store";
 import { TelegramInstallDialog } from "../telegram/TelegramInstallDialog";
@@ -322,28 +320,23 @@ export function WorkspacePicker() {
       // Host to prepare — take the in-place `workspace.setCurrent` path (the
       // same connection; no prepareForHostSwitch/replay needed) and register
       // the workspace via rebindActiveWorkspaceHost below.
-
-      // Transient SERVICE_GRAPH_BUSY collisions (an in-flight read holding the
-      // serviceGraphLock) are retryable by design; give the switch a short
-      // retry window instead of surfacing a one-off busy toast.
-      // optimistic: the Host commits a pending shell (servicesReady: false)
+      //
+      // `optimistic`: the Host commits a pending shell (servicesReady: false)
       // and returns before the full build, so the picker switches instantly —
       // the session lands via a later snapshot event.
+      //
       // Growing backoff: the Host itself waits up to 8s for the lock per
       // attempt, so a few patient retries cover another switch's graph build
       // (cold tsx compile can exceed 10s) before surfacing a busy toast.
-      const attempted = await requestWithRetry(
-        () =>
-          hostClient.request(
-            "workspace.setCurrent",
-            workspaceContext(host, workspace),
-            { cwd, optimistic: true },
-            60_000,
-          ),
-        undefined,
-        () => request === requestRef.current,
-        [400, 800, 1_600, 3_200],
-      );
+      // Transient SERVICE_GRAPH_BUSY collisions (an in-flight read holding the
+      // serviceGraphLock) are retryable by design; so is a lost identity race,
+      // which `requestWorkspaceSwitch` re-sends with the absorbed identity
+      // instead of surfacing 「界面状态已过期」.
+      const attempted = await requestWorkspaceSwitch(cwd, host, {
+        optimistic: true,
+        isCurrent: () => request === requestRef.current,
+        delays: [400, 800, 1_600, 3_200],
+      });
       if (!attempted) return;
       const res = attempted;
 

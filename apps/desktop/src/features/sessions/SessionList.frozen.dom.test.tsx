@@ -133,7 +133,6 @@ describe("SessionList frozen 模式（小精灵页侧边栏）", () => {
       expect(openSpy).toHaveBeenCalledWith({
         cwd: "/previous",
         sessionPath: "/previous/sessions/prev-2.jsonl",
-        optimistic: false,
       }),
     );
     await waitFor(() => expect(useAppStore.getState().page).toBe("chat"));
@@ -148,7 +147,6 @@ describe("SessionList frozen 模式（小精灵页侧边栏）", () => {
       expect(openSpy).toHaveBeenCalledWith({
         cwd: "/previous",
         sessionPath: "/previous/sessions/prev-1.jsonl",
-        optimistic: false,
       }),
     );
   });

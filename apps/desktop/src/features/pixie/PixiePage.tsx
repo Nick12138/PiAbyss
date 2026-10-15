@@ -43,9 +43,7 @@ import {
   type ComposerRuntime,
 } from "../chat/composer-runtime";
 import { usePixieViewStore } from "./pixie-store";
-import {
-  rememberPixiePreviousWorkspace,
-} from "./pixie-previous-workspace";
+import { rememberPixiePreviousWorkspace } from "./pixie-previous-workspace";
 import { usePixieSidebarSnapshot } from "./pixie-sidebar-snapshot";
 import { sessionCatalogItems } from "../../lib/stores/session-catalog";
 import { isSamePixiePath } from "../../lib/pixie-path";
@@ -451,11 +449,10 @@ export function PixiePage() {
       cwd: pixie.cwd,
       sessionId: pixie.sessionId,
       sessionPath: pixie.sessionPath,
-      // 阻塞式切换：切完立刻 session.open，绝不能吃 optimistic 的 pending
-      // shell——shell 期 servicesReady=false，session.open 直接 AGENT_NOT_READY
-      // （该错误码前端不重试），就是「每次进小精灵页都提示暂不可用、手动
-      // 重试才好」的根因之一。等待期间本页本来就有加载态。
-      optimistic: false,
+      // 切换是阻塞式的（openSessionAcrossWorkspaces 自己保证）：切完紧接着
+      // session.open，不能吃 pending shell——shell 期 servicesReady=false，
+      // session.open 直接 AGENT_NOT_READY，就是「每次进小精灵页都提示暂不可用、
+      // 手动重试才好」的根因之一。等待期间本页本来就有加载态。
       quiet: true,
     });
     if (outcome.status === "opened" || outcome.status === "already-active") {
@@ -528,6 +525,13 @@ export function PixiePage() {
       // 新的 PixiePage 实例，挂载必重新捕获。
       if (!before || !pixieCwd) return;
       if (!isSamePixiePath(useAppStore.getState().workspace?.canonicalCwd, pixieCwd)) return;
+      // 用户是「点了另一个工作区」离开本页的：WorkspacePicker 先占
+      // workspaceSwitchTarget 再 setPage，卸载发生在 workspace.setCurrent 的
+      // 响应落地之前，上面那条非 pixie 守卫此时还看不见新工作区。这里必须让路：
+      // 两次并发 setCurrent 各自生成新 workspaceId 并 bump revision，后提交的一方
+      // 会让先提交那方的 UI 身份立刻过期（选择器弹「界面状态已过期」），宿主还会
+      // 用后来者取消在飞的构建（workspace-lifecycle 的 supersede 分支）。
+      if (useAppStore.getState().workspaceSwitchTarget !== null) return;
       void activateWorkspaceAcrossWorkspaces(before, { quiet: true });
     };
   }, []);
@@ -695,9 +699,9 @@ export function PixiePage() {
                * 之间）。 */}
               <InlineExtensionUiRequest />
               {/* 四周留白全部交给共享 Composer 自己的 footer（`px-5 pb-5 pt-2`，
-                * 统计药丸在位时 footer 底部收到 5px），与 ChatPage 完全同一套
-                * 度量。这里曾叠着 px-3/sm:px-6 + pt-2 + pb-3/sm:pb-5，是小精灵
-                * V1 自带输入框时代的残留，v5 复用 Composer 后就成了双份间距。 */}
+               * 统计药丸在位时 footer 底部收到 5px），与 ChatPage 完全同一套
+               * 度量。这里曾叠着 px-3/sm:px-6 + pt-2 + pb-3/sm:pb-5，是小精灵
+               * V1 自带输入框时代的残留，v5 复用 Composer 后就成了双份间距。 */}
               <div className="shrink-0">
                 {error && <p className="mb-2 px-5 text-xs text-danger">{error}</p>}
                 <ComposerRuntimeProvider runtime={runtime}>
