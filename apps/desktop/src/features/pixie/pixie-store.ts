@@ -5,11 +5,12 @@
  * workspace/session + agent.* RPC），这里只保留小精灵专属的三块：
  *   1. `ensureCurrent` — 取当前 pixie 会话锚点（cwd/sessionId/sessionPath），
  *      页面挂载时据此完成 workspace.setCurrent + session.open；
- *   2. `dispatches` — 委派注册表（pixie.dispatches）+ 回复/插话/叫停/重试；
+ *   2. `dispatches` — 委派注册表（pixie.dispatches + pixie.taskTree 分组树）
+ *      + 回复/插话/叫停/重试；
  *   3. `nap` — 打盹（pixie.newSegment，切新会话）与已知工作区推送。
  */
 import { create } from "zustand";
-import type { PixieDispatchRecord } from "@piabyss/protocol";
+import type { PixieDispatchRecord, PixieTaskTreeWorkspace } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -26,6 +27,11 @@ type PixieCurrent = {
 type PixieViewState = {
   current: PixieCurrent | null;
   dispatches: PixieDispatchRecord[];
+  /**
+   * 委派面板的展示形状：同一批记录的「工作区 → 会话 → 任务」投影（Host 侧
+   * 算好短名、四态与跳转锚点，前端只渲染）。与 `dispatches` 同一次轮询刷新。
+   */
+  taskTree: PixieTaskTreeWorkspace[];
   dispatchesLoaded: boolean;
   dispatchesLoading: boolean;
   error: string | null;
@@ -70,6 +76,7 @@ export function resetPixiePanelSessionForTests(): void {
 export const usePixieViewStore = create<PixieViewState>((set, get) => ({
   current: null,
   dispatches: [],
+  taskTree: [],
   dispatchesLoaded: false,
   dispatchesLoading: false,
   error: null,
@@ -130,11 +137,27 @@ export const usePixieViewStore = create<PixieViewState>((set, get) => ({
         });
         return;
       }
+      // 分组树与列表同源（同一批记录的两种投影），放在同一次轮询里一起拉，
+      // 面板与操作按钮读到的永远是同一时刻的状态。树拉取失败不影响列表：
+      // 保留上一次投影，宁可旧一点也不要整块空掉。
+      let groups: PixieTaskTreeWorkspace[] | null = null;
+      try {
+        const tree = await hostClient.request(
+          "pixie.taskTree",
+          hostContext(host),
+          { sessionId: panelSessionId },
+          DISPATCHES_TIMEOUT_MS,
+        );
+        if (tree.ok) groups = tree.result.groups;
+      } catch {
+        /* 树不可用：面板继续用上一次投影 */
+      }
       set({
         dispatchesLoading: false,
         dispatchesLoaded: true,
         error: null,
         dispatches: response.result.dispatches,
+        ...(groups ? { taskTree: groups } : {}),
       });
     } catch (error) {
       set({

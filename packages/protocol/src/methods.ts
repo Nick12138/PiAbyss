@@ -179,6 +179,7 @@ export const HOST_METHODS = [
   "pixie.stopDispatch",
   "pixie.retryDispatch",
   "pixie.listSessions",
+  "pixie.taskTree",
 ] as const;
 
 export type HostMethod = (typeof HOST_METHODS)[number];
@@ -295,7 +296,7 @@ export type HostOnlyMethod =
   | "pixie.stopDispatch"
   | "pixie.retryDispatch"
   | "pixie.listSessions"
-;
+  | "pixie.taskTree";
 export type WorkspaceOnlyMethod =
   | "workspace.setCurrent"
   | "workspace.getCurrent"
@@ -599,6 +600,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "pixie.stopDispatch": "host",
   "pixie.retryDispatch": "host",
   "pixie.listSessions": "host",
+  "pixie.taskTree": "host",
   "extensionUi.respond": "sessionTarget",
   "extensionUi.customInput": "sessionTarget",
   "extensionUi.customResize": "sessionTarget",

@@ -5,7 +5,7 @@
  * 预留），全部经 `node:http` 直连 127.0.0.1:<PIABYSS_PIXIE_HTTP_PORT>（禁用
  * 全局 fetch：Host 注入的代理设置会拦截环回请求）。执行本体仍在本进程：
  *
- * - `POST /api/pixie/dispatch`        { cwd, task, newSession? } → 委派受理结果
+ * - `POST /api/pixie/dispatch`        { cwd, task, newSession?, taskName?, sessionName? } → 委派受理结果
  * - `POST /api/pixie/report`          { dispatchId, summary, success } → done/error 回注
  * - `POST /api/pixie/ask`             { dispatchId, question, options? } → 询问用户
  * - `POST /api/pixie/rest`            { phrase?, handoff? } → 小精灵自睡收尾
@@ -59,6 +59,10 @@ export type PixieControlPlaneDeps = {
     /** 用户明确授权的模型/推理深度覆盖。 */
     model?: string | null;
     thinkingLevel?: string | null;
+    /** 小精灵给这条任务起的短名（已 trim；长度口径由 Host 统一裁）。 */
+    taskName?: string | null;
+    /** 本次真的新建会话时采用的会话名；复用既有会话时引擎会忽略。 */
+    sessionName?: string | null;
   }) => Promise<
     | {
         ok: true;
@@ -210,6 +214,22 @@ function parseModelOverride(
   };
 }
 
+/**
+ * dispatch 的可选短名字段（taskName / sessionName）：插件侧保证「要么非空字符串、
+ * 要么字段缺席」，这里按同一口径收——非字符串一律 400，全空白/ null 退回未传。
+ * 长度裁剪不在这里（口径由委派引擎统一掌握，见 pixie-agent-runner 的短名上限）。
+ */
+function readOptionalShortName(
+  value: Record<string, unknown>,
+  key: "taskName" | "sessionName",
+): { ok: true; value?: string } | { ok: false; error: string } {
+  const raw = value[key];
+  if (raw === undefined || raw === null) return { ok: true };
+  if (typeof raw !== "string") return { ok: false, error: `${key} 必须是字符串` };
+  const trimmed = raw.trim();
+  return trimmed ? { ok: true, value: trimmed } : { ok: true };
+}
+
 /** 解析并强校验 dispatch 请求体；失败返回可读中文错误。 */
 export function parseDispatchBody(raw: string | null):
   | {
@@ -220,6 +240,8 @@ export function parseDispatchBody(raw: string | null):
         newSession?: boolean;
         sessionId?: string | null;
         batchId?: string | null;
+        taskName?: string | null;
+        sessionName?: string | null;
       } & PixieModelOverride;
     }
   | { ok: false; error: string } {
@@ -251,6 +273,10 @@ export function parseDispatchBody(raw: string | null):
   }
   const override = parseModelOverride(value);
   if (!override.ok) return override;
+  const taskName = readOptionalShortName(value, "taskName");
+  if (!taskName.ok) return taskName;
+  const sessionName = readOptionalShortName(value, "sessionName");
+  if (!sessionName.ok) return sessionName;
   return {
     ok: true,
     request: {
@@ -259,6 +285,8 @@ export function parseDispatchBody(raw: string | null):
       ...(value.newSession !== undefined ? { newSession: value.newSession } : {}),
       ...(value.batchId !== undefined ? { batchId: value.batchId as string | null } : {}),
       ...(value.sessionId !== undefined ? { sessionId: value.sessionId as string | null } : {}),
+      ...(taskName.value !== undefined ? { taskName: taskName.value } : {}),
+      ...(sessionName.value !== undefined ? { sessionName: sessionName.value } : {}),
       ...override.override,
     },
   };

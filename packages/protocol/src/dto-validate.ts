@@ -2707,6 +2707,10 @@ function isPixieDispatchRecord(value: unknown): boolean {
         "model",
         "thinkingLevel",
         "originSessionId",
+        "taskName",
+        "sessionName",
+        "dispatchMessageId",
+        "reportMessageId",
       ],
     ) &&
     isString(value.id) &&
@@ -2763,7 +2767,107 @@ function isPixieDispatchRecord(value: unknown): boolean {
       isString(value.thinkingLevel)) &&
     (value.originSessionId === undefined ||
       value.originSessionId === null ||
-      isString(value.originSessionId))
+      isString(value.originSessionId)) &&
+    (value.taskName === undefined || value.taskName === null || isString(value.taskName)) &&
+    (value.sessionName === undefined ||
+      value.sessionName === null ||
+      isString(value.sessionName)) &&
+    (value.dispatchMessageId === undefined ||
+      value.dispatchMessageId === null ||
+      isString(value.dispatchMessageId)) &&
+    (value.reportMessageId === undefined ||
+      value.reportMessageId === null ||
+      isString(value.reportMessageId))
+  );
+}
+
+const PIXIE_TASK_STATUSES = ["queued", "running", "done", "failed"] as const;
+
+/** 任务行跳转目标：锚点在哪个会话就跳哪个，未必是任务所属的工作区/会话。 */
+function isPixieTaskJump(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["cwd", "sessionId", "sessionPath", "messageId", "anchor"]) &&
+    isString(value.cwd) &&
+    (value.sessionId === null || isString(value.sessionId)) &&
+    (value.sessionPath === null || isString(value.sessionPath)) &&
+    (value.messageId === null || isString(value.messageId)) &&
+    (value.anchor === null || value.anchor === "report" || value.anchor === "dispatch")
+  );
+}
+
+function isPixieTaskTreeTask(value: unknown): boolean {
+  if (!isPlainObject(value) || !isPixieTaskJump(value.jump)) return false;
+  const status = value.status as (typeof PIXIE_TASK_STATUSES)[number];
+  return (
+    hasExactKeys(value, [
+      "dispatchId",
+      "label",
+      "status",
+      "statusDetail",
+      "kind",
+      "question",
+      "options",
+      "failCount",
+      "stale",
+      "createdAt",
+      "lastActiveAt",
+      "dispatchMessageId",
+      "reportMessageId",
+      "jump",
+    ]) &&
+    isString(value.dispatchId) &&
+    isString(value.label) &&
+    PIXIE_TASK_STATUSES.includes(status) &&
+    (value.statusDetail === "dispatched" ||
+      value.statusDetail === "queued" ||
+      value.statusDetail === "paused" ||
+      value.statusDetail === "awaiting_user" ||
+      value.statusDetail === "reported" ||
+      value.statusDetail === "failed" ||
+      value.statusDetail === "stopped" ||
+      value.statusDetail === "cancelled") &&
+    (value.kind === null ||
+      value.kind === "done" ||
+      value.kind === "error" ||
+      value.kind === "ask" ||
+      value.kind === "progress" ||
+      value.kind === "stopped") &&
+    (value.question === null || isString(value.question)) &&
+    Array.isArray(value.options) &&
+    value.options.every((option: unknown) => isString(option)) &&
+    typeof value.failCount === "number" &&
+    Number.isSafeInteger(value.failCount) &&
+    value.failCount >= 0 &&
+    typeof value.stale === "boolean" &&
+    typeof value.createdAt === "number" &&
+    Number.isSafeInteger(value.createdAt) &&
+    (value.lastActiveAt === null ||
+      (typeof value.lastActiveAt === "number" && Number.isSafeInteger(value.lastActiveAt))) &&
+    (value.dispatchMessageId === null || isString(value.dispatchMessageId)) &&
+    (value.reportMessageId === null || isString(value.reportMessageId))
+  );
+}
+
+function isPixieTaskTreeSession(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["sessionId", "label", "tasks"]) &&
+    isString(value.sessionId) &&
+    isString(value.label) &&
+    Array.isArray(value.tasks) &&
+    value.tasks.every(isPixieTaskTreeTask)
+  );
+}
+
+function isPixieTaskTreeWorkspace(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["cwd", "workspaceLabel", "sessions"]) &&
+    isString(value.cwd) &&
+    isString(value.workspaceLabel) &&
+    Array.isArray(value.sessions) &&
+    value.sessions.every(isPixieTaskTreeSession)
   );
 }
 
@@ -3822,6 +3926,13 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         result.dispatches.every(isPixieDispatchRecord)
         ? null
         : "invalid pixie.dispatches result";
+    case "pixie.taskTree":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["groups"]) &&
+        Array.isArray(result.groups) &&
+        result.groups.every(isPixieTaskTreeWorkspace)
+        ? null
+        : "invalid pixie.taskTree result";
     case "pixie.usage":
       return isPlainObject(result) &&
         hasExactKeys(result, ["days"]) &&

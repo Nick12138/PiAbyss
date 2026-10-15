@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   askDispatch,
+  clipPixieShortName,
   ensurePixiePersonaFile,
   failDispatch,
+  findDispatchById,
   findDispatchBySession,
   findDuplicateDispatchRequest,
   hasActiveDispatchFor,
@@ -10,11 +12,14 @@ import {
   listDispatchesForPanel,
   parsePixieModelRef,
   pixieClockLine,
+  pixieDir,
+  pixieFallbackName,
   reactivateDispatchAfterReply,
   registerDispatch,
   resetPixieStateForTests,
   resolvePixieWorkspacePath,
   settleDispatch,
+  setDispatchMessageAnchor,
   pixieStaleMs,
   pixieSegmentMaxTurns,
   pixieTranscriptFrom,
@@ -324,15 +329,30 @@ describe("pixie dispatch 重复提交防护", () => {
       agentDir,
     });
     expect(
-      findDuplicateDispatchRequest({ agentDir, cwd: "D:/ws", task: "列出顶层目录", withinMs: 30_000 })?.id,
+      findDuplicateDispatchRequest({
+        agentDir,
+        cwd: "D:/ws",
+        task: "列出顶层目录",
+        withinMs: 30_000,
+      })?.id,
     ).toBe(record.id);
     // 任务文本改一个字 = 新任务，不去重。
     expect(
-      findDuplicateDispatchRequest({ agentDir, cwd: "D:/ws", task: "列出顶层文件", withinMs: 30_000 }),
+      findDuplicateDispatchRequest({
+        agentDir,
+        cwd: "D:/ws",
+        task: "列出顶层文件",
+        withinMs: 30_000,
+      }),
     ).toBeNull();
     // 别的会话（cwd 不同）不去重。
     expect(
-      findDuplicateDispatchRequest({ agentDir, cwd: "D:/other", task: "列出顶层目录", withinMs: 30_000 }),
+      findDuplicateDispatchRequest({
+        agentDir,
+        cwd: "D:/other",
+        task: "列出顶层目录",
+        withinMs: 30_000,
+      }),
     ).toBeNull();
     // 出了窗口不去重。
     expect(
@@ -347,7 +367,12 @@ describe("pixie dispatch 重复提交防护", () => {
     // 已到终态（失败/回调完成）的记录不再充当去重依据。
     failDispatch(record.id, "boom", agentDir);
     expect(
-      findDuplicateDispatchRequest({ agentDir, cwd: "D:/ws", task: "列出顶层目录", withinMs: 30_000 }),
+      findDuplicateDispatchRequest({
+        agentDir,
+        cwd: "D:/ws",
+        task: "列出顶层目录",
+        withinMs: 30_000,
+      }),
     ).toBeNull();
   });
 
@@ -627,5 +652,134 @@ describe("segmentSessionName（打盹归档名）", () => {
     expect(segmentSessionName(long, null, "短语")).toBe(`${"很长".repeat(20)}…`);
     const fits = "刚好".repeat(20); // 40 字
     expect(segmentSessionName(fits, null, "短语")).toBe(fits);
+  });
+});
+
+describe("委派短名与消息锚点（v0.5.0 契约）", () => {
+  it("registerDispatch 记下 taskName / sessionName；未传一律 null", () => {
+    const agentDir = freshAgentDir();
+    const named = registerDispatch({
+      cwd: "C:/ws",
+      sessionId: "s1",
+      sessionPath: "C:/s1.jsonl",
+      task: "把登录相关的测试全部跑一遍",
+      agentDir,
+      taskName: "跑登录测试",
+      sessionName: "登录修复",
+    });
+    expect(named.taskName).toBe("跑登录测试");
+    expect(named.sessionName).toBe("登录修复");
+    expect(named.dispatchMessageId).toBeNull();
+    expect(named.reportMessageId).toBeNull();
+
+    const legacy = registerDispatch({
+      cwd: "C:/ws",
+      sessionId: "s2",
+      sessionPath: "C:/s2.jsonl",
+      task: "旧版插件没传短名",
+      agentDir,
+    });
+    expect(legacy.taskName).toBeNull();
+    expect(legacy.sessionName).toBeNull();
+  });
+
+  it("锚点只写一次：重复回执不覆盖派发消息，两个锚点互不影响", () => {
+    const agentDir = freshAgentDir();
+    const record = registerDispatch({
+      cwd: "C:/ws",
+      sessionId: "s1",
+      sessionPath: "C:/s1.jsonl",
+      task: "t",
+      agentDir,
+    });
+    expect(
+      setDispatchMessageAnchor(record.id, agentDir, {
+        dispatchMessageId: "entry-1",
+        reportMessageId: "entry-r1",
+      }),
+    ).not.toBeNull();
+    expect(
+      setDispatchMessageAnchor(record.id, agentDir, {
+        dispatchMessageId: "entry-2",
+        reportMessageId: "entry-r2",
+      }),
+    ).toBeNull();
+    const live = findDispatchById(record.id)!;
+    expect(live.dispatchMessageId).toBe("entry-1");
+    expect(live.reportMessageId).toBe("entry-r1");
+    // 未登记的 id / 空锚点都不落盘。
+    expect(
+      setDispatchMessageAnchor("pix_missing", agentDir, { dispatchMessageId: "x" }),
+    ).toBeNull();
+    expect(setDispatchMessageAnchor(record.id, agentDir, { reportMessageId: null })).toBeNull();
+  });
+
+  it("锚点与短名跨重启存活（dispatches.json 往返）", () => {
+    const agentDir = freshAgentDir();
+    const record = registerDispatch({
+      cwd: "C:/ws",
+      sessionId: "s1",
+      sessionPath: "C:/s1.jsonl",
+      task: "任务全文",
+      agentDir,
+      taskName: "短名",
+      sessionName: "会话名",
+    });
+    setDispatchMessageAnchor(record.id, agentDir, {
+      dispatchMessageId: "entry-d",
+      reportMessageId: "entry-r",
+    });
+    resetPixieStateForTests();
+    const [loaded] = listDispatches(10, agentDir);
+    expect(loaded).toMatchObject({
+      id: record.id,
+      taskName: "短名",
+      sessionName: "会话名",
+      dispatchMessageId: "entry-d",
+      reportMessageId: "entry-r",
+    });
+  });
+
+  it("旧 dispatches.json 没有这些字段：读回来是 null，不报错", () => {
+    const agentDir = freshAgentDir();
+    mkdirSync(pixieDir(agentDir), { recursive: true });
+    writeFileSync(
+      join(pixieDir(agentDir), "dispatches.json"),
+      JSON.stringify({
+        version: 1,
+        records: [
+          {
+            id: "pix_old",
+            status: "reported",
+            kind: "done",
+            cwd: "C:/ws",
+            sessionId: "s1",
+            sessionPath: "C:/s1.jsonl",
+            task: "升级前受理的任务",
+            report: "done",
+            question: null,
+            options: [],
+            createdAt: Date.now() - 60_000,
+            reportedAt: Date.now(),
+            stale: false,
+            originSessionId: "seg-1",
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const [loaded] = listDispatches(10, agentDir);
+    expect(loaded?.id).toBe("pix_old");
+    expect(loaded?.taskName ?? null).toBeNull();
+    expect(loaded?.sessionName ?? null).toBeNull();
+    expect(loaded?.dispatchMessageId ?? null).toBeNull();
+    expect(loaded?.reportMessageId ?? null).toBeNull();
+  });
+
+  it("短名裁剪：≤20 码位，与会话名是两个语义", () => {
+    expect(clipPixieShortName("一二三四五六七八九十一二三四五六七八九十一二三")).toBe(
+      "一二三四五六七八九十一二三四五六七八九十",
+    );
+    expect(pixieFallbackName("  多   行\n任务  ")).toBe("多 行 任务");
   });
 });

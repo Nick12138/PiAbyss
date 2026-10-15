@@ -46,6 +46,7 @@ import {
   askDispatch,
   cancelQueuedDispatch,
   classifyError,
+  clipPixieShortName,
   configurePixieTerminalSettleHook,
   currentPixieSessionId,
   deliverDispatchCallback,
@@ -59,6 +60,7 @@ import {
   liveDispatchFor,
   listDispatches,
   listDispatchesForPanel,
+  pixieFallbackName,
   progressDispatch,
   queuedDispatchesFor,
   reactivateDispatchAfterReply,
@@ -69,13 +71,16 @@ import {
   requestPixieSegment,
   resumePausedDispatch,
   settleDispatch,
+  setDispatchMessageAnchor,
   setPixieContext,
   stopSettleDispatch,
   summarizeDelegatedProgress,
 } from "./pixie-agent-runner.js";
+import { resolveMessageEntryId } from "./session-entry-anchor.js";
 import { getEnabledProviderIds, getProviderModelAllowLists } from "./provider-models-config.js";
 import type { PixieControlPlaneDeps } from "./pixie-control-plane.js";
 import { recordPixieDispatch, readPixieUsage } from "./pixie-usage.js";
+import { buildPixieTaskTree } from "./pixie-task-tree.js";
 import { createHostAgentSession } from "./agent-session-factory.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
 import { isRepoPluginEnabled, PIXIE_PLUGIN_ENTRY_FILE } from "./plugin-gate.js";
@@ -232,10 +237,17 @@ function resolveExplicitTargetSession(
   return null;
 }
 
-/** Spin up a brand-new formal session inside the target workspace. */
+/**
+ * Spin up a brand-new formal session inside the target workspace.
+ *
+ * `name` 是这次委派为会话定的名（小精灵给的 sessionName，或 Host 用 task 前缀
+ * 兜底）：在建会话当场写死，界面上才不会再出现「新会话」。命名只在新建分支
+ * 发生——复用既有会话一律沿用原名。
+ */
 async function createTargetSession(
   factory: WorkspaceGraphFactory,
   graph: WorkspaceGraph,
+  name: string,
 ): Promise<{ ok: true; sessionId: string; sessionPath: string } | { ok: false; error: string }> {
   if (!graph.servicesReady || !graph.settingsManager) {
     return { ok: false, error: "目标工作区未就绪" };
@@ -259,6 +271,13 @@ async function createTargetSession(
       sessionManager,
     });
     const session = created.session;
+    if (name) {
+      try {
+        session.setSessionName(name);
+      } catch {
+        /* 命名失败不影响委派本身（与会话换段同名处理一致） */
+      }
+    }
     const snapshot = buildSessionSnapshot({
       session,
       sessionManager,
@@ -429,6 +448,15 @@ function watchDispatchTurn(
         messageTextOf(event.message).includes("<pixie-dispatch")
       ) {
         envelopeSeen = true;
+        // 锚点：这条派发消息在目标会话里的 entry id（面板点击「跳转定位」的落点）。
+        // 落盘发生在事件广播之后，resolveMessageEntryId 自带延后重试；拿不到就留空。
+        resolveMessageEntryId({
+          session,
+          message: event.message,
+          onFound: (entryId) => {
+            setDispatchMessageAnchor(dispatchId, agentDir, { dispatchMessageId: entryId });
+          },
+        });
         return;
       }
       // Runtime errors surface as assistant messages with stopReason "error".
@@ -706,6 +734,15 @@ export type PixieDispatchRequest = {
   /** 用户明确授权的模型/推理深度覆盖（未授权不传，跟随会话当前设置）。 */
   model?: string | null;
   thinkingLevel?: string | null;
+  /**
+   * 小精灵给这条任务起的短名（插件侧已 trim；≤20 字由 Host 统一裁）。
+   * 每条委派一份，与会话名是两个语义——绝不拿它去改会话名。
+   */
+  taskName?: string | null;
+  /**
+   * 会话名：只在本次真的新建会话时被采用；复用既有会话一律忽略（沿用原名）。
+   */
+  sessionName?: string | null;
 };
 
 type PixieDispatchOutcome =
@@ -827,6 +864,12 @@ async function dispatchPixieTaskInner(
   let sessionPath: string;
   let busy: boolean;
   let reusedExisting = false;
+  /**
+   * 面板会话层的显示名：新建 = 本次采用的名字（未传则 task 前缀兜底）；
+   * 复用 = 会话现有名（没有名则 null，交给树的兜底）。两种情况都不改写会话名。
+   */
+  let sessionLabel: string | null;
+  const taskName = clipPixieShortName(request.taskName ?? null) || null;
 
   if (resolution?.ok) {
     session = resolution.session;
@@ -834,6 +877,7 @@ async function dispatchPixieTaskInner(
     sessionPath = resolution.sessionPath;
     busy = resolution.busy;
     reusedExisting = true;
+    sessionLabel = clipPixieShortName(session.sessionName ?? null) || null;
     // 复用既有会话：刷新缓存（归属不翻转——显式指定用户的会话时登记为 user）。
     upsertPixieSession(agentDir, {
       sessionId,
@@ -851,7 +895,11 @@ async function dispatchPixieTaskInner(
         `指定的会话在目标工作区里找不到（sessionId: ${explicitSessionId}）。请确认会话 id 是否正确，或改用 newSession 新开一个会话。`,
       );
     }
-    const created = await createTargetSession(factory, graph);
+    // 新建会话才消费 sessionName；未传则用 task 前缀兜底，杜绝「新会话」。
+    const newSessionLabel =
+      clipPixieShortName(request.sessionName ?? null) || pixieFallbackName(request.task);
+    sessionLabel = newSessionLabel;
+    const created = await createTargetSession(factory, graph, newSessionLabel);
     targetMs = Date.now() - targetStartedAt;
     if (!created.ok) {
       return rejected(`无法在目标工作区创建会话：${created.error}`);
@@ -892,6 +940,8 @@ async function dispatchPixieTaskInner(
       model: request.model ?? null,
       thinkingLevel: request.thinkingLevel ?? null,
       originSessionId: currentPixieSessionId(agentDir),
+      taskName,
+      sessionName: sessionLabel,
     });
     recordPixieDispatch(agentDir);
     return accepted({
@@ -922,6 +972,8 @@ async function dispatchPixieTaskInner(
     model: request.model ?? null,
     thinkingLevel: request.thinkingLevel ?? null,
     originSessionId: currentPixieSessionId(agentDir),
+    taskName,
+    sessionName: sessionLabel,
   });
   recordPixieDispatch(agentDir);
   dispatchedSessions.set(dispatch.id, session);
@@ -1497,6 +1549,15 @@ export function createPixieHandlers(
       const scopedSessionId = params.sessionId?.trim() || currentPixieSessionId(agentDir);
       const dispatches: PixieDispatchRecord[] = listDispatchesForPanel(agentDir, scopedSessionId);
       return { result: { dispatches } };
+    },
+
+    "pixie.taskTree": async (ctx) => {
+      if (!gate()) return { error: pixiePluginDisabledError() };
+      // 分组树与上面的列表同源（同一批委派记录），只是投影成
+      // 「工作区 → 会话 → 任务」，前端只渲染短名 + 四态。
+      const params = (ctx.params ?? {}) as { sessionId?: string | null };
+      const scopedSessionId = params.sessionId?.trim() || currentPixieSessionId(agentDir);
+      return { result: { groups: buildPixieTaskTree(agentDir, scopedSessionId) } };
     },
 
     "pixie.usage": async () => {

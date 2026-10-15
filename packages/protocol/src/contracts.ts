@@ -112,6 +112,7 @@ import type {
   PixieDispatchRecord,
   PixieSessionAlive,
   PixieStopAction,
+  PixieTaskTreeWorkspace,
   PixieUsageStats,
   PixieWorkspaceSessionSummary,
   ScheduleAgentTranscript,
@@ -304,6 +305,7 @@ export type HostContextMap = {
   "pixie.stopDispatch": HostContext;
   "pixie.retryDispatch": HostContext;
   "pixie.listSessions": HostContext;
+  "pixie.taskTree": HostContext;
 };
 
 export type HostRequestParams = {
@@ -618,6 +620,11 @@ export type HostRequestParams = {
   "pixie.retryDispatch": { dispatchId: string; mode?: "resume" | "redispatch" };
   /** 按工作区列出历史会话（找回旧会话继续派活）。 */
   "pixie.listSessions": { cwd: string };
+  /**
+   * 「工作区 → 会话 → 任务」分组树。归属过滤与 pixie.dispatches 同语义：
+   * sessionId = 用户当前打开的小精灵会话；缺省/null = Host 退回当前段指针。
+   */
+  "pixie.taskTree": { sessionId?: string | null };
   /** 可选模型列表 + 当前段生效的模型选择（与普通会话 model.list 同源）。 */
 };
 
@@ -879,6 +886,7 @@ export type HostResultMap = {
   "pixie.stopDispatch": { ok: boolean; action: PixieStopAction };
   "pixie.retryDispatch": { ok: boolean; dispatchId: string | null; error: string | null };
   "pixie.listSessions": { sessions: PixieWorkspaceSessionSummary[] };
+  "pixie.taskTree": { groups: PixieTaskTreeWorkspace[] };
 };
 
 export type HostEventPayloadMap = {

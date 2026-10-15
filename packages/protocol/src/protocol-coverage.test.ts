@@ -372,6 +372,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "pixie.stopDispatch": { dispatchId: "pix_abc" },
   "pixie.retryDispatch": { dispatchId: "pix_abc", mode: "resume" },
   "pixie.listSessions": { cwd: "C:/work/alpha" },
+  "pixie.taskTree": { sessionId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150" },
 };
 
 function contextFor(method: HostMethod): Record<string, unknown> {
@@ -683,6 +684,7 @@ function invalidParams(method: HostMethod): unknown {
     case "pixie.usage":
       return { unexpected: true };
     case "pixie.dispatches":
+    case "pixie.taskTree":
       // 归属会话必须是字符串（或 null）；数字/多余键都非法。
       return { sessionId: 42 };
     case "pixie.ensureCurrent":

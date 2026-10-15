@@ -460,6 +460,42 @@ describe("pixie control-plane body parsers", () => {
     });
   });
 
+  it("parseDispatchBody 消费 taskName / sessionName：给了就 trim 透传，没给就不带键", () => {
+    // 旧版插件不发这两个字段：必须原样受理，不能报错、也不能凭空造空串。
+    expect(parseDispatchBody(JSON.stringify({ cwd: "c", task: "t" }))).toEqual({
+      ok: true,
+      request: { cwd: "c", task: "t" },
+    });
+    expect(
+      parseDispatchBody(
+        JSON.stringify({ cwd: "c", task: "t", taskName: " 跑登录测试 ", sessionName: "登录修复" }),
+      ),
+    ).toEqual({
+      ok: true,
+      request: { cwd: "c", task: "t", taskName: "跑登录测试", sessionName: "登录修复" },
+    });
+    // 全空白 = 未传（插件侧保证不会发，Host 再兜一层，字段缺席而不是空串）。
+    expect(
+      parseDispatchBody(
+        JSON.stringify({ cwd: "c", task: "t", taskName: "   ", sessionName: null }),
+      ),
+    ).toEqual({ ok: true, request: { cwd: "c", task: "t" } });
+    // 长度口径由引擎统一裁，边界这里不截。
+    expect(
+      parseDispatchBody(JSON.stringify({ cwd: "c", task: "t", taskName: "一".repeat(30) })),
+    ).toEqual({ ok: true, request: { cwd: "c", task: "t", taskName: "一".repeat(30) } });
+  });
+
+  it("parseDispatchBody 拒绝非字符串的 taskName / sessionName", () => {
+    for (const raw of [
+      JSON.stringify({ cwd: "c", task: "t", taskName: 42 }),
+      JSON.stringify({ cwd: "c", task: "t", sessionName: ["a"] }),
+    ]) {
+      const parsed = parseDispatchBody(raw);
+      expect(parsed.ok).toBe(false);
+    }
+  });
+
   it("parseReportBody defaults success to true", () => {
     expect(parseReportBody(JSON.stringify({ dispatchId: "d", summary: "s" }))).toEqual({
       ok: true,

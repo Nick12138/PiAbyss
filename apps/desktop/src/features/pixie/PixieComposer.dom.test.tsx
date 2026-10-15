@@ -98,6 +98,59 @@ vi.mock("../../lib/bridge/session-navigation", async () => {
 
 const dispatchesMock: PixieDispatchRecord[] = [];
 
+/**
+ * `pixie.taskTree` 的测试替身：按 Host 同一形状把记录折成「工作区 → 会话 → 任务」。
+ * 映射规则本身由 Host 侧 pixie-task-tree.test.ts 覆盖，这里只保证前端拿到的
+ * DTO 形状与真实响应一致。
+ */
+function taskTreeFor(records: PixieDispatchRecord[]) {
+  const statusOf = (record: PixieDispatchRecord): string => {
+    if (record.status === "queued") return "queued";
+    if (record.status === "reported") return "done";
+    if (["failed", "stopped", "cancelled"].includes(record.status)) return "failed";
+    return "running";
+  };
+  const byWorkspace = new Map<string, Map<string, PixieDispatchRecord[]>>();
+  for (const record of records) {
+    const sessions = byWorkspace.get(record.cwd) ?? new Map<string, PixieDispatchRecord[]>();
+    const key = record.sessionId ?? "";
+    const bucket = sessions.get(key) ?? [];
+    bucket.push(record);
+    sessions.set(key, bucket);
+    byWorkspace.set(record.cwd, sessions);
+  }
+  return [...byWorkspace.entries()].map(([cwd, sessions]) => ({
+    cwd,
+    workspaceLabel: cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? cwd,
+    sessions: [...sessions.entries()].map(([sessionId, sessionRecords]) => ({
+      sessionId,
+      label: sessionRecords[0]!.sessionName ?? sessionRecords[0]!.task.slice(0, 20),
+      tasks: sessionRecords.map((record) => ({
+        dispatchId: record.id,
+        label: record.taskName ?? record.task.slice(0, 20),
+        status: statusOf(record),
+        statusDetail: record.status,
+        kind: record.kind,
+        question: record.question,
+        options: record.options,
+        failCount: record.failCount,
+        stale: record.stale,
+        createdAt: record.createdAt,
+        lastActiveAt: record.lastActiveAt,
+        dispatchMessageId: record.dispatchMessageId ?? null,
+        reportMessageId: record.reportMessageId ?? null,
+        jump: {
+          cwd: record.cwd,
+          sessionId: record.sessionId,
+          sessionPath: record.sessionPath,
+          messageId: record.dispatchMessageId ?? null,
+          anchor: record.dispatchMessageId ? "dispatch" : null,
+        },
+      })),
+    })),
+  }));
+}
+
 function dispatchRecord(overrides: Partial<PixieDispatchRecord> = {}): PixieDispatchRecord {
   return {
     id: "d1",
@@ -144,6 +197,7 @@ beforeEach(() => {
   usePixieViewStore.setState({
     current: null,
     dispatches: [],
+    taskTree: [],
     dispatchesLoaded: false,
     error: null,
   });
@@ -160,6 +214,7 @@ afterEach(() => {
   usePixieViewStore.setState({
     current: null,
     dispatches: [],
+    taskTree: [],
     dispatchesLoaded: false,
     error: null,
   });
@@ -185,6 +240,9 @@ function mockPixieHostWithParams(onDispatches?: (params: unknown) => void) {
     if (method === "pixie.dispatches") {
       onDispatches?.(params);
       return { ok: true, result: { dispatches: [...dispatchesMock] } } as never;
+    }
+    if (method === "pixie.taskTree") {
+      return { ok: true, result: { groups: taskTreeFor(dispatchesMock) } } as never;
     }
     if (method === "session.getCommands") {
       return { ok: true, result: { commands: [] } } as never;
@@ -383,23 +441,30 @@ describe("PixiePage 适配提问与子代理（对齐 ChatPage 挂载面）", ()
 });
 
 /* ------------------------------------------------------------------ */
-/* 委派面板分层（瘦身重构）：活跃详细卡置顶，终态记录进历史折叠区。      */
+/* 委派面板＝任务树：只显示短名 + 四态，正文一概不进面板。             */
 /* ------------------------------------------------------------------ */
 
-describe("PixiePage 委派面板分层", () => {
+describe("PixiePage 委派面板（任务树）", () => {
   afterEach(() => {
     useAppStore.setState({ activeSubagentNodeId: null, extensionUiRequest: null });
   });
 
-  it("活跃记录直接渲染详细卡；终态记录收进历史折叠区，展开行可再看详情", async () => {
-    const user = userEvent.setup();
+  it("按工作区/会话分组渲染短名与四态，不渲染提示词全文与结束内容", async () => {
     dispatchesMock.push(
-      dispatchRecord({ id: "d-run", status: "dispatched" }),
+      dispatchRecord({
+        id: "d-run",
+        status: "dispatched",
+        task: "把登录相关的测试全部跑一遍并把失败项逐个修好，注意不要动数据库迁移那部分",
+        taskName: "跑登录测试",
+        sessionName: "登录修复",
+      }),
       dispatchRecord({
         id: "d-done",
         status: "reported",
         kind: "done",
-        report: "干完了",
+        task: "这一整段任务正文绝对不应该出现在面板上",
+        taskName: "整理周报",
+        report: "这一整段结束内容绝对不应该出现在面板上",
         lastActiveAt: Date.now() - 120_000,
       }),
     );
@@ -407,19 +472,38 @@ describe("PixiePage 委派面板分层", () => {
     render(<PixiePage />);
     await screen.findByTestId("pixie-input");
 
-    // 活跃区：只有 running 那张详细卡；历史默认收起。
-    const cards = document.querySelectorAll('[data-testid="pixie-dispatch-card"]');
-    expect(cards.length).toBe(1);
-    const toggle = screen.getByTestId("pixie-history-toggle");
-    expect(toggle.textContent).toContain("1");
+    const rows = document.querySelectorAll('[data-testid="pixie-task-row"]');
+    expect(rows.length).toBe(2);
+    const text = document.querySelector('[data-testid="pixie-task-tree"]')!.textContent ?? "";
+    expect(text).toContain("跑登录测试");
+    expect(text).toContain("整理周报");
+    expect(text).toContain("登录修复");
+    expect(text).toContain("ws");
+    // 详细提示词与结束内容不进面板。
+    expect(text).not.toContain("绝对不应该出现");
+    expect(text).not.toContain("把登录相关的测试全部跑一遍");
+  });
 
-    await user.click(toggle);
-    const row = screen.getByTestId("pixie-dispatch-history-row");
-    expect(row).toBeInTheDocument();
-    // 详情默认收起：展开行后出现完整卡（含回调正文与 retry 动作区）。
-    expect(document.querySelectorAll('[data-testid="pixie-dispatch-card"]').length).toBe(1);
+  it("任务行展开后给出操作入口；活跃任务能叫停", async () => {
+    const user = userEvent.setup();
+    dispatchesMock.push(dispatchRecord({ id: "d-run", status: "dispatched", taskName: "跑测试" }));
+    const request = mockPixieHost();
+    render(<PixiePage />);
+    await screen.findByTestId("pixie-input");
+
+    const row = document.querySelector('[data-testid="pixie-task-row"]')!;
+    expect(row.querySelector('[data-testid="pixie-dispatch-stop"]')).toBeNull();
     await user.click(row.querySelector("button")!);
-    expect(document.querySelectorAll('[data-testid="pixie-dispatch-card"]').length).toBe(2);
+    await user.click(await screen.findByTestId("pixie-dispatch-stop"));
+
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "pixie.stopDispatch",
+        expect.anything(),
+        { dispatchId: "d-run" },
+        expect.anything(),
+      ),
+    );
   });
 
   it("切换会话后面板归属跟随：pixie.dispatches 带上当前打开的 sessionId 重新拉取", async () => {

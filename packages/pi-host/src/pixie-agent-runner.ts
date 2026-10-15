@@ -66,6 +66,7 @@ import { buildSessionSnapshot } from "./session-snapshot.js";
 import { recordPixieInteraction } from "./pixie-usage.js";
 import { piabyssDataDir } from "./piabyss-data.js";
 import { upsertPixieSession } from "./pixie-session-cache.js";
+import { watchMessageEntryId } from "./session-entry-anchor.js";
 import {
   composeDailyNapHandoff,
   dailyNapPhrase,
@@ -174,6 +175,25 @@ export function segmentSessionName(
   return oneLine.length > SEGMENT_NAME_MAX_LENGTH
     ? `${oneLine.slice(0, SEGMENT_NAME_MAX_LENGTH)}…`
     : oneLine;
+}
+
+/* ── 短名（面板/会话名统一口径）───────────────────────────────────── */
+
+/**
+ * 任务短名与会话名的长度上限（码位，不是 UTF-16 单元——CJK 一个字算一个）。
+ * 插件侧不做截断，口径全部由 Host 统一裁，保证同一份数据在任何界面一样长。
+ */
+const PIXIE_SHORT_NAME_LIMIT = 20;
+
+/** 压成单行、按码位裁到 ≤20 字；裁不掉空串（输入为空时返回 ""）。 */
+export function clipPixieShortName(value: string | null | undefined): string {
+  const oneLine = (value ?? "").replace(/\s+/g, " ").trim();
+  return Array.from(oneLine).slice(0, PIXIE_SHORT_NAME_LIMIT).join("");
+}
+
+/** 未传短名时的兜底：取 task 前 ~20 字（界面据此永远不会出现「新会话」）。 */
+export function pixieFallbackName(task: string): string {
+  return clipPixieShortName(task);
 }
 
 /** Registry bound: in-memory cap (matches the V1 bound). */
@@ -542,6 +562,18 @@ function loadDispatches(agentDir: string): void {
       thinkingLevel: typeof record.thinkingLevel === "string" ? record.thinkingLevel : null,
       // 归属段：老记录缺字段 → 用 v4 段窗口按时间反推；推不出=null（不显示）。
       originSessionId: recordedOrigin ?? inferLegacyOriginSessionId(legacyWindows ?? [], createdAt),
+      // v0.5.0 起插件才会传短名；老记录缺字段一律 null（展示层用 task 兜底）。
+      taskName: typeof record.taskName === "string" && record.taskName ? record.taskName : null,
+      sessionName:
+        typeof record.sessionName === "string" && record.sessionName ? record.sessionName : null,
+      dispatchMessageId:
+        typeof record.dispatchMessageId === "string" && record.dispatchMessageId
+          ? record.dispatchMessageId
+          : null,
+      reportMessageId:
+        typeof record.reportMessageId === "string" && record.reportMessageId
+          ? record.reportMessageId
+          : null,
     });
   }
   dispatches.sort((left, right) => right.createdAt - left.createdAt);
@@ -660,6 +692,10 @@ export function registerDispatch(input: {
   thinkingLevel?: string | null;
   /** 发起委派时小精灵所在会话段（面板按段过滤的归属键；null = 无归属）。 */
   originSessionId?: string | null;
+  /** 任务短名（引擎已裁到 ≤20 字；null = 旧版插件未传，展示层用 task 兜底）。 */
+  taskName?: string | null;
+  /** 本次新建会话所采用的会话名；复用既有会话为 null（绝不覆盖会话名）。 */
+  sessionName?: string | null;
 }): PixieDispatch {
   loadDispatches(input.agentDir);
   const now = Date.now();
@@ -688,6 +724,10 @@ export function registerDispatch(input: {
     model: input.model ?? null,
     thinkingLevel: input.thinkingLevel ?? null,
     originSessionId: input.originSessionId ?? null,
+    taskName: input.taskName ?? null,
+    sessionName: input.sessionName ?? null,
+    dispatchMessageId: null,
+    reportMessageId: null,
   };
   dispatches.unshift(record);
   if (dispatches.length > MAX_DISPATCHES) dispatches.length = MAX_DISPATCHES;
@@ -875,6 +915,33 @@ export function recordDispatchModelChange(
   record.model = model;
   record.thinkingLevel = thinkingLevel;
   record.lastActiveAt = Date.now();
+  persistDispatches(agentDir);
+  return record;
+}
+
+/**
+ * 记录一条委派的消息锚点（session entry id）：dispatchMessageId = 派发消息注入
+ * 目标会话的位置；reportMessageId = 回调信封注入小精灵段会话的位置。两者都与
+ * dispatchId 关联，前端据此跳转滚动定位。只在尚未记录时写入（同一任务的重派/
+ * 续跑会产生新的信封，但锚点认的是这条记录第一次落位的那条消息）。
+ */
+export function setDispatchMessageAnchor(
+  id: string,
+  agentDir: string,
+  anchor: { dispatchMessageId?: string | null; reportMessageId?: string | null },
+): PixieDispatch | null {
+  const record = dispatches.find((d) => d.id === id);
+  if (!record) return null;
+  let changed = false;
+  if (anchor.dispatchMessageId && !record.dispatchMessageId) {
+    record.dispatchMessageId = anchor.dispatchMessageId;
+    changed = true;
+  }
+  if (anchor.reportMessageId && !record.reportMessageId) {
+    record.reportMessageId = anchor.reportMessageId;
+    changed = true;
+  }
+  if (!changed) return null;
   persistDispatches(agentDir);
   return record;
 }
@@ -1748,6 +1815,11 @@ async function deliverToCurrentSegment(
     interactive: boolean;
     /** 随消息一并发送的图片（UI 附件，透传给 session.prompt/steer）。 */
     images?: ImageContent[];
+    /**
+     * 委派回调信封的归属 id：armed 后第一条含该 id 标记的 user 消息落位即记下
+     * entry id 作为 reportMessageId 锚点（面板点击「跳到结果回执」的落点）。
+     */
+    anchorDispatchId?: string | null;
   },
 ): Promise<{ ok: true; sessionId: string } | { ok: false; error: string }> {
   const state = ensureRunner(args.agentDir);
@@ -1781,6 +1853,16 @@ async function deliverToCurrentSegment(
   saveRunnerState(state);
   // 记一次用户侧活动（静默样本 + 最后活动时间）。
   notePixieActivity(state, Date.now());
+  const anchorDispatchId = args.anchorDispatchId?.trim() || null;
+  if (anchorDispatchId) {
+    // 必须在注入之前武装：信封可能是 steer/followUp，落位晚于本次调用返回。
+    watchMessageEntryId({
+      session,
+      marker: `dispatchId="${anchorDispatchId}"`,
+      onFound: (entryId) =>
+        setDispatchMessageAnchor(anchorDispatchId, args.agentDir, { reportMessageId: entryId }),
+    });
+  }
   if (session.isStreaming) {
     if (args.interactive) return { ok: false, error: "上一条回复还在生成中" };
     // Non-interactive envelopes must not be lost: steer into the running turn.
@@ -2204,6 +2286,9 @@ export async function deliverDispatchCallback(
     text: envelope.join("\n"),
     source: "system",
     interactive: false,
+    // 锚点只认终态结果回执（pixie_report 的 done/error）；ask/progress/stopped
+    // 也走这条注入通道，但它们不是「结果落位」的那条消息。
+    anchorDispatchId: args.kind === "done" || args.kind === "error" ? record.id : null,
   });
   if (!delivered.ok) {
     // Registry already settled by the mutator; the pixie just misses the live

@@ -2186,6 +2186,81 @@ export type PixieDispatchRecord = {
    * 面板语义下全段可见。
    */
   originSessionId: string | null;
+  /**
+   * 小精灵给这条任务起的短名（≤20 字，长度由 Host 统一裁）。
+   * null = 旧版插件未传 → 展示层用 task 前缀兜底。与会话名是两个语义：
+   * 复用既有会话派新任务时只动这里，绝不影响会话名。
+   */
+  taskName?: string | null;
+  /**
+   * 本次委派所属会话的显示名（同样 ≤20 字口径）：
+   * - 新建会话 = 本次采用的名字（未传 sessionName 时 Host 用 task 前缀兜底）；
+   * - 复用既有会话 = 会话当时的现有名，取不到为 null。
+   * 两种情况都不会改写会话名——复用一律沿用原名。
+   */
+  sessionName?: string | null;
+  /**
+   * 派发消息在目标会话里的锚点（session entry id）：前端「跳转定位」用它
+   * 滚动到被委派会话中这条任务注入的位置。null = 老记录 / 未能反查。
+   */
+  dispatchMessageId?: string | null;
+  /**
+   * 收到 pixie_report 后回注小精灵会话那条消息的锚点（session entry id）。
+   * 落在 originSessionId 对应的小精灵段会话，不在被委派会话里。
+   */
+  reportMessageId?: string | null;
+};
+
+/** 任务对外收敛的四态；详细生命周期仍留在 PixieDispatchStatus。 */
+export type PixieTaskStatus = "queued" | "running" | "done" | "failed";
+
+/**
+ * 任务行的跳转目标：锚点在哪个会话就跳哪个，所以这里的 cwd/sessionId
+ * 未必是任务所属工作区/会话（reportMessageId 落在小精灵段会话）。
+ */
+export type PixieTaskJump = {
+  cwd: string;
+  sessionId: string | null;
+  sessionPath: string | null;
+  /** 锚点消息 id；null = 老记录没有锚点，只打开会话不滚动。 */
+  messageId: string | null;
+  /** 锚点来源，便于前端区分「结果回执」与「派发消息」。 */
+  anchor: "report" | "dispatch" | null;
+};
+
+/** 任务层：只显示短名 + 状态，不显示提示词全文与结束内容。 */
+export type PixieTaskTreeTask = {
+  dispatchId: string;
+  /** 短名（taskName，未传时 Host 用 task 前缀裁切兜底）。 */
+  label: string;
+  status: PixieTaskStatus;
+  /** 原始生命周期状态（插话/停止/重试门禁与文案细分要用）。 */
+  statusDetail: PixieDispatchStatus;
+  kind: PixieDispatchKind | null;
+  /** ask 待答复的问题：回答入口离不开它，不属于「详细提示词」。 */
+  question: string | null;
+  options: string[];
+  failCount: number;
+  stale: boolean;
+  createdAt: number;
+  lastActiveAt: number | null;
+  dispatchMessageId: string | null;
+  reportMessageId: string | null;
+  jump: PixieTaskJump;
+};
+
+/** 会话层：会话名优先（sessionName / 复用会话的现有名），兜底用该会话最早任务。 */
+export type PixieTaskTreeSession = {
+  sessionId: string;
+  label: string;
+  tasks: PixieTaskTreeTask[];
+};
+
+/** 工作区层：workspaceLabel 由 cwd 推导（与前端侧边栏同口径的目录名）。 */
+export type PixieTaskTreeWorkspace = {
+  cwd: string;
+  workspaceLabel: string;
+  sessions: PixieTaskTreeSession[];
 };
 
 /** pixie.usage 结果：留存判定埋点（按天计数）。 */
