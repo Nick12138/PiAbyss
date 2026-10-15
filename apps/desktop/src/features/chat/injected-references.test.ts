@@ -14,6 +14,16 @@ const memoBlock = [
   "</piabyss-memo>",
 ].join("\n");
 
+const pixieBlock = [
+  "<pixie-context>",
+  "你是小精灵，PiAbyss 桌面里的常驻小助手（人格、语气与工作方式见工作区 CLAUDE.md）。",
+  "本段开始时间：2026-10-15（周四）22:00，UTC+8。",
+  "已知的 PiAbyss 工作区：",
+  "- D:\\我的项目\\PiAbyss",
+  "</pixie-context>",
+].join("\n");
+const pixiePreamble = `[pixie|ui]\n${pixieBlock}`;
+
 describe("buildInjectedReferenceEnvelope", () => {
   it("wraps the payload and escapes quotes in the title", () => {
     const envelope = buildInjectedReferenceEnvelope({
@@ -99,6 +109,32 @@ describe("parseInjectedReferences", () => {
   it("strips injected blocks but keeps attachment markers visible", () => {
     const raw = `${memoBlock}\n\n<attached-path name="a.ts" path="/w/a.ts"/>`;
     expect(stripInjectedReferences(raw)).toBe('<attached-path name="a.ts" path="/w/a.ts"/>');
+  });
+
+  it("folds the pixie segment preamble into one chip and keeps only the user's words", () => {
+    const parsed = parseInjectedReferences(`${pixiePreamble}\n晚上好`);
+    expect(parsed.references).toHaveLength(1);
+    expect(parsed.references[0]?.kind).toBe("pixie-context");
+    expect(parsed.references[0]?.body).toContain("本段开始时间");
+    expect(parsed.references[0]?.raw).toBe(pixieBlock);
+    expect(parsed.text).toBe("晚上好");
+  });
+
+  it("drops the channel marker the delivery path repeats after the preamble", () => {
+    const parsed = parseInjectedReferences(`${pixiePreamble}\n[pixie|tg]\n看看这个`);
+    expect(parsed.references).toHaveLength(1);
+    expect(parsed.text).toBe("看看这个");
+  });
+
+  it("hides a bare channel marker with no preamble attached", () => {
+    expect(stripInjectedReferences("[pixie|tg]\n看看这个")).toBe("看看这个");
+  });
+
+  it("keeps the folded preamble re-sendable so a retry does not lose it", () => {
+    const parsed = parseInjectedReferences(`${pixiePreamble}\n晚上好`);
+    expect(
+      joinOutgoingParts([...parsed.references.map((reference) => reference.raw), parsed.text]),
+    ).toBe(`${pixieBlock}\n\n晚上好`);
   });
 });
 

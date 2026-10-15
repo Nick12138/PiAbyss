@@ -51,4 +51,20 @@ describe("InjectedReferenceChip", () => {
     );
     expect(screen.getByRole("button", { name: /@Nook summary/ })).toBeVisible();
   });
+
+  it("labels the pixie segment preamble and keeps it collapsed by default", async () => {
+    const user = userEvent.setup();
+    render(
+      <InjectedReferenceChip
+        reference={reference({ kind: "pixie-context", title: "", body: "你是小精灵。" })}
+      />,
+    );
+
+    const chip = screen.getByRole("button", { name: /@Pixie context/ });
+    expect(chip).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText(/你是小精灵。/)).toBeNull();
+
+    await user.click(chip);
+    expect(screen.getByText(/你是小精灵。/)).toBeVisible();
+  });
 });

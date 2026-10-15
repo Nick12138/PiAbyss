@@ -1609,26 +1609,29 @@ describe("pixie segment handoff divider", () => {
     };
   }
 
-  it("collapses to a quiet localized divider and expands to the verbatim card", async () => {
+  it("collapses to a quiet localized entry and expands straight to the verbatim card", async () => {
     const card = "<pixie-segments>0. nap · handoff</pixie-segments>";
     const user = userEvent.setup();
     render(<ExtensionMessageRow row={segmentsRow(card)} />);
 
-    expect(screen.getByText("Taking a quick nap~")).toBeVisible();
+    expect(screen.getByText("Previous segment recap")).toBeVisible();
     expect(screen.queryByText("Subagents")).not.toBeInTheDocument();
     expect(screen.queryByText(card)).not.toBeInTheDocument();
-    const disclosure = screen.getByRole("button", { name: /Taking a quick nap~/ });
+    const disclosure = screen.getByRole("button", { name: /Previous segment recap/ });
     expect(disclosure).toHaveAttribute("aria-expanded", "false");
 
     await user.click(disclosure);
     expect(disclosure).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText(card)).toBeVisible();
+    // 展开即原文：不套「Raw message」标题，也不列 metadata。
+    expect(screen.queryByText("Raw message")).not.toBeInTheDocument();
+    expect(screen.queryByText("Metadata")).not.toBeInTheDocument();
   });
 
-  it("用中文分隔线文案（界面语言为 zh）", () => {
+  it("用中文入口文案（界面语言为 zh）", () => {
     setLanguage("zh");
     render(<ExtensionMessageRow row={segmentsRow("<pixie-segments>handoff</pixie-segments>")} />);
 
-    expect(screen.getByText("小憩一下~")).toBeVisible();
+    expect(screen.getByText("上一段回顾")).toBeVisible();
   });
 });

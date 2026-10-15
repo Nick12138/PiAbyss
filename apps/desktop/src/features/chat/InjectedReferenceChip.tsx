@@ -4,7 +4,15 @@
  * transcript never renders it inline — that is the whole point of the chip.
  */
 import { useState } from "react";
-import { Bot, CalendarClock, ChevronDown, ChevronUp, ListTodo, NotebookPen } from "lucide-react";
+import {
+  Bot,
+  CalendarClock,
+  ChevronDown,
+  ChevronUp,
+  ListTodo,
+  NotebookPen,
+  Sparkles,
+} from "lucide-react";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 import type { InjectedReference, InjectedReferenceKind } from "./injected-references";
 
@@ -12,6 +20,7 @@ function referenceIcon(kind: InjectedReferenceKind) {
   if (kind === "memo") return ListTodo;
   if (kind === "memo-result") return NotebookPen;
   if (kind === "relay-mapping") return Bot;
+  if (kind === "pixie-context") return Sparkles;
   return CalendarClock;
 }
 
@@ -27,6 +36,8 @@ function referenceLabel(kind: InjectedReferenceKind, t: Translate): string {
       return t("injectedRefScheduleJob");
     case "relay-mapping":
       return t("injectedRefRelayMapping");
+    case "pixie-context":
+      return t("injectedRefPixieContext");
   }
 }
 

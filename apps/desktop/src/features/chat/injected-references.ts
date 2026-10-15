@@ -1,9 +1,10 @@
 /**
  * Injected-reference model: prompts the app composes on the user's behalf
- * (memo handling, schedule smart-creation preamble, plan context) travel in
- * the prompt text so any model sees them verbatim, but the UI must never show
- * the raw prompt. This module folds those blocks into `@`-style reference
- * chips for the transcript and rebuilds the payload for the composer.
+ * (memo handling, schedule smart-creation preamble, plan context, the pixie
+ * segment preamble) travel in the prompt text so any model sees them verbatim,
+ * but the UI must never show the raw prompt. This module folds those blocks
+ * into `@`-style reference chips for the transcript and rebuilds the payload
+ * for the composer.
  *
  * Pure functions only: parsing, envelope construction, and the copy-safe
  * visible-text view. Rendering lives in `InjectedReferenceChip`.
@@ -11,7 +12,12 @@
 
 /** Reference kinds the transcript knows how to label. */
 export type InjectedReferenceKind =
-  "memo" | "memo-result" | "schedule-preamble" | "schedule-job" | "relay-mapping";
+  | "memo"
+  | "memo-result"
+  | "schedule-preamble"
+  | "schedule-job"
+  | "relay-mapping"
+  | "pixie-context";
 
 export type InjectedReference = {
   kind: InjectedReferenceKind;
@@ -44,12 +50,25 @@ const MEMO_RESULT_PATTERN =
 const SCHEDULE_PREAMBLE_PATTERN = /<schedule-preamble>\s*([\s\S]*?)\s*<\/schedule-preamble>/gu;
 const SCHEDULE_JOB_PATTERN = /<schedule-job\s+([^>]*)>\s*([\s\S]*?)\s*<\/schedule-job>/gu;
 
+/**
+ * 小精灵会话段前导：Host 在段的首条用户消息外面包一层 `<pixie-context>` 契约正文
+ * （身份、时间锚点、委派契约、已知工作区列表）。它必须原样送给模型，但用户气泡里
+ * 只该看见自己说的话——和 memo / schedule 一样折成一张 chip。
+ */
+const PIXIE_CONTEXT_PATTERN = /<pixie-context>\s*([\s\S]*?)\s*<\/pixie-context>/gu;
+/**
+ * 通道标记行：`[pixie|ui]` / `[pixie|tg]` / `[pixie|system]`，Host 用来标注这条
+ * 用户消息来自哪个入口，单独占一行。它是投递元数据，不该出现在气泡里。
+ */
+const PIXIE_MARKER_LINE = /^[ \t]*\[pixie\|[^\]\s]*\][ \t]*$/gmu;
+
 const REFERENCE_KINDS: readonly InjectedReferenceKind[] = [
   "memo",
   "memo-result",
   "schedule-preamble",
   "schedule-job",
   "relay-mapping",
+  "pixie-context",
 ];
 
 function isReferenceKind(value: string): value is InjectedReferenceKind {
@@ -119,6 +138,12 @@ export function parseInjectedReferences(raw: string): ParsedInjectedText {
     references.push({ kind: "schedule-job", title: "", body, raw: match });
     return "";
   });
+  text = text.replace(PIXIE_CONTEXT_PATTERN, (match, body: string) => {
+    references.push({ kind: "pixie-context", title: "", body, raw: match });
+    return "";
+  });
+  // 标记行最后剥：它可能紧贴在块前面，块先被摘掉才好按整行匹配。
+  text = text.replace(PIXIE_MARKER_LINE, "");
   return { text: text.replace(/^[ \t]*\n+/, "").trimEnd(), references };
 }
 

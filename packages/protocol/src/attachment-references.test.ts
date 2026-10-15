@@ -128,6 +128,20 @@ describe("PiAbyss-injected reference blocks", () => {
     expect(stripPiabyssInjectedBlocks(preamble)).toBe("");
   });
 
+  it("strips the pixie segment preamble together with its channel marker", () => {
+    const text = [
+      "[pixie|ui]",
+      "<pixie-context>",
+      "你是小精灵，PiAbyss 桌面里的常驻小助手。",
+      "本段开始时间：2026-10-15（周四）22:00，UTC+8。",
+      "</pixie-context>",
+      "晚上好",
+    ].join("\n");
+
+    expect(stripPiabyssInjectedBlocks(text)).toBe("晚上好");
+    expect(stripAttachmentReferenceBlocks(text)).toBe("晚上好");
+  });
+
   it("leaves plain text and attachment blocks untouched", () => {
     const text = `<attached-path name="a.ts" path="/w/a.ts"/>\n\n看下这个`;
     expect(stripPiabyssInjectedBlocks(text)).toBe(text);

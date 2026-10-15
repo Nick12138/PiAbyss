@@ -1185,6 +1185,7 @@ export const en = {
   injectedRefSchedulePreamble: "Schedule prompt",
   injectedRefScheduleJob: "Schedule plan",
   injectedRefRelayMapping: "Field mapping",
+  injectedRefPixieContext: "Pixie context",
   injectedRefShowDetail: "Show injected content",
   injectedRefHideDetail: "Hide injected content",
   resultFileOpen: "Open {name}",
@@ -2054,7 +2055,7 @@ export const en = {
   pixieBackToCurrentButton: "Back to latest",
   pixieBackToCurrentTitle:
     "Return to the pixie's live conversation segment; falls back to a new session when there is none",
-  pixieSegmentsDivider: "Taking a quick nap~",
+  pixieSegmentsDivider: "Previous segment recap",
   pixieSegmentsToggle: "Show the segment handoff",
   pixieUnavailable: "Pixie unavailable (host not ready or plugin disabled)",
   pixieRetryAcquire: "Retry",

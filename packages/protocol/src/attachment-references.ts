@@ -10,11 +10,12 @@ const GUIDE_PATTERN =
 
 /**
  * PiAbyss-injected reference blocks: prompts the app composes on the user's
- * behalf (memo handling, schedule smart-creation preamble, plan context).
- * They must reach the model verbatim but are display noise everywhere else —
- * session titles, search indexing, the queue row, the copy button — so they
- * are stripped alongside the attachment blocks. The desktop app folds them
- * back into `@`-style reference chips when rendering the transcript.
+ * behalf (memo handling, schedule smart-creation preamble, plan context, the
+ * pixie segment preamble). They must reach the model verbatim but are display
+ * noise everywhere else — session titles, search indexing, the queue row, the
+ * copy button — so they are stripped alongside the attachment blocks. The
+ * desktop app folds them back into `@`-style reference chips when rendering
+ * the transcript.
  */
 const INJECTED_BLOCK_PATTERNS: readonly RegExp[] = [
   // Envelope the app wraps around a whole injected payload (reference block
@@ -24,12 +25,23 @@ const INJECTED_BLOCK_PATTERNS: readonly RegExp[] = [
   /<piabyss-memo-result\s[^>]*>[\s\S]*?<\/piabyss-memo-result>/gu,
   /<schedule-preamble>[\s\S]*?<\/schedule-preamble>/gu,
   /<schedule-job\s[^>]*>[\s\S]*?<\/schedule-job>/gu,
+  /<pixie-context>[\s\S]*?<\/pixie-context>/gu,
 ];
+
+/**
+ * Channel marker the Host prepends when it delivers a message on the user's
+ * behalf through the pixie runner (`[pixie|ui]`, `[pixie|tg]`,
+ * `[pixie|system]`), always on its own line. Delivery metadata, never content:
+ * it is stripped with the blocks so it cannot leak into a title, a preview or
+ * the copy button.
+ */
+const PIXIE_MARKER_LINE = /^[ \t]*\[pixie\|[^\]\s]*\][ \t]*$/gmu;
 
 /** Remove PiAbyss-injected reference blocks, keeping the user's own text. */
 export function stripPiabyssInjectedBlocks(text: string): string {
   let out = text;
   for (const pattern of INJECTED_BLOCK_PATTERNS) out = out.replace(pattern, "");
+  out = out.replace(PIXIE_MARKER_LINE, "");
   // A prepended envelope leaves a blank-line seam behind; drop it so titles and
   // previews never start with an empty line.
   return out.replace(/^[ \t]*\n+/, "");

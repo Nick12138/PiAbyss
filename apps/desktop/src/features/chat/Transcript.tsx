@@ -29,11 +29,11 @@ import {
   FoldVertical,
   GitBranch,
   GitFork,
+  History,
   Link2,
   ListTree,
   LoaderCircle,
   MessageCircleQuestion,
-  Moon,
   Play,
   Puzzle,
   Quote,
@@ -2052,8 +2052,10 @@ function ExtensionRenderedMessageRow({ row }: { row: TranscriptRow }) {
 }
 
 /**
- * 小精灵换段交接卡片：一条安静的分隔线，默认收起，点开才是卡片全文
- * （走通用 technical-content 面板，原样展示，不做 Markdown interpretation）。
+ * 小精灵换段交接卡片：一行居中、安静的小字，整行可点（不带箭头，靠悬停变色
+ * 与 title 提示暗示可展开）。展开直接把卡片全文铺开——不画分隔线、不标
+ * 「原始消息」、不列元数据，不做 Markdown interpretation（走 formatJson 的
+ * 字符串分支，原样输出）。
  */
 function PixieSegmentsDividerRow({ row }: { row: TranscriptRow }) {
   const t = useT();
@@ -2063,29 +2065,18 @@ function PixieSegmentsDividerRow({ row }: { row: TranscriptRow }) {
       <button
         type="button"
         data-testid="pixie-segments-divider"
-        className="flex w-full min-w-0 items-center gap-3 rounded-md py-1 text-[11px] text-muted transition-colors hover:text-foreground"
+        className="flex w-full min-w-0 items-center justify-center gap-1.5 rounded-md py-1 text-[11px] text-muted transition-colors hover:text-foreground"
         aria-expanded={open}
         title={t("pixieSegmentsToggle")}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="h-px min-w-6 flex-1 bg-border" aria-hidden="true" />
-        <span className="flex shrink-0 items-center gap-1.5">
-          <Moon size={12} aria-hidden="true" />
-          {t("pixieSegmentsDivider")}
-        </span>
-        <ChevronRight
-          size={12}
-          aria-hidden="true"
-          className={`shrink-0 transition-transform duration-150 motion-reduce:transition-none ${
-            open ? "rotate-90" : ""
-          }`}
-        />
-        <span className="h-px min-w-6 flex-1 bg-border" aria-hidden="true" />
+        <History size={12} aria-hidden="true" />
+        {t("pixieSegmentsDivider")}
       </button>
       {open && (
-        <div className="ml-2 mt-1 border-l border-border py-1 pl-4">
-          <ExtensionTechnicalContent row={row} />
-        </div>
+        <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-overlay/50 px-2 py-1.5 font-mono text-[11px] leading-5 text-foreground/70">
+          {formatJson(row.copyText, t("transcriptDetailsTruncated"))}
+        </pre>
       )}
     </div>
   );
