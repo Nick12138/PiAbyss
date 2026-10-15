@@ -2034,34 +2034,22 @@ export const en = {
   pixieInputPlaceholder: "Say something to Pixie… (Enter to send, Shift+Enter for newline)",
   pixieDispatchPanelTitle: "Delegated tasks",
   pixieDispatchEmpty: "No delegated tasks yet",
-  // The task tree collapses the lifecycle into four states (the detailed
-  // status still lives on the record and drives the action gating).
+  // The task tree collapses the lifecycle into four states; "waiting on you"
+  // is the one cell of Running the panel calls out by name.
   pixieTaskQueued: "Queued",
   pixieTaskRunning: "Running",
+  pixieTaskAwaiting: "waiting on you",
   pixieTaskDone: "Done",
   pixieTaskFailed: "Failed",
-  pixieTaskJumpReport: "Jump to the result report",
-  pixieTaskJumpDispatch: "Jump to the dispatched message",
-  pixieTaskJumpNoAnchor: "Open session (no message anchor on this record)",
-  pixieTaskJumpUnavailable: "This task has not landed in a session yet",
+  pixieSessionJumpButton: "Open this session",
   pixieEscalateTag: "failed ×{count}",
   pixieTimeJustNow: "just now",
   pixieTimeMinutesAgo: "{count}m ago",
   pixieTimeHoursAgo: "{count}h ago",
   pixieTimeDaysAgo: "{count}d ago",
-  pixieInterjectButton: "Interject",
-  pixieInterjectPlaceholder: "Add a requirement or correction (won't interrupt)…",
-  pixieProgressAskButton: "Progress",
-  pixieProgressRequestText:
-    "Please report your current progress now (done / where you are / what's left), then continue.",
-  pixieStopButton: "Stop",
-  pixieRetryResume: "Resume",
-  pixieRetryRedispatch: "Resend",
   pixieBackToCurrentButton: "Back to latest",
   pixieBackToCurrentTitle:
     "Return to the pixie's live conversation segment; falls back to a new session when there is none",
-  pixieReplyPlaceholder: "Reply to the question Pixie relayed…",
-  pixieReplySend: "Reply",
   pixieSegmentsDivider: "Taking a quick nap~",
   pixieSegmentsToggle: "Show the segment handoff",
   pixieUnavailable: "Pixie unavailable (host not ready or plugin disabled)",

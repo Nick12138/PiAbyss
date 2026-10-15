@@ -1,26 +1,19 @@
 /**
  * 委派任务树（`pixie.taskTree`）：把委派注册表投影成「工作区 → 会话 → 任务」。
  *
- * 前端只渲染短名 + 四态，详细提示词与结束内容不进这棵树。每条任务带一个
- * `jump`：锚点在哪个会话就跳哪个——reportMessageId 落在小精灵段会话（回执
- * 注入的那条），dispatchMessageId 落在被委派会话（任务注入的那条）。老记录
- * 两个锚点都没有时 `messageId=null`：跳转退化成「打开会话」，不做滚动。
+ * 前端只渲染短名 + 四态，详细提示词与结束内容不进这棵树；跳转按会话给，坐标就是
+ * 每行的 cwd + sessionId，所以这里不再产出消息锚点（记录里的 dispatchMessageId /
+ * reportMessageId 字段留着，只是没人再写它）。
  */
 import type {
   PixieDispatchRecord,
   PixieDispatchStatus,
-  PixieTaskJump,
   PixieTaskStatus,
   PixieTaskTreeSession,
   PixieTaskTreeTask,
   PixieTaskTreeWorkspace,
 } from "@piabyss/protocol";
-import {
-  clipPixieShortName,
-  listDispatchesForPanel,
-  resolvePixieWorkspacePath,
-} from "./pixie-agent-runner.js";
-import { listPixieSessions } from "./pixie-session-cache.js";
+import { clipPixieShortName, listDispatchesForPanel } from "./pixie-agent-runner.js";
 
 /**
  * 生命周期 → 对外四态。排队=还没进会话；进行中=已注入且未终态（含暂停等指令
@@ -50,38 +43,30 @@ function activityOf(task: PixieTaskTreeTask): number {
   return task.lastActiveAt ?? task.createdAt;
 }
 
-/** 回执锚点的会话路径：小精灵段会话登记在会话缓存里，取不到交给前端解析。 */
-function originSessionPath(agentDir: string, originSessionId: string): string | null {
-  const pixieCwd = resolvePixieWorkspacePath(agentDir);
-  const found = listPixieSessions(agentDir, pixieCwd).find(
-    (entry) => entry.sessionId === originSessionId,
-  );
-  return found?.sessionPath || null;
+/**
+ * 展示档位的先后：在跑的最前，其次要看的失败，再往下是排队，已完成沉底——
+ * 面板是扫一眼用的，历史不该占住视线顶端。
+ */
+const PIXIE_TASK_RANK: Record<PixieTaskStatus, number> = {
+  running: 0,
+  failed: 1,
+  queued: 2,
+  done: 3,
+};
+
+/**
+ * 同档内按派发时间倒序（新的在上），唯独排队档按正序：那一档从上往下读就是
+ * 执行顺序（出队是 FIFO，见 `queuedDispatchesFor`），别让"最上面的其实最后跑"。
+ */
+function comparePixieTasks(left: PixieTaskTreeTask, right: PixieTaskTreeTask): number {
+  const rank = PIXIE_TASK_RANK[left.status] - PIXIE_TASK_RANK[right.status];
+  if (rank !== 0) return rank;
+  return left.status === "queued"
+    ? left.createdAt - right.createdAt
+    : right.createdAt - left.createdAt;
 }
 
-/** 跳转目标：优先结果回执，其次派发消息，都没有就只带会话坐标（不滚动）。 */
-function buildJump(agentDir: string, record: PixieDispatchRecord): PixieTaskJump {
-  const reportMessageId = record.reportMessageId ?? null;
-  const dispatchMessageId = record.dispatchMessageId ?? null;
-  if (reportMessageId && record.originSessionId) {
-    return {
-      cwd: resolvePixieWorkspacePath(agentDir),
-      sessionId: record.originSessionId,
-      sessionPath: originSessionPath(agentDir, record.originSessionId),
-      messageId: reportMessageId,
-      anchor: "report",
-    };
-  }
-  return {
-    cwd: record.cwd,
-    sessionId: record.sessionId,
-    sessionPath: record.sessionPath,
-    messageId: dispatchMessageId,
-    anchor: dispatchMessageId ? "dispatch" : null,
-  };
-}
-
-function buildTask(agentDir: string, record: PixieDispatchRecord): PixieTaskTreeTask {
+function buildTask(record: PixieDispatchRecord): PixieTaskTreeTask {
   return {
     dispatchId: record.id,
     // 短名口径：小精灵传了 taskName 就用，没传用 task 前 ~20 字兜底。
@@ -95,9 +80,6 @@ function buildTask(agentDir: string, record: PixieDispatchRecord): PixieTaskTree
     stale: record.stale,
     createdAt: record.createdAt,
     lastActiveAt: record.lastActiveAt,
-    dispatchMessageId: record.dispatchMessageId ?? null,
-    reportMessageId: record.reportMessageId ?? null,
-    jump: buildJump(agentDir, record),
   };
 }
 
@@ -126,7 +108,7 @@ const UNRESOLVED_SESSION_KEY = "";
 /**
  * 组装任务树。归属过滤沿用委派面板语义（活跃跨段 + 当前段历史），与
  * `pixie.dispatches` 看到的是同一批记录，只是换了投影形状。
- * 排序：工作区 / 会话按最近活动倒序，任务按派发时间倒序。
+ * 排序：工作区 / 会话按最近活动倒序；任务按档位排（见 `comparePixieTasks`）。
  */
 export function buildPixieTaskTree(
   agentDir: string,
@@ -147,10 +129,7 @@ export function buildPixieTaskTree(
   for (const [cwd, sessions] of byWorkspace) {
     const sessionNodes: PixieTaskTreeSession[] = [];
     for (const [sessionId, sessionRecords] of sessions) {
-      const tasks = sessionRecords
-        .slice()
-        .sort((left, right) => right.createdAt - left.createdAt)
-        .map((record) => buildTask(agentDir, record));
+      const tasks = sessionRecords.map((record) => buildTask(record)).sort(comparePixieTasks);
       const label = sessionId
         ? sessionLabel(sessionRecords) || `会话 ${sessionId.slice(0, 8)}`
         : pixieWorkspaceLabel(cwd);

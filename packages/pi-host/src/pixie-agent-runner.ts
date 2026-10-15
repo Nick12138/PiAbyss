@@ -79,7 +79,6 @@ import { recordPixieInteraction } from "./pixie-usage.js";
 import { piabyssDataDir } from "./piabyss-data.js";
 import { sessionStorageDirs } from "./session-storage.js";
 import { upsertPixieSession } from "./pixie-session-cache.js";
-import { watchMessageEntryId } from "./session-entry-anchor.js";
 import { logger } from "./logger.js";
 
 /** 小精灵工作区的人格文件名（SDK context files 候选之一，见下）。 */
@@ -826,33 +825,6 @@ export function recordDispatchModelChange(
   record.model = model;
   record.thinkingLevel = thinkingLevel;
   record.lastActiveAt = Date.now();
-  persistDispatches(agentDir);
-  return record;
-}
-
-/**
- * 记录一条委派的消息锚点（session entry id）：dispatchMessageId = 派发消息注入
- * 目标会话的位置；reportMessageId = 回调信封注入小精灵段会话的位置。两者都与
- * dispatchId 关联，前端据此跳转滚动定位。只在尚未记录时写入（同一任务的重派/
- * 续跑会产生新的信封，但锚点认的是这条记录第一次落位的那条消息）。
- */
-export function setDispatchMessageAnchor(
-  id: string,
-  agentDir: string,
-  anchor: { dispatchMessageId?: string | null; reportMessageId?: string | null },
-): PixieDispatch | null {
-  const record = dispatches.find((d) => d.id === id);
-  if (!record) return null;
-  let changed = false;
-  if (anchor.dispatchMessageId && !record.dispatchMessageId) {
-    record.dispatchMessageId = anchor.dispatchMessageId;
-    changed = true;
-  }
-  if (anchor.reportMessageId && !record.reportMessageId) {
-    record.reportMessageId = anchor.reportMessageId;
-    changed = true;
-  }
-  if (!changed) return null;
   persistDispatches(agentDir);
   return record;
 }
@@ -1733,11 +1705,6 @@ async function deliverToSegment(
     /** 随消息一并发送的图片（UI 附件，透传给 session.prompt/steer）。 */
     images?: ImageContent[];
     /**
-     * 委派回调信封的归属 id：armed 后第一条含该 id 标记的 user 消息落位即记下
-     * entry id 作为 reportMessageId 锚点（面板点击「跳到结果回执」的落点）。
-     */
-    anchorDispatchId?: string | null;
-    /**
      * 派单那一段的会话 id：用户在旧段里继续聊并派活时，回执要回到旧段，而不是
      * 「创建最新的那段」。图里没有这条会话时退回当前段。
      */
@@ -1757,16 +1724,6 @@ async function deliverToSegment(
   const preamble = needsSegmentPreamble(session)
     ? buildSegmentContextPreamble(args.agentDir)
     : null;
-  const anchorDispatchId = args.anchorDispatchId?.trim() || null;
-  if (anchorDispatchId) {
-    // 必须在注入之前武装：信封可能是 steer/followUp，落位晚于本次调用返回。
-    watchMessageEntryId({
-      session,
-      marker: `dispatchId="${anchorDispatchId}"`,
-      onFound: (entryId) =>
-        setDispatchMessageAnchor(anchorDispatchId, args.agentDir, { reportMessageId: entryId }),
-    });
-  }
   if (session.isStreaming) {
     if (args.interactive) return { ok: false, error: "上一条回复还在生成中" };
     // Non-interactive envelopes must not be lost: steer into the running turn.
@@ -2117,9 +2074,6 @@ export async function deliverDispatchCallback(
     text: envelope.join("\n"),
     source: "system",
     interactive: false,
-    // 锚点只认终态结果回执（pixie_report 的 done/error）；ask/progress/stopped
-    // 也走这条注入通道，但它们不是「结果落位」的那条消息。
-    anchorDispatchId: args.kind === "done" || args.kind === "error" ? record.id : null,
     // 回执送回派单的那一段（用户在旧段里派的活）；图里找不到才退回当前段。
     targetSessionId: record.originSessionId,
   });

@@ -33,24 +33,3 @@ export function subscribeTranscriptScroll(handler: TranscriptScrollHandler): () 
   handlers.add(handler);
   return () => handlers.delete(handler);
 }
-
-/**
- * 打开会话之后转写还要挂载 + 投影若干帧，一次请求多半落空。按重试节奏请求，
- * 命中即停；始终落空就安静放弃（会话已经打开，只是没滚过去）。
- */
-const SCROLL_RETRY_DELAYS_MS = [0, 60, 180, 400, 900, 1_800];
-
-export function scrollTranscriptToSource(sourceId: string): void {
-  let done = false;
-  const attempt = (index: number): void => {
-    if (done) return;
-    if (requestTranscriptScroll({ sourceId })) {
-      done = true;
-      return;
-    }
-    const delay = SCROLL_RETRY_DELAYS_MS[index];
-    if (delay === undefined) return;
-    setTimeout(() => attempt(index + 1), delay);
-  };
-  attempt(0);
-}

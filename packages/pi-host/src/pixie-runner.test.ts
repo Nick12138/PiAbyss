@@ -13,13 +13,11 @@ import {
   pixieClockLine,
   pixieDir,
   pixieFallbackName,
-  findDispatchById,
   reactivateDispatchAfterReply,
   registerDispatch,
   resetPixieStateForTests,
   resolvePixieWorkspacePath,
   settleDispatch,
-  setDispatchMessageAnchor,
   pixieStaleMs,
   pixieTranscriptFrom,
   clipSegmentName,
@@ -753,63 +751,6 @@ describe("委派短名与消息锚点（v0.5.0 契约）", () => {
       id: record.id,
       taskName: "短名",
       sessionName: "会话名",
-    });
-  });
-
-  it("锚点只写一次：重复回执不覆盖派发消息，两个锚点互不影响", () => {
-    const agentDir = freshAgentDir();
-    const record = registerDispatch({
-      cwd: "C:/ws",
-      sessionId: "s1",
-      sessionPath: "C:/s1.jsonl",
-      task: "t",
-      agentDir,
-    });
-    expect(
-      setDispatchMessageAnchor(record.id, agentDir, {
-        dispatchMessageId: "entry-1",
-        reportMessageId: "entry-r1",
-      }),
-    ).not.toBeNull();
-    expect(
-      setDispatchMessageAnchor(record.id, agentDir, {
-        dispatchMessageId: "entry-2",
-        reportMessageId: "entry-r2",
-      }),
-    ).toBeNull();
-    const live = findDispatchById(record.id)!;
-    expect(live.dispatchMessageId).toBe("entry-1");
-    expect(live.reportMessageId).toBe("entry-r1");
-    // 未登记的 id / 空锚点都不落盘。
-    expect(
-      setDispatchMessageAnchor("pix_missing", agentDir, { dispatchMessageId: "x" }),
-    ).toBeNull();
-    expect(setDispatchMessageAnchor(record.id, agentDir, { reportMessageId: null })).toBeNull();
-  });
-
-  it("锚点与短名跨重启存活（dispatches.json 往返）", () => {
-    const agentDir = freshAgentDir();
-    const record = registerDispatch({
-      cwd: "C:/ws",
-      sessionId: "s1",
-      sessionPath: "C:/s1.jsonl",
-      task: "任务全文",
-      agentDir,
-      taskName: "短名",
-      sessionName: "会话名",
-    });
-    setDispatchMessageAnchor(record.id, agentDir, {
-      dispatchMessageId: "entry-d",
-      reportMessageId: "entry-r",
-    });
-    resetPixieStateForTests();
-    const [loaded] = listDispatches(10, agentDir);
-    expect(loaded).toMatchObject({
-      id: record.id,
-      taskName: "短名",
-      sessionName: "会话名",
-      dispatchMessageId: "entry-d",
-      reportMessageId: "entry-r",
     });
   });
 

@@ -8,7 +8,8 @@
  *   - 顶部动作（回到最新会话）在 AppTopBar；会话列表在侧边栏左下，
  *     与普通工作区同款（点行留在本页，keepPage）；
  *   - 右侧保留委派面板（pixie.dispatches + pixie.taskTree 轮询，面板是
- *     「工作区 → 会话 → 任务」树：只显示短名 + 四态，操作仍齐全）；
+ *     「工作区 · 会话 → 任务」两层树：只显示短名 + 四态，唯一的动作是定位到
+ *     会话里的锚点消息，操作全部留给小精灵）；
  *   - ask 待回复时把输入框发送改道 pixie.reply；
  *   - 内嵌扩展 UI（ask_user_question 问卷等）与子代理对话视图对齐 ChatPage
  *     的挂载方式——小精灵会话是标准会话，两类工具的交互面必须同样可用。
@@ -35,7 +36,7 @@ import {
   type ComposerRuntime,
 } from "../chat/composer-runtime";
 import { usePixieViewStore } from "./pixie-store";
-import { PixieTaskTree, type PixieTaskActions } from "./PixieTaskTree";
+import { PixieTaskTree } from "./PixieTaskTree";
 import { isSamePixiePath } from "../../lib/pixie-path";
 
 const DISPATCH_POLL_IDLE_MS = 5_000;
@@ -68,11 +69,7 @@ export function PixiePage() {
   const taskTree = usePixieViewStore((s) => s.taskTree);
   const error = usePixieViewStore((s) => s.error);
   const refreshDispatches = usePixieViewStore((s) => s.refreshDispatches);
-  const reply = usePixieViewStore((s) => s.reply);
   const pushContext = usePixieViewStore((s) => s.pushContext);
-  const interject = usePixieViewStore((s) => s.interject);
-  const stopDispatch = usePixieViewStore((s) => s.stopDispatch);
-  const retryDispatch = usePixieViewStore((s) => s.retryDispatch);
 
   const [acquiring, setAcquiring] = useState(true);
   const [acquireFailed, setAcquireFailed] = useState(false);
@@ -212,34 +209,10 @@ export function PixiePage() {
     [dispatches],
   );
 
-  function handleReplyInline(dispatchId: string, text: string) {
-    if (!text) return;
-    void reply(dispatchId, text);
-  }
-
-  function handleInterject(dispatchId: string, text: string, mode: "append" | "checkpoint") {
-    if (!text) return;
-    void interject(dispatchId, text, mode, mode === "checkpoint" ? "continue" : undefined);
-  }
-
-  function handleStop(dispatchId: string) {
-    void stopDispatch(dispatchId);
-  }
-
-  function handleRetry(dispatchId: string, mode: "resume" | "redispatch") {
-    void retryDispatch(dispatchId, mode);
-  }
-
-  const dispatchActions: PixieTaskActions = {
-    onReply: handleReplyInline,
-    onInterject: handleInterject,
-    onStop: handleStop,
-    onRetry: handleRetry,
-  };
-
   /**
    * 输入框运行时：默认实现（读 app store → agent.prompt/steer）。唯一覆写：
    * 有 ask 待回复时，发送改道 pixie.reply（与 v4 的 reply-mode 行为一致）。
+   * 这也是面板不再放回复框的原因——用户本来就坐在小精灵会话里，直接说就行。
    */
   const baseRuntime = useComposerRuntime();
   const runtime = useMemo<ComposerRuntime>(() => {
@@ -334,14 +307,14 @@ export function PixiePage() {
           )}
         </div>
 
-        {/* Delegation panel (30%)：工作区 → 会话 → 任务；只有短名 + 四态，
-         * 正文（提示词 / 结束内容）靠行尾的定位按钮回到会话里的锚点消息。 */}
+        {/* Delegation panel (30%)：「工作区 · 会话 → 任务」两层，只有短名 + 四态；
+         * 唯一的动作是行尾定位按钮，把用户送回会话里的锚点消息。 */}
         <div className="hidden min-h-0 flex-col border-l border-border @3xl:flex @3xl:w-[30%]">
           <div className="shrink-0 border-b border-border px-3 py-2 text-xs font-medium text-muted">
             {t("pixieDispatchPanelTitle")}
           </div>
           <div className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto p-3">
-            <PixieTaskTree groups={taskTree} actions={dispatchActions} />
+            <PixieTaskTree groups={taskTree} />
           </div>
         </div>
       </div>

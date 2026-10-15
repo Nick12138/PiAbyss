@@ -1,23 +1,21 @@
 /**
  * 任务树投影（pixie.taskTree 的数据形状）：分组、短名与会话名兜底、四态收敛，
- * 以及跳转锚点的优先级——结果回执落在小精灵段会话，派发消息落在被委派会话，
- * 老记录两个都没有时只带会话坐标（前端据此打开会话但不滚动）。
+ * 以及展示档位的排序。跳转按会话给（面板自己用 cwd + sessionId 拼），投影里
+ * 不再有消息锚点。
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  failDispatch,
   registerDispatch,
   resetPixieStateForTests,
-  resolvePixieWorkspacePath,
-  setDispatchMessageAnchor,
   settleDispatch,
   clipPixieShortName,
   pixieFallbackName,
 } from "./pixie-agent-runner.js";
 import { buildPixieTaskTree, pixieTaskStatusOf, pixieWorkspaceLabel } from "./pixie-task-tree.js";
-import { upsertPixieSession } from "./pixie-session-cache.js";
 
 let currentDir: string | null = null;
 
@@ -128,6 +126,62 @@ describe("任务树分组", () => {
     expect(groups[0]!.sessions[0]!.label).toBe("发布通道");
   });
 
+  it("任务排序：进行中 → 失败 → 排队（先派发的在上）→ 已完成", () => {
+    const agentDir = freshAgentDir();
+    const base = Date.now();
+    const backdate = (record: { createdAt: number }, minutesAgo: number): void => {
+      record.createdAt = base - minutesAgo * 60_000;
+    };
+    const late = addTask(agentDir, {
+      task: "改文案",
+      cwd: "C:/work/PiAbyss",
+      sessionId: "s-a",
+      taskName: "改文案",
+      status: "queued",
+    });
+    backdate(late, 1);
+    const first = addTask(agentDir, {
+      task: "整理周报",
+      cwd: "C:/work/PiAbyss",
+      sessionId: "s-a",
+      taskName: "整理周报",
+      status: "queued",
+    });
+    backdate(first, 3);
+    const running = addTask(agentDir, {
+      task: "跑登录测试",
+      cwd: "C:/work/PiAbyss",
+      sessionId: "s-a",
+      taskName: "跑登录测试",
+    });
+    backdate(running, 8);
+    const done = addTask(agentDir, {
+      task: "查 git 近况",
+      cwd: "C:/work/PiAbyss",
+      sessionId: "s-a",
+      taskName: "查 git 近况",
+    });
+    backdate(done, 18);
+    settleDispatch(done.id, "完成了", "done", agentDir);
+    const broken = addTask(agentDir, {
+      task: "挂了的那条",
+      cwd: "C:/work/PiAbyss",
+      sessionId: "s-a",
+      taskName: "挂了的那条",
+    });
+    backdate(broken, 40);
+    failDispatch(broken.id, "boom", agentDir);
+
+    const [group] = buildPixieTaskTree(agentDir, "seg-1");
+    expect(group!.sessions[0]!.tasks.map((task) => [task.label, task.status])).toEqual([
+      ["跑登录测试", "running"],
+      ["挂了的那条", "failed"],
+      ["整理周报", "queued"],
+      ["改文案", "queued"],
+      ["查 git 近况", "done"],
+    ]);
+  });
+
   it("旧版插件没传短名：任务用 task 前缀兜底，会话不显示「新会话」", () => {
     const agentDir = freshAgentDir();
     const record = addTask(agentDir, {
@@ -157,7 +211,6 @@ describe("任务树分组", () => {
       originSessionId: "seg-1",
     });
     settleDispatch(done.id, "完成了", "done", agentDir);
-    setDispatchMessageAnchor(done.id, agentDir, { dispatchMessageId: "entry-x" });
 
     const mine = buildPixieTaskTree(agentDir, "seg-1");
     const all = mine.flatMap((group) => group.sessions.flatMap((session) => session.tasks));
@@ -166,62 +219,5 @@ describe("任务树分组", () => {
     const other = buildPixieTaskTree(agentDir, "seg-2");
     const otherTasks = other.flatMap((group) => group.sessions.flatMap((session) => session.tasks));
     expect(otherTasks.map((task) => task.label)).toEqual(["还在跑"]);
-  });
-});
-
-describe("跳转锚点", () => {
-  it("有结果回执时跳到小精灵段会话那条消息", () => {
-    const agentDir = freshAgentDir();
-    const record = addTask(agentDir, {
-      task: "跑测试",
-      cwd: "C:/work/PiAbyss",
-      sessionId: "s-a",
-      taskName: "跑测试",
-    });
-    setDispatchMessageAnchor(record.id, agentDir, {
-      dispatchMessageId: "entry-dispatch",
-      reportMessageId: "entry-report",
-    });
-    const pixieCwd = resolvePixieWorkspacePath(agentDir);
-    upsertPixieSession(agentDir, {
-      sessionId: "seg-1",
-      sessionPath: join(pixieCwd, "sessions", "seg-1.jsonl"),
-      cwd: pixieCwd,
-      owner: "pixie",
-      role: "pixie",
-    });
-
-    const task = buildPixieTaskTree(agentDir, "seg-1")[0]!.sessions[0]!.tasks[0]!;
-    expect(task.jump).toMatchObject({
-      cwd: pixieCwd,
-      sessionId: "seg-1",
-      messageId: "entry-report",
-      anchor: "report",
-    });
-    expect(task.dispatchMessageId).toBe("entry-dispatch");
-    expect(task.reportMessageId).toBe("entry-report");
-  });
-
-  it("只有派发消息时跳到被委派会话；两个都没有时只带会话坐标", () => {
-    const agentDir = freshAgentDir();
-    const withDispatch = addTask(agentDir, {
-      task: "任务甲",
-      cwd: "C:/work/PiAbyss",
-      sessionId: "s-a",
-    });
-    setDispatchMessageAnchor(withDispatch.id, agentDir, { dispatchMessageId: "entry-1" });
-    addTask(agentDir, { task: "任务乙", cwd: "C:/work/PiAbyss", sessionId: "s-b" });
-
-    const tasks = buildPixieTaskTree(agentDir, "seg-1")[0]!
-      .sessions.flatMap((session) => session.tasks)
-      .sort((left, right) => left.label.localeCompare(right.label));
-    expect(tasks[0]!.jump).toMatchObject({
-      cwd: "C:/work/PiAbyss",
-      sessionId: "s-a",
-      messageId: "entry-1",
-      anchor: "dispatch",
-    });
-    // 老记录（没有锚点）：会话坐标齐全、messageId=null，前端点击只打开不滚动。
-    expect(tasks[1]!.jump).toMatchObject({ sessionId: "s-b", messageId: null, anchor: null });
   });
 });

@@ -6,7 +6,7 @@
  *   1. `ensureCurrent` — 取当前 pixie 会话锚点（cwd/sessionId/sessionPath），
  *      页面挂载时据此完成 workspace.setCurrent + session.open；
  *   2. `dispatches` — 委派注册表（pixie.dispatches + pixie.taskTree 分组树）
- *      + 回复/插话/叫停/重试；
+ *      + 回复 ask（面板只做导航，插话/叫停/重试归小精灵）；
  *   3. `pushContext` — 已知工作区推送。
  */
 import { create } from "zustand";
@@ -43,17 +43,6 @@ type PixieViewState = {
   reply: (dispatchId: string, text: string) => Promise<boolean>;
   /** Push the known-workspace list (mount + knownWorkspaces changes). */
   pushContext: (workspaces: string[]) => Promise<void>;
-  /** 插话：向进行中委派补充/修正（append）或要进度检查点（checkpoint）。 */
-  interject: (
-    dispatchId: string,
-    text: string,
-    mode?: "append" | "checkpoint",
-    after?: "continue" | "wait",
-  ) => Promise<boolean>;
-  /** 叫停：运行中中断 / 排队中取消，回执明确。 */
-  stopDispatch: (dispatchId: string) => Promise<boolean>;
-  /** 重试：resume=原地续跑；redispatch=重派；缺省 Host 自动判定。 */
-  retryDispatch: (dispatchId: string, mode?: "resume" | "redispatch") => Promise<boolean>;
 };
 
 /**
@@ -105,8 +94,8 @@ export const usePixieViewStore = create<PixieViewState>((set, get) => ({
    * 拉取委派列表。
    *
    * 归属会话：默认取「用户当前打开的小精灵会话」——在会话弹窗里切换会话后
-   * 传新的 id 即可让面板立即跟随；不传则复用上次的归属（reply/interject/stop/
-   * retry 之后的无声刷新走这条路），首次调用前则为 null（Host 退回当前段指针）。
+   * 传新的 id 即可让面板立即跟随；不传则复用上次的归属（reply 之后的无声刷新
+   * 走这条路），首次调用前则为 null（Host 退回当前段指针）。
    */
   refreshDispatches: async (sessionId?: string | null) => {
     const host = useAppStore.getState().host;
@@ -205,88 +194,6 @@ export const usePixieViewStore = create<PixieViewState>((set, get) => ({
       );
     } catch {
       /* context push is best-effort */
-    }
-  },
-
-  interject: async (dispatchId, text, mode = "append", after) => {
-    const host = useAppStore.getState().host;
-    if (!host || !text.trim()) return false;
-    try {
-      const response = await hostClient.request(
-        "pixie.interject",
-        hostContext(host),
-        {
-          dispatchId,
-          text: text.trim(),
-          mode,
-          ...(mode === "checkpoint" && after ? { after } : {}),
-        },
-        SEND_TIMEOUT_MS,
-      );
-      if (!response.ok) {
-        set({ error: response.error?.message ?? "pixie interject failed" });
-        return false;
-      }
-      // result.ok=false（排队中/已结束不可插话等）转为可读错误提示。
-      const result = response.result as { ok?: boolean; error?: string | null };
-      if (result && result.ok === false) {
-        set({ error: result.error ?? "插话未送达" });
-        return false;
-      }
-      void get().refreshDispatches();
-      return true;
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error) });
-      return false;
-    }
-  },
-
-  stopDispatch: async (dispatchId) => {
-    const host = useAppStore.getState().host;
-    if (!host) return false;
-    try {
-      const response = await hostClient.request(
-        "pixie.stopDispatch",
-        hostContext(host),
-        { dispatchId },
-        SEND_TIMEOUT_MS,
-      );
-      if (!response.ok) {
-        set({ error: response.error?.message ?? "pixie stop failed" });
-        return false;
-      }
-      void get().refreshDispatches();
-      return true;
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error) });
-      return false;
-    }
-  },
-
-  retryDispatch: async (dispatchId, mode) => {
-    const host = useAppStore.getState().host;
-    if (!host) return false;
-    try {
-      const response = await hostClient.request(
-        "pixie.retryDispatch",
-        hostContext(host),
-        { dispatchId, ...(mode ? { mode } : {}) },
-        SEND_TIMEOUT_MS,
-      );
-      if (!response.ok) {
-        set({ error: response.error?.message ?? "pixie retry failed" });
-        return false;
-      }
-      const result = response.result as { ok?: boolean; error?: string | null };
-      if (result && result.ok === false) {
-        set({ error: result.error ?? "重试失败" });
-        return false;
-      }
-      void get().refreshDispatches();
-      return true;
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error) });
-      return false;
     }
   },
 }));

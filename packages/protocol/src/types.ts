@@ -2200,33 +2200,15 @@ export type PixieDispatchRecord = {
    */
   sessionName?: string | null;
   /**
-   * 派发消息在目标会话里的锚点（session entry id）：前端「跳转定位」用它
-   * 滚动到被委派会话中这条任务注入的位置。null = 老记录 / 未能反查。
+   * 已退役：面板跳转改为按会话打开后，锚点抓取整体下线，这两个字段不再有人
+   * 写。留在类型里是为了旧 dispatches.json 能原样读回，新记录恒为 null。
    */
   dispatchMessageId?: string | null;
-  /**
-   * 收到 pixie_report 后回注小精灵会话那条消息的锚点（session entry id）。
-   * 落在 originSessionId 对应的小精灵段会话，不在被委派会话里。
-   */
   reportMessageId?: string | null;
 };
 
 /** 任务对外收敛的四态；详细生命周期仍留在 PixieDispatchStatus。 */
 export type PixieTaskStatus = "queued" | "running" | "done" | "failed";
-
-/**
- * 任务行的跳转目标：锚点在哪个会话就跳哪个，所以这里的 cwd/sessionId
- * 未必是任务所属工作区/会话（reportMessageId 落在小精灵段会话）。
- */
-export type PixieTaskJump = {
-  cwd: string;
-  sessionId: string | null;
-  sessionPath: string | null;
-  /** 锚点消息 id；null = 老记录没有锚点，只打开会话不滚动。 */
-  messageId: string | null;
-  /** 锚点来源，便于前端区分「结果回执」与「派发消息」。 */
-  anchor: "report" | "dispatch" | null;
-};
 
 /** 任务层：只显示短名 + 状态，不显示提示词全文与结束内容。 */
 export type PixieTaskTreeTask = {
@@ -2234,19 +2216,16 @@ export type PixieTaskTreeTask = {
   /** 短名（taskName，未传时 Host 用 task 前缀裁切兜底）。 */
   label: string;
   status: PixieTaskStatus;
-  /** 原始生命周期状态（插话/停止/重试门禁与文案细分要用）。 */
+  /** 原始生命周期状态（面板据此细分「等你回复」）。 */
   statusDetail: PixieDispatchStatus;
   kind: PixieDispatchKind | null;
-  /** ask 待答复的问题：回答入口离不开它，不属于「详细提示词」。 */
+  /** ask 的问题：面板不渲染正文，但记录里得留着它。 */
   question: string | null;
   options: string[];
   failCount: number;
   stale: boolean;
   createdAt: number;
   lastActiveAt: number | null;
-  dispatchMessageId: string | null;
-  reportMessageId: string | null;
-  jump: PixieTaskJump;
 };
 
 /** 会话层：会话名优先（sessionName / 复用会话的现有名），兜底用该会话最早任务。 */

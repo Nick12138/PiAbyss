@@ -137,15 +137,6 @@ function taskTreeFor(records: PixieDispatchRecord[]) {
         stale: record.stale,
         createdAt: record.createdAt,
         lastActiveAt: record.lastActiveAt,
-        dispatchMessageId: record.dispatchMessageId ?? null,
-        reportMessageId: record.reportMessageId ?? null,
-        jump: {
-          cwd: record.cwd,
-          sessionId: record.sessionId,
-          sessionPath: record.sessionPath,
-          messageId: record.dispatchMessageId ?? null,
-          anchor: record.dispatchMessageId ? "dispatch" : null,
-        },
       })),
     })),
   }));
@@ -484,25 +475,23 @@ describe("PixiePage 委派面板（任务树）", () => {
     expect(text).not.toContain("把登录相关的测试全部跑一遍");
   });
 
-  it("任务行展开后给出操作入口；活跃任务能叫停", async () => {
-    const user = userEvent.setup();
+  it("面板只做导航：跳转挂在会话行上，任务行一个按钮都没有", async () => {
     dispatchesMock.push(dispatchRecord({ id: "d-run", status: "dispatched", taskName: "跑测试" }));
     const request = mockPixieHost();
     render(<PixiePage />);
     await screen.findByTestId("pixie-input");
 
     const row = document.querySelector('[data-testid="pixie-task-row"]')!;
+    expect(row.querySelectorAll("button").length).toBe(0);
     expect(row.querySelector('[data-testid="pixie-dispatch-stop"]')).toBeNull();
-    await user.click(row.querySelector("button")!);
-    await user.click(await screen.findByTestId("pixie-dispatch-stop"));
-
-    await waitFor(() =>
-      expect(request).toHaveBeenCalledWith(
-        "pixie.stopDispatch",
-        expect.anything(),
-        { dispatchId: "d-run" },
-        expect.anything(),
-      ),
+    expect(
+      document.querySelector('[data-testid="pixie-task-group"] button:last-child'),
+    ).toHaveAttribute("data-testid", "pixie-session-jump");
+    expect(request).not.toHaveBeenCalledWith(
+      "pixie.stopDispatch",
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
     );
   });
 

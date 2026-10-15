@@ -70,12 +70,10 @@ import {
   renamePixieSegment,
   resumePausedDispatch,
   settleDispatch,
-  setDispatchMessageAnchor,
   setPixieContext,
   stopSettleDispatch,
   summarizeDelegatedProgress,
 } from "./pixie-agent-runner.js";
-import { resolveMessageEntryId } from "./session-entry-anchor.js";
 import { getEnabledProviderIds, getProviderModelAllowLists } from "./provider-models-config.js";
 import type { PixieControlPlaneDeps } from "./pixie-control-plane.js";
 import { recordPixieDispatch, readPixieUsage } from "./pixie-usage.js";
@@ -447,15 +445,6 @@ function watchDispatchTurn(
         messageTextOf(event.message).includes("<pixie-dispatch")
       ) {
         envelopeSeen = true;
-        // 锚点：这条派发消息在目标会话里的 entry id（面板点击「跳转定位」的落点）。
-        // 落盘发生在事件广播之后，resolveMessageEntryId 自带延后重试；拿不到就留空。
-        resolveMessageEntryId({
-          session,
-          message: event.message,
-          onFound: (entryId) => {
-            setDispatchMessageAnchor(dispatchId, agentDir, { dispatchMessageId: entryId });
-          },
-        });
         return;
       }
       // Runtime errors surface as assistant messages with stopReason "error".
