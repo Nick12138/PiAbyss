@@ -354,7 +354,7 @@ export async function buildPromptWithAttachments(args: {
   };
 }
 
-export function commitPromptAttachments(
+function commitPromptAttachments(
   factory: WorkspaceGraphFactory,
   sessionId: string,
   attachmentIds: readonly string[],

@@ -31,12 +31,6 @@ const CONTEXT = {
   expectedSessionRevision: 1,
 };
 
-const OTHER_CONTEXT = {
-  ...CONTEXT,
-  expectedSessionId: OTHER_SESSION,
-  expectedSessionRevision: 2,
-};
-
 function sessionSnapshot(sessionId: string, revision: number): SessionSnapshot {
   return {
     sessionId,
@@ -202,9 +196,9 @@ it("does not resurrect an answered request that a session switch demoted to the 
   // The settled request must not linger in the queue: the next close of the
   // same session's requests would otherwise promote it back on screen.
   expect(
-    useAppStore.getState().extensionUiQueue.some(
-      (request) => request.requestId === question1.requestId,
-    ),
+    useAppStore
+      .getState()
+      .extensionUiQueue.some((request) => request.requestId === question1.requestId),
   ).toBe(false);
 
   // Question 2 arrives and is answered; closing it must not rewind to Q1.

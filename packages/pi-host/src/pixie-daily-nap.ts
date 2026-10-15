@@ -74,7 +74,7 @@ export function adaptiveGapMs(samples: number[], config: DailyNapConfig): number
   return Math.min(Math.max(raw, config.minGapMs), config.maxGapMs);
 }
 
-export type DailyNapReason =
+type DailyNapReason =
   | "daily-idle"
   | "disabled"
   | "streaming"

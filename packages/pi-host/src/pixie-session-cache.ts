@@ -127,7 +127,7 @@ export function loadPixieSessionCache(agentDir: string): PixieSessionCacheFile {
   }
 }
 
-export function savePixieSessionCache(agentDir: string, cache: PixieSessionCacheFile): void {
+function savePixieSessionCache(agentDir: string, cache: PixieSessionCacheFile): void {
   try {
     const path = pixieSessionCachePath(agentDir);
     mkdirSync(join(piabyssDataDir(agentDir), "pixie"), { recursive: true });
@@ -197,7 +197,7 @@ export function upsertPixieSession(
   return entry;
 }
 
-export function findPixieSessionByPath(
+function findPixieSessionByPath(
   agentDir: string,
   sessionPath: string,
 ): PixieSessionCacheEntry | null {

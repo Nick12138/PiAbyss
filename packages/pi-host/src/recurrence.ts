@@ -22,7 +22,7 @@
  */
 
 /** 周期频率。 */
-export type MemoRecurrenceFrequency = "daily" | "weekly" | "monthly";
+type MemoRecurrenceFrequency = "daily" | "weekly" | "monthly";
 
 /** 备忘录周期规则（存储在 MemoNote.recurrence；磁盘格式见 memo-store.ts）。 */
 export type MemoRecurrence = {

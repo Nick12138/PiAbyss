@@ -122,11 +122,6 @@ export function isMemoOverdue(note: MemoNote, now: number): boolean {
   return target !== null && target <= now;
 }
 
-/** 记录当前应关注的计划时刻（周期看 nextDueAt，否则看 dueAt）；无计划返回 null。 */
-export function memoPlanTarget(note: MemoNote): number | null {
-  return note.recurrence !== null ? note.nextDueAt : note.dueAt;
-}
-
 /** 展示用标签串（#a #b）。 */
 export function formatTags(tags: readonly string[]): string {
   return tags.map((tag) => `#${tag}`).join(" ");

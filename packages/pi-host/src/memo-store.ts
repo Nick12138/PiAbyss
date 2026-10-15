@@ -53,7 +53,7 @@ const NOTE_STATUSES: readonly MemoNoteStatus[] = ["open", "in_progress", "done"]
  * - v0.3.0 之前写入的 type 字段统一剔除；
  * - recurrence 形状非法时清为 null，防止单条脏数据拖垮整个页面。
  */
-export function normalizeNoteDefaults(note: MemoNote): void {
+function normalizeNoteDefaults(note: MemoNote): void {
   if (note.result === undefined) note.result = null;
   if (note.sessionId === undefined) note.sessionId = null;
   if (note.deletedAt === undefined) note.deletedAt = null;

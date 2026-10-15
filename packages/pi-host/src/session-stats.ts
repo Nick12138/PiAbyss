@@ -55,7 +55,7 @@ function nonNegativeNumber(value: unknown): number | null {
  * entries the runtime cache writes when a message settles; only timings whose
  * assistant message is still on the branch fold in.
  */
-export function deriveSessionTiming(entries: readonly unknown[]): {
+function deriveSessionTiming(entries: readonly unknown[]): {
   timing: {
     llmMs: number;
     toolMs: number;

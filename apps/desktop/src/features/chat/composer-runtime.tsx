@@ -37,12 +37,12 @@ import {
   setAutoCompaction as setAutoCompactionAction,
 } from "./compaction-actions";
 
-export type ComposerSendArgs = {
+type ComposerSendArgs = {
   text: string;
   images: SerializableImage[];
   attachmentIds: string[];
 };
-export type ComposerSendResult = { ok: true } | { ok: false; error?: unknown };
+type ComposerSendResult = { ok: true } | { ok: false; error?: unknown };
 
 export type ComposerRuntime = {
   host: HostStatusSnapshot | null;
@@ -80,7 +80,9 @@ export function ComposerRuntimeProvider({
   runtime: ComposerRuntime;
   children: ReactNode;
 }) {
-  return <ComposerRuntimeContext.Provider value={runtime}>{children}</ComposerRuntimeContext.Provider>;
+  return (
+    <ComposerRuntimeContext.Provider value={runtime}>{children}</ComposerRuntimeContext.Provider>
+  );
 }
 
 /** 把 model.list 的 ModelSummary 适配成菜单需要的 PixieModelOption 形状。 */
@@ -131,11 +133,11 @@ function useStoreComposerRuntime(): ComposerRuntime {
         const imageParams = images.length > 0 ? { images } : {};
         const attachmentParams = attachmentIds.length > 0 ? { attachmentIds } : {};
         const res = busy
-          ? await hostClient.request(
-              busySendMethod(busySendBehavior),
-              context,
-              { text, ...imageParams, ...attachmentParams },
-            )
+          ? await hostClient.request(busySendMethod(busySendBehavior), context, {
+              text,
+              ...imageParams,
+              ...attachmentParams,
+            })
           : await hostClient.request(
               "agent.prompt",
               context,
@@ -161,7 +163,10 @@ function useStoreComposerRuntime(): ComposerRuntime {
           return;
         }
         if (!res.ok) {
-          current.pushNotification(localizeHostError(res.error, tCurrent), hostErrorLevel(res.error));
+          current.pushNotification(
+            localizeHostError(res.error, tCurrent),
+            hostErrorLevel(res.error),
+          );
           return;
         }
         current.applySessionSnapshot(res.result.session);

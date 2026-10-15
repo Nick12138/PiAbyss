@@ -505,9 +505,7 @@ export function WorkspacePicker() {
   // never a regular entry (its presence would read as a second "selected
   // pixie" while the pixie page holds the foreground), so folder rows exclude
   // both.
-  const listed = (
-    currentCwd ? addKnownWorkspace(knownWorkspaces, currentCwd) : knownWorkspaces
-  )
+  const listed = (currentCwd ? addKnownWorkspace(knownWorkspaces, currentCwd) : knownWorkspaces)
     .filter((path) => !isSameTelegramPath(path, telegramWorkspacePath))
     .filter((path) => !isSamePixiePath(path, pixieWorkspacePath));
 

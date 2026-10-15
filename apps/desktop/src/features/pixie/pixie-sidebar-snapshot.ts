@@ -21,7 +21,7 @@ import { create } from "zustand";
 import type { WorkspaceSnapshot } from "@piabyss/protocol";
 import type { SessionCatalogEntry } from "../../lib/stores/session-catalog";
 
-export type PixieSidebarSnapshot = {
+type PixieSidebarSnapshot = {
   /** 进入小精灵前的工作区快照（列表归属 + pinned/终端标记的 workspaceId 键）。 */
   workspace: WorkspaceSnapshot;
   /** 进入小精灵前的会话目录（按目录排序原样冻结）。 */

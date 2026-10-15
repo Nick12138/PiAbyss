@@ -17,7 +17,7 @@ import { useAppStore } from "../../lib/stores/app-store";
 const SEND_TIMEOUT_MS = 30_000;
 const DISPATCHES_TIMEOUT_MS = 30_000;
 
-export type PixieCurrent = {
+type PixieCurrent = {
   cwd: string;
   sessionId: string;
   sessionPath: string;

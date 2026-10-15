@@ -27,7 +27,6 @@ import {
   type PixieDispatchRecord,
   type PixieStopAction,
   type PixieWorkspaceSessionSummary,
-  type SerializableImage,
 } from "@piabyss/protocol";
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { DefaultResourceLoader, SessionManager } from "@earendil-works/pi-coding-agent";
@@ -76,12 +75,6 @@ import { getEnabledProviderIds, getProviderModelAllowLists } from "./provider-mo
 import type { PixieControlPlaneDeps } from "./pixie-control-plane.js";
 import { recordPixieDispatch, readPixieUsage } from "./pixie-usage.js";
 import { createHostAgentSession } from "./agent-session-factory.js";
-import {
-  buildPromptWithAttachments,
-  commitPromptAttachments,
-  toSdkImages,
-} from "./agent-controller.js";
-import { attachmentHostError } from "./attachment-controller.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
 import { isRepoPluginEnabled, PIXIE_PLUGIN_ENTRY_FILE } from "./plugin-gate.js";
 
@@ -904,7 +897,6 @@ async function replyToDispatch(
   const agentDir = factory.deps.agentDir;
   const outcome = reactivateDispatchAfterReply(args.dispatchId, args.text, agentDir);
   if ("error" in outcome) return { ok: false, error: outcome.error };
-  const record = outcome.record;
   const session = dispatchedSessions.get(args.dispatchId) ?? null;
   if (!session) {
     failDispatch(

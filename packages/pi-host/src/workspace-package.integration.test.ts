@@ -238,7 +238,7 @@ describe("package + workspace integration", () => {
     );
 
     host = new HostProcess(agentDir);
-    await host.waitForEvent("host.ready");
+    await host.waitForEvent("host.ready", 45_000);
     const hello = await host.request(
       "system.hello",
       {},

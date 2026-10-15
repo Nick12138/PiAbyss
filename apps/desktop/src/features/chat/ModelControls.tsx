@@ -9,19 +9,9 @@ import {
   FlaskConical,
   RefreshCw,
 } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type {
-  ModelSummary,
-  SessionContextBreakdown,
-} from "@piabyss/protocol";
+import type { ModelSummary, SessionContextBreakdown } from "@piabyss/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
@@ -32,7 +22,7 @@ import {
 } from "../../lib/bridge/host-context";
 import { formatTokenCount } from "../../lib/format-token-count";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
-import { useComposerRuntime, type ComposerRuntime } from "./composer-runtime";
+import { useComposerRuntime } from "./composer-runtime";
 import { usePopoverLeft } from "./popover-placement";
 import { relayPriceCandidates, useRelayMenuData, useRelayModelTest } from "./model-menu-relay";
 import { Switch } from "../../components/Switch";
@@ -388,7 +378,9 @@ export function ContextUsageRing({
               checked={autoCompactionEnabled}
               label={t("contextToggleAutoCompaction")}
               disabled={!session}
-              onChange={() => session && void runtime.setAutoCompaction(!session.autoCompactionEnabled)}
+              onChange={() =>
+                session && void runtime.setAutoCompaction(!session.autoCompactionEnabled)
+              }
             />
           </div>
           <button
@@ -404,7 +396,6 @@ export function ContextUsageRing({
     </span>
   );
 }
-
 
 /** Model menu and context indicator for the composer's bottom bar. */
 export function ModelControls() {

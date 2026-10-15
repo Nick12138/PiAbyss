@@ -1861,7 +1861,16 @@ export async function ensurePixieCurrent(
 export function isPixieWorkspaceCwd(factory: WorkspaceGraphFactory, sessionCwd: string): boolean {
   const agentDir = factory?.deps?.agentDir;
   if (!agentDir || typeof factory?.canonicalizeCwd !== "function") return false;
-  return sessionCwd === factory.canonicalizeCwd(resolvePixieWorkspacePath(agentDir));
+  // 防御：小精灵工作区目录可能不存在（全新安装 / 自定义路径未建），
+  // canonicalizeCwd 会在这种时候抛 WORKSPACE_SWITCH_FAILED —— 比较用途
+  // 不应把错误泄进 agent.prompt 等调用方，按「非小精灵会话」处理。
+  let pixieCwd: string;
+  try {
+    pixieCwd = factory.canonicalizeCwd(resolvePixieWorkspacePath(agentDir));
+  } catch {
+    return false;
+  }
+  return sessionCwd === pixieCwd;
 }
 
 /**
@@ -1983,11 +1992,6 @@ export function pixieTranscriptFrom(sessionPath: string): PixieAgentMessage[] {
     if (projected) out.push(projected);
   }
   return out;
-}
-
-/** Strip the `[pixie|…]` channel marker for display (first line only). */
-export function stripPixieSourceMarker(text: string): string {
-  return text.replace(/^\[pixie\|[a-z]+\]\n?/, "");
 }
 
 /**
@@ -2159,9 +2163,6 @@ export async function deliverDispatchCallback(
 }
 
 /* ── 兼容残留 ────────────────────────────────────────────────────── */
-
-/** Legacy no-op hook (the v3 env-window marker; kept for type stability). */
-export const PIXIE_RESIDENT_LEGACY_ENV = "PIABYSS_PIXIE_RESIDENT";
 
 /** Read the persisted known-workspace list (dispatch engine gating uses it). */
 export function getKnownWorkspaces(agentDir: string): string[] {

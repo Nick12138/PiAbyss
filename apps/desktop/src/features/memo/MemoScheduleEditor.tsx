@@ -33,7 +33,7 @@ const WEEKDAY_KEYS = [
 ] as const;
 
 /** 各频率的默认规则（切换频率时用它兜底，保证形状合法）。 */
-export function defaultRecurrence(frequency: MemoRecurrenceFrequency): MemoRecurrence {
+function defaultRecurrence(frequency: MemoRecurrenceFrequency): MemoRecurrence {
   return {
     frequency,
     interval: 1,
@@ -51,7 +51,7 @@ function pad(value: number): string {
 }
 
 /** epoch ms → `<input type="datetime-local">` 的本地时区取值。 */
-export function toLocalInputValue(epoch: number | null): string {
+function toLocalInputValue(epoch: number | null): string {
   if (epoch === null) return "";
   const date = new Date(epoch);
   if (Number.isNaN(date.getTime())) return "";
@@ -62,7 +62,7 @@ export function toLocalInputValue(epoch: number | null): string {
 }
 
 /** 本地时区输入值 → epoch ms（空/非法返回 null）。 */
-export function fromLocalInputValue(value: string): number | null {
+function fromLocalInputValue(value: string): number | null {
   if (!value) return null;
   const ms = new Date(value).getTime();
   return Number.isFinite(ms) && ms > 0 ? ms : null;

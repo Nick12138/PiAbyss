@@ -39,10 +39,10 @@ export const PIXIE_INJECT_PATH = "/api/pixie/inject";
 export const PIXIE_DISPATCH_STATE_PATH = "/api/pixie/dispatch-state";
 export const PIXIE_INTERJECT_PATH = "/api/pixie/interject";
 export const PIXIE_STOP_PATH = "/api/pixie/stop";
-export const PIXIE_RETRY_PATH = "/api/pixie/retry";
-export const PIXIE_DISPATCHES_PATH = "/api/pixie/dispatches";
+const PIXIE_RETRY_PATH = "/api/pixie/retry";
+const PIXIE_DISPATCHES_PATH = "/api/pixie/dispatches";
 /** v4.3：小精灵会话缓存（自己创建的会话 + 被委托会话的简介/结果）。 */
-export const PIXIE_SESSIONS_PATH = "/api/pixie/sessions";
+const PIXIE_SESSIONS_PATH = "/api/pixie/sessions";
 
 /** 控制面鉴权头（v4 token）。 */
 export const PIXIE_TOKEN_HEADER = "x-piabyss-pixie-token";
@@ -479,7 +479,7 @@ export function parseStopBody(
 }
 
 /** 解析并强校验 retry 请求体（重试失败/叫停的委派）。 */
-export function parseRetryBody(
+function parseRetryBody(
   raw: string | null,
 ):
   | { ok: true; args: { dispatchId: string; mode?: "resume" | "redispatch" } }
