@@ -53,6 +53,39 @@ async function completesWithin(operation: Promise<void>, timeoutMs: number): Pro
   return true;
 }
 
+/**
+ * Describes an outbound failure envelope for the durable log, or null when the
+ * body is a success or a silently-retried busy collision.
+ *
+ * This is the only place a refusal can be recorded: the renderer localizes
+ * `STALE_REVISION` and `AGENT_NOT_READY` into generic one-line toasts that drop
+ * the reason and the method, so an unlogged rejection is undiagnosable once the
+ * toast is gone.
+ */
+function describeRefusal(body: unknown): Record<string, unknown> | null {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
+  const envelope = body as Record<string, unknown>;
+  if (envelope.ok !== false) return null;
+  const error = envelope.error;
+  if (typeof error !== "object" || error === null) return null;
+  const failure = error as Record<string, unknown>;
+  // SERVICE_GRAPH_BUSY / AGENT_BUSY are retried by the UI; logging them would
+  // only add noise around every workspace switch.
+  if (failure.retryable === true) return null;
+  return {
+    method: typeof envelope.method === "string" ? envelope.method : null,
+    code: typeof failure.code === "string" ? failure.code : null,
+    reason: typeof failure.message === "string" ? failure.message : null,
+    committed: {
+      workspaceId: envelope.workspaceId ?? null,
+      workspaceRevision: envelope.workspaceRevision ?? null,
+      sessionId: envelope.sessionId ?? null,
+      sessionRevision: envelope.sessionRevision ?? null,
+      packageRevision: envelope.packageRevision ?? null,
+    },
+  };
+}
+
 export type HostRuntimeDeps = {
   agentDir: string;
   sdkVersion: string;
@@ -269,6 +302,8 @@ export class PiHostServer {
   }
 
   writeResponse(body: unknown): void {
+    const refusal = describeRefusal(body);
+    if (refusal) logger.warn("Host refused request", refusal);
     this.outbound.enqueueResponse(body);
   }
 
