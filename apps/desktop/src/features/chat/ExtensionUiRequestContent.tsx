@@ -313,21 +313,24 @@ export function ExtensionUiRequestContent({
     initialRect: { width: 640, height: 240 },
   });
 
-  // A new question starts clean — except for a rewind, where the extension tells
-  // us which answer to restore.
+  /**
+   * A new question starts clean — except for a rewind, where the extension tells
+   * us which answer to restore: an option id (single-select), a `"1,3"` position
+   * list (multi-select), or the raw text the user typed last time.
+   *
+   * This card owns both halves of that restore. Only it can tell the two apart —
+   * a restored selection has to land on the options, a typed answer has to land
+   * back in the field — and the response hook deliberately steps back for
+   * requests that carry a choice list (see `useExtensionUiResponse`).
+   */
   useEffect(() => {
     setSelectSubmitSource(null);
     setOptionQuery("");
     setFocusedOptionId(null);
     setSelectedOptionIds(preselectedOptionIds);
-  }, [request.requestId, preselectedOptionIds]);
-
-  // A rewound free-text answer matches no option, so it seeds the input instead.
-  useEffect(() => {
     if (!hasChoiceList || !request.allowFreeform) return;
-    const value = request.defaultValue;
-    if (!value || preselectedOptionIds.length > 0) return;
-    setInput(value);
+    // Positions belong to the checkboxes, so the field starts empty for them.
+    setInput(preselectedOptionIds.length === 0 ? (request.defaultValue ?? "") : "");
   }, [
     request.requestId,
     hasChoiceList,
@@ -730,9 +733,7 @@ export function ExtensionUiRequestContent({
       </div>
       {/* Decoration only — the whole header above is the actual control, so
           this must not be a second focusable element with the same name. */}
-      {canFold ? (
-        <ChevronUp size={14} className="shrink-0 text-muted" aria-hidden="true" />
-      ) : null}
+      {canFold ? <ChevronUp size={14} className="shrink-0 text-muted" aria-hidden="true" /> : null}
     </>
   );
   const headerClassName = "flex min-w-0 items-center gap-2.5 rounded-md";

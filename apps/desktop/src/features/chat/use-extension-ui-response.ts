@@ -46,9 +46,7 @@ export function useExtensionUiResponse(
     (requestId: string, outcome: ExtensionDecisionStepOutcome): boolean => {
       const state = useAppStore.getState();
       const wasActive = state.extensionUiRequest?.requestId === requestId;
-      const wasQueued = state.extensionUiQueue.some(
-        (queued) => queued.requestId === requestId,
-      );
+      const wasQueued = state.extensionUiQueue.some((queued) => queued.requestId === requestId);
       if (!wasActive && !wasQueued) return false;
       closeRequest(requestId, outcome);
       return true;
@@ -58,16 +56,20 @@ export function useExtensionUiResponse(
 
   useEffect(() => {
     submittingRef.current = false;
-    // Only the free-text kinds seed their field from `defaultValue`. A
-    // multi-select question is a checkbox list whose previous answer arrives as
-    // a `"1,3"` position string — filling the free-text box with that would both
-    // look wrong and make the action button submit the positions as if the user
-    // had typed them.
-    const seedsField =
-      (request?.kind === "input" || request?.kind === "editor") && request?.multiSelect !== true;
-    setInputState(seedsField ? (request?.defaultValue ?? "") : "");
     setSubmitting(false);
     setError(null);
+    /**
+     * A card that shows a choice list (a single-select, or a questionnaire's
+     * multi-select) owns its own field: telling a restored *selection* (an option
+     * id, or a `"1,3"` position list) from a restored *free-text* answer needs the
+     * option list, which only that card has. Seeding here would blank a rewound
+     * typed answer — the card restores it, then this effect runs afterwards
+     * (children flush before their parent) and wipes it.
+     */
+    if (request?.kind === "select" || request?.multiSelect === true) return;
+    // Only the free-text kinds seed their field from `defaultValue`.
+    const seedsField = request?.kind === "input" || request?.kind === "editor";
+    setInputState(seedsField ? (request?.defaultValue ?? "") : "");
   }, [request?.requestId, request?.defaultValue, request?.kind, request?.multiSelect]);
 
   useEffect(() => {

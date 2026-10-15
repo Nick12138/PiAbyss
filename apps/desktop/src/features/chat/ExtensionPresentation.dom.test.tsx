@@ -1217,6 +1217,125 @@ describe("Extension presentation surfaces", () => {
     expect(screen.getByRole("button", { name: "Beta" })).toHaveAttribute("aria-pressed", "false");
   });
 
+  it("gives a rewound typed answer back to a multi-select question's field", () => {
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "input",
+          multiSelect: true,
+          questionIndex: 2,
+          questionCount: 3,
+          defaultValue: "my earlier note",
+          allowFreeform: true,
+          options: [
+            { id: "Alpha", label: "Alpha", description: "first" },
+            { id: "Beta", label: "Beta" },
+          ],
+        }),
+      );
+    });
+    renderRequestSurfaces();
+
+    // A rewound answer that matches no option is free text: the user typed it,
+    // so it belongs back in the field they typed it into — while the boxes stay
+    // unchecked, because picking and typing are mutually exclusive.
+    expect(screen.getByLabelText("Custom response")).toHaveValue("my earlier note");
+    expect(screen.getByRole("button", { name: "Alpha. first" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("gives a rewound typed answer back to a single-select question's field", () => {
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "select",
+          questionIndex: 2,
+          questionCount: 3,
+          defaultValue: "my own answer",
+          allowFreeform: true,
+          options: [{ id: "keep", label: "Keep" }],
+        }),
+      );
+    });
+    renderRequestSurfaces();
+
+    expect(screen.getByLabelText("Custom response")).toHaveValue("my own answer");
+  });
+
+  it("does not carry a typed answer into the next question, and clears a rewound one", async () => {
+    const hostRequest = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue({ ok: true, result: null } as never);
+    const user = userEvent.setup();
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "select",
+          questionIndex: 1,
+          questionCount: 3,
+          title: "First question",
+          allowFreeform: true,
+          options: [{ id: "keep", label: "Keep" }],
+        }),
+      );
+    });
+    renderRequestSurfaces();
+    await user.type(screen.getByLabelText("Custom response"), "first answer");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(hostRequest).toHaveBeenCalledOnce());
+
+    // The questionnaire moves on to the multi-select question: the field starts
+    // from *its* answer, never with the previous question's words still in it.
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "input",
+          multiSelect: true,
+          questionIndex: 2,
+          questionCount: 3,
+          title: "Second question",
+          allowFreeform: true,
+          defaultValue: "second answer",
+          options: [
+            { id: "Alpha", label: "Alpha" },
+            { id: "Beta", label: "Beta" },
+          ],
+        }),
+      );
+    });
+    expect(screen.queryByLabelText("Custom response")).toBeVisible();
+    expect(screen.getByLabelText("Custom response")).toHaveValue("second answer");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(hostRequest).toHaveBeenCalledTimes(2));
+
+    // …and when the questionnaire moves on again, the restored answer goes with
+    // it instead of lingering in the box.
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "input",
+          multiSelect: true,
+          questionIndex: 3,
+          questionCount: 3,
+          title: "Third question",
+          allowFreeform: true,
+          options: [
+            { id: "Alpha", label: "Alpha" },
+            { id: "Beta", label: "Beta" },
+          ],
+        }),
+      );
+    });
+    expect(screen.getByLabelText("Custom response")).toHaveValue("");
+  });
+
   it("folds from the whole header rather than only a corner chevron", async () => {
     vi.spyOn(hostClient, "request").mockResolvedValue({ ok: true, result: null } as never);
     useAppStore.setState({
