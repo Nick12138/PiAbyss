@@ -300,7 +300,7 @@ export const zh: Record<MessageKey, string> = {
   hostErrAgentBusy: "Agent 正忙，请等待当前运行结束后再试。",
   hostErrAgentNotReady: "Agent 尚未就绪。",
   hostErrNoActiveSession: "没有活动会话。",
-  hostErrWorkspaceServicesNotReady: "工作区服务尚未就绪。",
+  hostErrWorkspaceServicesNotReady: "马上就好。",
   hostErrServiceBusy: "服务繁忙，请稍后重试。",
   hostErrNoWorkspace: "尚未选择工作区。",
   hostErrPackageMutationBusy: "另一个包操作正在进行，请稍候。",
@@ -1088,7 +1088,7 @@ export const zh: Record<MessageKey, string> = {
   // Chat surface
   chatSelectWorkspaceTitle: "选择工作区以开始",
   chatSelectWorkspaceHint: "请使用侧边栏中的文件夹选择器。",
-  chatWorkspaceServicesNotReady: "工作区服务尚未就绪。",
+  chatWorkspaceServicesNotReady: "马上就好。",
   chatAuthRequired: "当前模型未配置凭据。请登录提供商后再发送消息。",
   chatAuthRequiredProvider: "“{provider}” 未配置凭据。登录后即可发送消息。",
   chatAuthOpenProviders: "打开提供商设置",
