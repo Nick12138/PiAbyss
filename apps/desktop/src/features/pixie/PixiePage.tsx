@@ -694,8 +694,12 @@ export function PixiePage() {
                * 看不到问题卡片——死等到超时。与 ChatPage 同位（内容与输入框
                * 之间）。 */}
               <InlineExtensionUiRequest />
-              <div className="shrink-0 px-3 pb-3 pt-2 sm:px-6 sm:pb-5">
-                {error && <p className="mb-2 text-xs text-danger">{error}</p>}
+              {/* 四周留白全部交给共享 Composer 自己的 footer（`px-5 pb-5 pt-2`，
+                * 统计药丸在位时 footer 底部收到 5px），与 ChatPage 完全同一套
+                * 度量。这里曾叠着 px-3/sm:px-6 + pt-2 + pb-3/sm:pb-5，是小精灵
+                * V1 自带输入框时代的残留，v5 复用 Composer 后就成了双份间距。 */}
+              <div className="shrink-0">
+                {error && <p className="mb-2 px-5 text-xs text-danger">{error}</p>}
                 <ComposerRuntimeProvider runtime={runtime}>
                   <Composer inputTestId="pixie-input" />
                   <SessionStatsPills />
