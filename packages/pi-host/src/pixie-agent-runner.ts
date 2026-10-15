@@ -947,6 +947,28 @@ export function liveDispatchFor(sessionId: string): PixieDispatch | undefined {
   );
 }
 
+/**
+ * 重复提交检测：同一工作区 + 逐字相同的任务文本，在窗口内已有活跃记录。
+ * 环回超时后小精灵按「失败」原样重试，而第一次多半已经受理成功——这条查询让
+ * 引擎能把第二次请求认成同一次派发，而不是再开一个会话跑第二遍。
+ */
+export function findDuplicateDispatchRequest(input: {
+  agentDir: string;
+  cwd: string;
+  task: string;
+  withinMs: number;
+  now?: number;
+}): PixieDispatch | null {
+  loadDispatches(input.agentDir);
+  const now = input.now ?? Date.now();
+  for (const record of dispatches) {
+    if (now - record.createdAt > input.withinMs) continue;
+    if (!isLiveDispatchRecord(record)) continue;
+    if (record.cwd === input.cwd && record.task === input.task) return record;
+  }
+  return null;
+}
+
 export function findDispatchById(id: string): PixieDispatch | undefined {
   return dispatches.find((d) => d.id === id);
 }
@@ -1894,6 +1916,27 @@ export function maybeWrapPixiePrompt(
   return `${buildSegmentContextPreamble(agentDir, state.lastHandoff)}\n${text}`;
 }
 
+/**
+ * 新会话段的时间锚点。前导只吃一次（段的首条用户消息），所以这行写的是「本段
+ * 开始」的时刻；不注入的话，模型会拿备忘录里的「周一」这类线索硬猜今天。
+ */
+export function pixieClockLine(now: Date): string {
+  const date = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+  const weekday = new Intl.DateTimeFormat("zh-CN", { weekday: "short" }).format(now);
+  const time = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(now);
+  const offsetHours = -now.getTimezoneOffset() / 60;
+  const zone = `UTC${offsetHours < 0 ? "−" : "+"}${Math.abs(offsetHours)}`;
+  return `本段开始时间：${date}（${weekday}）${time}，${zone}。判断「今天/周几/是否逾期」以它为准，跨天了先跑一次 date 校准，不要凭记忆推。`;
+}
+
 /** Built-in identity + handoff + known-workspaces preamble for a fresh session. */
 function buildSegmentContextPreamble(agentDir: string, handoff: string | null): string {
   const workspaces = knownWorkspacesOf(agentDir);
@@ -1901,6 +1944,7 @@ function buildSegmentContextPreamble(agentDir: string, handoff: string | null): 
     "[pixie|ui]",
     "<pixie-context>",
     "你是小精灵，PiAbyss 桌面里的常驻小助手（人格、语气与工作方式见工作区 CLAUDE.md）。",
+    pixieClockLine(new Date()),
     "委派落点：默认只复用【你自己创建的】会话，没有就新开一个。用户自己在界面里创建的会话不要自动复用；只有用户明确给出会话 id 时，才用 sessionId 参数指定（找不到会直接报错，不要改派到别的会话）。",
     "排队：目标会话有活在跑时，新任务会排队并返回排队说明——不要重复派单，也不用自己数着等，对方回调时你会收到信封。",
     "回调：信封自带处理要求，照它办。总则——完成只转述、不代写总结；报错在「原样重试 / 调整委派词再派 / 如实报告」里选，但同一任务连败 3 次就别再试，带全部现场升级给用户；询问立刻转述给用户、不要代答，用户的下一条消息就是答复。",

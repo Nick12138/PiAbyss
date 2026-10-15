@@ -30,6 +30,7 @@ import {
 } from "@piabyss/protocol";
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { DefaultResourceLoader, SessionManager } from "@earendil-works/pi-coding-agent";
+import { logger } from "./logger.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import type { WorkspaceGraph } from "./workspace-graph-types.js";
 import {
@@ -52,6 +53,7 @@ import {
   failDispatch,
   findDispatchById,
   findDispatchBySession,
+  findDuplicateDispatchRequest,
   getKnownWorkspaces,
   injectPixieMessage,
   liveDispatchFor,
@@ -641,30 +643,72 @@ function drainQueueAfterSettle(factory: WorkspaceGraphFactory, sessionId: string
   void activateQueuedDispatch(factory, head.id);
 }
 
+/** 同请求重复提交的判定窗口（环回超时后模型原样重试的时间尺度）。 */
+const PIXIE_DISPATCH_DEDUPE_MS = 30_000;
+/** 在途受理的兜底上限：超过它认为上一次请求已经卡死，不再拦住同样的请求。 */
+const PIXIE_DISPATCH_INFLIGHT_MAX_MS = 60_000;
+
+/** 受理中（记录尚未落地）的同请求并发保护。 */
+const inFlightDispatchRequests = new Map<string, number>();
+
 /**
- * The delegation engine behind pixie_dispatch. The plugin-side tool shell
- * (my-pi-plugins pi-pixie) reaches it through the loopback control plane
- * (startPixieControlPlane); the engine itself stays Host-owned.
+ * pixie_dispatch 的入口：先挡掉重复提交，再交给引擎受理。
+ *
+ * 插件侧环回超时不等于 Host 没受理——委派请求要先打开目标工作区的后台图，
+ * 慢起来能到数秒。小精灵看到「委派失败」会原样重试，两次请求于是各开一个会话
+ * 跑同一件事。受理已落记录的按记录去重（回原 dispatchId），还在受理中的按在途
+ * 键挡住（明确告知不要重复派发）。`retryOf`（pixie_retry 的重派）是有意重跑，
+ * 不受这两条约束。
  */
 async function dispatchPixieTask(
   factory: WorkspaceGraphFactory,
-  request: {
-    cwd: string;
-    task: string;
-    newSession?: boolean;
-    /**
-     * 用户在对话中明确给出的会话 id：此时允许复用用户自己的会话。
-     * 不传 = 自动落点（只挑小精灵自己创建的会话，挑不到就新建）。
-     */
-    sessionId?: string | null;
-    batchId?: string | null;
-    retryOf?: string | null;
-    failCount?: number;
-    /** 用户明确授权的模型/推理深度覆盖（未授权不传，跟随会话当前设置）。 */
-    model?: string | null;
-    thinkingLevel?: string | null;
-  },
-): Promise<
+  request: PixieDispatchRequest,
+): Promise<PixieDispatchOutcome> {
+  if (request.retryOf) return dispatchPixieTaskInner(factory, request);
+  // 在途键用请求原文，不规范化 cwd：重试必然逐字相同，而规范化差异已由记录级去重覆盖。
+  const key = `${request.cwd.trim()}\n${request.task}`;
+  const pendingSince = inFlightDispatchRequests.get(key);
+  if (pendingSince !== undefined && Date.now() - pendingSince <= PIXIE_DISPATCH_INFLIGHT_MAX_MS) {
+    logger.warn("pixie dispatch rejected: same task still accepting", {
+      cwd: request.cwd,
+      pendingMs: Date.now() - pendingSince,
+    });
+    return {
+      ok: false,
+      error:
+        "同一个任务正在受理中（上一条请求还没返回，可能正在后台打开目标工作区）。不要重复派发，稍后用 pixie_dispatch_status 查岗确认它是否已经在跑。",
+    };
+  }
+  inFlightDispatchRequests.set(key, Date.now());
+  try {
+    return await dispatchPixieTaskInner(factory, request);
+  } finally {
+    inFlightDispatchRequests.delete(key);
+  }
+}
+
+/**
+ * 委派引擎的请求形状。比环回契约（parseDispatchBody 白名单）多出
+ * retryOf/failCount：只有 Host 自身的重派路径能填，插件侧传不进来。
+ */
+export type PixieDispatchRequest = {
+  cwd: string;
+  task: string;
+  newSession?: boolean;
+  /**
+   * 用户在对话中明确给出的会话 id：此时允许复用用户自己的会话。
+   * 不传 = 自动落点（只挑小精灵自己创建的会话，挑不到就新建）。
+   */
+  sessionId?: string | null;
+  batchId?: string | null;
+  retryOf?: string | null;
+  failCount?: number;
+  /** 用户明确授权的模型/推理深度覆盖（未授权不传，跟随会话当前设置）。 */
+  model?: string | null;
+  thinkingLevel?: string | null;
+};
+
+type PixieDispatchOutcome =
   | {
       ok: true;
       dispatchId: string;
@@ -676,35 +720,102 @@ async function dispatchPixieTask(
       /** queued=true 时的排队说明（告知小精灵可等待/取消/改并行）。 */
       queuedNote?: string;
     }
-  | { ok: false; error: string }
-> {
+  | { ok: false; error: string };
+
+/**
+ * The delegation engine behind pixie_dispatch. The plugin-side tool shell
+ * (my-pi-plugins pi-pixie) reaches it through the loopback control plane
+ * (startPixieControlPlane); the engine itself stays Host-owned.
+ */
+async function dispatchPixieTaskInner(
+  factory: WorkspaceGraphFactory,
+  request: PixieDispatchRequest,
+): Promise<PixieDispatchOutcome> {
   const agentDir = factory.deps.agentDir;
-  let graph = factory.findBoundGraph(factory.canonicalizeCwd(request.cwd));
+  const startedAt = Date.now();
+  const canonicalCwd = factory.canonicalizeCwd(request.cwd);
+  let graphMs = 0;
+  let targetMs = 0;
+
+  const accepted = (
+    args: Omit<Extract<PixieDispatchOutcome, { ok: true }>, "ok">,
+  ): PixieDispatchOutcome => {
+    logger.info("pixie dispatch accepted", {
+      dispatchId: args.dispatchId,
+      cwd: canonicalCwd,
+      sessionId: args.sessionId,
+      queued: args.queued,
+      reused: args.reused,
+      graphMs,
+      targetMs,
+      totalMs: Date.now() - startedAt,
+    });
+    return { ok: true, ...args };
+  };
+  const rejected = (error: string): PixieDispatchOutcome => {
+    logger.warn("pixie dispatch rejected", {
+      cwd: canonicalCwd,
+      error,
+      totalMs: Date.now() - startedAt,
+    });
+    return { ok: false, error };
+  };
+
+  // 重复提交：同工作区 + 逐字相同的任务文本已有活跃记录 → 认成同一次派发，
+  // 回原 dispatchId，绝不再开一个会话把同一件事跑第二遍。
+  if (!request.retryOf) {
+    const duplicate = findDuplicateDispatchRequest({
+      agentDir,
+      cwd: canonicalCwd,
+      task: request.task,
+      withinMs: PIXIE_DISPATCH_DEDUPE_MS,
+      now: startedAt,
+    });
+    if (duplicate) {
+      logger.info("pixie dispatch deduplicated", {
+        dispatchId: duplicate.id,
+        cwd: canonicalCwd,
+        status: duplicate.status,
+        ageMs: startedAt - duplicate.createdAt,
+      });
+      return {
+        ok: true,
+        dispatchId: duplicate.id,
+        sessionId: duplicate.sessionId ?? "",
+        sessionPath: duplicate.sessionPath ?? "",
+        queued: true,
+        reused: true,
+        queuedNote: `同一个任务在 ${Math.round((startedAt - duplicate.createdAt) / 1000)} 秒前已经受理（dispatchId: ${duplicate.id}，当前状态 ${duplicate.status}），本次没有重复派发。若认为上一条失败了，请对它用 pixie_retry；确实要再跑一遍请调整任务描述后重新派发。`,
+      };
+    }
+  }
+
+  let graph = factory.findBoundGraph(canonicalCwd);
   if (!graph) {
     // v4: a known workspace that exists on disk gets a BACKGROUND graph
     // (parked, never foregrounded) and delegation proceeds as usual.
-    const canonicalRequest = factory.canonicalizeCwd(request.cwd);
+    const buildStartedAt = Date.now();
     const known = getKnownWorkspaces(agentDir).some(
-      (path) => factory.canonicalizeCwd(path) === canonicalRequest,
+      (path) => factory.canonicalizeCwd(path) === canonicalCwd,
     );
-    if (!known || !existsSync(canonicalRequest)) {
-      return {
-        ok: false,
-        error: `目标工作区未打开且不在已知工作区列表中（${request.cwd}）。请用户先在 PiAbyss 中打开该工作区，或把它加入 PiAbyss 工作区列表后再委派。`,
-      };
+    if (!known || !existsSync(canonicalCwd)) {
+      return rejected(
+        `目标工作区未打开且不在已知工作区列表中（${request.cwd}）。请用户先在 PiAbyss 中打开该工作区，或把它加入 PiAbyss 工作区列表后再委派。`,
+      );
     }
-    const built = await factory.ensureBackgroundGraph(canonicalRequest);
+    const built = await factory.ensureBackgroundGraph(canonicalCwd);
     if ("error" in built) {
-      return {
-        ok: false,
-        error: `无法在后台打开目标工作区（${built.error.message}）。请用户先在 PiAbyss 中打开该工作区后再委派。`,
-      };
+      return rejected(
+        `无法在后台打开目标工作区（${built.error.message}）。请用户先在 PiAbyss 中打开该工作区后再委派。`,
+      );
     }
     graph = built.graph;
+    graphMs = Date.now() - buildStartedAt;
   }
 
   // v4.3 会话归属：自动落点只允许复用「小精灵自己创建的会话」；用户自己在 UI 里
   // 创建的会话必须由用户在对话中明确给出 id（request.sessionId）才会被委托使用。
+  const targetStartedAt = Date.now();
   const explicitSessionId = request.sessionId?.trim() || null;
   const resolution: TargetResolution | null = explicitSessionId
     ? resolveExplicitTargetSession(factory, graph, explicitSessionId)
@@ -735,14 +846,15 @@ async function dispatchPixieTask(
     });
   } else {
     if (explicitSessionId) {
-      return {
-        ok: false,
-        error: `指定的会话在目标工作区里找不到（sessionId: ${explicitSessionId}）。请确认会话 id 是否正确，或改用 newSession 新开一个会话。`,
-      };
+      targetMs = Date.now() - targetStartedAt;
+      return rejected(
+        `指定的会话在目标工作区里找不到（sessionId: ${explicitSessionId}）。请确认会话 id 是否正确，或改用 newSession 新开一个会话。`,
+      );
     }
     const created = await createTargetSession(factory, graph);
+    targetMs = Date.now() - targetStartedAt;
     if (!created.ok) {
-      return { ok: false, error: `无法在目标工作区创建会话：${created.error}` };
+      return rejected(`无法在目标工作区创建会话：${created.error}`);
     }
     session = graph.backgroundSessions.get(created.sessionId)!.agentSession;
     sessionId = created.sessionId;
@@ -758,6 +870,7 @@ async function dispatchPixieTask(
       summary: request.task,
     });
   }
+  targetMs = Date.now() - targetStartedAt;
 
   // v4.1 queue gate: an existing LIVE dispatch on this session holds it —
   // the new task is registered as queued (envelope NOT sent; the engine
@@ -781,8 +894,7 @@ async function dispatchPixieTask(
       originSessionId: currentPixieSessionId(agentDir),
     });
     recordPixieDispatch(agentDir);
-    return {
-      ok: true,
+    return accepted({
       dispatchId: dispatch.id,
       sessionId,
       sessionPath,
@@ -792,7 +904,7 @@ async function dispatchPixieTask(
         queuedAhead > 0
           ? `目标会话正有委派任务在执行（${gate.task.slice(0, 60)}…），本任务已排队（前面还有 ${queuedAhead} 个）。当前面的任务回调结束后自动开始；你也可以取消本任务改用 newSession 新开会话并行，或继续等待。`
           : `目标会话正有委派任务在执行（${gate.task.slice(0, 60)}…），本任务已排队，等它回调结束后自动开始。可继续等待、取消本任务、或改用 newSession 新开会话并行执行。`,
-    };
+    });
   }
 
   const prompt = buildDispatchTaskPrompt({ task: request.task, from: "小精灵委派" });
@@ -836,7 +948,7 @@ async function dispatchPixieTask(
           errorType: "model_override",
         });
       }
-      return { ok: false, error: applied.error };
+      return rejected(applied.error);
     }
   }
 
@@ -848,16 +960,15 @@ async function dispatchPixieTask(
     } catch (error) {
       dispatchedSessions.delete(dispatch.id);
       failDispatch(dispatch.id, error instanceof Error ? error.message : String(error), agentDir);
-      return { ok: false, error: `目标会话忙且队列不可用：${String(error)}` };
+      return rejected(`目标会话忙且队列不可用：${String(error)}`);
     }
-    return {
-      ok: true,
+    return accepted({
       dispatchId: dispatch.id,
       sessionId,
       sessionPath,
       queued: false,
       reused: reusedExisting,
-    };
+    });
   }
   void session.prompt(prompt).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -874,14 +985,13 @@ async function dispatchPixieTask(
       });
     }
   });
-  return {
-    ok: true,
+  return accepted({
     dispatchId: dispatch.id,
     sessionId,
     sessionPath,
     queued: false,
     reused: reusedExisting,
-  };
+  });
 }
 
 /**

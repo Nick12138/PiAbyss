@@ -4,10 +4,12 @@ import {
   ensurePixiePersonaFile,
   failDispatch,
   findDispatchBySession,
+  findDuplicateDispatchRequest,
   hasActiveDispatchFor,
   listDispatches,
   listDispatchesForPanel,
   parsePixieModelRef,
+  pixieClockLine,
   reactivateDispatchAfterReply,
   registerDispatch,
   resetPixieStateForTests,
@@ -20,7 +22,11 @@ import {
   setPixieContext,
   getKnownWorkspaces,
 } from "./pixie-agent-runner.js";
-import { buildDispatchTaskPrompt } from "./pixie-controller.js";
+import {
+  buildDispatchTaskPrompt,
+  createPixieControlPlaneDeps,
+  type PixieDispatchRequest,
+} from "./pixie-controller.js";
 import { buildPromptWithAttachments, toSdkImages } from "./agent-controller.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { localDayKey } from "./pixie-usage.js";
@@ -304,6 +310,134 @@ describe("pixie delegation registry", () => {
 
     // Reply on a non-awaiting record fails.
     expect("error" in reactivateDispatchAfterReply(record.id, "again", agentDir)).toBe(true);
+  });
+});
+
+describe("pixie dispatch 重复提交防护", () => {
+  it("findDuplicateDispatchRequest：同 cwd + 逐字相同 task 的活跃记录才命中", () => {
+    const agentDir = freshAgentDir();
+    const record = registerDispatch({
+      cwd: "D:/ws",
+      sessionId: "dup-1",
+      sessionPath: null,
+      task: "列出顶层目录",
+      agentDir,
+    });
+    expect(
+      findDuplicateDispatchRequest({ agentDir, cwd: "D:/ws", task: "列出顶层目录", withinMs: 30_000 })?.id,
+    ).toBe(record.id);
+    // 任务文本改一个字 = 新任务，不去重。
+    expect(
+      findDuplicateDispatchRequest({ agentDir, cwd: "D:/ws", task: "列出顶层文件", withinMs: 30_000 }),
+    ).toBeNull();
+    // 别的会话（cwd 不同）不去重。
+    expect(
+      findDuplicateDispatchRequest({ agentDir, cwd: "D:/other", task: "列出顶层目录", withinMs: 30_000 }),
+    ).toBeNull();
+    // 出了窗口不去重。
+    expect(
+      findDuplicateDispatchRequest({
+        agentDir,
+        cwd: "D:/ws",
+        task: "列出顶层目录",
+        withinMs: 30_000,
+        now: record.createdAt + 31_000,
+      }),
+    ).toBeNull();
+    // 已到终态（失败/回调完成）的记录不再充当去重依据。
+    failDispatch(record.id, "boom", agentDir);
+    expect(
+      findDuplicateDispatchRequest({ agentDir, cwd: "D:/ws", task: "列出顶层目录", withinMs: 30_000 }),
+    ).toBeNull();
+  });
+
+  it("受理已落记录后的原样重试 → 回原 dispatchId，不再开第二个会话", async () => {
+    const agentDir = freshAgentDir();
+    const factory = {
+      deps: { agentDir },
+      canonicalizeCwd: (cwd: string) => cwd,
+      findBoundGraph: () => null,
+    } as unknown as WorkspaceGraphFactory;
+    const record = registerDispatch({
+      cwd: "D:/ws",
+      sessionId: "dup-2",
+      sessionPath: "D:/s.jsonl",
+      task: "列出顶层目录",
+      agentDir,
+    });
+
+    const outcome = await createPixieControlPlaneDeps(factory).dispatch({
+      cwd: "D:/ws",
+      task: "列出顶层目录",
+      newSession: true,
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.dispatchId).toBe(record.id);
+    expect(outcome.queued).toBe(true);
+    expect(outcome.queuedNote).toContain("本次没有重复派发");
+  });
+
+  it("上一条还在受理中收到同样的请求 → 明确拒绝，不重复执行", async () => {
+    const agentDir = freshAgentDir();
+    const workspace = freshAgentDir();
+    setPixieContext(agentDir, [workspace]);
+    let release: (value: { error: Error }) => void = () => undefined;
+    const factory = {
+      deps: { agentDir },
+      canonicalizeCwd: (cwd: string) => cwd,
+      findBoundGraph: () => null,
+      ensureBackgroundGraph: () => new Promise((resolve) => (release = resolve)),
+    } as unknown as WorkspaceGraphFactory;
+    const dispatch = createPixieControlPlaneDeps(factory).dispatch;
+
+    const pending = dispatch({ cwd: workspace, task: "慢一点的委派" });
+    const resubmit = await dispatch({ cwd: workspace, task: "慢一点的委派" });
+    expect(resubmit.ok).toBe(false);
+    if (resubmit.ok) return;
+    expect(resubmit.error).toContain("正在受理中");
+
+    release({ error: new Error("测试：后台打开失败") });
+    const first = await pending;
+    expect(first.ok).toBe(false);
+  });
+
+  it("redispatch（retryOf）是有意重跑，不受去重约束", async () => {
+    const agentDir = freshAgentDir();
+    const factory = {
+      deps: { agentDir },
+      canonicalizeCwd: (cwd: string) => cwd,
+      findBoundGraph: () => null,
+    } as unknown as WorkspaceGraphFactory;
+    const record = registerDispatch({
+      cwd: "D:/ws",
+      sessionId: "dup-3",
+      sessionPath: null,
+      task: "重跑一次",
+      agentDir,
+    });
+    // retryOf 只由 Host 内部的重派路径填写，环回契约传不进来。
+    const request: PixieDispatchRequest = {
+      cwd: "D:/ws",
+      task: "重跑一次",
+      retryOf: record.id,
+    };
+    const outcome = await createPixieControlPlaneDeps(factory).dispatch(request);
+    // 走到受理本体才会报「工作区未打开」，说明两道去重都被跳过。
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.error).toContain("目标工作区未打开");
+  });
+});
+
+describe("pixie 时间锚点（新会话段前导）", () => {
+  it("写明日期、周几、时刻与时区，并提示跨天要重新校准", () => {
+    const line = pixieClockLine(new Date(2026, 9, 15, 9, 24));
+    expect(line).toContain("2026-10-15");
+    expect(line).toContain("周四");
+    expect(line).toContain("09:24");
+    expect(line).toContain("UTC");
+    expect(line).toContain("date");
   });
 });
 
