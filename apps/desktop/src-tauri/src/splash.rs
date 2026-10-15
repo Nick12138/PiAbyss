@@ -189,9 +189,7 @@ pub async fn splash_finish<R: tauri::Runtime>(app: AppHandle<R>) {
 
 /// splash 前端拉取上下文（语言 + 当前阶段）。
 #[tauri::command]
-pub async fn splash_context(
-    state: tauri::State<'_, AppState>,
-) -> Result<SplashContext, String> {
+pub async fn splash_context(state: tauri::State<'_, AppState>) -> Result<SplashContext, String> {
     let language = match state.settings.lock().await.settings.language {
         Some(DesktopLanguage::Zh) => Some("zh".to_string()),
         Some(DesktopLanguage::En) => Some("en".to_string()),
@@ -214,8 +212,12 @@ mod tests {
         assert_eq!(SPLASH_INITIAL_STAGE, "preparing");
         assert_eq!(MIN_SPLASH_VISIBLE_MS, 3_000);
         // 看门狗必须显著长于保底停留，否则正常启动也会被兜底路径抢跑。
-        assert!(SPLASH_WATCHDOG_MS > MIN_SPLASH_VISIBLE_MS * 10);
+        const {
+            assert!(SPLASH_WATCHDOG_MS > MIN_SPLASH_VISIBLE_MS * 10);
+        }
         // 交接延迟要短到用户感知不到，又不能为 0（否则两个窗口同时消失）。
-        assert!(HANDOFF_DELAY_MS > 0 && HANDOFF_DELAY_MS < 1_000);
+        const {
+            assert!(HANDOFF_DELAY_MS > 0 && HANDOFF_DELAY_MS < 1_000);
+        }
     }
 }
