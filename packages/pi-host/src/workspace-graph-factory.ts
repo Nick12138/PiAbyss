@@ -136,9 +136,7 @@ export class WorkspaceGraphFactory {
    * opened. Idempotent; fails SERVICE_GRAPH_BUSY while a user switch owns the
    * service graph lock.
    */
-  ensureBackgroundGraph(
-    cwd: string,
-  ): Promise<{ graph: WorkspaceGraph } | { error: HostError }> {
+  ensureBackgroundGraph(cwd: string): Promise<{ graph: WorkspaceGraph } | { error: HostError }> {
     return this.workspaceLifecycle.ensureBackgroundGraph(cwd);
   }
 
@@ -252,6 +250,11 @@ export class WorkspaceGraphFactory {
   /** Busy-session check scoped to one bound graph (active or parked). */
   isGraphBusy(graph: WorkspaceGraph): boolean {
     return this.workspaceLifecycle.graphIsBusy(graph);
+  }
+
+  /** Every bound graph (active first, then parked) — for busy diagnostics. */
+  boundGraphs(): WorkspaceGraph[] {
+    return this.workspaceLifecycle.boundGraphs();
   }
 
   /** Park/reactivation transition check scoped to one bound graph. */

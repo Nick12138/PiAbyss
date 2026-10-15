@@ -188,6 +188,12 @@ function lifecycleWith(
       disposeIdleSessionRuntimes: vi.fn().mockResolvedValue(undefined),
       disposeGraphSessionRuntimes: vi.fn().mockResolvedValue(undefined),
       isSessionBusy: vi.fn((session: { isIdle?: boolean }) => session?.isIdle === false),
+      hasRunningBackgroundSessions: vi.fn(
+        (graph: { backgroundSessions: Map<string, { agentSession: { isIdle?: boolean } }> }) =>
+          [...graph.backgroundSessions.values()].some(
+            (runtime) => runtime.agentSession?.isIdle === false,
+          ),
+      ),
     } as unknown as SessionRuntimeCache,
   );
 }
@@ -277,6 +283,17 @@ function busyGraph(canonicalCwd: string, workspaceId: string): WorkspaceGraph {
   } as unknown as WorkspaceGraph;
 }
 
+/** The 小精灵 shape: an idle graph holding one idle resident background Session. */
+function residentGraph(canonicalCwd: string, workspaceId: string): WorkspaceGraph {
+  const graph = busyGraph(canonicalCwd, workspaceId);
+  Reflect.set(graph.agentSession!, "isIdle", true);
+  graph.backgroundSessions.set("resident", {
+    sessionId: "resident",
+    agentSession: { isIdle: true, sessionId: "resident" },
+  } as never);
+  return graph;
+}
+
 describe("Workspace lifecycle busy-graph parking", () => {
   it("parks a busy graph with its own identity and keeps its live wiring", async () => {
     const onBoundWorkspacesChanged = vi.fn();
@@ -305,6 +322,35 @@ describe("Workspace lifecycle busy-graph parking", () => {
     await retain(subject, idle);
     expect(idle.backgroundRunning).toBe(false);
     expect(idle.parkedIdentity).toBeUndefined();
+  });
+
+  it("reads a resident background Session as residence, not busyness", () => {
+    const subject = lifecycleWith({ platform: "linux" });
+    const resident = residentGraph("/repo/pixie", "workspace-pixie");
+
+    expect(subject.graphIsBusy(resident)).toBe(false);
+    expect(subject.graphHasResidentSessions(resident)).toBe(true);
+  });
+
+  it("still parks a resident-only graph alive and protects it from eviction", async () => {
+    const subject = lifecycleWith({ platform: "linux", maxBoundWorkspaces: 1 });
+    const resident = residentGraph("/repo/pixie", "workspace-pixie");
+    const unsubscribeAgent = resident.unsubscribeAgent as unknown as ReturnType<typeof vi.fn>;
+    const extensionUiCleanup = resident.extensionUiCleanup as unknown as ReturnType<typeof vi.fn>;
+
+    await retain(subject, resident);
+
+    // Dropping it would throw away the session the 小精灵 still expects to
+    // find, and suspending its providers would break its next run.
+    expect(resident.backgroundRunning).toBe(true);
+    expect(unsubscribeAgent).not.toHaveBeenCalled();
+    expect(extensionUiCleanup).not.toHaveBeenCalled();
+    // Yet the Host is no longer reported busy, so package mutations get through.
+    expect(subject.hasBusyRetainedGraphs()).toBe(false);
+
+    const dispose = vi.spyOn(subject, "disposeGraph").mockResolvedValue();
+    await retain(subject, retainableGraph("/repo/other"));
+    expect(dispose).not.toHaveBeenCalled();
   });
 
   it("evicts idle graphs but never busy parked ones, exceeding the bound if needed", async () => {

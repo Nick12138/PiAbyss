@@ -550,12 +550,50 @@ function isSettingsOnlyPackageMutation(
  * their loaded resources and pick the change up on their next reload or
  * rebuild (same policy as the skills settings write paths).
  */
+/** What the busy gate actually saw, per bound graph.
+ *  A refusal used to be undiagnosable: the gate returned a bare `AGENT_BUSY`
+ *  with no log line, so a live run and a stuck in-memory flag looked identical
+ *  from outside. `residentBackground` is reported even when nothing runs there
+ *  so a spurious refusal shows up as "N resident, 0 running". */
+function busyGraphReport(factory: WorkspaceGraphFactory): Array<Record<string, unknown>> {
+  const view = (session: NonNullable<WorkspaceGraph["agentSession"]>) => ({
+    sessionId: session.sessionId,
+    isIdle: session.isIdle,
+    lockHeld: factory.getSessionOperationLock(session).isHeld(),
+  });
+  return factory.boundGraphs().flatMap((graph) => {
+    const runningBackground = [...graph.backgroundSessions.values()].filter((runtime) =>
+      factory.isSessionBusy(runtime.agentSession),
+    );
+    const activeBusy = graph.agentSession !== null && factory.isSessionBusy(graph.agentSession);
+    if (!activeBusy && runningBackground.length === 0) return [];
+    return [
+      {
+        cwd: graph.canonicalCwd,
+        active: activeBusy && graph.agentSession ? view(graph.agentSession) : null,
+        background: runningBackground.map((runtime) => view(runtime.agentSession)),
+        residentBackground: graph.backgroundSessions.size,
+      },
+    ];
+  });
+}
+
 function packageMutationBusyError(
   factory: WorkspaceGraphFactory,
   settingsOnly: boolean,
 ): ReturnType<typeof createHostError> | null {
   const busy = settingsOnly ? factory.hasBusySessions() : factory.hasAnyBusySessions();
   if (!busy) return null;
+  // The refusal itself must never depend on the report: a half-built graph can
+  // make the read throw, and losing the busy signal would turn a retryable
+  // rejection into a failed mutation.
+  let graphs: unknown;
+  try {
+    graphs = busyGraphReport(factory);
+  } catch (error) {
+    graphs = `report failed: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  logger.warn("Package mutation refused by the busy gate", { settingsOnly, graphs });
   return createHostError("AGENT_BUSY", "Stop the agent before modifying packages", {
     retryable: true,
   });

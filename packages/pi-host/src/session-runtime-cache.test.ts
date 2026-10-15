@@ -152,10 +152,8 @@ describe("idle Session cache", () => {
     // PIABYSS_IDLE_SESSION_CACHE_LIMIT is set to a different value.
     process.env.PIABYSS_IDLE_SESSION_CACHE_LIMIT = "5";
     vi.resetModules();
-    const {
-      MAX_IDLE_SESSION_CACHE: pinnedCacheLimit,
-      SessionRuntimeCache: pinnedCache,
-    } = await import("./session-runtime-cache.js");
+    const { MAX_IDLE_SESSION_CACHE: pinnedCacheLimit, SessionRuntimeCache: pinnedCache } =
+      await import("./session-runtime-cache.js");
     const runtimeCache = new pinnedCache({
       getGraph: () => null,
       getServer: () => null,
@@ -256,9 +254,7 @@ describe("active Session state", () => {
       getTree: () => unknown[];
       getLeafId: () => string | null;
     };
-    nextManager.getTree = () => [
-      { entry: { id: "n1", type: "message" }, children: [] },
-    ];
+    nextManager.getTree = () => [{ entry: { id: "n1", type: "message" }, children: [] }];
     nextManager.getLeafId = () => "n1";
     const graph = {
       ...graphFrom(current),
@@ -557,5 +553,35 @@ describe("background runtime promotion", () => {
 
     expect("error" in promoted).toBe(false);
     expect((promoted as SessionSnapshot).messages).toHaveLength(1);
+  });
+});
+
+describe("busy Session check", () => {
+  function cacheWithGraph(graph: WorkspaceGraph): SessionRuntimeCache {
+    return new SessionRuntimeCache({
+      getGraph: () => graph,
+      getServer: () => null,
+      getCurrentRunId: () => null,
+      sessionPathsEqual: () => false,
+    });
+  }
+
+  function graphWithBackgroundSession(idle: boolean): WorkspaceGraph {
+    return {
+      agentSession: { isIdle: true },
+      backgroundSessions: new Map([["resident", { agentSession: { isIdle: idle } }]]),
+    } as unknown as WorkspaceGraph;
+  }
+
+  // `backgroundSessions` doubles as a residence: the 小精灵 parks its workspace
+  // session there between turns and nothing ever takes it back out. Reading map
+  // size as busyness made that idle resident wedge every package mutation on
+  // the whole Host, with no run visible anywhere in the UI.
+  it("does not count an idle resident background Session as busy", () => {
+    expect(cacheWithGraph(graphWithBackgroundSession(true)).hasBusySessions()).toBe(false);
+  });
+
+  it("counts a background Session that is still running as busy", () => {
+    expect(cacheWithGraph(graphWithBackgroundSession(false)).hasBusySessions()).toBe(true);
   });
 });

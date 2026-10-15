@@ -263,11 +263,29 @@ export class SessionRuntimeCache {
     return observed.queue;
   }
 
+  /**
+   * True when one of this graph's background runtimes is actually mid-run.
+   *
+   * `backgroundSessions` is a residence, not a run counter: entries are added
+   * when a session is busy and only removed on settle, promotion or disposal —
+   * and a deliberately resident session (the 小精灵 keeps its workspace session
+   * parked here between turns, see `pixie-agent-runner.ts`) never leaves. Map
+   * size therefore says nothing about whether anything is running, and busy
+   * gates that read it refuse package mutations for as long as that workspace
+   * stays bound.
+   */
+  hasRunningBackgroundSessions(graph: WorkspaceGraph): boolean {
+    for (const runtime of graph.backgroundSessions.values()) {
+      if (this.isSessionBusy(runtime.agentSession)) return true;
+    }
+    return false;
+  }
+
   hasBusySessions(): boolean {
     const graph = this.context.getGraph();
     if (!graph) return false;
     if (graph.agentSession && this.isSessionBusy(graph.agentSession)) return true;
-    return graph.backgroundSessions.size > 0;
+    return this.hasRunningBackgroundSessions(graph);
   }
 
   getSessionRuntimeInfo(

@@ -410,7 +410,7 @@ export class WorkspaceLifecycle {
       // Suspending a busy graph's providers would break its in-flight model
       // calls during the build window. Skip the pre-merge suspension there:
       // the retention park branch keeps those providers registered anyway.
-      if (previousGraph && !this.graphIsBusy(previousGraph)) {
+      if (previousGraph && !this.graphHasResidentSessions(previousGraph)) {
         this.suspendGraphProviders(previousGraph);
       }
       const built = await this.buildServices({
@@ -528,7 +528,9 @@ export class WorkspaceLifecycle {
    * (a pixie delegation never cancels a user's in-flight switch) and fails
    * busy instead.
    */
-  async ensureBackgroundGraph(cwd: string): Promise<{ graph: WorkspaceGraph } | { error: HostError }> {
+  async ensureBackgroundGraph(
+    cwd: string,
+  ): Promise<{ graph: WorkspaceGraph } | { error: HostError }> {
     const server = this.context.getServer();
     if (!server) {
       return { error: createHostError("HOST_NOT_READY", "Server not bound") };
@@ -548,10 +550,16 @@ export class WorkspaceLifecycle {
     if (activeGraph && workspaceCanonicalPathsEqual(activeGraph.canonicalCwd, canonical)) {
       return { graph: activeGraph };
     }
-    if (this.reactivatingGraph && workspaceCanonicalPathsEqual(this.reactivatingGraph.canonicalCwd, canonical)) {
+    if (
+      this.reactivatingGraph &&
+      workspaceCanonicalPathsEqual(this.reactivatingGraph.canonicalCwd, canonical)
+    ) {
       return { graph: this.reactivatingGraph };
     }
-    if (this.parkingGraph && workspaceCanonicalPathsEqual(this.parkingGraph.canonicalCwd, canonical)) {
+    if (
+      this.parkingGraph &&
+      workspaceCanonicalPathsEqual(this.parkingGraph.canonicalCwd, canonical)
+    ) {
       return { graph: this.parkingGraph };
     }
     const retained = this.retainedGraphs.get(this.retainedGraphKey(canonical));
@@ -867,10 +875,13 @@ export class WorkspaceLifecycle {
       return;
     }
     if (!this.isBoundGraph(graph)) return;
-    if (this.graphIsBusy(graph)) {
-      logger.warn("Parked busy workspace changed on disk; reusing graph", {
-        cwd: graph.canonicalCwd,
-      });
+    if (this.graphHasResidentSessions(graph)) {
+      logger.warn(
+        "Parked workspace with live or resident sessions changed on disk; reusing graph",
+        {
+          cwd: graph.canonicalCwd,
+        },
+      );
       return;
     }
     logger.info("Parked idle workspace changed on disk; disposing for fresh rebuild", {
@@ -881,11 +892,29 @@ export class WorkspaceLifecycle {
     this.context.onBoundWorkspacesChanged?.();
   }
 
+  /**
+   * True while something in this graph is ACTUALLY running — the question busy
+   * gates and the Host-wide phase ask. See
+   * `SessionRuntimeCache.hasRunningBackgroundSessions` for why residence is not
+   * busyness.
+   */
   graphIsBusy(graph: WorkspaceGraph): boolean {
     return (
       (graph.agentSession !== null && this.sessionRuntimeCache.isSessionBusy(graph.agentSession)) ||
-      graph.backgroundSessions.size > 0
+      this.sessionRuntimeCache.hasRunningBackgroundSessions(graph)
     );
+  }
+
+  /**
+   * True while this graph holds anything that must survive teardown: a run in
+   * flight, or a session deliberately parked in it (the 小精灵's resident
+   * workspace session). The park / eviction / provider-suspension paths ask
+   * this rather than `graphIsBusy` — disposing such a graph drops a session its
+   * owner still expects to find, and suspending its providers breaks the model
+   * registrations that resident session relies on.
+   */
+  graphHasResidentSessions(graph: WorkspaceGraph): boolean {
+    return this.graphIsBusy(graph) || graph.backgroundSessions.size > 0;
   }
 
   /** True when the graph is mid park or mid reactivation — not merely parked. */
@@ -934,7 +963,7 @@ export class WorkspaceLifecycle {
   }
 
   private async retainGraph(graph: WorkspaceGraph): Promise<void> {
-    if (graph.staleOnDisk && !this.graphIsBusy(graph)) {
+    if (graph.staleOnDisk && !this.graphHasResidentSessions(graph)) {
       // Deferred verification found on-disk drift while this graph was bound:
       // an idle graph is rebuilt on next switch-in instead of being parked.
       graph.staleOnDisk = undefined;
@@ -952,7 +981,7 @@ export class WorkspaceLifecycle {
       await this.disposeGraph(graph);
       return;
     }
-    if (this.graphIsBusy(graph)) {
+    if (this.graphHasResidentSessions(graph)) {
       // Park: keep the busy graph fully alive in the background. Its sessions
       // keep running and emitting under the graph's own identity, so the
       // agent subscription, provider registration and Extension UI binding
@@ -1165,7 +1194,7 @@ export class WorkspaceLifecycle {
     // still present: ModelRuntime merges same-id extension Provider configs.
     // A busy outgoing graph keeps its providers registered instead — its
     // in-flight model calls must survive the reactivation window.
-    if (args.previousGraph && !this.graphIsBusy(args.previousGraph)) {
+    if (args.previousGraph && !this.graphHasResidentSessions(args.previousGraph)) {
       this.suspendGraphProviders(args.previousGraph);
     }
     this.resumeGraphProviders(graph);

@@ -92,6 +92,7 @@ function mockFactory(opts: {
       }),
     },
     resourceIdMap: new Map(),
+    backgroundSessions: new Map<string, { agentSession: { isIdle: boolean } }>(),
     resourceLoader: {
       reload: vi.fn(async () => {}),
     },
@@ -166,6 +167,14 @@ function mockFactory(opts: {
     requestShutdown: vi.fn(async () => {}),
   };
 
+  const parkedGraph = {
+    canonicalCwd: "/parked",
+    agentSession: { isIdle: true, sessionId: "parked-active" },
+    backgroundSessions: new Map([
+      ["parked-run", { agentSession: { isIdle: false, sessionId: "parked-run" } }],
+    ]),
+  };
+
   return {
     checkIdentity: () => null,
     getGraph: () => g,
@@ -176,6 +185,10 @@ function mockFactory(opts: {
     hasBusySessions: () => opts.agentBusy === true || !g.agentSession.isIdle,
     hasAnyBusySessions: () =>
       opts.parkedBusy === true || opts.agentBusy === true || !g.agentSession.isIdle,
+    // `parkedBusy` stands for a genuinely running background Session in
+    // another bound graph, so the busy-gate report has something real to name.
+    isSessionBusy: (session: { isIdle?: boolean }) => session?.isIdle === false,
+    boundGraphs: () => (opts.parkedBusy === true ? [g, parkedGraph] : [g]),
     setSessionRunId: () => {},
     clearSessionRunId: () => {},
     publishCurrentRuntimeState: vi.fn(),
