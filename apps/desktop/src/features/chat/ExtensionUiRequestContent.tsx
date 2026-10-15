@@ -737,6 +737,17 @@ export function ExtensionUiRequestContent({
     </>
   );
   const headerClassName = "flex min-w-0 items-center gap-2.5 rounded-md";
+  /**
+   * The fold header is the card's top band, so it bleeds back over the card's
+   * own `px-3.5 py-3` padding: negative margins cancelled by matching padding,
+   * which leaves every row below it exactly where it was. Corners stay square —
+   * the card's `overflow-hidden` clips the wash to its own outline, and a
+   * rounded box in here would only leave slivers of bare background at the
+   * corners. Keyboard focus shows the same wash rather than a ring: an inset
+   * outline drawn around a bare title reads as a stray border.
+   */
+  const foldHeaderClassName =
+    "-mx-3.5 -mb-1 -mt-3 flex min-w-0 cursor-pointer items-center gap-2.5 px-3.5 pb-1 pt-3 transition-colors hover:bg-surface-overlay/60 focus-visible:bg-surface-overlay focus-visible:outline-none";
 
   return (
     <div
@@ -754,7 +765,7 @@ export function ExtensionUiRequestContent({
             aria-label={t("extUiCollapseQuestion")}
             title={t("extUiCollapseQuestion")}
             data-extension-ui-fold-toggle="true"
-            className={`${headerClassName} cursor-pointer transition-colors hover:bg-surface-overlay/60 focus-visible:outline focus-visible:outline-[1.5px] focus-visible:outline-focus`}
+            className={foldHeaderClassName}
             onClick={() => onToggleFold?.()}
             onKeyDown={(event) => {
               if (event.key !== "Enter" && event.key !== " ") return;

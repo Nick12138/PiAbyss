@@ -112,7 +112,7 @@ export function InlineExtensionUiRequest() {
               aria-label={t("extUiCollapseQuestion")}
               title={t("extUiCollapseQuestion")}
               data-extension-ui-fold-toggle="true"
-              className="flex min-h-20 cursor-pointer items-center gap-2 rounded-md pr-7 text-sm text-muted transition-colors hover:bg-surface-overlay/60"
+              className="-mx-3.5 flex min-h-20 cursor-pointer items-center gap-2 pl-3.5 pr-7 text-sm text-muted transition-colors hover:bg-surface-overlay/60 focus-visible:bg-surface-overlay focus-visible:outline-none"
               onClick={() => setCollapsed(true)}
               onKeyDown={(event) => {
                 if (event.key !== "Enter" && event.key !== " ") return;
@@ -147,7 +147,7 @@ export function InlineExtensionUiRequest() {
             aria-expanded={false}
             aria-controls={contentId}
             title={t("extUiExpandQuestion")}
-            className="group flex w-full items-center gap-2 rounded text-left"
+            className="group -mx-3.5 -my-3 flex cursor-pointer items-center gap-2 px-3.5 py-3 text-left transition-colors hover:bg-surface-overlay/60 focus-visible:bg-surface-overlay focus-visible:outline-none"
             onClick={() => setCollapsed(false)}
           >
             {highRisk ? (
