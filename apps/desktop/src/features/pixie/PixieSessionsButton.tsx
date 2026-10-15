@@ -36,6 +36,8 @@ export function PixieSessionsButton() {
   const close = () => setOpen(false);
 
   // 面板挂在按钮正下方、右边缘与按钮对齐，并整体夹进视口。
+  // 必须按 right 锚定：面板只有 max-width，实际宽度随会话名收缩，
+  // 用 left = rect.right - maxWidth 定位会让窄面板整体往左飘离按钮。
   useLayoutEffect(() => {
     if (!open) return;
     const updatePosition = () => {
@@ -45,12 +47,14 @@ export function PixieSessionsButton() {
       const maxWidth = Math.min(
         PANEL_MAX_WIDTH,
         Math.max(1, window.innerWidth - VIEWPORT_MARGIN * 2),
+        // 面板从按钮右边缘向左生长，留出视口左边距才不会溢出。
+        Math.max(1, rect.right - VIEWPORT_MARGIN),
       );
-      const left = Math.min(
-        Math.max(VIEWPORT_MARGIN, rect.right - maxWidth),
-        Math.max(VIEWPORT_MARGIN, window.innerWidth - maxWidth - VIEWPORT_MARGIN),
-      );
-      setPanelStyle({ left, top: Math.round(rect.bottom + ANCHOR_GAP), maxWidth });
+      setPanelStyle({
+        right: Math.max(VIEWPORT_MARGIN, Math.round(window.innerWidth - rect.right)),
+        top: Math.round(rect.bottom + ANCHOR_GAP),
+        maxWidth,
+      });
     };
     updatePosition();
     window.addEventListener("resize", updatePosition);
@@ -88,7 +92,7 @@ export function PixieSessionsButton() {
       aria-label={t("pixieSessionsTitle")}
       data-testid="pixie-sessions-panel"
       className="theme-floating-surface fixed z-50 flex flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl"
-      style={panelStyle ?? { visibility: "hidden", left: 0, top: 0, maxWidth: PANEL_MAX_WIDTH }}
+      style={panelStyle ?? { visibility: "hidden", right: 0, top: 0, maxWidth: PANEL_MAX_WIDTH }}
     >
       <div className="scrollbar-subtle max-h-[60vh] min-h-0 overflow-y-auto p-1.5">
         <SessionList

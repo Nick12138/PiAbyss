@@ -112,6 +112,30 @@ describe("PixieSessionsButton 点击浮层", () => {
     expect(within(panel).getByText("Position the menu")).toBeInTheDocument();
   });
 
+  it("面板右边缘贴住按钮右边缘（不随面板内容宽度漂移）", async () => {
+    const user = userEvent.setup();
+    render(<PixieSessionsButton />);
+    const button = screen.getByTestId("pixie-sessions-button");
+    vi.spyOn(button, "getBoundingClientRect").mockReturnValue({
+      left: 830,
+      right: 900,
+      top: 20,
+      bottom: 40,
+      width: 70,
+      height: 20,
+    } as DOMRect);
+
+    await user.click(button);
+
+    const panel = await screen.findByTestId("pixie-sessions-panel");
+    // 锚定用 right 而非 left：面板只有 max-width，宽度会随会话名收缩，
+    // 按 left = rect.right - maxWidth 定位时窄面板会整体飘离按钮。
+    expect(panel.style.right).toBe(`${window.innerWidth - 900}px`);
+    expect(panel.style.left).toBe("");
+    expect(panel.style.top).toBe("46px");
+    expect(panel.style.maxWidth).toBe("320px");
+  });
+
   it("再点一次按钮即收起（toggle）", async () => {
     const user = userEvent.setup();
     render(<PixieSessionsButton />);
