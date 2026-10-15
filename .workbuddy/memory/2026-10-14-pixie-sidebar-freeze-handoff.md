@@ -40,10 +40,17 @@ dev 的「挂载→模拟卸载（清掉）→重放挂载（被守卫跳过，�
 
 ## 明日待办
 
-1. **全量 vitest + typecheck + eslint**（WorkspacePicker/测试改动后未全量验证过）。
-2. **dev 实测**：重启 dev 应用（避免 HMR 旧 store 实例干扰）→ 点小精灵 →
-   确认：会话列表可见、上一个会话高亮、上一个工作区行高亮、点行/点「新会话」
-   能正确切回。
+1. ~~**全量 vitest + typecheck + eslint**~~ ✅ **已完成（2026-10-14 23:53）**：
+   desktop 全量 **186 文件 / 1652 通过（+3 跳过）**、`tsc --noEmit` ✅、
+   改动文件 ESLint ✅、`check-format.mjs` ✅。
+   顺带核对了接线：`Sidebar.tsx` pixie 分支 → `pixieSidebarSnapshot` →
+   `<SessionList frozen={...} />`；`WorkspacePicker` 的 `frozenSelectedCwd`
+   让工作区行选中视觉跟随快照。`Sidebar.pixie.dom.test.tsx` 两条用例直接钉住
+   「列表可见 + 会话选中 + 工作区选中 / 无快照则空」，`SessionList.frozen`
+   5 例覆盖点行导航与 RPC 禁用。
+2. **dev 实测（待 Nick 重启）**：重启 dev 应用（**必须重启**，避免 HMR 旧 store
+   实例干扰）→ 点小精灵 → 确认：会话列表可见、上一个会话高亮、上一个工作区行
+   高亮、点行/点「新会话」能正确切回。
 3. 若仍有问题，排查方向：PixiePage capture 的触发条件
    （`prevCwdRef === null` + `acquiredHostInstanceRef` 守卫，PixiePage.tsx 挂载 effect）。
 
