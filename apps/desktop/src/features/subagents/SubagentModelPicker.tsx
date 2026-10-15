@@ -195,9 +195,9 @@ export function SubagentModelPicker({
         title={activeKey ?? undefined}
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="truncate leading-none">{activeLabel}</span>
+        <span className="truncate">{activeLabel}</span>
         {effectiveThinking !== undefined && (
-          <span className="shrink-0 whitespace-nowrap leading-none text-foreground/70">
+          <span className="shrink-0 whitespace-nowrap text-foreground/70">
             {thinkingLevelLabel(effectiveThinking)}
           </span>
         )}

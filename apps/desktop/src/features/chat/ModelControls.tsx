@@ -797,9 +797,11 @@ function SessionModelControls() {
             setMenuOpen((open) => !open);
           }}
         >
-          <span className="truncate leading-none">{activeModelDisplayName || t("modelNone")}</span>
+          {/* 不能加 leading-none：truncate 自带 overflow:hidden，行高压到 1 时
+            * 内容盒只有 12px 高，Inter 的下伸部（g/p/y）会被裁掉一截。 */}
+          <span className="truncate">{activeModelDisplayName || t("modelNone")}</span>
           {activeThinkingLevel && (
-            <span className="shrink-0 whitespace-nowrap leading-none text-foreground/70">
+            <span className="shrink-0 whitespace-nowrap text-foreground/70">
               {activeThinkingLevel}
             </span>
           )}
