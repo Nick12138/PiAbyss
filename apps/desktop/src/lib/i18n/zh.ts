@@ -1985,8 +1985,6 @@ export const zh: Record<MessageKey, string> = {
   pixieKindDone: "已完成",
   pixieKindError: "已报错",
   pixieKindAsk: "等你回复",
-  pixieSessionsButton: "会话",
-  pixieSessionsTitle: "小精灵的会话",
   pixieUnavailable: "小精灵暂不可用（主机未就绪或插件未启用）",
   pixieRetryAcquire: "重试",
 

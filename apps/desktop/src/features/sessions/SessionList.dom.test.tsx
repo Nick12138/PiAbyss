@@ -555,3 +555,59 @@ describe("SessionList flatByDate（小精灵弹窗平铺模式）", () => {
     expect(screen.getByText("Fresh chat")).toBeInTheDocument();
   });
 });
+
+describe("SessionList keepPage（小精灵页的侧边栏列表）", () => {
+  beforeEach(() => {
+    clearPendingSessionRevealForTest();
+    useAppStore.setState({
+      host,
+      workspace,
+      session: null,
+      page: "pixie",
+      connecting: false,
+      rehydrating: false,
+      desynchronized: false,
+      hostFatal: null,
+      sessionCatalog: { workspaceId: null, entries: {}, order: [], loaded: false },
+      sessionTerminalStates: {},
+      workspaceActivities: {},
+    });
+    useAppStore.getState().replaceSessionCatalog(workspace.id, [summary]);
+    vi.spyOn(hostClient, "request").mockResolvedValue({
+      ok: true,
+      result: { items: [summary] },
+    } as never);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    useAppStore.getState().setPage("chat");
+  });
+
+  it("keepPage 点会话行留在当前页，并把这条会话打开", async () => {
+    // 小精灵页左侧列表点历史会话要停在 pixie 页：跳回 chat 会触发本页卸载
+    // 时的「归还之前工作区」，与这次 session.open 抢活动工作区。
+    render(<SessionList keepPage showCreateAction={false} />);
+
+    fireEvent.click(screen.getByText("Position the menu"));
+
+    expect(useAppStore.getState().page).toBe("pixie");
+    await waitFor(() =>
+      expect(hostClient.request).toHaveBeenCalledWith(
+        "session.open",
+        expect.anything(),
+        { sessionPath: "/sessions/session-1.jsonl" },
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("不带 keepPage 时照旧跳回 chat 页（普通工作区行为）", () => {
+    render(<SessionList showCreateAction={false} />);
+
+    fireEvent.click(screen.getByText("Position the menu"));
+
+    expect(useAppStore.getState().page).toBe("chat");
+  });
+});

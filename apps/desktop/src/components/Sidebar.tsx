@@ -31,8 +31,6 @@ import {
   isCreateSessionPending,
   subscribeCreateSessionPending,
 } from "../lib/commands/actions";
-import { createNewSessionFromPixiePage } from "../features/pixie/pixie-previous-workspace";
-import { usePixieSidebarSnapshot } from "../features/pixie/pixie-sidebar-snapshot";
 
 const SIDEBAR_WIDTH_KEY = "piabyss.sidebar.width.v1";
 const DEFAULT_SIDEBAR_WIDTH = 268;
@@ -124,14 +122,10 @@ function NewSessionButton() {
       type="button"
       onClick={() => {
         const state = useAppStore.getState();
-        if (state.page === "pixie") {
-          // 小精灵页的「新会话」作用于进入小精灵前的工作区（先切回再建），
-          // 不在 pixie 工作区里误建小精灵会话。见 pixie-previous-workspace.ts。
-          void createNewSessionFromPixiePage();
-          return;
-        }
-        // Creating a session from Settings/Packages should land on the chat page.
-        if (state.page !== "chat") useAppStore.getState().setPage("chat");
+        // 小精灵页不跳页也不改作用域：活动工作区就是 pixie 工作区，
+        // 建出来的即新的小精灵会话（与左下列表同一工作区）。
+        // 其余非 chat 页（设置、插件库、备忘录）建完落到 chat。
+        if (state.page !== "chat" && state.page !== "pixie") state.setPage("chat");
         void createNewSession();
       }}
       disabled={!workspace?.servicesReady || pending}
@@ -165,8 +159,6 @@ export function SidebarLayout({
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const sidebarAutoInstant = useAppStore((s) => s.sidebarAutoInstant);
   const telegramViewActive = useTelegramWorkspaceActive();
-  // 小精灵页的侧边栏冻结快照（进入小精灵前的工作区目录 + 选中会话）。
-  const pixieSidebarSnapshot = usePixieSidebarSnapshot((s) => s.snapshot);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(() =>
     sidebarPref("piabyss.sidebar.sessionsCollapsed"),
   );
@@ -602,25 +594,19 @@ export function SidebarLayout({
 
             {/* Collapsed or not, the header row stays in place below Workspaces. */}
             <div className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-              {/* 小精灵页：会话列表渲染「冻结快照」（进入小精灵前的工作区
-                  目录 + 选中会话），上一个会话的选中态保留，点击行 = 离开
-                  小精灵切回该工作区并打开；无快照（冷启动直落 pixie）才为空。 */}
               {telegramViewActive ? (
                 <TelegramSessionList />
-              ) : page === "pixie" ? (
-                pixieSidebarSnapshot ? (
-                  <SessionList
-                    showCreateAction={false}
-                    collapsed={sessionsCollapsed}
-                    onToggleCollapsed={toggleSessionsCollapsed}
-                    frozen={pixieSidebarSnapshot}
-                  />
-                ) : null
               ) : (
+                /* 小精灵页与普通工作区同一套列表（活动工作区就是 pixie 工作区，
+                   目录/改名/归档/删除/导出全部照常）。差别只在 keepPage：点行
+                   留在小精灵页加载那条历史会话，委派面板与子代理跟着它；若跳回
+                   chat 页，本页卸载时的「归还之前工作区」会打断这次 session.open。
+                   「回到最新会话」在顶栏（PixieBackToCurrentButton）。 */
                 <SessionList
                   showCreateAction={false}
                   collapsed={sessionsCollapsed}
                   onToggleCollapsed={toggleSessionsCollapsed}
+                  keepPage={page === "pixie"}
                 />
               )}
             </div>

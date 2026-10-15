@@ -12,7 +12,6 @@ import { MemoSyncStatusDot } from "../features/memo/memo-sync-status";
 import { SubagentTitleMenu } from "../features/subagents/SubagentTitleMenu";
 import { PixieBackToCurrentButton } from "../features/pixie/PixieBackToCurrentButton";
 import { PixieNapButton } from "../features/pixie/PixieNapButton";
-import { PixieSessionsButton } from "../features/pixie/PixieSessionsButton";
 import { clampSessionTitleForDisplay } from "../lib/session-title-display";
 
 /** Single full-width app-level top bar replacing the three independent header
@@ -269,10 +268,9 @@ export function AppTopBar({
         {page === "memo" && <MemoSyncHeaderActions />}
         {page === "pixie" && (
           <>
-            {/* 打开历史段时出现的「回到最新会话」入口；正开着活段时自隐藏。 */}
+            {/* 打开历史段时出现的「回到最新会话」入口；正开着活段时自隐藏。
+                会话列表在侧边栏左下角，与普通工作区同款。 */}
             <PixieBackToCurrentButton />
-            {/* 会话列表入口收进 pixie 页自己的顶栏动作区（点击浮层选择/切换）。 */}
-            <PixieSessionsButton />
             <PixieNapButton />
           </>
         )}

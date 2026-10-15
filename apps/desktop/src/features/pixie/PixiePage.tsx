@@ -5,7 +5,8 @@
  * `pixie.ensureCurrent` 拿到锚点后走 `openSessionAcrossWorkspaces`（内部完成
  * workspace.setCurrent + session.open），此后转写/输入框/统计全部由标准
  * session.snapshot / agent.event 推送驱动——与普通会话同一套机制，仅展示不同：
- *   - 顶部动作（打个盹 / 会话列表弹窗）在 AppTopBar；
+ *   - 顶部动作（打个盹 / 回到最新会话）在 AppTopBar；会话列表在侧边栏左下，
+ *     与普通工作区同款（点行留在本页，keepPage）；
  *   - 右侧保留委派面板（pixie.dispatches 轮询 + 回复/插话/叫停/重试）；
  *   - ask 待回复时把输入框发送改道 pixie.reply；
  *   - 内嵌扩展 UI（ask_user_question 问卷等）与子代理对话视图对齐 ChatPage
@@ -43,9 +44,6 @@ import {
   type ComposerRuntime,
 } from "../chat/composer-runtime";
 import { usePixieViewStore } from "./pixie-store";
-import { rememberPixiePreviousWorkspace } from "./pixie-previous-workspace";
-import { usePixieSidebarSnapshot } from "./pixie-sidebar-snapshot";
-import { sessionCatalogItems } from "../../lib/stores/session-catalog";
 import { isSamePixiePath } from "../../lib/pixie-path";
 
 const DISPATCH_POLL_IDLE_MS = 5_000;
@@ -482,22 +480,6 @@ export function PixiePage() {
       const before = useAppStore.getState().workspace?.canonicalCwd ?? null;
       const pixieCwd = usePixieViewStore.getState().current?.cwd;
       prevCwdRef.current = before && !isSamePixiePath(before, pixieCwd) ? before : null;
-      // 同步给侧边栏「新会话」分支（见 pixie-previous-workspace.ts）：
-      // 小精灵页的「新会话」要作用于这个工作区，而不是 pixie 工作区。
-      rememberPixiePreviousWorkspace(prevCwdRef.current);
-      // 冻结侧边栏：小精灵页期间，侧边栏会话列表继续显示进入前的工作区
-      // 目录与选中会话（见 pixie-sidebar-snapshot.ts）。必须在 acquire 切
-      // 工作区/换会话目录之前捕获。
-      const app = useAppStore.getState();
-      if (prevCwdRef.current !== null && app.workspace) {
-        usePixieSidebarSnapshot.getState().capture({
-          workspace: app.workspace,
-          items: sessionCatalogItems(app.sessionCatalog),
-          activeSessionId: app.session?.sessionId ?? null,
-        });
-      } else {
-        usePixieSidebarSnapshot.getState().clear();
-      }
     }
     void acquire();
   }, [hostInstanceId, acquire]);
@@ -515,14 +497,6 @@ export function PixiePage() {
       }
       const pixieCwd = usePixieViewStore.getState().current?.cwd;
       const before = prevCwdRef.current;
-      // 注意：这里**不**清 previousWorkspace / 侧边栏冻结快照。dev 的
-      // StrictMode 会「挂载 → 模拟卸载 → 重放挂载」，重放被
-      // acquiredHostInstanceRef 守卫跳过（避免双重 acquire），若在这里
-      // 清掉镜像，重放不会重新捕获，小精灵页期间侧边栏就永远是空——
-      // 只能在生产复现不了的 dev 必现 bug。残留也无风险：两个镜像的
-      // 消费方（侧边栏 pixie 分支、createNewSessionFromPixiePage）都以
-      // page === "pixie" 为门，离开小精灵页后不可达；下次进 pixie 是
-      // 新的 PixiePage 实例，挂载必重新捕获。
       if (!before || !pixieCwd) return;
       if (!isSamePixiePath(useAppStore.getState().workspace?.canonicalCwd, pixieCwd)) return;
       // 用户是「点了另一个工作区」离开本页的：WorkspacePicker 先占

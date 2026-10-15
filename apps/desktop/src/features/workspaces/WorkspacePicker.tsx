@@ -42,7 +42,6 @@ import { useTelegramViewStore, useTelegramWorkspaceActive } from "../telegram/te
 import { isSameTelegramPath } from "../../lib/telegram-path";
 import { loadTelegramWorkspaceDisplayName } from "../telegram/telegram-view-store";
 import { usePixieViewStore } from "../pixie/pixie-store";
-import { usePixieSidebarSnapshot } from "../pixie/pixie-sidebar-snapshot";
 import { isSamePixiePath } from "../../lib/pixie-path";
 
 export function workspaceDisplayName(path: string): string {
@@ -222,15 +221,10 @@ export function WorkspacePicker() {
   const requestedCwd = workspace?.cwd ?? null;
 
   // 小精灵页会把活动工作区切到 pixie 工作区（会话机制依赖它），但侧边栏
-  // 应该保持进入小精灵前的样子：工作区行的选中视觉跟随冻结快照（见
-  // pixie-sidebar-snapshot.ts）里的上一个工作区，不再整体抑制。行为仍按
-  // 真实活动工作区：行仍可点——点上一个工作区行即离开小精灵回到它；
-  // 无快照（冷启动直落 pixie）才无选中。
+  // 不应该因此出现第二个“选中”目标——pixie 页期间抑制工作区行的选中视觉，
+  // 只保留顶栏 pixie 入口自己的选中态。行为不受影响：行仍可点、仍按真实
+  // 活动工作区禁用自身/隐藏移除按钮。
   const onPixiePage = useAppStore((s) => s.page) === "pixie";
-  const pixieSidebarSnapshot = usePixieSidebarSnapshot((s) => s.snapshot);
-  const frozenSelectedCwd = onPixiePage
-    ? (pixieSidebarSnapshot?.workspace.canonicalCwd ?? null)
-    : null;
 
   // Self-heal: whatever workspace is active (restored, picked, or set by the
   // host) always appears in the persistent list. The telegram workspace is a
@@ -505,31 +499,23 @@ export function WorkspacePicker() {
   // Collapsed-header summary of the current selection so the user can tell
   // which workspace is active without expanding the list. Matches the row
   // labels: folder rows use the folder name; the telegram row uses its
-  // display name (rename override > bot handle). On the pixie page the
-  // selection follows the frozen snapshot (the workspace from before the
-  // pixie visit); only the pixie workspace itself holding the foreground
-  // *without* the pixie page (e.g. restored at cold start) suppresses the
-  // summary — it would otherwise read as a second "selected pixie".
-  const pixieForeground = !onPixiePage && isSamePixiePath(currentCwd, pixieWorkspacePath);
-  const collapsedActivePath = onPixiePage
-    ? frozenSelectedCwd
-    : pixieForeground
-      ? null
-      : telegramActive
-        ? telegramWorkspacePath
-        : currentCwd;
-  const collapsedActiveName = onPixiePage
-    ? frozenSelectedCwd
-      ? workspaceDisplayName(frozenSelectedCwd)
-      : null
-    : pixieForeground
-      ? null
-      : telegramActive
-        ? (loadTelegramWorkspaceDisplayName() ??
-          (telegramProfile?.botUsername ? `@${telegramProfile.botUsername}` : "Telegram"))
-        : currentCwd
-          ? workspaceDisplayName(currentCwd)
-          : null;
+  // display name (rename override > bot handle). Suppressed while the pixie
+  // page (or the pixie workspace itself) holds the foreground — the summary
+  // would otherwise read as a second "selected pixie".
+  const pixieForeground = onPixiePage || isSamePixiePath(currentCwd, pixieWorkspacePath);
+  const collapsedActivePath = pixieForeground
+    ? null
+    : telegramActive
+      ? telegramWorkspacePath
+      : currentCwd;
+  const collapsedActiveName = pixieForeground
+    ? null
+    : telegramActive
+      ? (loadTelegramWorkspaceDisplayName() ??
+        (telegramProfile?.botUsername ? `@${telegramProfile.botUsername}` : "Telegram"))
+      : currentCwd
+        ? workspaceDisplayName(currentCwd)
+        : null;
   const collapseButtonTitle = collapsed
     ? collapsedActivePath
       ? `${t("workspacesExpand")}\n${collapsedActivePath}`
@@ -643,16 +629,11 @@ export function WorkspacePicker() {
               // Folders and the telegram workspace are single-select: while
               // the telegram view is active, folder rows show as inactive.
               const active = !telegramActive && Boolean(currentCwd && samePath(currentCwd, path));
-              // Selection visuals on the pixie page follow the frozen
-              // snapshot (the workspace from before the pixie visit) — the
-              // previous workspace keeps its selected look; without a
-              // snapshot nothing is highlighted. Behavior — disabled
-              // self-click, hidden remove button, status dots — still
-              // follows the real `active`, so clicking the highlighted row
-              // leaves the pixie page for that workspace.
-              const showActive = onPixiePage
-                ? Boolean(frozenSelectedCwd && samePath(frozenSelectedCwd, path))
-                : active;
+              // Selection visuals are suppressed on the pixie page (the
+              // active row there is the pixie workspace); behavior —
+              // disabled self-click, hidden remove button, status dots —
+              // still follows the real `active`.
+              const showActive = active && !onPixiePage;
               const activity = workspaceActivities[normalizedActivityKey(path)];
               // Priority: red (unacknowledged failure) > green (busy) > gray
               // (unacknowledged completion) > none. Returning to the sessions

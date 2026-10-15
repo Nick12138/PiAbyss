@@ -24,17 +24,16 @@ describe("Sidebar", () => {
     },
   );
 
-  it("keeps the new-session button visible on the pixie page", () => {
-    // 小精灵页不隐藏「新会话」：点击时它会作用于进入小精灵前的工作区
-    // （NewSessionButton 分流，见 pixie-previous-workspace.ts）。会话列表
-    // 改为渲染冻结快照（上一个会话的选中态保留）——但 zustand v5 在
-    // renderToStaticMarkup 下只读模块加载时的初始快照，运行期 capture
-    // 不可见，所以快照列表的渲染断言放在 SessionList.frozen.dom.test。
+  it("keeps both the new-session button and the session list on the pixie page", () => {
+    // 小精灵页不再把会话列表藏进顶栏浮层：活动工作区就是 pixie 工作区，
+    // 左下角渲染与普通工作区同款的列表，改名/归档/删除/导出照常。
+    // 「新会话」同样作用于 pixie 工作区——建出来的就是一条新的小精灵会话。
     const html = renderToStaticMarkup(
       createElement(SidebarLayout, { page: "pixie", setPage: vi.fn() }),
     );
 
     expect(html).toContain("New conversation");
+    expect(html).toContain("Recent conversations");
   });
 
   it("hides plugin-backed entries (memo, pixie) while their plugins are not known-enabled", () => {
