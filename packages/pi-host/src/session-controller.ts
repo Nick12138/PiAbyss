@@ -26,6 +26,7 @@ import {
   subagentRunExists,
 } from "./subagent-runs.js";
 import { toWireTree, type SdkSessionTreeNode } from "./session-tree-cache.js";
+import { notePixieSessionCreatedFromUi, pixieNewSessionOptions } from "./pixie-agent-runner.js";
 
 /** Forward a subagent control action to the pi-subagent HTTP API. */
 async function controlSubagentRun(
@@ -109,10 +110,16 @@ export function createSessionHandlers(
       });
       if (stale) return { error: stale };
       const params = (ctx.params ?? {}) as { name?: string };
-      const result = await factory.createSession(ctx.id, params.name);
+      const result = await factory.createSession(
+        ctx.id,
+        params.name,
+        pixieNewSessionOptions(factory),
+      );
       if (result && typeof result === "object" && "error" in result) {
         return { error: result.error };
       }
+      // 小精灵工作区里新建的会话就是她的新一段：当场认下来，不等落盘。
+      notePixieSessionCreatedFromUi(factory, result);
       return { result };
     },
 

@@ -454,7 +454,7 @@ describe("agent.prompt startup", () => {
     expect(fixture.session.prompt).not.toHaveBeenCalled();
   });
 
-  it("pixie 会话不走「新建即自动起名」：段名等打盹收尾再定", async () => {
+  it("pixie 段名打首条消息上，且用的是包装前的原话", async () => {
     const agentDir = mkdtempSync(join(tmpdir(), "pixie-title-test-"));
     try {
       const fixture = stableHandlerFixture(Promise.resolve());
@@ -468,17 +468,24 @@ describe("agent.prompt startup", () => {
       const handler = createAgentHandlers(fixture.factory)["agent.prompt"]!;
 
       const outcome = await handler({
-        id: "prompt-pixie-no-autotitle",
+        id: "prompt-pixie-autotitle",
         context: {},
         params: { text: "你好，小精灵" },
       } as never);
 
       expect("error" in outcome).toBe(false);
       await vi.waitFor(() => expect(fixture.session.prompt).toHaveBeenCalledOnce());
-      // 不在首条消息上起临时标题，也没有后续的 LLM 精修——段名由打盹
-      // 收尾（rotateToNewSession → segmentSessionName）按整段内容定。
-      expect(fixture.factory.setActiveSessionName).not.toHaveBeenCalled();
-      expect(fixture.factory.refineActiveSessionName).not.toHaveBeenCalled();
+      // 首条用户消息就落名（段名进 jsonl 的 session_info，插件的段索引只读它）。
+      expect(fixture.factory.setActiveSessionName).toHaveBeenCalledTimes(1);
+      const named = (fixture.factory.setActiveSessionName as ReturnType<typeof vi.fn>).mock
+        .calls[0]?.[0] as string;
+      expect(named).toContain("你好");
+      expect(named).not.toContain("pixie-context");
+      // 前导照旧包在正文外层——名字取的是包之前的原话。
+      const sent = (fixture.session.prompt as ReturnType<typeof vi.fn>).mock
+        .calls[0]?.[0] as string;
+      expect(sent).toContain("<pixie-context>");
+      expect(sent).toContain("你好，小精灵");
     } finally {
       resetPixieStateForTests();
       rmSync(agentDir, { recursive: true, force: true });

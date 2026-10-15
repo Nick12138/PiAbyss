@@ -174,7 +174,6 @@ export const HOST_METHODS = [
   "pixie.ensureCurrent",
   "pixie.reply",
   "pixie.setContext",
-  "pixie.newSegment",
   "pixie.interject",
   "pixie.stopDispatch",
   "pixie.retryDispatch",
@@ -291,7 +290,6 @@ export type HostOnlyMethod =
   | "pixie.ensureCurrent"
   | "pixie.reply"
   | "pixie.setContext"
-  | "pixie.newSegment"
   | "pixie.interject"
   | "pixie.stopDispatch"
   | "pixie.retryDispatch"
@@ -595,7 +593,6 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "pixie.ensureCurrent": "host",
   "pixie.reply": "host",
   "pixie.setContext": "host",
-  "pixie.newSegment": "host",
   "pixie.interject": "host",
   "pixie.stopDispatch": "host",
   "pixie.retryDispatch": "host",

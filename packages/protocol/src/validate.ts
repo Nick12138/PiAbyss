@@ -1713,8 +1713,6 @@ export function validateRequestParams<M extends HostMethod>(
         )
         ? ok(params)
         : fail("invalid pixie.setContext params", { method });
-    case "pixie.newSegment":
-      return params === null ? ok(null) : fail("params must be null", { method });
     case "pixie.interject":
       return exactObject(
         params,

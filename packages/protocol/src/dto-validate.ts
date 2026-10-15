@@ -2783,21 +2783,8 @@ function isPixieDispatchRecord(value: unknown): boolean {
 
 const PIXIE_TASK_STATUSES = ["queued", "running", "done", "failed"] as const;
 
-/** 任务行跳转目标：锚点在哪个会话就跳哪个，未必是任务所属的工作区/会话。 */
-function isPixieTaskJump(value: unknown): boolean {
-  return (
-    isPlainObject(value) &&
-    hasExactKeys(value, ["cwd", "sessionId", "sessionPath", "messageId", "anchor"]) &&
-    isString(value.cwd) &&
-    (value.sessionId === null || isString(value.sessionId)) &&
-    (value.sessionPath === null || isString(value.sessionPath)) &&
-    (value.messageId === null || isString(value.messageId)) &&
-    (value.anchor === null || value.anchor === "report" || value.anchor === "dispatch")
-  );
-}
-
 function isPixieTaskTreeTask(value: unknown): boolean {
-  if (!isPlainObject(value) || !isPixieTaskJump(value.jump)) return false;
+  if (!isPlainObject(value)) return false;
   const status = value.status as (typeof PIXIE_TASK_STATUSES)[number];
   return (
     hasExactKeys(value, [
@@ -2812,9 +2799,6 @@ function isPixieTaskTreeTask(value: unknown): boolean {
       "stale",
       "createdAt",
       "lastActiveAt",
-      "dispatchMessageId",
-      "reportMessageId",
-      "jump",
     ]) &&
     isString(value.dispatchId) &&
     isString(value.label) &&
@@ -2843,9 +2827,7 @@ function isPixieTaskTreeTask(value: unknown): boolean {
     typeof value.createdAt === "number" &&
     Number.isSafeInteger(value.createdAt) &&
     (value.lastActiveAt === null ||
-      (typeof value.lastActiveAt === "number" && Number.isSafeInteger(value.lastActiveAt))) &&
-    (value.dispatchMessageId === null || isString(value.dispatchMessageId)) &&
-    (value.reportMessageId === null || isString(value.reportMessageId))
+      (typeof value.lastActiveAt === "number" && Number.isSafeInteger(value.lastActiveAt)))
   );
 }
 
@@ -3968,10 +3950,6 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
       return isPlainObject(result) && hasExactKeys(result, ["ok"]) && result.ok === true
         ? null
         : "invalid pixie.setContext result";
-    case "pixie.newSegment":
-      return isPlainObject(result) && hasExactKeys(result, ["ok"]) && result.ok === true
-        ? null
-        : "invalid pixie.newSegment result";
     case "pixie.interject":
       return isPlainObject(result) &&
         hasExactKeys(result, ["ok", "error"]) &&

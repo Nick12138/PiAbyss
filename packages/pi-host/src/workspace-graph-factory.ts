@@ -460,8 +460,8 @@ export class WorkspaceGraphFactory {
       : resolvedLeft === resolvedRight;
   }
 
-  async createSession(requestId: string, name?: string) {
-    return createSession(this, requestId, name);
+  async createSession(requestId: string, name?: string, options?: { parentSession?: string }) {
+    return createSession(this, requestId, name, options);
   }
 
   async openSession(

@@ -3,9 +3,9 @@
  *
  * 在会话浮层里点开某条历史会话后，页面会一直停在旧段；此按钮在
  * 「当前打开的会话 ≠ 当前段指针（pixie-store.current）」时出现于顶栏。
- * 点击：重新 ensureCurrent 拿活段（未打盹、运行阶段的会话），拿到就
+ * 点击：重新 ensureCurrent 拿活段（正在运行阶段的会话），拿到就
  * 标准切回（openSessionAcrossWorkspaces）；拿不到（图不可用等）则落回
- * 新建会话。打盹换段时 segmentChanged 会驱动页面 re-acquire，
+ * 新建会话。换段时 segmentChanged 会驱动页面 re-acquire，
  * store.current 始终指向最新活段。
  */
 import { Undo2 } from "lucide-react";

@@ -1234,6 +1234,47 @@ describe("Pi extension and session entry messages", () => {
     expect(rows[0]?.sections?.stepCount).toBe(1);
   });
 
+  it("projects the pixie segment handoff as its own row while other customs stay absorbed", () => {
+    const card = "<pixie-segments>上一段没有丢，正文都在本机会话目录里</pixie-segments>";
+    const rows = buildTranscriptRows([
+      { role: "assistant", content: "第一段回复" },
+      { role: "custom", customType: "pixie-segments", display: true, content: card },
+      { role: "assistant", content: "第二段回复" },
+      { role: "custom", customType: "plan", display: true, content: "plan card" },
+      { role: "assistant", content: "第三段回复" },
+    ] as SerializableAgentMessage[]);
+
+    expect(rows.map((row) => row.role)).toEqual(["assistant", "custom", "assistant"]);
+    expect(rows[1]?.customType).toBe("pixie-segments");
+    expect(rows[1]?.display).toBe(true);
+    expect(rows[1]?.copyText).toBe(card);
+    expect(rows[1]?.extensionPresentation).toEqual({
+      version: 1,
+      extensionId: "pi-pixie",
+      sourceLabel: "Pixie",
+      audience: "user",
+      kind: "activity",
+      correlationId: "1",
+      severity: "neutral",
+    });
+    // 交接卡片是轮次边界：卡片前的 assistant 不与卡片后的合并成一行。
+    expect(rows[0]?.blocks.map((block) => block.kind)).toEqual(["text"]);
+    // 其它 customType 的归宿不变：仍然并进当前 assistant 轮。
+    expect(rows[2]?.blocks.map((block) => block.kind)).toEqual(["text", "extension", "text"]);
+    expect(rows[2]?.copyText).toBe("第二段回复\n\n第三段回复");
+  });
+
+  it("keeps a hidden pixie segment handoff unrendered but still a turn boundary", () => {
+    const rows = buildTranscriptRows([
+      { role: "assistant", content: "one" },
+      { role: "custom", customType: "pixie-segments", display: false, content: "hidden handoff" },
+      { role: "assistant", content: "two" },
+    ] as SerializableAgentMessage[]);
+
+    expect(rows.map((row) => row.role)).toEqual(["assistant", "assistant"]);
+    expect(rows[0]?.blocks.map((block) => block.kind)).toEqual(["text"]);
+  });
+
   it("keeps unknown content parts as typed fallback blocks", () => {
     const rows = buildTranscriptRows([
       {

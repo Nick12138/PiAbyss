@@ -18,6 +18,12 @@ import { parseInjectedReferences, type InjectedReference } from "./injected-refe
 
 export type ToolTraceStatus = "waiting" | "running" | "done" | "error" | "aborted";
 
+/**
+ * pi-pixie 换段时注入的交接卡片 customType。它不属于任何一轮对话：必须独立成行
+ * （不进 assistant 气泡），并作为轮次边界；渲染成可展开的分隔线。
+ */
+export const PIXIE_SEGMENTS_CUSTOM_TYPE = "pixie-segments";
+
 export type ToolTrace = {
   id: string;
   name: string;
@@ -759,7 +765,22 @@ function extensionPresentationForCustomMessage(
     parseExtensionPresentation(details.presentation);
   if (declared) return declared;
 
-  if (stringField(message, "customType") !== "subagent_supervisor_request") return undefined;
+  const customType = stringField(message, "customType");
+  if (customType === PIXIE_SEGMENTS_CUSTOM_TYPE) {
+    // 交接卡片没有声明式 presentation：desktop 侧按 customType 认领这套展示，
+    // 渲染成一条安静分隔线，点开才是卡片全文。
+    return {
+      version: 1,
+      extensionId: "pi-pixie",
+      sourceLabel: "Pixie",
+      audience: "user",
+      kind: "activity",
+      correlationId: sourceKey.slice(0, 256),
+      severity: "neutral",
+    };
+  }
+
+  if (customType !== "subagent_supervisor_request") return undefined;
   const legacyId =
     (typeof details.id === "string" && details.id.trim()) ||
     (typeof details.runId === "string" && details.runId.trim()) ||
@@ -1486,7 +1507,9 @@ export function buildTranscriptRows(
       sourceIndex,
       extensionMessageRender,
     );
-    if (special?.role === "custom") {
+    // 其它 custom 消息一律并进当前 assistant 轮；换段交接卡片走下面的独立成行
+    // 分支（它不属于任何一轮，但仍是一个轮次边界）。
+    if (special?.role === "custom" && special.customType !== PIXIE_SEGMENTS_CUSTOM_TYPE) {
       const block: TranscriptBlock = { kind: "extension", row: special };
       if (activeAssistant?.role === "assistant") {
         activeAssistant.blocks.push(block);

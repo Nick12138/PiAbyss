@@ -67,8 +67,7 @@ import {
   reactivateDispatchForResume,
   recordDispatchModelChange,
   registerDispatch,
-  requestPixieRest,
-  requestPixieSegment,
+  renamePixieSegment,
   resumePausedDispatch,
   settleDispatch,
   setDispatchMessageAnchor,
@@ -743,6 +742,11 @@ export type PixieDispatchRequest = {
    * 会话名：只在本次真的新建会话时被采用；复用既有会话一律忽略（沿用原名）。
    */
   sessionName?: string | null;
+  /**
+   * 派单那一段的小精灵会话 id（插件从 ctx 取，取不到不传）。回调信封按它送回
+   * 派单的段；缺失时退回当前段指针。
+   */
+  sourceSessionId?: string | null;
 };
 
 type PixieDispatchOutcome =
@@ -939,7 +943,7 @@ async function dispatchPixieTaskInner(
       queued: true,
       model: request.model ?? null,
       thinkingLevel: request.thinkingLevel ?? null,
-      originSessionId: currentPixieSessionId(agentDir),
+      originSessionId: request.sourceSessionId?.trim() || currentPixieSessionId(agentDir),
       taskName,
       sessionName: sessionLabel,
     });
@@ -971,7 +975,7 @@ async function dispatchPixieTaskInner(
     failCount: request.failCount ?? 0,
     model: request.model ?? null,
     thinkingLevel: request.thinkingLevel ?? null,
-    originSessionId: currentPixieSessionId(agentDir),
+    originSessionId: request.sourceSessionId?.trim() || currentPixieSessionId(agentDir),
     taskName,
     sessionName: sessionLabel,
   });
@@ -1492,13 +1496,8 @@ export function createPixieControlPlaneDeps(factory: WorkspaceGraphFactory): Pix
       applyDispatchRecordsToSessionCache(agentDir, listDispatches(50, agentDir));
       return listPixieSessions(agentDir, cwd);
     },
-    rest: async (args) =>
-      requestPixieRest(factory, {
-        agentDir,
-        phrase: args.phrase,
-        handoff: args.handoff,
-        title: args.title,
-      }),
+    name: async (args) =>
+      renamePixieSegment(factory, { agentDir, name: args.name, sessionId: args.sessionId }),
     inject: async (args) =>
       injectPixieMessage(factory, {
         agentDir,
@@ -1531,8 +1530,8 @@ export function createPixieHandlers(
   return {
     "pixie.ensureCurrent": async () => {
       if (!gate()) return { error: pixiePluginDisabledError() };
-      // 页面入口：确保小精灵工作区图与当前会话存在（含每日打盹懒判定），
-      // 返回前端应当 workspace.setCurrent + session.open 的会话。
+      // 页面入口：确保小精灵工作区图与当前会话存在（顺带与盘面对账，认下用户在
+      // 界面里新开的段），返回前端应当 workspace.setCurrent + session.open 的会话。
       const out = await ensurePixieCurrent(factory, agentDir);
       return out.ok
         ? { result: { cwd: out.cwd, sessionId: out.sessionId, sessionPath: out.sessionPath } }
@@ -1577,12 +1576,6 @@ export function createPixieHandlers(
       if (!gate()) return { error: pixiePluginDisabledError() };
       const params = ctx.params as { workspaces: string[] };
       setPixieContext(agentDir, params.workspaces);
-      return { result: { ok: true as const } };
-    },
-
-    "pixie.newSegment": async () => {
-      if (!gate()) return { error: pixiePluginDisabledError() };
-      await requestPixieSegment(factory, { agentDir });
       return { result: { ok: true as const } };
     },
 

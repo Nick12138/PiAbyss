@@ -33,6 +33,7 @@ import {
   ListTree,
   LoaderCircle,
   MessageCircleQuestion,
+  Moon,
   Play,
   Puzzle,
   Quote,
@@ -57,6 +58,7 @@ import {
   executionTraceIsActive,
   findStreamingAssistantKey,
   parseUserAttachments,
+  PIXIE_SEGMENTS_CUSTOM_TYPE,
   reuseStableRows,
   thinkingBlockIsLive,
   type RetryableTurn,
@@ -2049,10 +2051,51 @@ function ExtensionRenderedMessageRow({ row }: { row: TranscriptRow }) {
   );
 }
 
+/**
+ * 小精灵换段交接卡片：一条安静的分隔线，默认收起，点开才是卡片全文
+ * （走通用 technical-content 面板，原样展示，不做 Markdown interpretation）。
+ */
+function PixieSegmentsDividerRow({ row }: { row: TranscriptRow }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="min-w-0 py-1">
+      <button
+        type="button"
+        data-testid="pixie-segments-divider"
+        className="flex w-full min-w-0 items-center gap-3 rounded-md py-1 text-[11px] text-muted transition-colors hover:text-foreground"
+        aria-expanded={open}
+        title={t("pixieSegmentsToggle")}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="h-px min-w-6 flex-1 bg-border" aria-hidden="true" />
+        <span className="flex shrink-0 items-center gap-1.5">
+          <Moon size={12} aria-hidden="true" />
+          {t("pixieSegmentsDivider")}
+        </span>
+        <ChevronRight
+          size={12}
+          aria-hidden="true"
+          className={`shrink-0 transition-transform duration-150 motion-reduce:transition-none ${
+            open ? "rotate-90" : ""
+          }`}
+        />
+        <span className="h-px min-w-6 flex-1 bg-border" aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="ml-2 mt-1 border-l border-border py-1 pl-4">
+          <ExtensionTechnicalContent row={row} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ExtensionMessageRow({ row }: { row: TranscriptRow }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const presentation = row.extensionPresentation;
+  if (row.customType === PIXIE_SEGMENTS_CUSTOM_TYPE) return <PixieSegmentsDividerRow row={row} />;
   if (!presentation && row.extensionMessageRender) {
     return <ExtensionRenderedMessageRow row={row} />;
   }

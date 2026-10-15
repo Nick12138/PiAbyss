@@ -300,7 +300,6 @@ export type HostContextMap = {
   "pixie.ensureCurrent": HostContext;
   "pixie.reply": HostContext;
   "pixie.setContext": HostContext;
-  "pixie.newSegment": HostContext;
   "pixie.interject": HostContext;
   "pixie.stopDispatch": HostContext;
   "pixie.retryDispatch": HostContext;
@@ -597,8 +596,6 @@ export type HostRequestParams = {
   "pixie.reply": { dispatchId: string; text: string };
   /** 前端推送已知工作区列表（新段 <pixie-context> 注入用）。 */
   "pixie.setContext": { workspaces: string[] };
-  /** 用户请求打盹：注入收尾指令，小精灵不配合时 Host 兜底强制换段。 */
-  "pixie.newSegment": null;
   /** 向进行中委派的目标会话插话（补充/修正/进度检查点；非新任务，不建记录）。 */
   "pixie.interject": {
     dispatchId: string;
@@ -881,7 +878,6 @@ export type HostResultMap = {
   "pixie.ensureCurrent": { cwd: string; sessionId: string; sessionPath: string };
   "pixie.reply": { ok: boolean };
   "pixie.setContext": { ok: true };
-  "pixie.newSegment": { ok: true };
   "pixie.interject": { ok: boolean; error: string | null };
   "pixie.stopDispatch": { ok: boolean; action: PixieStopAction };
   "pixie.retryDispatch": { ok: boolean; dispatchId: string | null; error: string | null };

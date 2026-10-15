@@ -7,7 +7,7 @@
  *      页面挂载时据此完成 workspace.setCurrent + session.open；
  *   2. `dispatches` — 委派注册表（pixie.dispatches + pixie.taskTree 分组树）
  *      + 回复/插话/叫停/重试；
- *   3. `nap` — 打盹（pixie.newSegment，切新会话）与已知工作区推送。
+ *   3. `pushContext` — 已知工作区推送。
  */
 import { create } from "zustand";
 import type { PixieDispatchRecord, PixieTaskTreeWorkspace } from "@piabyss/protocol";
@@ -41,8 +41,6 @@ type PixieViewState = {
   refreshDispatches: (sessionId?: string | null) => Promise<void>;
   /** Answer an awaiting ask explicitly (inline reply in the dispatch panel). */
   reply: (dispatchId: string, text: string) => Promise<boolean>;
-  /** 打个盹: instruct the pixie to rest; Host force-finalizes on refusal. */
-  nap: () => Promise<boolean>;
   /** Push the known-workspace list (mount + knownWorkspaces changes). */
   pushContext: (workspaces: string[]) => Promise<void>;
   /** 插话：向进行中委派补充/修正（append）或要进度检查点（checkpoint）。 */
@@ -185,28 +183,6 @@ export const usePixieViewStore = create<PixieViewState>((set, get) => ({
       );
       if (!response.ok) {
         set({ error: response.error?.message ?? "pixie reply failed" });
-        return false;
-      }
-      void get().refreshDispatches();
-      return true;
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error) });
-      return false;
-    }
-  },
-
-  nap: async () => {
-    const host = useAppStore.getState().host;
-    if (!host) return false;
-    try {
-      const response = await hostClient.request(
-        "pixie.newSegment",
-        hostContext(host),
-        null,
-        SEND_TIMEOUT_MS,
-      );
-      if (!response.ok) {
-        set({ error: response.error?.message ?? "pixie nap failed" });
         return false;
       }
       void get().refreshDispatches();

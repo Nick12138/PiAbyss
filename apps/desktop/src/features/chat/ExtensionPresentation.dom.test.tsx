@@ -1581,3 +1581,54 @@ describe("registered Extension message renderer output", () => {
     expect(disclosure).toHaveAttribute("aria-expanded", "false");
   });
 });
+
+describe("pixie segment handoff divider", () => {
+  beforeEach(() => setLanguage("en"));
+  afterEach(() => {
+    cleanup();
+    useAppStore.getState().setDesktopSettings(null);
+  });
+
+  function segmentsRow(card: string): TranscriptRow {
+    return {
+      key: "custom:segments",
+      role: "custom",
+      blocks: [{ kind: "text", text: card }],
+      copyText: card,
+      customType: "pixie-segments",
+      display: true,
+      extensionPresentation: {
+        version: 1,
+        extensionId: "pi-pixie",
+        sourceLabel: "Pixie",
+        audience: "user",
+        kind: "activity",
+        correlationId: "segments-1",
+        severity: "neutral",
+      },
+    };
+  }
+
+  it("collapses to a quiet localized divider and expands to the verbatim card", async () => {
+    const card = "<pixie-segments>0. nap · handoff</pixie-segments>";
+    const user = userEvent.setup();
+    render(<ExtensionMessageRow row={segmentsRow(card)} />);
+
+    expect(screen.getByText("Taking a quick nap~")).toBeVisible();
+    expect(screen.queryByText("Subagents")).not.toBeInTheDocument();
+    expect(screen.queryByText(card)).not.toBeInTheDocument();
+    const disclosure = screen.getByRole("button", { name: /Taking a quick nap~/ });
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(disclosure);
+    expect(disclosure).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText(card)).toBeVisible();
+  });
+
+  it("用中文分隔线文案（界面语言为 zh）", () => {
+    setLanguage("zh");
+    render(<ExtensionMessageRow row={segmentsRow("<pixie-segments>handoff</pixie-segments>")} />);
+
+    expect(screen.getByText("小憩一下~")).toBeVisible();
+  });
+});

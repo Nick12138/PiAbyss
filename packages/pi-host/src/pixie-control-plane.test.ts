@@ -5,7 +5,7 @@
  * The plugin's byte-level expectations:
  * - dispatch success 200 `{ ok: true, dispatchId, sessionId, sessionPath, queued }`
  *   (missing a field reads as a contract violation on the plugin side)
- * - dispatch/report/ask/rest/inject failure `{ ok: false, error }` readable
+ * - dispatch/report/ask/name/inject failure `{ ok: false, error }` readable
  * - dispatch-state 200 `{ armed, dispatchId, kind }`; any non-200/invalid
  *   shape is treated as not-armed by the plugin (401 included).
  * Endpoint handlers are exercised directly (no real socket needed) plus one
@@ -19,6 +19,7 @@ import {
   PIXIE_DISPATCH_STATE_PATH,
   PIXIE_INJECT_PATH,
   PIXIE_INTERJECT_PATH,
+  PIXIE_NAME_PATH,
   PIXIE_REPORT_PATH,
   PIXIE_REST_PATH,
   PIXIE_STOP_PATH,
@@ -28,8 +29,8 @@ import {
   parseDispatchBody,
   parseInjectBody,
   parseInterjectBody,
+  parseNameBody,
   parseReportBody,
-  parseRestBody,
   parseStopBody,
   startPixieControlPlane,
   type PixieControlPlaneDeps,
@@ -52,7 +53,7 @@ function deps(overrides: Partial<PixieControlPlaneDeps> = {}): PixieControlPlane
     retry: async () => ({ ok: true, dispatchId: "pix_1" }),
     dispatchList: () => [],
     sessionList: () => [],
-    rest: async () => ({ ok: true }),
+    name: async () => ({ ok: true }),
     inject: async () => ({ ok: true, sessionId: "s1" }),
     dispatchState: () => ({ armed: false, dispatchId: null, kind: null }),
     ...overrides,
@@ -179,27 +180,50 @@ describe("pixie control-plane endpoints", () => {
     }
   });
 
-  it("POST /api/pixie/rest forwards optional title/phrase/handoff", async () => {
-    const seen: Array<{ phrase?: string | null; handoff?: string | null; title?: string | null }> =
-      [];
+  it("POST /api/pixie/name forwards the trimmed segment name", async () => {
+    const seen: Array<{ name: string }> = [];
     const d = deps({
-      rest: async (args) => {
+      name: async (args) => {
         seen.push(args);
         return { ok: true };
       },
     });
-    const empty = await handlePixieControlPlaneRequest(d, "POST", PIXIE_REST_PATH, null);
-    expect(empty.status).toBe(200);
-    expect(empty.body).toEqual({ ok: true });
-    const full = await handlePixieControlPlaneRequest(
+    const out = await handlePixieControlPlaneRequest(
       d,
       "POST",
-      PIXIE_REST_PATH,
-      JSON.stringify({ title: "整理三站价格表", phrase: "先睡啦", handoff: "交接" }),
+      PIXIE_NAME_PATH,
+      JSON.stringify({ name: "  整理三站价格表  " }),
     );
-    expect(full.status).toBe(200);
-    expect(full.body).toEqual({ ok: true });
-    expect(seen).toEqual([{}, { title: "整理三站价格表", phrase: "先睡啦", handoff: "交接" }]);
+    expect(out.status).toBe(200);
+    expect(out.body).toEqual({ ok: true });
+    expect(seen).toEqual([{ name: "整理三站价格表" }]);
+  });
+
+  it("POST /api/pixie/name rejects empty or malformed bodies with 400", async () => {
+    for (const raw of [
+      null,
+      "not json",
+      "{}",
+      JSON.stringify({ name: "   " }),
+      JSON.stringify([]),
+    ]) {
+      const out = await handlePixieControlPlaneRequest(deps(), "POST", PIXIE_NAME_PATH, raw);
+      expect(out.status).toBe(400);
+    }
+  });
+
+  it("POST /api/pixie/rest 只回「打盹已取消」，不再换段", async () => {
+    const out = await handlePixieControlPlaneRequest(
+      deps(),
+      "POST",
+      PIXIE_REST_PATH,
+      JSON.stringify({ phrase: "先睡啦" }),
+    );
+    expect(out.status).toBe(200);
+    expect(out.body).toEqual({
+      ok: false,
+      error: "打盹已经取消，不需要收尾交接；要开新段请让用户在小精灵页点「新会话」。",
+    });
   });
 
   it("POST /api/pixie/inject forwards source/text (gateway预留)", async () => {
@@ -519,19 +543,28 @@ describe("pixie control-plane body parsers", () => {
     });
   });
 
-  it("parseRestBody treats an empty body as no-arg rest", () => {
-    expect(parseRestBody(null)).toEqual({ ok: true, args: {} });
-    expect(parseRestBody("{}")).toEqual({ ok: true, args: {} });
-    expect(parseRestBody(JSON.stringify({ phrase: "睡" }))).toEqual({
+  it("parseNameBody 要求非空 name 并 trim", () => {
+    expect(parseNameBody(JSON.stringify({ name: " 整理价格表 " }))).toEqual({
       ok: true,
-      args: { phrase: "睡" },
+      args: { name: "整理价格表" },
     });
-    expect(parseRestBody(JSON.stringify({ phrase: 42 })).ok).toBe(false);
-    expect(parseRestBody(JSON.stringify({ title: "整理价格表" }))).toEqual({
+    expect(parseNameBody(null).ok).toBe(false);
+    expect(parseNameBody("{}").ok).toBe(false);
+    expect(parseNameBody(JSON.stringify({ name: "   " })).ok).toBe(false);
+    expect(parseNameBody(JSON.stringify({ name: 42 })).ok).toBe(false);
+  });
+
+  it("parseDispatchBody 透传派单会话 id（sourceSessionId），没给就不带键", () => {
+    expect(
+      parseDispatchBody(JSON.stringify({ cwd: "c", task: "t", sourceSessionId: " seg-1 " })),
+    ).toEqual({ ok: true, request: { cwd: "c", task: "t", sourceSessionId: "seg-1" } });
+    expect(parseDispatchBody(JSON.stringify({ cwd: "c", task: "t" }))).toEqual({
       ok: true,
-      args: { title: "整理价格表" },
+      request: { cwd: "c", task: "t" },
     });
-    expect(parseRestBody(JSON.stringify({ title: 42 })).ok).toBe(false);
+    expect(parseDispatchBody(JSON.stringify({ cwd: "c", task: "t", sourceSessionId: 7 })).ok).toBe(
+      false,
+    );
   });
 
   it("parseInjectBody validates the source enum", () => {

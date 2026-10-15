@@ -4,7 +4,6 @@ import {
   clipPixieShortName,
   ensurePixiePersonaFile,
   failDispatch,
-  findDispatchById,
   findDispatchBySession,
   findDuplicateDispatchRequest,
   hasActiveDispatchFor,
@@ -14,6 +13,7 @@ import {
   pixieClockLine,
   pixieDir,
   pixieFallbackName,
+  findDispatchById,
   reactivateDispatchAfterReply,
   registerDispatch,
   resetPixieStateForTests,
@@ -21,9 +21,9 @@ import {
   settleDispatch,
   setDispatchMessageAnchor,
   pixieStaleMs,
-  pixieSegmentMaxTurns,
   pixieTranscriptFrom,
-  segmentSessionName,
+  clipSegmentName,
+  latestSegmentOfDir,
   setPixieContext,
   getKnownWorkspaces,
 } from "./pixie-agent-runner.js";
@@ -35,7 +35,15 @@ import {
 import { buildPromptWithAttachments, toSdkImages } from "./agent-controller.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { localDayKey } from "./pixie-usage.js";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -48,7 +56,6 @@ afterEach(() => {
   resetPixieStateForTests();
   delete process.env.PIABYSS_PIXIE_WORKSPACE;
   delete process.env.PIABYSS_PIXIE_STALE_MS;
-  delete process.env.PIABYSS_PIXIE_MAX_TURNS;
 });
 
 describe("pixie delegation registry", () => {
@@ -489,15 +496,11 @@ describe("pixie workspace + config resolution", () => {
     expect(parsePixieModelRef(undefined)).toBeNull();
   });
 
-  it("applies stale/max-turns env overrides with safe defaults", () => {
+  it("applies the stale-threshold env override with a safe default", () => {
     delete process.env.PIABYSS_PIXIE_STALE_MS;
-    delete process.env.PIABYSS_PIXIE_MAX_TURNS;
     expect(pixieStaleMs()).toBe(30 * 60 * 1000);
-    expect(pixieSegmentMaxTurns()).toBe(200);
     process.env.PIABYSS_PIXIE_STALE_MS = "60000";
-    process.env.PIABYSS_PIXIE_MAX_TURNS = "50";
     expect(pixieStaleMs()).toBe(60000);
-    expect(pixieSegmentMaxTurns()).toBe(50);
   });
 
   it("persists and reloads the known-workspace context", () => {
@@ -634,24 +637,74 @@ describe("agent prompt attachments（与 agent.prompt 共用）", () => {
   });
 });
 
-describe("segmentSessionName（打盹归档名）", () => {
-  it("title 优先于 handoff，handoff 优先于睡觉短语；空串视同缺省", () => {
-    expect(segmentSessionName("整理三站价格表", "下一段继续对价", "打个盹~")).toBe(
-      "整理三站价格表",
-    );
-    expect(segmentSessionName(null, "上一段在改 OKXBot 前端", "打个盹~")).toBe(
-      "上一段在改 OKXBot 前端",
-    );
-    expect(segmentSessionName("  ", "", "我先打个盹~")).toBe("我先打个盹~");
-    expect(segmentSessionName(null, null, "  小憩片刻 💤  ")).toBe("小憩片刻 💤");
+describe("clipSegmentName（改名端点的段名口径）", () => {
+  it("压成单行并按 40 字截断（超出加省略号）", () => {
+    expect(clipSegmentName("多\n行\r\n标  题")).toBe("多 行 标 题");
+    const long = "很长".repeat(30); // 60 字
+    expect(clipSegmentName(long)).toBe(`${"很长".repeat(20)}…`);
+    const fits = "刚好".repeat(20); // 40 字
+    expect(clipSegmentName(fits)).toBe(fits);
+    expect(clipSegmentName(null)).toBe("");
+    expect(clipSegmentName("   ")).toBe("");
+  });
+});
+
+describe("latestSegmentOfDir（当前段 = 创建时间最新的那条会话）", () => {
+  it("按 header 的创建时间挑最新一段，不是按写入时间", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pixie-segments-"));
+    try {
+      // 老段刚刚被回写过（mtime 最新），新段的 header 时间才说了算。
+      const older = join(
+        dir,
+        "2026-10-15T01-00-00-000Z_aaaaaaaa-0000-0000-0000-000000000000.jsonl",
+      );
+      const newer = join(
+        dir,
+        "2026-10-15T09-00-00-000Z_bbbbbbbb-0000-0000-0000-000000000000.jsonl",
+      );
+      writeFileSync(
+        older,
+        `${JSON.stringify({ type: "session", id: "a", timestamp: "2026-10-15T01:00:00.000Z", cwd: "C:/x" })}\n`,
+        "utf8",
+      );
+      writeFileSync(
+        newer,
+        `${JSON.stringify({ type: "session", id: "b", timestamp: "2026-10-15T09:00:00.000Z", cwd: "C:/x" })}\n`,
+        "utf8",
+      );
+      const touchOlder = Date.now() - 60_000;
+      // 让老段的 mtime 反而更新一些：排序必须只看创建时间。
+      utimesSync(older, new Date(), new Date(touchOlder));
+      utimesSync(newer, new Date(Date.now() - 3_600_000), new Date(Date.now() - 3_600_000));
+      const latest = latestSegmentOfDir(dir);
+      expect(latest?.path).toBe(newer);
+      expect(latest?.createdMs).toBe(Date.parse("2026-10-15T09:00:00.000Z"));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
-  it("压成单行并按 40 字截断（超出加省略号）", () => {
-    expect(segmentSessionName("多\n行\r\n标  题", null, "短语")).toBe("多 行 标 题");
-    const long = "很长".repeat(30); // 60 字
-    expect(segmentSessionName(long, null, "短语")).toBe(`${"很长".repeat(20)}…`);
-    const fits = "刚好".repeat(20); // 40 字
-    expect(segmentSessionName(fits, null, "短语")).toBe(fits);
+  it("header 缺失时退回文件名里的创建时间；目录空或读不到返回 null", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pixie-segments-"));
+    try {
+      const fileA = join(
+        dir,
+        "2026-10-15T02-00-00-000Z_cccccccc-0000-0000-0000-000000000000.jsonl",
+      );
+      const fileB = join(
+        dir,
+        "2026-10-15T05-00-00-000Z_dddddddd-0000-0000-0000-000000000000.jsonl",
+      );
+      writeFileSync(fileA, "not json at all\n", "utf8");
+      writeFileSync(fileB, "not json at all\n", "utf8");
+      expect(latestSegmentOfDir(dir)?.path).toBe(fileB);
+      expect(latestSegmentOfDir(join(dir, "nope"))).toBeNull();
+      const empty = mkdtempSync(join(tmpdir(), "pixie-empty-"));
+      expect(latestSegmentOfDir(empty)).toBeNull();
+      rmSync(empty, { recursive: true, force: true });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -681,6 +734,26 @@ describe("委派短名与消息锚点（v0.5.0 契约）", () => {
     });
     expect(legacy.taskName).toBeNull();
     expect(legacy.sessionName).toBeNull();
+  });
+
+  it("短名与会话名跨重启存活（dispatches.json 往返）", () => {
+    const agentDir = freshAgentDir();
+    const record = registerDispatch({
+      cwd: "C:/ws",
+      sessionId: "s1",
+      sessionPath: "C:/s1.jsonl",
+      task: "任务全文",
+      agentDir,
+      taskName: "短名",
+      sessionName: "会话名",
+    });
+    resetPixieStateForTests();
+    const [loaded] = listDispatches(10, agentDir);
+    expect(loaded).toMatchObject({
+      id: record.id,
+      taskName: "短名",
+      sessionName: "会话名",
+    });
   });
 
   it("锚点只写一次：重复回执不覆盖派发消息，两个锚点互不影响", () => {

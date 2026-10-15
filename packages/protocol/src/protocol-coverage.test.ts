@@ -360,7 +360,6 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "pixie.ensureCurrent": null,
   "pixie.reply": { dispatchId: "pix_abc", text: "选方案 A" },
   "pixie.setContext": { workspaces: ["C:/work/alpha"] },
-  "pixie.newSegment": null,
   "pixie.interject": {
     dispatchId: "pix_abc",
     text: "先汇报一下当前进度",
@@ -693,8 +692,6 @@ function invalidParams(method: HostMethod): unknown {
       return { dispatchId: "", text: "x" };
     case "pixie.setContext":
       return { workspaces: [42] };
-    case "pixie.newSegment":
-      return { unexpected: true };
     case "pixie.interject":
       return { dispatchId: "", text: "x", mode: "nonsense", thinkingLevel: "ultra" };
     case "pixie.stopDispatch":

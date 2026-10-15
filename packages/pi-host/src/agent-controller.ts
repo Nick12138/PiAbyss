@@ -41,7 +41,7 @@ import {
   diffPromptCacheFingerprints,
   type PromptCacheFingerprint,
 } from "./prompt-cache-contract.js";
-import { isPixieWorkspaceCwd, maybeWrapPixiePrompt } from "./pixie-agent-runner.js";
+import { maybeWrapPixiePrompt } from "./pixie-agent-runner.js";
 
 /** Protocol images ({mediaType,data}) → SDK ImageContent ({type,mimeType,data}). */
 export function toSdkImages(images: SerializableImage[] | undefined): ImageContent[] | undefined {
@@ -152,10 +152,10 @@ function startDetachedPrompt(args: {
   images?: ImageContent[];
   streamingBehavior?: "steer" | "followUp";
   /**
-   * 小精灵会话传 true：段名不在首条消息时自动起（误差大），统一等打盹
-   * 收尾时按整段内容定（pixie-agent-runner 的 segmentSessionName）。
+   * 起会话名用的文本，默认就是 text。小精灵首条消息外面包着 <pixie-context>
+   * 前导，调用方把用户原话传这里，段名才不会取到前导的第一句。
    */
-  suppressProvisionalTitle?: boolean;
+  titleText?: string;
 }): string {
   let runStatePublished = false;
   let detachedTaskStarted = false;
@@ -192,9 +192,11 @@ function startDetachedPrompt(args: {
     // below may run after the active graph changed.
     const initiatingOwner = args.factory.getGraph()?.providerOwner ?? null;
     const runIdentity = args.server.getIdentity();
-    const visibleText = stripAttachmentReferenceBlocks(args.text);
+    // 标题取用户原话：小精灵首条消息外面包着 <pixie-context> 前导，拿包装后的
+    // 文本起名会得到「你是小精灵…」这种名字。
+    const visibleText = stripAttachmentReferenceBlocks(args.titleText ?? args.text);
     const provisionalTitle =
-      args.suppressProvisionalTitle || args.session.sessionName?.trim() || !visibleText.trim()
+      args.session.sessionName?.trim() || !visibleText.trim()
         ? null
         : createProvisionalSessionTitle(visibleText);
     const titleSessionId = args.server.identity.sessionId;
@@ -569,8 +571,8 @@ export function createAgentHandlers(
         return { error: attachmentHostError(error) };
       }
       // 小精灵首条用户消息：包上 <pixie-context> 前导（runner 判定，非小精灵
-      // 工作区时原样返回）。
-      prompt.text = maybeWrapPixiePrompt(factory, g.canonicalCwd, prompt.text);
+      // 工作区或本段已有用户消息时原样返回）。
+      prompt.text = maybeWrapPixiePrompt(factory, g.canonicalCwd, prompt.text, g.agentSession);
       const promptImages =
         toSdkImages(params.images) ??
         (params.attachQueuedImages ? takeQueuedImages(g.agentSession, params.text) : undefined);
@@ -581,10 +583,10 @@ export function createAgentHandlers(
         session: g.agentSession,
         operationLock,
         text: prompt.text,
+        // 段名用小精灵包装前的原话（小精灵工作区里这条就是那条新会话的名字）。
+        titleText: params.text,
         images: promptImages,
         streamingBehavior: params.streamingBehavior,
-        // 小精灵段名不打首条消息上——等打盹收尾时再定。
-        suppressProvisionalTitle: isPixieWorkspaceCwd(factory, g.canonicalCwd),
       });
       commitPromptAttachments(factory, server.identity.sessionId!, prompt.attachmentIds);
 
@@ -1028,10 +1030,6 @@ export function createAgentHandlers(
               operationLock,
               text: item,
               images: promptImages,
-              suppressProvisionalTitle: isPixieWorkspaceCwd(
-                factory,
-                factory.getGraph()?.canonicalCwd ?? "",
-              ),
             });
           } catch (error) {
             operationLock.release(ctx.id);

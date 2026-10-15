@@ -1,14 +1,15 @@
 /**
  * Pixie 环回 HTTP 控制面 —— pi-pixie 插件的 Host 对端。
  *
- * v4：插件侧工具壳扩展为五类（dispatch / report / ask / rest / inject 网关
+ * v4：插件侧工具壳扩展为四类（dispatch / report / ask / name / inject 网关
  * 预留），全部经 `node:http` 直连 127.0.0.1:<PIABYSS_PIXIE_HTTP_PORT>（禁用
  * 全局 fetch：Host 注入的代理设置会拦截环回请求）。执行本体仍在本进程：
  *
- * - `POST /api/pixie/dispatch`        { cwd, task, newSession?, taskName?, sessionName? } → 委派受理结果
+ * - `POST /api/pixie/dispatch`        { cwd, task, newSession?, taskName?, sessionName?, sourceSessionId? } → 委派受理结果
  * - `POST /api/pixie/report`          { dispatchId, summary, success } → done/error 回注
  * - `POST /api/pixie/ask`             { dispatchId, question, options? } → 询问用户
- * - `POST /api/pixie/rest`            { phrase?, handoff? } → 小精灵自睡收尾
+ * - `POST /api/pixie/name`            { name, sessionId? } → 给会话段改显示名
+ * - `POST /api/pixie/rest`            → 打盹已取消，只回一句说明（旧插件兼容）
  * - `POST /api/pixie/inject`          { source, text } → 统一注入入口（网关预留，已实装最小版）
  * - `GET  /api/pixie/dispatch-state`  ?sessionId=… → 该会话是否被委派（armed）+ kind
  *
@@ -34,7 +35,11 @@ const MAX_BODY_BYTES = 512 * 1024;
 export const PIXIE_DISPATCH_PATH = "/api/pixie/dispatch";
 export const PIXIE_REPORT_PATH = "/api/pixie/report";
 export const PIXIE_ASK_PATH = "/api/pixie/ask";
+export const PIXIE_NAME_PATH = "/api/pixie/name";
+/** 打盹已从产品里去掉；这条路径只为还没更新的插件版本留一句明确说明。 */
 export const PIXIE_REST_PATH = "/api/pixie/rest";
+const PIXIE_REST_REMOVED_ERROR =
+  "打盹已经取消，不需要收尾交接；要开新段请让用户在小精灵页点「新会话」。";
 export const PIXIE_INJECT_PATH = "/api/pixie/inject";
 export const PIXIE_DISPATCH_STATE_PATH = "/api/pixie/dispatch-state";
 export const PIXIE_INTERJECT_PATH = "/api/pixie/interject";
@@ -63,6 +68,11 @@ export type PixieControlPlaneDeps = {
     taskName?: string | null;
     /** 本次真的新建会话时采用的会话名；复用既有会话时引擎会忽略。 */
     sessionName?: string | null;
+    /**
+     * 派单那一段的会话 id（插件从 ctx 里取，取不到不传）。工作区里可以同时活着
+     * 多段小精灵会话，回调信封要靠它把回执送回派单的那一段。
+     */
+    sourceSessionId?: string | null;
   }) => Promise<
     | {
         ok: true;
@@ -119,12 +129,11 @@ export type PixieControlPlaneDeps = {
    * 按 cwd 过滤（不传 = 全部）。
    */
   sessionList: (cwd?: string) => unknown[];
-  /** pixie_rest：标记休眠请求（下个运行边界收尾换段）。 */
-  rest: (args: {
-    phrase?: string | null;
-    handoff?: string | null;
-    /** 小精灵自拟的本段标题（打盹后作为旧段的归档会话名）。 */
-    title?: string | null;
+  /** pixie_name：给会话段改显示名（落 jsonl 的 session_info，插件只读）。 */
+  name: (args: {
+    name: string;
+    /** 插件自己那条会话；不传 = 改当前段。 */
+    sessionId?: string | null;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** 统一注入入口（网关预留，最小实装）。 */
   inject: (args: {
@@ -242,6 +251,7 @@ export function parseDispatchBody(raw: string | null):
         batchId?: string | null;
         taskName?: string | null;
         sessionName?: string | null;
+        sourceSessionId?: string | null;
       } & PixieModelOverride;
     }
   | { ok: false; error: string } {
@@ -277,6 +287,13 @@ export function parseDispatchBody(raw: string | null):
   if (!taskName.ok) return taskName;
   const sessionName = readOptionalShortName(value, "sessionName");
   if (!sessionName.ok) return sessionName;
+  if (
+    value.sourceSessionId !== undefined &&
+    value.sourceSessionId !== null &&
+    typeof value.sourceSessionId !== "string"
+  ) {
+    return { ok: false, error: "sourceSessionId 必须是字符串" };
+  }
   return {
     ok: true,
     request: {
@@ -287,6 +304,9 @@ export function parseDispatchBody(raw: string | null):
       ...(value.sessionId !== undefined ? { sessionId: value.sessionId as string | null } : {}),
       ...(taskName.value !== undefined ? { taskName: taskName.value } : {}),
       ...(sessionName.value !== undefined ? { sessionName: sessionName.value } : {}),
+      ...(value.sourceSessionId !== undefined && value.sourceSessionId !== null
+        ? { sourceSessionId: (value.sourceSessionId as string).trim() || null }
+        : {}),
       ...override.override,
     },
   };
@@ -388,13 +408,11 @@ export function parseAskBody(
   };
 }
 
-/** 解析并强校验 rest 请求体；phrase/handoff/title 均可省略。 */
-export function parseRestBody(
+/** 解析并强校验 name 请求体（给会话段改显示名）。 */
+export function parseNameBody(
   raw: string | null,
-):
-  | { ok: true; args: { phrase?: string | null; handoff?: string | null; title?: string | null } }
-  | { ok: false; error: string } {
-  if (raw === null) return { ok: true, args: {} };
+): { ok: true; args: { name: string; sessionId?: string | null } } | { ok: false; error: string } {
+  if (raw === null) return { ok: false, error: "请求体读取失败" };
   let value: unknown;
   try {
     value = JSON.parse(raw) as unknown;
@@ -402,21 +420,23 @@ export function parseRestBody(
     return { ok: false, error: "请求体不是合法 JSON" };
   }
   if (!isRecord(value)) return { ok: false, error: "请求体必须是 JSON 对象" };
-  if (value.phrase !== undefined && value.phrase !== null && typeof value.phrase !== "string") {
-    return { ok: false, error: "phrase 必须是字符串" };
+  if (typeof value.name !== "string" || !value.name.trim()) {
+    return { ok: false, error: "name 必须是非空字符串" };
   }
-  if (value.handoff !== undefined && value.handoff !== null && typeof value.handoff !== "string") {
-    return { ok: false, error: "handoff 必须是字符串" };
-  }
-  if (value.title !== undefined && value.title !== null && typeof value.title !== "string") {
-    return { ok: false, error: "title 必须是字符串" };
+  if (
+    value.sessionId !== undefined &&
+    value.sessionId !== null &&
+    typeof value.sessionId !== "string"
+  ) {
+    return { ok: false, error: "sessionId 必须是字符串" };
   }
   return {
     ok: true,
     args: {
-      ...(value.phrase !== undefined ? { phrase: value.phrase as string | null } : {}),
-      ...(value.handoff !== undefined ? { handoff: value.handoff as string | null } : {}),
-      ...(value.title !== undefined ? { title: value.title as string | null } : {}),
+      name: value.name.trim(),
+      ...(value.sessionId !== undefined && value.sessionId !== null
+        ? { sessionId: (value.sessionId as string).trim() || null }
+        : {}),
     },
   };
 }
@@ -596,18 +616,24 @@ export async function handlePixieControlPlaneRequest(
     }
   }
 
-  if (path === PIXIE_REST_PATH) {
+  if (path === PIXIE_NAME_PATH) {
     if (method !== "POST") return { status: 405, body: { ok: false, error: "仅支持 POST" } };
-    const parsed = parseRestBody(await readBodyText());
+    const parsed = parseNameBody(await readBodyText());
     if (!parsed.ok) return { status: 400, body: { ok: false, error: parsed.error } };
     try {
-      const result = await deps.rest(parsed.args);
+      const result = await deps.name(parsed.args);
       return { status: 200, body: result };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.warn("pixie control-plane rest failed", { error: message });
+      logger.warn("pixie control-plane name failed", { error: message });
       return { status: 200, body: { ok: false, error: message } };
     }
+  }
+
+  if (path === PIXIE_REST_PATH) {
+    // 打盹取消后仍回 200 + 结构化失败：还没更新的插件版本能把这句话原样转给模型，
+    // 而不是撞上 404 那种「控制面挂了」的误导信号。
+    return { status: 200, body: { ok: false, error: PIXIE_REST_REMOVED_ERROR } };
   }
 
   if (path === PIXIE_INJECT_PATH) {

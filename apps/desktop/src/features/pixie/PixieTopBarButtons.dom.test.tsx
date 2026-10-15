@@ -13,7 +13,6 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
 import { usePixieViewStore, resetPixiePanelSessionForTests } from "./pixie-store";
 import { PixieBackToCurrentButton } from "./PixieBackToCurrentButton";
-import { PixieNapButton } from "./PixieNapButton";
 
 const HOST_ID = "11111111-1111-4111-8111-111111111111";
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
@@ -188,34 +187,5 @@ describe("PixieBackToCurrentButton（回到最新会话）", () => {
 
     await waitFor(() => expect(createSpy).toHaveBeenCalled());
     expect(openSpy).not.toHaveBeenCalled();
-  });
-});
-
-describe("PixieNapButton（空会话禁用打盹）", () => {
-  it("没有打开会话时禁用", () => {
-    render(<PixieNapButton />);
-
-    const button = screen.getByTestId("pixie-nap-button") as HTMLButtonElement;
-    expect(button).toBeDisabled();
-  });
-
-  it("空会话（新建会话界面）禁用并给出提示", () => {
-    useAppStore.getState().applySessionSnapshot(sessionSnapshot());
-    render(<PixieNapButton />);
-
-    const button = screen.getByTestId("pixie-nap-button") as HTMLButtonElement;
-    expect(button).toBeDisabled();
-    expect(button).toHaveAttribute("title", "Nothing to nap on yet — say something first");
-  });
-
-  it("有消息的会话可以打盹", () => {
-    useAppStore
-      .getState()
-      .applySessionSnapshot(
-        sessionSnapshot({ messages: [{ role: "user", content: "hi" }] as never }),
-      );
-    render(<PixieNapButton />);
-
-    expect(screen.getByTestId("pixie-nap-button")).toBeEnabled();
   });
 });

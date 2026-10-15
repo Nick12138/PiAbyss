@@ -5,7 +5,7 @@
  * `pixie.ensureCurrent` 拿到锚点后走 `openSessionAcrossWorkspaces`（内部完成
  * workspace.setCurrent + session.open），此后转写/输入框/统计全部由标准
  * session.snapshot / agent.event 推送驱动——与普通会话同一套机制，仅展示不同：
- *   - 顶部动作（打个盹 / 回到最新会话）在 AppTopBar；会话列表在侧边栏左下，
+ *   - 顶部动作（回到最新会话）在 AppTopBar；会话列表在侧边栏左下，
  *     与普通工作区同款（点行留在本页，keepPage）；
  *   - 右侧保留委派面板（pixie.dispatches + pixie.taskTree 轮询，面板是
  *     「工作区 → 会话 → 任务」树：只显示短名 + 四态，操作仍齐全）；
@@ -90,7 +90,7 @@ export function PixiePage() {
 
   /**
    * 锚点获取 + 会话打开。幂等：会话已激活时 openSessionAcrossWorkspaces 快速
-   * 返回 already-active；segmentChanged 事件（打盹切新会话）触发重跑即可。
+   * 返回 already-active；segmentChanged 事件（换段开新会话）触发重跑即可。
    */
   const acquire = useCallback(async () => {
     const pixie = await usePixieViewStore.getState().ensureCurrent();
