@@ -895,9 +895,6 @@ export const zh: Record<MessageKey, string> = {
   botAddFolderWorkspaceDesc: "选择一个本地文件夹作为工作区。",
   botAddTelegramBot: "Telegram 工作区",
   botAddTelegramBotDesc: "创建独立的 Telegram 工作区并绑定机器人。",
-  botAddWeixinBot: "WeXin Bot",
-  botAddWeixinBotDesc: "微信网关支持即将推出。",
-  botAddComingSoon: "敬请期待",
   botAddTelegramTitle: "添加 Telegram Bot",
   botAddTelegramSubtitle:
     "Bot 默认拥有最高权限：首位向该 bot 发送 /start 的用户将被锁定为所有者，可驱动 Pi；其他人均被拒绝。",
@@ -916,7 +913,6 @@ export const zh: Record<MessageKey, string> = {
   botAddTelegramWorkspaceNotCreated: "无法创建工作区目录，请检查 agent 目录权限。",
   botAddTelegramConfirm: "添加",
   botAddTelegramSaved: "已添加 Telegram Bot「{name}」。",
-  botAddWeixinComingSoon: "WeXin Bot 网关支持即将推出。",
 
   // Bot gateways list (saved gateways shown in the sidebar under Workspaces)
   botGatewaysTitle: "机器人网关",

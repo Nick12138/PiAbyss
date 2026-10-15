@@ -952,9 +952,6 @@ export const en = {
   botAddFolderWorkspaceDesc: "Pick a local folder to work in.",
   botAddTelegramBot: "Telegram Workspace",
   botAddTelegramBotDesc: "Create a dedicated Telegram workspace and bind your bot.",
-  botAddWeixinBot: "WeXin Bot",
-  botAddWeixinBotDesc: "WeXin gateway support is coming soon.",
-  botAddComingSoon: "Coming soon",
   botAddTelegramTitle: "Add Telegram Bot",
   botAddTelegramSubtitle:
     "The bot defaults to highest privilege: the first person to send /start to it becomes the owner and can drive Pi; everyone else is rejected.",
@@ -974,7 +971,6 @@ export const en = {
     "Workspace directory couldn’t be created; check the agent directory permissions.",
   botAddTelegramConfirm: "Add",
   botAddTelegramSaved: "Added Telegram Bot “{name}”.",
-  botAddWeixinComingSoon: "WeXin Bot support is coming soon.",
 
   // Bot gateways list (saved gateways shown in the sidebar under Workspaces)
   botGatewaysTitle: "Bot gateways",

@@ -5,7 +5,6 @@ import {
   Folder,
   FolderPlus,
   LoaderCircle,
-  MessageCircle,
   Plus,
   Send,
   Trash2,
@@ -630,25 +629,6 @@ export function WorkspacePicker() {
                       </span>
                     </button>
                   )}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled
-                    className="flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <MessageCircle size={16} className="mt-0.5 shrink-0 text-muted" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium text-foreground">
-                        {t("botAddWeixinBot")}
-                      </span>
-                      <span className="block truncate text-xs text-muted">
-                        {t("botAddWeixinBotDesc")}
-                      </span>
-                    </span>
-                    <span className="mt-0.5 shrink-0 rounded bg-surface-overlay px-1.5 py-0.5 text-[10px] text-muted">
-                      {t("botAddComingSoon")}
-                    </span>
-                  </button>
                 </div>,
                 document.body,
               )
