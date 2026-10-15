@@ -54,7 +54,14 @@ const pixieWorkspace: WorkspaceSnapshot = {
   servicesReady: true,
 };
 
-const openSpy = vi.hoisted(() => vi.fn(async () => ({ status: "opened" }) as const));
+// 真实的会话导航会把活动工作区落到目标 cwd 上（见 session-navigation）；这里照做，
+// 否则页面会认为「工作区被切走了」，触发它自己的重锚（那条路径由页面用例覆盖）。
+const openSpy = vi.hoisted(() =>
+  vi.fn(async () => {
+    useAppStore.getState().setWorkspace(pixieWorkspace);
+    return { status: "opened" } as const;
+  }),
+);
 const activateSpy = vi.hoisted(() => vi.fn(async () => ({ status: "opened" }) as const));
 
 vi.mock("../../lib/bridge/session-navigation", () => ({
@@ -122,6 +129,39 @@ describe("PixiePage 锚定获取（acquire）", () => {
       quiet: true,
     });
     expect(document.body.textContent ?? "").not.toContain("暂不可用");
+  });
+
+  it("工作区被人从脚下换走时重新锚定，不会停在空白加载页", async () => {
+    render(
+      <StrictMode>
+        <PixiePage />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+
+    // 跳转失败 / 外部路由把活动工作区切到别处：本页只能坐在小精灵工作区上，
+    // 发现之后就再锚一次（之前这里永远停在加载态，也就是用户看到的空白页）。
+    useAppStore.getState().setWorkspace(otherWorkspace);
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(2));
+
+    // 锚回来即停：不会因为一次切换就无限重锚。
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(openSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("用户点了别的工作区（切换已在途）时不抢着重锚", async () => {
+    render(
+      <StrictMode>
+        <PixiePage />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+
+    useAppStore.getState().setWorkspace(otherWorkspace);
+    useAppStore.getState().setWorkspaceSwitchTarget(OTHER_CWD);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
   });
 
   it("用户点了别的工作区时不再抢发第二次切换", async () => {

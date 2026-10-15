@@ -125,6 +125,9 @@ function taskTreeFor(records: PixieDispatchRecord[]) {
     sessions: [...sessions.entries()].map(([sessionId, sessionRecords]) => ({
       sessionId,
       label: sessionRecords[0]!.sessionName ?? sessionRecords[0]!.task.slice(0, 20),
+      sessionPath: sessionRecords[0]!.sessionPath,
+      // 替身只关心形状；存活判定本身由 Host 侧 pixie-task-tree.test.ts 覆盖。
+      liveness: "active" as const,
       tasks: sessionRecords.map((record) => ({
         dispatchId: record.id,
         label: record.taskName ?? record.task.slice(0, 20),

@@ -64,6 +64,8 @@ export function PixiePage() {
   const session = useAppStore((s) => s.session);
   const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces ?? []);
   const activeSubagentNodeId = useAppStore((s) => s.activeSubagentNodeId);
+  /** 有人正在切工作区（选择器 / 会话跳转）：别在这个窗口里再抢一次，否则两边互相作废。 */
+  const workspaceSwitchPending = useAppStore((s) => s.workspaceSwitchTarget !== null);
   const current = usePixieViewStore((s) => s.current);
   const dispatches = usePixieViewStore((s) => s.dispatches);
   const taskTree = usePixieViewStore((s) => s.taskTree);
@@ -136,6 +138,25 @@ export function PixiePage() {
     }
     void acquire();
   }, [hostInstanceId, acquire]);
+
+  /**
+   * 工作区被人从脚下换走时重新锚定。本页只能坐在小精灵工作区上（转写、发送、
+   * 面板全按这个前提），而「跳转失败但工作区已经被切走」这类路径会让 here
+   * 一直不成立——页面就停在加载态，用户看到的就是一片空白。acquire 是幂等的：
+   * 工作区已经回来的话 openSessionAcrossWorkspaces 直接返回 already-active，
+   * 所以这里发现「锚定已完成却没坐在小精灵工作区上」就再锚一次，切回来即停。
+   */
+  const pixieAnchorCwd = current?.cwd ?? null;
+  const workspaceStrayed =
+    !acquiring &&
+    !acquireFailed &&
+    !workspaceSwitchPending &&
+    pixieAnchorCwd !== null &&
+    !isSamePixiePath(workspace?.canonicalCwd, pixieAnchorCwd);
+  useEffect(() => {
+    if (!hostInstanceId || !workspaceStrayed) return;
+    void acquire();
+  }, [hostInstanceId, workspaceStrayed, acquire]);
 
   // Leaving the pixie page: hand the active workspace back so the chat page
   // keeps showing whatever the user had before. Skipped when the user already

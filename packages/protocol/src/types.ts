@@ -2228,10 +2228,30 @@ export type PixieTaskTreeTask = {
   lastActiveAt: number | null;
 };
 
+/**
+ * 会话落点的存活状态。面板上的行来自委派记录，而记录不会随会话删除消失，
+ * 所以「这一行的会话还在不在」得由 Host 替前端看一眼磁盘——前端拿到这个状态
+ * 后可以在跳转**之前**就把已删除的判掉（就地提示），而不是先切工作区、
+ * 再告诉用户打不开。
+ */
+export type PixieSessionLiveness =
+  /** 会话文件还在活动目录里，跳转能打开。 */
+  | "active"
+  /** 已被归档：文件在归档目录里，先在会话列表恢复才打得开。 */
+  | "archived"
+  /** 两处都找不到——多半是被删了。 */
+  | "missing"
+  /** 记录里没有落点路径（受理前就失败的记录），无从判定。 */
+  | "unknown";
+
 /** 会话层：会话名优先（sessionName / 复用会话的现有名），兜底用该会话最早任务。 */
 export type PixieTaskTreeSession = {
   sessionId: string;
   label: string;
+  /** 记录上的会话文件路径（跳转直接用它，不必回查 session.list）；未落点时为 null。 */
+  sessionPath: string | null;
+  /** 这个落点还在不在（见 PixieSessionLiveness）。 */
+  liveness: PixieSessionLiveness;
   tasks: PixieTaskTreeTask[];
 };
 

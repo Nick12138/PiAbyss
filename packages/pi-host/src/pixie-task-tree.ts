@@ -5,15 +5,19 @@
  * 每行的 cwd + sessionId，所以这里不再产出消息锚点（记录里的 dispatchMessageId /
  * reportMessageId 字段留着，只是没人再写它）。
  */
+import { existsSync } from "node:fs";
+import { basename, join } from "node:path";
 import type {
   PixieDispatchRecord,
   PixieDispatchStatus,
+  PixieSessionLiveness,
   PixieTaskStatus,
   PixieTaskTreeSession,
   PixieTaskTreeTask,
   PixieTaskTreeWorkspace,
 } from "@piabyss/protocol";
 import { clipPixieShortName, listDispatchesForPanel } from "./pixie-agent-runner.js";
+import { sessionStorageDirs } from "./session-storage.js";
 
 /**
  * 生命周期 → 对外四态。排队=还没进会话；进行中=已注入且未终态（含暂停等指令
@@ -106,6 +110,34 @@ function sessionLabel(records: PixieDispatchRecord[]): string {
 const UNRESOLVED_SESSION_KEY = "";
 
 /**
+ * 会话落点还在不在：面板的行来自委派记录，记录不随会话删除消失，所以这里先替
+ * 前端看一眼磁盘。跳转要用的 sessionPath 也一并按同一次判定给出（归档时给归档
+ * 目录里的那份，好让前端说清「去哪恢复」而不是「找不到了」）。
+ *
+ * 判定只看文件在不在，不解析内容：损坏的文件依旧算 active，交给 session.open
+ * 去报真正的错误——这里不该替 Host 猜「能不能打开」。
+ */
+function sessionLivenessOf(
+  agentDir: string,
+  cwd: string,
+  records: PixieDispatchRecord[],
+): { sessionPath: string | null; liveness: PixieSessionLiveness } {
+  // 同一条会话的多条记录路径一致（新建后回填的那次）；取最近一条带路径的。
+  const located = records.reduce<PixieDispatchRecord | null>(
+    (newest, record) =>
+      record.sessionPath && (!newest || record.createdAt > newest.createdAt) ? record : newest,
+    null,
+  );
+  const sessionPath = located?.sessionPath ?? null;
+  if (!sessionPath) return { sessionPath: null, liveness: "unknown" };
+  if (existsSync(sessionPath)) return { sessionPath, liveness: "active" };
+  const archivedPath = join(sessionStorageDirs(agentDir, cwd).archiveDir, basename(sessionPath));
+  return existsSync(archivedPath)
+    ? { sessionPath: archivedPath, liveness: "archived" }
+    : { sessionPath, liveness: "missing" };
+}
+
+/**
  * 组装任务树。归属过滤沿用委派面板语义（活跃跨段 + 当前段历史），与
  * `pixie.dispatches` 看到的是同一批记录，只是换了投影形状。
  * 排序：工作区 / 会话按最近活动倒序；任务按档位排（见 `comparePixieTasks`）。
@@ -133,7 +165,8 @@ export function buildPixieTaskTree(
       const label = sessionId
         ? sessionLabel(sessionRecords) || `会话 ${sessionId.slice(0, 8)}`
         : pixieWorkspaceLabel(cwd);
-      sessionNodes.push({ sessionId, label, tasks });
+      const { sessionPath, liveness } = sessionLivenessOf(agentDir, cwd, sessionRecords);
+      sessionNodes.push({ sessionId, label, sessionPath, liveness, tasks });
     }
     sessionNodes.sort(
       (left, right) =>

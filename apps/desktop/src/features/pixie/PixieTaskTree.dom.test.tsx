@@ -3,7 +3,11 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PixieTaskTreeTask, PixieTaskTreeWorkspace } from "@piabyss/protocol";
+import type {
+  PixieTaskTreeSession,
+  PixieTaskTreeTask,
+  PixieTaskTreeWorkspace,
+} from "@piabyss/protocol";
 import { PixieTaskTree } from "./PixieTaskTree";
 
 vi.mock("./pixie-session-jump", () => ({
@@ -29,12 +33,27 @@ function task(overrides: Partial<PixieTaskTreeTask> = {}): PixieTaskTreeTask {
   } as PixieTaskTreeTask;
 }
 
-function groups(tasks: PixieTaskTreeTask[]): PixieTaskTreeWorkspace[] {
+/** 会话行；默认落点还在（active），要测「已删除 / 已归档」就覆盖 liveness。 */
+function session(overrides: Partial<PixieTaskTreeSession> = {}): PixieTaskTreeSession {
+  return {
+    sessionId: "s-1",
+    label: "登录修复",
+    sessionPath: "/sessions/2026-10-12T13-02-40-119Z_s-1.jsonl",
+    liveness: "active",
+    tasks: [],
+    ...overrides,
+  };
+}
+
+function groups(
+  tasks: PixieTaskTreeTask[],
+  sessionOverrides: Partial<PixieTaskTreeSession> = {},
+): PixieTaskTreeWorkspace[] {
   return [
     {
       cwd: "C:/work/PiAbyss",
       workspaceLabel: "PiAbyss",
-      sessions: [{ sessionId: "s-1", label: "登录修复", tasks }],
+      sessions: [session({ tasks, ...sessionOverrides })],
     },
   ];
 }
@@ -69,7 +88,15 @@ describe("PixieTaskTree", () => {
           {
             cwd: "C:/work/PiAbyss",
             workspaceLabel: "PiAbyss",
-            sessions: [{ sessionId: "", label: "PiAbyss", tasks: [task()] }],
+            sessions: [
+              session({
+                sessionId: "",
+                label: "PiAbyss",
+                sessionPath: null,
+                liveness: "unknown",
+                tasks: [task()],
+              }),
+            ],
           },
         ]}
       />,
@@ -104,14 +131,34 @@ describe("PixieTaskTree", () => {
     expect(screen.queryByText("选哪个？")).toBeNull();
   });
 
-  it("跳转按会话给：点会话行的按钮打开这个会话，不定位到消息", async () => {
+  it("跳转按会话给：点会话行的按钮打开这个会话，坐标连同落点与存活状态一起带走", async () => {
     const user = userEvent.setup();
     render(<PixieTaskTree groups={groups([task()])} />);
     await user.click(screen.getByTestId("pixie-session-jump"));
     expect(jumpToPixieSession).toHaveBeenCalledWith({
       cwd: "C:/work/PiAbyss",
       sessionId: "s-1",
+      sessionPath: "/sessions/2026-10-12T13-02-40-119Z_s-1.jsonl",
+      liveness: "active",
     });
+  });
+
+  it("会话已被删除：面板上当场标出来，不用点一次才知道", () => {
+    render(<PixieTaskTree groups={groups([task()], { liveness: "missing" })} />);
+    const tag = screen.getByTestId("pixie-session-gone-tag");
+    expect(tag).toHaveTextContent("deleted");
+    // 按钮还在（点了会就地提示），但标记已经把话说在前面了。
+    expect(screen.getByTestId("pixie-session-jump")).toBeInTheDocument();
+  });
+
+  it("会话已归档：标记说的是归档，不是删除", () => {
+    render(<PixieTaskTree groups={groups([task()], { liveness: "archived" })} />);
+    expect(screen.getByTestId("pixie-session-gone-tag")).toHaveTextContent("archived");
+  });
+
+  it("落点还在的行不挂标记", () => {
+    render(<PixieTaskTree groups={groups([task()])} />);
+    expect(screen.queryByTestId("pixie-session-gone-tag")).toBeNull();
   });
 
   it("未落点的分组行（没有会话 id）不给跳转按钮", () => {
@@ -121,7 +168,15 @@ describe("PixieTaskTree", () => {
           {
             cwd: "C:/work/PiAbyss",
             workspaceLabel: "PiAbyss",
-            sessions: [{ sessionId: "", label: "PiAbyss", tasks: [task()] }],
+            sessions: [
+              session({
+                sessionId: "",
+                label: "PiAbyss",
+                sessionPath: null,
+                liveness: "unknown",
+                tasks: [task()],
+              }),
+            ],
           },
         ]}
       />,

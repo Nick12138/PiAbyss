@@ -9,7 +9,11 @@
  */
 import { useMemo, useState } from "react";
 import { ChevronRight, Crosshair } from "lucide-react";
-import type { PixieTaskTreeTask, PixieTaskTreeWorkspace } from "@piabyss/protocol";
+import type {
+  PixieSessionLiveness,
+  PixieTaskTreeTask,
+  PixieTaskTreeWorkspace,
+} from "@piabyss/protocol";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 import { jumpToPixieSession, type PixieSessionTarget } from "./pixie-session-jump";
 
@@ -87,8 +91,21 @@ type GroupLine = {
   key: string;
   label: string;
   jump: PixieSessionTarget | null;
+  /** 会话落点的存活状态：没了 / 归档的行直接在面板上点出来，不用点一次才知道。 */
+  liveness: PixieSessionLiveness;
   tasks: PixieTaskTreeTask[];
 };
+
+/**
+ * 落点已不在时的行内标记：会话被删（记录还在）与已归档是两件事，前者没救、
+ * 后者能恢复，所以分开说；`active` / `unknown` 不标记（后者只是记录里没路径，
+ * 不是「没了」）。
+ */
+function goneTag(liveness: PixieSessionLiveness, t: Translate): string | null {
+  if (liveness === "missing") return t("pixieSessionMissingTag");
+  if (liveness === "archived") return t("pixieSessionArchivedTag");
+  return null;
+}
 
 /**
  * Host 的投影是「工作区 → 会话 → 任务」三层，面板只铺两层：工作区名并进会话行当
@@ -104,7 +121,15 @@ function toGroupLines(groups: PixieTaskTreeWorkspace[]): GroupLine[] {
       lines.push({
         key: `${group.cwd}\n${session.sessionId}`,
         label: bare ? group.workspaceLabel : `${group.workspaceLabel} · ${session.label}`,
-        jump: session.sessionId ? { cwd: group.cwd, sessionId: session.sessionId } : null,
+        jump: session.sessionId
+          ? {
+              cwd: group.cwd,
+              sessionId: session.sessionId,
+              sessionPath: session.sessionPath,
+              liveness: session.liveness,
+            }
+          : null,
+        liveness: session.liveness,
         tasks: session.tasks,
       });
     }
@@ -139,6 +164,7 @@ export function PixieTaskTree({ groups }: { groups: PixieTaskTreeWorkspace[] }) 
       {lines.map((line) => {
         const isCollapsed = collapsed.has(line.key);
         const jump = line.jump;
+        const tag = jump ? goneTag(line.liveness, t) : null;
         return (
           <div key={line.key} data-testid="pixie-task-group">
             <div className="flex items-center gap-1">
@@ -154,7 +180,27 @@ export function PixieTaskTree({ groups }: { groups: PixieTaskTreeWorkspace[] }) 
                   className={`shrink-0 transition-transform ${isCollapsed ? "" : "rotate-90"}`}
                 />
                 <span className="min-w-0 flex-1 truncate text-left">{line.label}</span>
-                <span className="shrink-0 text-[10px] text-muted">{line.tasks.length}</span>
+                {/* 落点已不在（删除 / 归档）：不用点一次才知道——面板上就写清楚，
+                 * 点击时也只会就地提示，不再把用户送去一个打不开的页面。 */}
+                {tag && (
+                  <span
+                    data-testid="pixie-session-gone-tag"
+                    className="shrink-0 text-[10px] text-warning"
+                    title={
+                      line.liveness === "missing"
+                        ? t("pixieSessionGone")
+                        : t("pixieSessionArchived")
+                    }
+                  >
+                    {tag}
+                  </span>
+                )}
+                {/* 计数与标签同号（11px），次级感靠 400 字重 + muted 给；tabular-nums 让位数
+                 * 从 1 变到 10 时行宽不跳。此前这里是 text-[10px]，比同一行的 11px 标签小一
+                 * 档，数字墨迹只有汉字的三分之二高，看着"没居中"（几何上其实居中）。 */}
+                <span className="shrink-0 font-normal text-muted tabular-nums">
+                  {line.tasks.length}
+                </span>
               </button>
               {jump && (
                 <button
@@ -165,7 +211,9 @@ export function PixieTaskTree({ groups }: { groups: PixieTaskTreeWorkspace[] }) 
                   aria-label={t("pixieSessionJumpButton")}
                   onClick={() => void jumpToPixieSession(jump)}
                 >
-                  <Crosshair size={12} />
+                  {/* 与行内 chevron、正文同为 11px（PixieBackToCurrentButton 也是 text-[11px]+
+                   * size={11} 这套）；之前是 12px，比同一行的文字大一号，看着比文字"高"。 */}
+                  <Crosshair size={11} />
                 </button>
               )}
             </div>

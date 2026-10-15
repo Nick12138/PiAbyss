@@ -2834,9 +2834,14 @@ function isPixieTaskTreeTask(value: unknown): boolean {
 function isPixieTaskTreeSession(value: unknown): boolean {
   return (
     isPlainObject(value) &&
-    hasExactKeys(value, ["sessionId", "label", "tasks"]) &&
+    hasExactKeys(value, ["sessionId", "label", "sessionPath", "liveness", "tasks"]) &&
     isString(value.sessionId) &&
     isString(value.label) &&
+    (value.sessionPath === null || isString(value.sessionPath)) &&
+    (value.liveness === "active" ||
+      value.liveness === "archived" ||
+      value.liveness === "missing" ||
+      value.liveness === "unknown") &&
     Array.isArray(value.tasks) &&
     value.tasks.every(isPixieTaskTreeTask)
   );

@@ -4,7 +4,7 @@
  * 不再有消息锚点。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -16,6 +16,7 @@ import {
   pixieFallbackName,
 } from "./pixie-agent-runner.js";
 import { buildPixieTaskTree, pixieTaskStatusOf, pixieWorkspaceLabel } from "./pixie-task-tree.js";
+import { sessionStorageDirs } from "./session-storage.js";
 
 let currentDir: string | null = null;
 
@@ -41,12 +42,13 @@ function addTask(
     sessionName?: string | null;
     originSessionId?: string | null;
     status?: "dispatched" | "queued";
+    sessionPath?: string | null;
   },
 ) {
   return registerDispatch({
     cwd: input.cwd,
     sessionId: input.sessionId,
-    sessionPath: `${input.sessionId}.jsonl`,
+    sessionPath: input.sessionPath === undefined ? `${input.sessionId}.jsonl` : input.sessionPath,
     task: input.task,
     agentDir,
     taskName: input.taskName ?? null,
@@ -86,6 +88,60 @@ describe("四态收敛", () => {
   it("工作区标签取路径最后一段", () => {
     expect(pixieWorkspaceLabel("C:\\Users\\liu\\Documents\\我的项目\\PiAbyss")).toBe("PiAbyss");
     expect(pixieWorkspaceLabel("/home/me/wps/")).toBe("wps");
+  });
+});
+
+describe("会话落点存活状态", () => {
+  it("文件还在=active；只剩归档目录里的那份=archived；两处都没有=missing", () => {
+    const agentDir = freshAgentDir();
+    const cwd = "C:/work/PiAbyss";
+    const dirs = sessionStorageDirs(agentDir, cwd);
+    mkdirSync(dirs.activeDir, { recursive: true });
+    mkdirSync(dirs.archiveDir, { recursive: true });
+
+    // 活跃：文件真在活动会话目录里。
+    const livePath = join(dirs.activeDir, "2026-10-12T13-02-40-119Z_s-live.jsonl");
+    writeFileSync(livePath, "{}");
+    // 归档：文件只出现在归档目录里（活动目录那份已经被移走）。
+    const archivedName = "2026-10-12T13-02-40-119Z_s-arch.jsonl";
+    writeFileSync(join(dirs.archiveDir, archivedName), "{}");
+
+    addTask(agentDir, { task: "还在", cwd, sessionId: "s-live", sessionPath: livePath });
+    addTask(agentDir, {
+      task: "归档了",
+      cwd,
+      sessionId: "s-arch",
+      sessionPath: join(dirs.activeDir, archivedName),
+    });
+    addTask(agentDir, {
+      task: "删掉了",
+      cwd,
+      sessionId: "s-gone",
+      sessionPath: join(dirs.activeDir, "2026-10-12T13-02-40-119Z_s-gone.jsonl"),
+    });
+
+    const [group] = buildPixieTaskTree(agentDir, "seg-1");
+    const byId = new Map(group!.sessions.map((session) => [session.sessionId, session]));
+    expect(byId.get("s-live")).toMatchObject({ liveness: "active", sessionPath: livePath });
+    // 归档时给的是归档目录里的那份，前端才能说清「去哪恢复」。
+    expect(byId.get("s-arch")).toMatchObject({
+      liveness: "archived",
+      sessionPath: join(dirs.archiveDir, archivedName),
+    });
+    expect(byId.get("s-gone")!.liveness).toBe("missing");
+  });
+
+  it("受理前就失败、没落点的记录：unknown——没路径不等于已删除", () => {
+    const agentDir = freshAgentDir();
+    addTask(agentDir, {
+      task: "没落点的那条",
+      cwd: "C:/work/PiAbyss",
+      sessionId: "s-nopath",
+      sessionPath: null,
+    });
+
+    const [group] = buildPixieTaskTree(agentDir, "seg-1");
+    expect(group!.sessions[0]).toMatchObject({ sessionPath: null, liveness: "unknown" });
   });
 });
 
