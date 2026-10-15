@@ -1285,9 +1285,29 @@ export class WorkspaceLifecycle {
         toolRevision: graph.toolRevision,
         includeStreamingMessage: true,
       });
+      // Sessions registered as resident runtimes of this graph while also
+      // holding its foreground slot — the 小精灵's workspace session is placed
+      // that way on purpose, because the residency entry is what makes a parked
+      // graph keep its providers and its session alive.
+      const residentRuntimes = [
+        ...graph.backgroundSessions.values(),
+        ...(graph.idleSessionCache?.values() ?? []),
+      ].filter((runtime) => runtime.agentSession === session);
       // A parked graph still carries its agent subscription from before the
       // park; drop it before re-subscribing so events are never delivered
-      // twice.
+      // twice. A resident runtime may hold the live handle for this very
+      // session instead — take that one over too, or the old listener keeps
+      // firing beside the new one and the renderer applies every delta twice.
+      for (const runtime of residentRuntimes) {
+        if (!runtime.unsubscribeAgent || runtime.unsubscribeAgent === graph.unsubscribeAgent) {
+          continue;
+        }
+        try {
+          runtime.unsubscribeAgent();
+        } catch {
+          /* ignore */
+        }
+      }
       try {
         graph.unsubscribeAgent?.();
       } catch {
@@ -1296,6 +1316,23 @@ export class WorkspaceLifecycle {
       graph.unsubscribeAgent = session.subscribe((event) => {
         this.sessionRuntimeCache.handleAgentEvent(graph, session, event);
       });
+      // Both roles must now point at the one live handle: a resident runtime
+      // left holding the handle just unsubscribed above would drop the
+      // session's events if it were later promoted, and a stale
+      // `graph.sessionManager` (still describing the session the graph was built
+      // with) silently loses the timing entries — the fold asks that manager
+      // for a leaf it never wrote — and starves `session.getStats` of any
+      // aggregate, which is why the 小精灵's speed pill had no figure to show.
+      for (const runtime of residentRuntimes) {
+        runtime.unsubscribeAgent = graph.unsubscribeAgent;
+        if (graph.sessionManager === runtime.sessionManager) continue;
+        logger.warn("Reactivating a graph whose Session Manager described another Session", {
+          cwd: graph.canonicalCwd,
+          sessionId: session.sessionId,
+          managerSessionId: graph.sessionManager?.getSessionId() ?? null,
+        });
+        graph.sessionManager = runtime.sessionManager;
+      }
     } catch (err) {
       logger.warn("retained graph preparation failed; rebuilding workspace", {
         cwd: args.canonical,

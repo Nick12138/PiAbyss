@@ -1240,26 +1240,58 @@ function findCurrentRuntime(
 }
 
 /**
- * 给停驻的小精灵图补齐前台会话位（agentSession + sessionSnapshot）。
+ * 给停驻的小精灵图补齐前台会话位——会话的四个槽位一起补。
  *
- * 标准停驻图语义（曾经前台、被 park 的图）会把活动会话留在
- * `graph.agentSession` + `graph.sessionSnapshot`——`commitReactivateRetainedGraph`
- * 二者缺一就把整张图 dispose 重建。Runner 后台建的 pixie 图从未走过前台，
- * 会话只存在于 backgroundSessions：不补位的话，每次前台切到 pixie 工作区
- * 都会先销毁暖图、再走 pending shell，紧接着的 session.open 撞上未就绪的
- * services 返回 AGENT_NOT_READY（前端不重试该错误码）——即「每次进小精灵
- * 页都提示暂不可用，手动重试才好」。图在前台时这两个槽位归标准
- * promote 路径（promoteBackgroundRuntime / session.open）管，不要碰。
+ * 标准停驻图语义（曾经前台、被 park 的图）把活动会话留在 `graph.agentSession` +
+ * `graph.sessionSnapshot`，会话管理器与事件订阅留在 `graph.sessionManager` +
+ * `graph.unsubscribeAgent`——`commitReactivateRetainedGraph` 缺前两者就把整张图
+ * dispose 重建。Runner 后台建的 pixie 图从未走过前台，会话只存在于
+ * backgroundSessions：不补位的话，每次前台切到 pixie 工作区都会先销毁暖图、再走
+ * pending shell，紧接着的 session.open 撞上未就绪的 services 返回
+ * AGENT_NOT_READY（前端不重试该错误码）——即「每次进小精灵页都提示暂不可用，手动
+ * 重试才好」。
+ *
+ * 只补会话与快照这两个槽位是错的，漏掉后两个各留下一个症状：
+ *
+ * - 漏 `sessionManager`：`handleAgentEvent` 按「前台会话」取
+ *   `graph.sessionManager`，拿到的却是建图时那个从未用过的会话的管理器。它的
+ *   `getLeafId()` 永远是 null，计时的 custom entry 于是静默丢弃，
+ *   `session.getStats` 折的也是这份空 entries——速度药丸从此没有数字，「会话统计」
+ *   面板里模型/工具耗时全空。
+ * - 漏 `unsubscribeAgent`：重新激活会先 `graph.unsubscribeAgent?.()`（此时为
+ *   null，等于没摘）再给同一会话挂一条新订阅，而 runtime 自己那个监听还活着 →
+ *   同一个原始事件被处理两次，前端每个 delta 落两遍（正文逐字重复、工具数翻倍、
+ *   瞬时 tok/s 虚高）。
+ *
+ * 所以这里把 runtime 已建好的那条订阅**共享**给图槽位（不是再挂一条）。该会话同时
+ * 留在 backgroundSessions 是必要的：`graphHasResidentSessions` 靠它把这张图判为
+ * 有驻留会话，park 时才不摘订阅、不挂起 provider（后台投递的委派回报要靠这条
+ * 订阅才有人处理）。重新激活换订阅时由 workspace-lifecycle 把活着的那条回写给
+ * runtime，两边始终指向同一条。
+ *
+ * 图在前台时这些槽位归标准 promote 路径（`promoteBackgroundRuntime` /
+ * `session.open`）管，不要碰。
  */
 function markParkedForegroundSession(
   factory: WorkspaceGraphFactory,
   graph: WorkspaceGraph,
-  session: AgentSession,
-  snapshot: ReturnType<typeof buildSessionSnapshot>,
+  runtime: PixieParkedRuntime,
 ): void {
   if (factory.getGraph() === graph) return;
-  graph.agentSession = session;
-  graph.sessionSnapshot = snapshot;
+  // The session the graph was built with keeps being referenced by nothing but
+  // this slot once the placement below takes over, so drop its subscription
+  // first — otherwise it stays attached with no owner left to detach it.
+  if (graph.unsubscribeAgent && graph.unsubscribeAgent !== runtime.unsubscribeAgent) {
+    try {
+      graph.unsubscribeAgent();
+    } catch {
+      /* best-effort */
+    }
+  }
+  graph.agentSession = runtime.agentSession;
+  graph.sessionManager = runtime.sessionManager;
+  graph.sessionSnapshot = runtime.sessionSnapshot;
+  graph.unsubscribeAgent = runtime.unsubscribeAgent;
 }
 
 /** 在小精灵工作区图里新建一个正式会话并驻留到 backgroundSessions。 */
@@ -1317,7 +1349,7 @@ async function createPixieSessionInGraph(
     extensionUiReplayState: null,
   };
   graph.backgroundSessions.set(session.sessionId, runtime);
-  markParkedForegroundSession(factory, graph, session, snapshot);
+  markParkedForegroundSession(factory, graph, runtime);
   return { sessionId: session.sessionId, sessionPath: session.sessionFile ?? "", runtime };
 }
 
@@ -1370,7 +1402,7 @@ async function openPixieSessionInGraph(
     extensionUiReplayState: null,
   };
   graph.backgroundSessions.set(session.sessionId, runtime);
-  markParkedForegroundSession(factory, graph, session, snapshot);
+  markParkedForegroundSession(factory, graph, runtime);
   return { sessionId: session.sessionId, sessionPath: session.sessionFile ?? sessionPath, runtime };
 }
 

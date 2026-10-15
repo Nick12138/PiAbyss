@@ -1777,6 +1777,114 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
     }
   });
 
+  /**
+   * The 小精灵's workspace session is deliberately BOTH the graph's foreground
+   * session and a resident `backgroundSessions` entry (that registration is what
+   * keeps a parked pixie graph's providers and its session alive), so exactly one
+   * agent listener must serve both roles. Two listeners means every raw event is
+   * handled twice and the renderer applies each delta twice; a stale
+   * `graph.sessionManager` means the timing entries land on a session that never
+   * wrote them, so the speed pill has no figure to show.
+   */
+  function setupResidentForegroundGraph(state: ReturnType<typeof setup>) {
+    const session = fakeSession(true, BACKGROUND_SESSION_ID);
+    const liveHandlers = new Set<(event: unknown) => void>();
+    session.subscribe = vi.fn((handler: (event: unknown) => void) => {
+      liveHandlers.add(handler);
+      return () => {
+        liveHandlers.delete(handler);
+      };
+    }) as unknown as AgentSession["subscribe"];
+    const retained = fakeWorkspaceGraph(
+      state.retainedDir,
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      session,
+    );
+    const foreignManager = { getSessionId: () => ACTIVE_SESSION_ID };
+    const owningManager = { getSessionId: () => BACKGROUND_SESSION_ID };
+    retained.sessionManager = foreignManager as unknown as typeof retained.sessionManager;
+    // The agent listener the graph was built with, still attached.
+    const staleHandler = () => undefined;
+    const staleUnsubscribe = session.subscribe(staleHandler);
+    retained.backgroundSessions.set(BACKGROUND_SESSION_ID, {
+      sessionId: BACKGROUND_SESSION_ID,
+      sessionRevision: 1,
+      sessionManager: owningManager,
+      agentSession: session,
+      sessionSnapshot: fakeSessionSnapshot(BACKGROUND_SESSION_ID, 1, true),
+      unsubscribeAgent: staleUnsubscribe,
+    } as unknown as BackgroundSessionRuntime);
+    return {
+      session,
+      retained,
+      liveHandlers,
+      staleHandler,
+      owningManager,
+      foreignManager,
+      staleUnsubscribe,
+    };
+  }
+
+  async function reactivateRetained(state: ReturnType<typeof setup>, graph: WorkspaceGraph) {
+    await state.internal.retainGraph(graph);
+    await state.internal.flushFingerprintJobs();
+    const result = await state.internal.tryReactivateRetainedGraph({
+      canonical: state.retainedDir,
+      previousGraph: state.previous,
+      revision: 8,
+      sessionRevision: 10,
+      packageRevision: 5,
+    });
+    expect("error" in (result as { error?: unknown })).toBe(false);
+  }
+
+  it("keeps one agent listener when the resident runtime shares the foreground slot", async () => {
+    const state = setup();
+    try {
+      const { retained, liveHandlers, staleHandler, owningManager, staleUnsubscribe } =
+        setupResidentForegroundGraph(state);
+      // The placement the runner performs: the session's live subscription is
+      // shared by both slots, and the graph's manager describes that session.
+      retained.unsubscribeAgent = staleUnsubscribe;
+      retained.sessionManager = owningManager as unknown as typeof retained.sessionManager;
+      expect(liveHandlers.has(staleHandler)).toBe(true);
+
+      await reactivateRetained(state, retained);
+
+      // Retired, then replaced — never two agent listeners at once.
+      expect(liveHandlers.has(staleHandler)).toBe(false);
+      const resident = retained.backgroundSessions.get(BACKGROUND_SESSION_ID)!;
+      expect(resident.unsubscribeAgent).toBe(retained.unsubscribeAgent);
+      expect(retained.sessionManager).toBe(owningManager);
+      await state.internal.disposeRetainedGraphs();
+    } finally {
+      rmSync(state.root, { recursive: true, force: true });
+    }
+  });
+
+  it("takes over a resident runtime's listener instead of stacking a second one", async () => {
+    const state = setup();
+    try {
+      const { retained, liveHandlers, staleHandler, owningManager } =
+        setupResidentForegroundGraph(state);
+      // A half-placed graph: the foreground slot never learned about the
+      // resident runtime's subscription. Re-subscribing must retire the old
+      // listener rather than run beside it.
+      retained.unsubscribeAgent = null;
+      expect(liveHandlers.has(staleHandler)).toBe(true);
+
+      await reactivateRetained(state, retained);
+
+      expect(liveHandlers.has(staleHandler)).toBe(false);
+      const resident = retained.backgroundSessions.get(BACKGROUND_SESSION_ID)!;
+      expect(resident.unsubscribeAgent).toBe(retained.unsubscribeAgent);
+      expect(retained.sessionManager).toBe(owningManager);
+      await state.internal.disposeRetainedGraphs();
+    } finally {
+      rmSync(state.root, { recursive: true, force: true });
+    }
+  });
+
   it("invalidates retained Workspace runtimes", async () => {
     const state = setup();
     try {
