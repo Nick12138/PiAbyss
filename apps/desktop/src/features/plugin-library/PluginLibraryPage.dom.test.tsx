@@ -288,6 +288,31 @@ function snapshotWithRepo(webEnabled: boolean): PackageSnapshot {
   };
 }
 
+/** An npm plugin plus the registry repository: two independent packages in the
+ *  update popup, so the batch update really iterates more than once. */
+function snapshotWithBrowserAndRepo(): PackageSnapshot {
+  const repoPkg = packageRecord({
+    id: "pkg-repo",
+    identity: REPO_SOURCE,
+    source: REPO_SOURCE,
+    kind: "git",
+    displayName: "my-pi-plugins",
+  });
+  return {
+    ...emptySnapshot(),
+    configured: [packageRecord(), repoPkg],
+    resources: [
+      resource({ enabled: false }),
+      resource({
+        id: "res-web",
+        packageId: "pkg-repo",
+        path: "C:/agent/git/github.com/Nick12138/my-pi-plugins/packages/pi-web/extensions/pi-web.ts",
+        enabled: true,
+      }),
+    ],
+  };
+}
+
 function catalogWithGlobalOnlyPlugin(): PluginLibraryCatalog {
   const memoPlugin: PluginLibraryCatalog["plugins"][number] = {
     id: "piabyss-memo",
@@ -699,6 +724,73 @@ describe("PluginLibraryPage DOM workflows", () => {
         expect.any(Number),
       ),
     );
+    await waitFor(() => expect(document.querySelector("[data-plugin-updates]")).toBeNull());
+  });
+
+  it("updates every pending package even though each update bumps packageRevision", async () => {
+    // Regression: the batch loop reused the render-time host snapshot, so the
+    // second request carried a stale expectedPackageRevision and the host
+    // refused it with STALE_REVISION — only the first plugin ever updated.
+    currentSnapshot = snapshotWithBrowserAndRepo();
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    updateCheckResult = {
+      supported: true,
+      updates: [
+        {
+          packageId: "pkg-browser",
+          source: "npm:betterwright",
+          current: "1.9.0",
+          available: "1.10.0",
+        },
+        { packageId: "pkg-repo", source: REPO_SOURCE },
+      ],
+    };
+    // Host double that honours the real revision contract: a committed mutation
+    // bumps packageRevision, and a request pinned to an older revision is
+    // refused the way the host refuses it.
+    let hostPackageRevision = 1;
+    const committed: string[] = [];
+    request.mockImplementation(async (method: string, context: unknown, params: unknown) => {
+      if (method === "pluginLibrary.catalog") return envelope(method, currentCatalog);
+      if (method === "piSettings.get") return envelope(method, { models: visionModels });
+      if (method === "package.list") return envelope(method, currentSnapshot);
+      if (method === "package.checkUpdates") return envelope(method, updateCheckResult);
+      if (method === "package.update") {
+        const { expectedPackageRevision } = context as { expectedPackageRevision: number };
+        if (expectedPackageRevision !== hostPackageRevision) {
+          return {
+            ...envelope(method, undefined),
+            ok: false,
+            result: undefined,
+            packageRevision: hostPackageRevision,
+            error: { code: "STALE_REVISION", message: "Package revision mismatch" },
+          } as never;
+        }
+        hostPackageRevision += 1;
+        committed.push((params as { packageId: string }).packageId);
+        return {
+          ...envelope(method, mutationResult(currentSnapshot)),
+          packageRevision: hostPackageRevision,
+        } as never;
+      }
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    await screen.findByText("浏览器");
+    await user.click(await screen.findByRole("button", { name: "Updates available" }));
+
+    const menu = document.querySelector<HTMLElement>("[data-plugin-updates-menu]")!;
+    expect(menu.querySelector('[data-plugin-update-row="plugin:pkg-browser"]')).not.toBeNull();
+    expect(menu.querySelector('[data-plugin-update-row="repo:pkg-repo"]')).not.toBeNull();
+
+    await user.click(menu.querySelector<HTMLElement>("[data-plugin-update-all]")!);
+
+    // Both packages are actually committed — not merely attempted and refused.
+    await waitFor(() => expect(committed).toEqual(["pkg-browser", "pkg-repo"]));
+    expect(hostPackageRevision).toBe(3);
+    // Every applied row clears, so the update badge goes away.
     await waitFor(() => expect(document.querySelector("[data-plugin-updates]")).toBeNull());
   });
 
@@ -1336,5 +1428,51 @@ describe("PluginLibraryPage DOM workflows", () => {
     );
     // Store snapshot untouched by the cross-workspace mutation.
     expect(useAppStore.getState().packages?.revision).toBe(1);
+  });
+
+  it("hides the update prompt while another workspace's scope is selected", async () => {
+    // Update checks are active-workspace only (package.checkUpdates takes no
+    // workspace target), so the rows would describe the active workspace while
+    // the card list shows another one — and applying them would update the
+    // active workspace's copy. The prompt must not be offered there.
+    currentSnapshot = snapshotWithBrowser(true);
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    updateCheckResult = {
+      supported: true,
+      updates: [
+        {
+          packageId: "pkg-browser",
+          source: "npm:betterwright",
+          current: "1.9.0",
+          available: "1.10.0",
+        },
+      ],
+    };
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    // The active workspace's scope offers the prompt.
+    expect(await screen.findByRole("button", { name: "Updates available" })).toBeInTheDocument();
+
+    // Another workspace's scope: its targeted snapshot still carries
+    // pkg-browser, so rows would be produced — the prompt is withheld anyway.
+    await user.click(await screen.findByRole("button", { name: "other-project" }));
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "package.list",
+        expect.objectContaining({ expectedWorkspaceId: "w1" }),
+        {
+          scope: "all",
+          includeResources: true,
+          targetWorkspaceCwd: "C:/other-project",
+        },
+        expect.any(Number),
+      ),
+    );
+    await waitFor(() => expect(document.querySelector("[data-plugin-updates]")).toBeNull());
+
+    // Back to the active workspace's scope: the prompt returns.
+    await user.click(screen.getByRole("button", { name: "Global" }));
+    await waitFor(() => expect(document.querySelector("[data-plugin-updates]")).not.toBeNull());
   });
 });

@@ -921,6 +921,13 @@ export function PluginLibraryPage() {
     [catalog, managedPackages, pluginUpdates],
   );
   const updatesBusy = Object.keys(pendingOps).some((id) => id.startsWith("plugin-update:"));
+  // Update checks run against the active workspace only — package.checkUpdates
+  // takes no workspace target, so updateRows always describe the ACTIVE
+  // workspace. While the scope row points at another workspace the card list
+  // shows a different one, and applying a row would update the active
+  // workspace's copy behind the user's back. Only offer the prompt for the
+  // scope it actually describes.
+  const updatePromptMatchesScope = !targetSelection && updateRows.length > 0;
   // Per-row pending: the row button swaps to a spinner while its own
   // package.update is in flight (covers both single and update-all flows).
   const rowUpdating = (key: string) => pendingOps[`plugin-update:${key}`] === true;
@@ -950,6 +957,9 @@ export function PluginLibraryPage() {
   async function applyAllPluginUpdates() {
     // Unique package ids in display order; rows sharing a package (repo
     // plugins) update together in one mutation.
+    // Serial on purpose: each package.update bumps the host's packageRevision,
+    // and runMutation re-reads the live revision per request so every row after
+    // the first still passes the host's revision check.
     const rows = [...new Map(updateRows.map((row) => [row.packageId, row])).values()];
     for (const row of rows) {
       const ok = await runMutation(
@@ -972,17 +982,31 @@ export function PluginLibraryPage() {
     name: string,
     options?: { notifyInstalled?: boolean },
   ): Promise<boolean> {
-    if (!host || !workspace) return false;
+    // Pin only the host instance + workspace id from this render; every revision
+    // is re-read from the live store below. A batch loop ("update all") would
+    // otherwise keep reusing this render's packageRevision, and each successful
+    // package.update bumps it — so request two onwards would carry a stale
+    // expectedPackageRevision and be rejected with STALE_REVISION, leaving only
+    // the first plugin updated.
+    const live = useAppStore.getState();
+    const activeHost = live.host;
+    const activeWorkspace = live.workspace;
+    if (!host || !workspace || !activeHost || !activeWorkspace) return false;
+    // The user switched host/workspace mid-flight: abandon the mutation instead
+    // of applying it to whatever is active now.
+    if (activeHost.hostInstanceId !== host.hostInstanceId || activeWorkspace.id !== workspace.id) {
+      return false;
+    }
     const target = targetParams();
     // Cross-workspace toggles bypass the active session's package channel:
     // the host applies them onto a transient view of the target workspace and
     // never touches the active graph's locks/revisions. Only session-bound
     // mutation contexts carry the workspace target.
-    const base = sessionPackageContext(host, workspace);
+    const base = sessionPackageContext(activeHost, activeWorkspace);
     const context: typeof base = target
       ? { ...base, expectedSessionId: null, expectedSessionRevision: 0 }
       : base;
-    const generation = captureRequestGeneration(host);
+    const generation = captureRequestGeneration(activeHost);
     setPendingOps((prev) => ({ ...prev, [pluginId]: true }));
     try {
       const response = await hostClient.request(
@@ -996,8 +1020,8 @@ export function PluginLibraryPage() {
       const current = useAppStore.getState();
       if (
         !isExpectedPackageMutationCompletion(current.host, generation, response) ||
-        current.workspace?.id !== workspace.id ||
-        current.workspace?.revision !== workspace.revision
+        current.workspace?.id !== activeWorkspace.id ||
+        current.workspace?.revision !== activeWorkspace.revision
       )
         return false;
       if (!response.ok) {
@@ -1018,7 +1042,7 @@ export function PluginLibraryPage() {
       // Targeted mutations update only this page's scoped snapshot;
       // active-workspace mutations flow through the shared store.
       if (target) {
-        const cacheKey = `${host.hostInstanceId}:${target.targetWorkspaceCwd}`;
+        const cacheKey = `${activeHost.hostInstanceId}:${target.targetWorkspaceCwd}`;
         setWorkspacePackageCache((previous) => {
           const next = new Map(previous);
           next.set(cacheKey, result.packageSnapshot);
@@ -1125,7 +1149,7 @@ export function PluginLibraryPage() {
       {configFor && <PluginConfigDialog entry={configFor} onClose={() => setConfigFor(null)} />}
 
       <SettingsTopBarActions title={t("navPlugins")} subtitle={t("pluginsSubtitle")}>
-        {updateRows.length > 0 && (
+        {updatePromptMatchesScope && (
           <div ref={updateMenuRootRef} className="relative flex" data-plugin-updates>
             <button
               type="button"
