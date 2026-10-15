@@ -1722,19 +1722,21 @@ async function deliverToSegment(
         ? found.runtime.agentSession
         : acquired.session;
   const preamble = needsSegmentPreamble(session)
-    ? buildSegmentContextPreamble(args.agentDir)
+    ? buildSegmentContextPreamble(args.agentDir, args.source)
     : null;
+  // 前导自带 `[pixie|<source>]` 标记行，此时不要再补一个；只有没前导时才由这里补
+  // ——保证每条消息恰好一个标记，且标签反映真实来源。
+  const tagged = preamble
+    ? `${preamble}\n${args.text}`
+    : `[pixie|${args.source}]\n${args.text}`;
   if (session.isStreaming) {
     if (args.interactive) return { ok: false, error: "上一条回复还在生成中" };
     // Non-interactive envelopes must not be lost: steer into the running turn.
-    void session
-      .steer(`${preamble ? `${preamble}\n` : ""}[pixie|${args.source}]\n${args.text}`, args.images)
-      .catch(() => undefined);
+    void session.steer(tagged, args.images).catch(() => undefined);
     return { ok: true, sessionId: session.sessionId };
   }
-  const prompt = `${preamble ? `${preamble}\n` : ""}[pixie|${args.source}]\n${args.text}`;
   void session
-    .prompt(prompt, args.images?.length ? { images: args.images } : undefined)
+    .prompt(tagged, args.images?.length ? { images: args.images } : undefined)
     .catch((error: unknown) => {
       logger.warn("Pixie envelope delivery failed", {
         error: error instanceof Error ? error.message : String(error),
@@ -1822,6 +1824,10 @@ export function maybeWrapPixiePrompt(
 /**
  * 新会话段的时间锚点。前导只吃一次（段的首条用户消息），所以这行写的是「本段
  * 开始」的时刻；不注入的话，模型会拿备忘录里的「周一」这类线索硬猜今天。
+ *
+ * 这行只是**锚点**，不承担「当前时间」——段可能开很久（锚点很快就是旧的），
+ * 所以措辞上把「今天/周几/是否逾期」一律指向现跑的 date。原文写的是「跨天了
+ * 先跑一次 date 校准」，等于要模型先知道跨没跨天才能校准，是个循环，故改掉。
  */
 export function pixieClockLine(now: Date): string {
   const date = new Intl.DateTimeFormat("en-CA", {
@@ -1837,22 +1843,35 @@ export function pixieClockLine(now: Date): string {
   }).format(now);
   const offsetHours = -now.getTimezoneOffset() / 60;
   const zone = `UTC${offsetHours < 0 ? "−" : "+"}${Math.abs(offsetHours)}`;
-  return `本段开始时间：${date}（${weekday}）${time}，${zone}。判断「今天/周几/是否逾期」以它为准，跨天了先跑一次 date 校准，不要凭记忆推。`;
+  return `本段开始时间：${date}（${weekday}）${time}，${zone}。这是段开始那一刻的锚点，段可能开很久；判断今天/周几/是否逾期，一律以现跑 date 为准，不要凭记忆推。`;
 }
 
-/** Built-in identity + delegation contract + known-workspaces preamble. */
-function buildSegmentContextPreamble(agentDir: string): string {
+/**
+ * Built-in delegation contract + known-workspaces preamble.
+ *
+ * 这里只放**必须跟 Host 实现同源**的契约与运行期数据；人格与说话方式不在此处——
+ * 那份 `CLAUDE.md` 由 SDK 作为 `<project_instructions>` 注入系统提示词，不再复述。
+ *
+ * `source` 必须是投递方的真实来源：标记行 `[pixie|<source>]` 由本块自带，投递方
+ * 此时不要再补一个（见 deliverToSegment 里 tagged 的拼法）。
+ */
+function buildSegmentContextPreamble(
+  agentDir: string,
+  source: "ui" | "tg" | "system" = "ui",
+): string {
   const workspaces = knownWorkspacesOf(agentDir);
   const lines = [
-    "[pixie|ui]",
+    `[pixie|${source}]`,
     "<pixie-context>",
-    "你是小精灵，PiAbyss 桌面里的常驻小助手（人格、语气与工作方式见工作区 CLAUDE.md）。",
     pixieClockLine(new Date()),
-    "委派落点：默认只复用【你自己创建的】会话，没有就新开一个。用户自己在界面里创建的会话不要自动复用；只有用户明确给出会话 id 时，才用 sessionId 参数指定（找不到会直接报错，不要改派到别的会话）。",
-    "排队：目标会话有活在跑时，新任务会排队并返回排队说明——不要重复派单，也不用自己数着等，对方回调时你会收到信封。",
-    "回调：信封自带处理要求，照它办。总则——完成只转述、不代写总结；报错在「原样重试 / 调整委派词再派 / 如实报告」里选，但同一任务连败 3 次就别再试，带全部现场升级给用户；询问立刻转述给用户、不要代答，用户的下一条消息就是答复。",
-    "模型与推理深度：默认不传 model / thinkingLevel（跟随会话当前设置）。仅当用户在对话中明确指定（如「用 xxx 模型跑」「深度调到 high」）时才传，绝不主动更换。",
-    "委派目标 cwd 必须来自下方已知工作区列表（或用户当前打开的工作区）；用户手动指令的优先级最高。",
+    "- 落点：默认只复用【你自己创建的】会话，没有就新开一个。用户自己在界面里创建的会话不要自动复用；只有用户明确给出会话 id 时才用 sessionId 参数指定——找不到会直接报错，不要改派到别的会话。",
+    "- 排队：目标会话有活在跑时，新任务会排队并返回排队说明。不要重复派单，也不用自己数着等——对方回调时你会收到信封。",
+    "- 回调：信封自带处理要求，照它办。三种各按规矩来：",
+    "  - 完成：只转述、不代写总结。",
+    "  - 报错：在「原样重试 / 调整委派词再派 / 如实报告」里选；同一任务连败 3 次就别再试，带全部现场升级给用户。",
+    "  - 询问：立刻转述给用户、不要代答；用户的下一条消息就是答复。",
+    "- 模型与推理深度：默认不传 model / thinkingLevel（跟随会话当前设置）。仅当用户在对话中明确指定（如「用 xxx 模型跑」「深度调到 high」）时才传，绝不主动更换。",
+    "- 委派 cwd：必须来自下方已知工作区列表（或用户当前打开的工作区）；用户手动指令的优先级最高。",
     ...(workspaces.length > 0
       ? ["已知的 PiAbyss 工作区：", ...workspaces.map((path) => `- ${path}`)]
       : []),
