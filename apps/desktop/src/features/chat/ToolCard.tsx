@@ -3,6 +3,7 @@ import { Braces, ChevronRight, FileCode2, Search, Terminal, Wrench } from "lucid
 import type { ToolTraceStatus } from "./transcript-model";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
+import { isWebSearchTool } from "./tool-names";
 
 function limitToolText(value: string, truncatedLabel = "[tool data truncated]"): string {
   const limit = 100_000;
@@ -111,6 +112,10 @@ export function ToolCard(props: ToolCardProps) {
   const contentId = useId();
   const [open, setOpen] = useToolDisclosure(props);
   const Icon = toolIcon(props.name);
+  // Web search keeps one localized name here too, so a degraded search card
+  // (no parseable links, or an error) does not suddenly read as another tool.
+  // The raw tool name stays available on the title attribute.
+  const label = isWebSearchTool(props.name) ? t("toolSearch") : props.name;
   const canExpand =
     props.args !== undefined ||
     props.result !== undefined ||
@@ -144,7 +149,7 @@ export function ToolCard(props: ToolCardProps) {
           className="min-w-0 max-w-[42%] truncate text-xs font-medium text-foreground/80"
           title={props.name}
         >
-          {props.name}
+          {label}
         </span>
         {summary && (
           <span

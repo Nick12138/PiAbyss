@@ -116,4 +116,34 @@ describe("Chinese chat localization", () => {
     // Idle session, nothing pending: the manual compaction is available.
     expect(screen.getByRole("button", { name: "立即压缩" })).toBeEnabled();
   });
+
+  it("labels a degraded web search the same as a successful one", () => {
+    render(
+      <>
+        <ToolView
+          name="web_search"
+          args={{ query: "成都武侯发展集团 施工图审查" }}
+          result="Exa MCP search failed: Exa MCP returned no parseable results"
+          details={{ provider: "exa", count: 0, error: "Exa MCP returned no parseable results" }}
+          status="done"
+        />
+        <ToolView
+          name="web_search"
+          args={{ query: "Wuhou construction drawing review service 2026" }}
+          result={
+            "Provider: Exa MCP (free)\n\n1. 成都市武侯区住房建设和交通运输局\n" +
+            "   https://example.gov/wuhou/review-a\n   询价函公告正文"
+          }
+          status="done"
+        />
+      </>,
+    );
+
+    // The failed call has no parseable links and degrades to the generic card;
+    // it must still read "搜索" instead of leaking the raw tool name.
+    expect(screen.getAllByText("搜索")).toHaveLength(2);
+    expect(screen.queryByText("web_search")).not.toBeInTheDocument();
+    // The underlying tool name stays discoverable on hover.
+    expect(screen.getByTitle("web_search")).toBeInTheDocument();
+  });
 });

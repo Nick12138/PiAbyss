@@ -1,12 +1,8 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import {
-  extractSearchResults,
-  isWebSearchTool,
-  SearchToolCard,
-  searchQuery,
-} from "./SearchToolCard";
+import { extractSearchResults, SearchToolCard, searchQuery } from "./SearchToolCard";
+import { isWebSearchTool } from "./tool-names";
 import { selectToolRenderer } from "./ToolView";
 
 describe("search tool renderer", () => {

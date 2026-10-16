@@ -20,18 +20,6 @@ export type SearchResultItem = {
   site: string;
 };
 
-const SEARCH_NAMES = new Set([
-  "search",
-  "web_search",
-  "search_web",
-  "google_search",
-  "brave_search",
-  "tavily_search",
-  "exa_search",
-]);
-
-const NON_WEB_SEARCH_NAMES = new Set(["file_search", "find", "grep", "glob"]);
-
 function parseJsonish(value: unknown): unknown {
   if (typeof value !== "string") return value;
   try {
@@ -141,19 +129,6 @@ export function searchQuery(args: unknown): string {
     return queries.filter((item): item is string => typeof item === "string").join(", ");
   }
   return "";
-}
-
-export function isWebSearchTool(name: string): boolean {
-  const normalized = name
-    .trim()
-    .toLocaleLowerCase()
-    .replace(/[\s-]+/g, "_");
-  if (NON_WEB_SEARCH_NAMES.has(normalized)) return false;
-  return (
-    SEARCH_NAMES.has(normalized) ||
-    normalized.includes("web_search") ||
-    normalized.includes("search_web")
-  );
 }
 
 export function SearchToolCard(props: ToolCardProps) {

@@ -7,8 +7,9 @@ import {
   isShellTool,
   ShellToolCard,
 } from "./CodingToolCards";
-import { SearchToolCard, isWebSearchTool } from "./SearchToolCard";
+import { SearchToolCard } from "./SearchToolCard";
 import { ToolCard, useToolDisclosure, type ToolCardProps } from "./ToolCard";
+import { isWebSearchTool } from "./tool-names";
 
 export type ToolRendererDefinition = {
   id: string;
