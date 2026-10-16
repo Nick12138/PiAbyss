@@ -26,7 +26,7 @@ import {
   subagentRunExists,
 } from "./subagent-runs.js";
 import { toWireTree, type SdkSessionTreeNode } from "./session-tree-cache.js";
-import { notePixieSessionCreatedFromUi, pixieNewSessionOptions } from "./pixie-agent-runner.js";
+import { pixieNewSessionOptions } from "./pixie-agent-runner.js";
 
 /** Forward a subagent control action to the pi-subagent HTTP API. */
 async function controlSubagentRun(
@@ -118,8 +118,10 @@ export function createSessionHandlers(
       if (result && typeof result === "object" && "error" in result) {
         return { error: result.error };
       }
-      // 小精灵工作区里新建的会话就是她的新一段：当场认下来，不等落盘。
-      notePixieSessionCreatedFromUi(factory, result);
+      // 这里**不**把小精灵的新会话认作当前段：点「新会话」只是建出一条空会话，
+      // 用户在它里面发出第一条消息时（agent.prompt 路径的 notePixieUserTurn）
+      // 才算数。否则空段会立刻顶掉真正的当前段——「点完新会话再回上一段，当前
+      // 会话变成了那条空段」就是这么来的。
       return { result };
     },
 

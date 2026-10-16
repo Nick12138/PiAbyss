@@ -57,7 +57,8 @@ function sessionSnapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnaps
     steeringMode: "all",
     followUpMode: "all",
     pending: { revision: 1, steering: [], followUp: [] },
-    messages: [],
+    // 默认带一条消息：段 = 说过话的会话。空会话（刚点「新会话」）另有断言。
+    messages: [{ role: "user", content: "hi" }],
     tools: {
       revision: 1,
       workspaceId: WORKSPACE_ID,
@@ -143,6 +144,18 @@ function mockEnsureCurrent(
 describe("PixieBackToCurrentButton（回到最新会话）", () => {
   it("打开的会话就是活段时按钮不出现", () => {
     useAppStore.getState().applySessionSnapshot(sessionSnapshot({ sessionId: "live-1" }));
+    render(<PixieBackToCurrentButton />);
+
+    expect(screen.queryByTestId("pixie-back-to-current-button")).not.toBeInTheDocument();
+  });
+
+  it("刚建出来还没说话的空会话不显示（它还不是段）", () => {
+    // 点「新会话」只建出一条空会话：Host 要等用户在里面发出首条消息才认它作当前
+    // 段（notePixieUserTurn）。这期间若弹出「回到最新」，用户会以为「点一下新会话
+    // 就把当前段切走了」。
+    useAppStore
+      .getState()
+      .applySessionSnapshot(sessionSnapshot({ sessionId: "draft-1", messages: [] }));
     render(<PixieBackToCurrentButton />);
 
     expect(screen.queryByTestId("pixie-back-to-current-button")).not.toBeInTheDocument();

@@ -21,7 +21,9 @@ import {
   pixieStaleMs,
   pixieTranscriptFrom,
   clipSegmentName,
+  currentPixieSessionId,
   latestSegmentOfDir,
+  notePixieUserTurn,
   setPixieContext,
   getKnownWorkspaces,
 } from "./pixie-agent-runner.js";
@@ -703,6 +705,44 @@ describe("latestSegmentOfDir（当前段 = 创建时间最新的那条会话）"
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("notePixieUserTurn（当前段 = 用户真正说过话的会话）", () => {
+  /** 只用到 deps.agentDir / canonicalizeCwd / graph.canonicalCwd 三处。 */
+  function factoryFor(agentDir: string, canonicalCwd: string): WorkspaceGraphFactory {
+    return {
+      deps: { agentDir },
+      canonicalizeCwd: (cwd: string) => cwd,
+      graph: { canonicalCwd },
+    } as unknown as WorkspaceGraphFactory;
+  }
+
+  it("段的首条用户消息才认段；在已经说过话的旧段里补话不动指针", () => {
+    const agentDir = freshAgentDir();
+    const factory = factoryFor(agentDir, resolvePixieWorkspacePath(agentDir));
+
+    // 首条用户消息（本段还没有用户消息）→ 当场认作当前段，并记下落点路径。
+    notePixieUserTurn(factory, { sessionId: "draft-1", sessionPath: "D:/sessions/draft-1.jsonl" }, {
+      messages: [],
+    } as never);
+    expect(currentPixieSessionId(agentDir)).toBe("draft-1");
+
+    // 在已经说过话的旧段里补一句：指针不跟着走，当前段仍是创建最新的那段。
+    notePixieUserTurn(factory, { sessionId: "old-1", sessionPath: "D:/sessions/old-1.jsonl" }, {
+      messages: [{ role: "user", content: "早" }],
+    } as never);
+    expect(currentPixieSessionId(agentDir)).toBe("draft-1");
+  });
+
+  it("非小精灵工作区里的消息不动指针", () => {
+    const agentDir = freshAgentDir();
+    const factory = factoryFor(agentDir, "D:/somewhere/else");
+
+    notePixieUserTurn(factory, { sessionId: "s1", sessionPath: null }, {
+      messages: [],
+    } as never);
+    expect(currentPixieSessionId(agentDir)).toBeNull();
   });
 });
 

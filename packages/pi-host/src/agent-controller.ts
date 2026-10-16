@@ -41,7 +41,7 @@ import {
   diffPromptCacheFingerprints,
   type PromptCacheFingerprint,
 } from "./prompt-cache-contract.js";
-import { maybeWrapPixiePrompt } from "./pixie-agent-runner.js";
+import { maybeWrapPixiePrompt, notePixieUserTurn } from "./pixie-agent-runner.js";
 
 /** Protocol images ({mediaType,data}) → SDK ImageContent ({type,mimeType,data}). */
 export function toSdkImages(images: SerializableImage[] | undefined): ImageContent[] | undefined {
@@ -573,6 +573,18 @@ export function createAgentHandlers(
       // 小精灵首条用户消息：包上 <pixie-context> 前导（runner 判定，非小精灵
       // 工作区或本段已有用户消息时原样返回）。
       prompt.text = maybeWrapPixiePrompt(factory, g.canonicalCwd, prompt.text, g.agentSession);
+      // 用户真的在小精灵工作区里发了消息：这条会话这时才被认作小精灵的当前段
+      // （点「新会话」建出来的空会话不算）。必须在消息落库之前认——首条消息的
+      // 判定（本段还没有用户消息）过了这一刻就不再成立。落点路径此刻多半还
+      // 没有（SDK 要等首条消息才建 jsonl），runner 会在下次取段时补上。
+      notePixieUserTurn(
+        factory,
+        {
+          sessionId: server.identity.sessionId,
+          sessionPath: g.sessionSnapshot?.sessionPath ?? null,
+        },
+        g.agentSession,
+      );
       const promptImages =
         toSdkImages(params.images) ??
         (params.attachQueuedImages ? takeQueuedImages(g.agentSession, params.text) : undefined);

@@ -1405,8 +1405,11 @@ function findResidentSessionByPath(graph: WorkspaceGraph, sessionPath: string): 
 
 /**
  * 指针与盘面对账：当前段 = 工作区里**创建时间最新**的那条会话（不是最后被写入
- * 的那条）。用户在界面点「新会话」走的是通用 session.create，runner 不在那条
- * 路径上，所以每次取段前扫一遍会话目录把它认下来。
+ * 的那条）。
+ *
+ * 认段的正路是 `notePixieUserTurn`（用户在段里发出首条消息时当场认下）；这里
+ * 只是兜底——Host 重启、别的通道往小精灵工作区里建了会话（委派引擎新建的目标
+ * 会话、TG 注入等）时，扫一遍会话目录把创建最新的那条追平。
  *
  * 指针指向一个还没落盘的会话时不动它：刚建的空段比盘上任何一条都新，只是还没有
  * 文件可比（Pi 只在会话出现首条消息时才建文件）。
@@ -1416,6 +1419,25 @@ async function reconcilePointer(
   factory: WorkspaceGraphFactory,
   graph: WorkspaceGraph,
 ): Promise<void> {
+  // 指针指向的会话还没有落点路径：SDK 只在会话出现首条消息时才建 jsonl，而认段
+  // （notePixieUserTurn / adoptPixieSegment）发生在消息真正发出之前——那一刻拿不到
+  // 路径。路径空着会让 `pixie.ensureCurrent` 返回空 sessionPath，前端的
+  // `session.open` 直接判 blocked（「回到最新」点了没反应）。只要它还驻留在图里，
+  // 就把路径补上并保留指针：刚建出来的空段比盘上任何一条都新，不该被别的文件抢走。
+  if (state.pointer.sessionId && !state.pointer.sessionPath) {
+    const found = findCurrentRuntime(graph, state.pointer.sessionId);
+    if (found) {
+      const path =
+        found.where === "active"
+          ? (found.session.sessionFile ?? "")
+          : (found.runtime.sessionSnapshot.sessionPath ?? "");
+      if (path) {
+        state.pointer = { ...state.pointer, sessionPath: path };
+        saveRunnerState(state);
+      }
+      return;
+    }
+  }
   const latest = latestSegmentOfDir(
     sessionStorageDirs(state.agentDir, graph.canonicalCwd).activeDir,
   );
@@ -1428,13 +1450,6 @@ async function reconcilePointer(
     return;
   }
   if (state.pointer.createdMs >= latest.createdMs) return;
-  if (
-    state.pointer.sessionId &&
-    !state.pointer.sessionPath &&
-    findCurrentRuntime(graph, state.pointer.sessionId)
-  ) {
-    return;
-  }
   const residentId = findResidentSessionByPath(graph, latest.path);
   if (residentId) {
     state.pointer = {
@@ -1468,8 +1483,9 @@ async function reconcilePointer(
 }
 
 /**
- * 通用 session.create 在小精灵工作区里建了新会话：当场认作当前段，不等它落盘
- * ——委派回传、页面锚点与前导判定都要靠这个指针，晚一步就会把回传送进旧段。
+ * 把某条会话认作当前段（指针 + `pixie.segmentChanged`）。调用方：
+ * `notePixieUserTurn`（用户在段里发出首条消息）与 `acquireCurrentSession` 的懒建
+ * 分支。认段之后委派回传、页面锚点与前导判定才有落点。
  */
 function adoptPixieSegment(
   agentDir: string,
@@ -1489,7 +1505,10 @@ function adoptPixieSegment(
   };
   saveRunnerState(state);
   emit("pixie.segmentChanged", { segmentId: args.sessionId, phase: "started" });
-  logger.info("Pixie adopted a UI-created segment", { sessionId: args.sessionId });
+  logger.info("Pixie adopted a segment as current", {
+    sessionId: args.sessionId,
+    sessionPath: args.sessionPath ?? null,
+  });
 }
 
 /** 下一次「新会话」的 header 该指向哪一段（新建的小精灵会话链到上一段）。 */
@@ -1524,20 +1543,33 @@ export function pixieNewSessionOptions(factory: WorkspaceGraphFactory): {
 }
 
 /**
- * 界面里建了一条小精灵工作区的新会话：当场认作当前段。runner 不在
- * `session.create` 那条路径上，不补这一刀的话，新段的第一条委派会把回执寄到上一段。
+ * 用户在小精灵工作区里**真的发出了一条消息**：这条会话这时才被认作当前段。
+ *
+ * 点「新会话」只建出一条一句话都没说的空会话，**不算数**。空段当上当前段之后，
+ * `pixie.ensureCurrent`、委派回执的落点与前端的「回到最新」判定全都会指向它，
+ * 用户看到的症状就是「点完新会话、再回上一段，小精灵的当前会话变成了那条空段」。
+ * 改由首条用户消息触发认段：与 `reconcilePointer`（按盘上创建时间最新的会话认段）
+ * 殊途同归，但**当场**生效，不用等下一次取段，也就不会出现「刚聊过的段还不是
+ * 当前段」的错位窗口。
+ *
+ * 只在**本段的首条用户消息**上动指针：在历史段里补一句话不该把当前段拽走
+ * （`needsSegmentPreamble` 正是「这条会话还没有用户消息」的判定）。
  */
-export function notePixieSessionCreatedFromUi(
+export function notePixieUserTurn(
   factory: WorkspaceGraphFactory,
-  snapshot: { sessionId?: string; sessionPath?: string } | null | undefined,
+  snapshot: { sessionId?: string | null; sessionPath?: string | null } | null | undefined,
+  session: AgentSession | null,
 ): void {
   const agentDir = factory?.deps?.agentDir;
   const graph = factory?.graph;
-  if (!agentDir || !graph || !snapshot?.sessionId) return;
+  const sessionId = snapshot?.sessionId;
+  if (!agentDir || !graph || !sessionId) return;
   if (!isPixieWorkspaceCwd(factory, graph.canonicalCwd)) return;
+  if (!session || !needsSegmentPreamble(session)) return;
+  if (ensureRunner(agentDir).pointer.sessionId === sessionId) return;
   adoptPixieSegment(agentDir, {
-    sessionId: snapshot.sessionId,
-    sessionPath: snapshot.sessionPath ?? null,
+    sessionId,
+    sessionPath: snapshot?.sessionPath ?? null,
   });
 }
 
@@ -1726,9 +1758,7 @@ async function deliverToSegment(
     : null;
   // 前导自带 `[pixie|<source>]` 标记行，此时不要再补一个；只有没前导时才由这里补
   // ——保证每条消息恰好一个标记，且标签反映真实来源。
-  const tagged = preamble
-    ? `${preamble}\n${args.text}`
-    : `[pixie|${args.source}]\n${args.text}`;
+  const tagged = preamble ? `${preamble}\n${args.text}` : `[pixie|${args.source}]\n${args.text}`;
   if (session.isStreaming) {
     if (args.interactive) return { ok: false, error: "上一条回复还在生成中" };
     // Non-interactive envelopes must not be lost: steer into the running turn.

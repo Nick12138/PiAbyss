@@ -9,6 +9,11 @@ import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { IdentityState } from "./identity.js";
 import { TryMutex } from "./locks.js";
 import { createSessionHandlers } from "./session-controller.js";
+import {
+  currentPixieSessionId,
+  resetPixieStateForTests,
+  resolvePixieWorkspacePath,
+} from "./pixie-agent-runner.js";
 import { sessionStorageDirs } from "./session-storage.js";
 
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
@@ -684,5 +689,50 @@ describe("session.getStats", () => {
       cost: 0.42,
       sessionFile: "/sessions/active.jsonl",
     });
+  });
+});
+
+describe("session.create（小精灵工作区）", () => {
+  it("建出的新会话不当场认作当前段——要等用户在它里面发出第一条消息", async () => {
+    // 曾经的实现是「建出来就 adoptPixieSegment」：点一下「新会话」，那条一句话
+    // 都没说的空会话立刻顶掉真正的当前段，用户看到的就是「点完新会话再回上一段，
+    // 小精灵的当前会话变成了那条空段」。认段改到首条用户消息（agent.prompt 的
+    // notePixieUserTurn），这里守住「create 不再动指针」。
+    const root = mkdtempSync(join(tmpdir(), "piabyss-pixie-create-"));
+    try {
+      resetPixieStateForTests();
+      const agentDir = join(root, "agent");
+      const pixieCwd = resolve(resolvePixieWorkspacePath(agentDir));
+      mkdirSync(pixieCwd, { recursive: true });
+      const graph = {
+        canonicalCwd: pixieCwd,
+        // 当前段已经说过话 → 新会话不是 pristine 复用，会真的建一条新的。
+        agentSession: { messages: [{ role: "user", content: "早" }] },
+      };
+      const createSession = vi
+        .fn()
+        .mockResolvedValue({ sessionId: "new-pixie-segment", cwd: pixieCwd });
+      const factory = {
+        deps: { agentDir },
+        checkIdentity: () => null,
+        getGraph: () => graph,
+        canonicalizeCwd: (cwd: string) => resolve(cwd),
+        createSession,
+      } as unknown as WorkspaceGraphFactory;
+
+      const response = await createSessionHandlers(factory)["session.create"]!({
+        id: "55555555-5555-4555-8555-555555555555",
+        method: "session.create",
+        params: {},
+        context: {},
+      } as HandlerContext);
+
+      expect(response).toHaveProperty("result");
+      expect(createSession).toHaveBeenCalledTimes(1);
+      expect(currentPixieSessionId(agentDir)).toBeNull();
+    } finally {
+      resetPixieStateForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
