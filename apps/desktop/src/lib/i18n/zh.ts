@@ -1956,7 +1956,6 @@ export const zh: Record<MessageKey, string> = {
   pixieDispatchSummaryAwaiting: "{awaiting} 等你回复",
   // 随行面板 ·「方寸间」分组（待办中心：页签 / 三层行 / 新建）
   pixieTodoSectionTitle: "方寸间",
-  pixieTodoOverdueHint: "{count} 逾期",
   pixieTodoDoneEmpty: "还没有已完成的记录",
   pixieTodoShowMore: "查看更多（{count}）",
   pixieTodoShowLess: "收起",

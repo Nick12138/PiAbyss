@@ -24,8 +24,8 @@
  * 换成复选框、点整行即选中，页签下方出现「全选 / 已选 N / 删除所选 / ✕ 退出」，删完自动退出。
  *
  * 「进行中」不单独分区也不单独计数：它混在「待处理」里，用转圈 + 强调色文字标识。
- * 逾期数由二级页签那一行右侧的提示承担、待处理数同时挂在随行面板的页签上（`onCount`），
- * 所以顶部不再放概览格。
+ * 逾期不单列计数——页签行右侧原来那枚「N 逾期」提示已去掉，逾期只看每条行尾的红色徽章；
+ * 待处理数同时挂在随行面板的页签上（`onCount`），所以顶部也不放概览格。
  * 日期只用来排序（逾期在前、无日期沉底），不渲染分段标题——10 条时两个标题行
  * 吃掉的高度抵不上它们提供的信息。截断两档各一套：待处理只截排在最后的「无日期」
  * 那一档（前 5 条常驻），已完成整列只先给 5 条，其余收进列表下方的「查看更多」——
@@ -386,12 +386,10 @@ export function PixieTodoSection({
     });
   }, [pendingDelete, pushNotification, runAction, t]);
 
-  const hint = overview.overdue > 0 ? t("pixieTodoOverdueHint", { count: overview.overdue }) : "";
-
   return (
     <PixiePanelBody tab="todo" active={active}>
       {/* 这一行既是「待处理 / 已完成」二级页签，也是这一块的**工具条**：页签占满左边，
-        逾期提示与两个动作贴右。原来这些都写在折叠分组的标题行上，横排成页签之后那一行
+        两个动作贴右。原来这些都写在折叠分组的标题行上，横排成页签之后那一行
         没有了，计数与 ＋ 就搬到这里来。 */}
       <div className="flex items-center gap-1">
         {(["open", "done"] as const).map((candidate) => (
@@ -413,11 +411,6 @@ export function PixieTodoSection({
             </span>
           </button>
         ))}
-        {hint ? (
-          <span className="shrink-0 whitespace-nowrap text-[10px] tabular-nums text-muted">
-            {hint}
-          </span>
-        ) : null}
         {tab === "done" && visible.length > 0 ? (
           <button
             type="button"

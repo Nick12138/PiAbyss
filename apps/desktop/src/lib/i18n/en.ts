@@ -2044,7 +2044,6 @@ export const en = {
   pixieDispatchSummaryAwaiting: "{awaiting} awaiting you",
   // Side panel · the "Nook" group (tabs / three-line rows / capture).
   pixieTodoSectionTitle: "Nook",
-  pixieTodoOverdueHint: "{count} overdue",
   pixieTodoDoneEmpty: "Nothing completed yet",
   pixieTodoShowMore: "Show more ({count})",
   pixieTodoShowLess: "Show less",
