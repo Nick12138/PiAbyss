@@ -205,7 +205,7 @@ function PackagePreferenceControl({
         role="group"
         aria-label={label}
         data-ui="segmented"
-        className="interface-density-control inline-flex h-8 gap-1 rounded-md border border-border bg-surface p-1"
+        className="interface-density-control inline-flex h-8 gap-1 rounded-lg border border-border bg-surface-raised p-0.5"
       >
         {values.map((value) => (
           <button
@@ -215,7 +215,7 @@ function PackagePreferenceControl({
             aria-pressed={state === value}
             data-ui="segmented-item"
             data-state={state === value ? "active" : "inactive"}
-            className={`rounded px-2.5 text-xs capitalize ${state === value ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
+            className={`rounded-md px-2.5 text-xs capitalize ${state === value ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
             disabled={disabled || state === null}
             onClick={() => onChange(value)}
           >
@@ -905,7 +905,7 @@ export function PackagesPage() {
           {configurable ? (
             <div
               data-ui="segmented"
-              className="interface-density-control inline-flex h-8 gap-1 rounded-md border border-border bg-surface p-1"
+              className="interface-density-control inline-flex h-8 gap-1 rounded-lg border border-border bg-surface-raised p-0.5"
             >
               {(["enabled", "disabled"] as const).map((value) => (
                 <button
@@ -917,7 +917,7 @@ export function PackagesPage() {
                   })}
                   data-ui="segmented-item"
                   data-state={preference === value ? "active" : "inactive"}
-                  className={`rounded px-2.5 text-xs capitalize ${preference === value ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
+                  className={`rounded-md px-2.5 text-xs capitalize ${preference === value ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
                   disabled={mutationBlocked}
                   onClick={() => setResourcePreference(resource, value, mode)}
                 >
@@ -1073,7 +1073,7 @@ export function PackagesPage() {
           role="group"
           aria-label={t("packagesViewGroup")}
           data-ui="segmented"
-          className="interface-density-control inline-flex h-8 gap-1 rounded-md border border-border bg-surface p-1"
+          className="interface-density-control inline-flex h-8 gap-1 rounded-lg border border-border bg-surface-raised p-0.5"
         >
           {(
             [
@@ -1087,7 +1087,7 @@ export function PackagesPage() {
               type="button"
               data-ui="segmented-item"
               data-state={tab === id ? "active" : "inactive"}
-              className={`rounded px-3 text-xs ${
+              className={`rounded-md px-3 text-xs ${
                 tab === id
                   ? "bg-selection font-medium text-selection-foreground"
                   : "text-muted hover:text-foreground"
