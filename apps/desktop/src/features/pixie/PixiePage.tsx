@@ -290,9 +290,12 @@ export function PixiePage() {
 
   return (
     <div className="@container flex h-full min-w-0 flex-col" data-pixie-page>
-      <div className="flex min-h-0 flex-1 flex-col @3xl:flex-row">
-        {/* Conversation (70%) */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col @3xl:flex-[7]">
+      {/* 对话与随行面板**永远同排**：窄容器不再把面板 `display:none`，而是由面板自己
+       * 按 672px 阈值收起（负 margin 滑出，见 `PixieSidePanel`）。换成这样是为了让
+       * 「自动收起」和手动折叠共用一次动画——`display:none` 没有中间态，跨断点必然硬切。 */}
+      <div className="flex min-h-0 flex-1 flex-row">
+        {/* Conversation（面板收起时占满） */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {activeSubagentNodeId ? (
             /* Subagent view takeover，与 ChatPage 同款：整块对话区属于选中
              * run（自带转写与 composer），主会话转写/输入框仍挂在 store

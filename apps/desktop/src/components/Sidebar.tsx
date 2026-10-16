@@ -158,6 +158,7 @@ export function SidebarLayout({
   const hostReady = Boolean(useAppStore((s) => s.host?.hostInstanceId));
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const sidebarAutoInstant = useAppStore((s) => s.sidebarAutoInstant);
+  const publishSidebarWidth = useAppStore((s) => s.setSidebarWidth);
   const telegramViewActive = useTelegramWorkspaceActive();
   const [sessionsCollapsed, setSessionsCollapsed] = useState(() =>
     sidebarPref("piabyss.sidebar.sessionsCollapsed"),
@@ -173,13 +174,17 @@ export function SidebarLayout({
 
   // Expose the live sidebar width as a root CSS var so sibling chrome (the top
   // bar's title column) can align its start to the content-area's left edge.
+  // The nominal (expanded) width also goes to the store: content-area consumers
+  // need to decide against the width they will have *after* this sidebar springs
+  // back, not the temporarily freed-up one (see `app-store.sidebarWidth`).
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--sidebar-width", `${sidebarCollapsed ? 0 : sidebarWidth}px`);
+    publishSidebarWidth(sidebarWidth);
     return () => {
       root.style.removeProperty("--sidebar-width");
     };
-  }, [sidebarWidth, sidebarCollapsed]);
+  }, [sidebarWidth, sidebarCollapsed, publishSidebarWidth]);
 
   // Drive the OS-level window minimum width from the conversation-area min
   // width setting, scoped to the conversation column rather than acting as

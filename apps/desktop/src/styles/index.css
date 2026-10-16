@@ -2841,3 +2841,52 @@ svg[data-piabyss-mermaid-theme="neutral"] {
     transform: none;
   }
 }
+
+/* ── 小精灵页「随行面板」开合动画 ────────────────────────────────────────
+   折叠机制沿用右侧 dock：面板不卸载，靠负 margin 平移出界（`PixieSidePanel.tsx`）。
+   手动开关与断点自动收起共用这一条过渡。只有平移时它读起来像「宽度跳了一下」——
+   内容跟着被容器边缘硬切走。这里补上内容的淡出让位，让一次开合有起有收：
+   · 外层 margin-right 是主时长，收起 180ms 加速曲线、展开 240ms 减速曲线，
+     时长写在「目标状态」的规则上（CSS 过渡取的是新值的 computed transition）。
+   · 内层（标题条 + 分组栈）往滑出方向让 6px 再淡掉，展开时晚一步进来。
+   曲线口径与 `.collapsible-region` 一致，不另起一套。 */
+[data-pixie-side-panel] {
+  transition: margin-right 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-pixie-side-panel][data-panel-open="false"] {
+  transition: margin-right 180ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+[data-pixie-panel-content] {
+  transition:
+    opacity 160ms ease-out,
+    transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-pixie-side-panel][data-panel-open="false"] [data-pixie-panel-content] {
+  opacity: 0;
+  transform: translateX(6px);
+  transition:
+    opacity 110ms ease-in,
+    transform 180ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* 一次性提交必须没有过渡：拖宽度时要逐帧跟手，跨断点由启动 / 托盘 / 贴边触发的
+   那次也不算「用户在驱动」。`data-panel-instant` 由组件判定后挂上，写在最后是
+   刻意的——与前几条同特异度，后出现者胜。 */
+[data-pixie-side-panel][data-panel-instant="true"],
+[data-pixie-side-panel][data-panel-instant="true"] [data-pixie-panel-content] {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-pixie-side-panel],
+  [data-pixie-panel-content] {
+    transition: none;
+  }
+
+  [data-pixie-side-panel][data-panel-open="false"] [data-pixie-panel-content] {
+    transform: none;
+  }
+}

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -26,7 +26,7 @@ import {
  *   - 宽度可拖拽 / 键盘调整，有下限与「给对话区留位」的上限，并持久化；
  *   - 面板内是「可折叠分组」栈：方寸间（常驻展开）/ 周期计划 / 委派任务；
  *   - 委派任务分组默认折叠，汇总信息在折叠态就能读到；
- *   - 窄容器下面板不占位（CSS @3xl 断点），顶栏开关跟着消失。
+ *   - 行宽不足 672 时面板自动收起（与手动折叠同一个滑出），顶栏开关跟着消失。
  */
 const DISPATCH_EXPANDED_PREF = "piabyss.pixie.dispatchExpanded";
 
@@ -87,18 +87,39 @@ function panelEl(): HTMLElement {
 }
 
 /** 立刻回调一次，模拟「元素尺寸已知」；jsdom 里量到的宽度是 0（= 窄容器）。 */
+let fireResize: (() => void) | null = null;
 class ResizeObserverStub {
   constructor(private readonly callback: () => void) {}
   observe() {
     this.callback();
+    fireResize = this.callback;
   }
-  disconnect() {}
+  disconnect() {
+    fireResize = null;
+  }
+}
+
+/**
+ * 给面板与它所在那一行喂假宽度：Tauri 启动时窗口尺寸是**恢复到位之后**才量得到的，
+ * 首帧常量到一个偏小的行宽。这里用它模拟「先窄后宽」。
+ */
+function stubLayout(rowWidth: number, panelWidth: number) {
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+    this: Element,
+  ) {
+    const width = this.hasAttribute("data-pixie-side-panel") ? panelWidth : rowWidth;
+    return { width } as DOMRect;
+  });
 }
 
 beforeEach(() => {
   useAppStore.setState({
     pixiePanelOpen: true,
     pixiePanelWide: true,
+    // 侧栏默认「展开、宽度未知」：面板判断点时不扣欠账，各用例单独设自己的情形。
+    sidebarCollapsed: false,
+    sidebarAutoCollapsed: false,
+    sidebarWidth: 0,
     desktopSettings: {
       language: "en",
       theme: "system",
@@ -110,6 +131,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   globalThis.localStorage?.clear();
@@ -120,7 +142,7 @@ describe("PixieSidePanel 宽度拖拽", () => {
     render(<PixieSidePanel groups={[]} />);
 
     expect(panelEl().style.width).toBe("");
-    expect(panelEl().className).toContain("@3xl:w-[clamp(300px,30%,404px)]");
+    expect(panelEl().className).toContain("w-[clamp(300px,30%,404px)]");
     expect(globalThis.localStorage?.getItem(PANEL_WIDTH_KEY)).toBeNull();
   });
 
@@ -186,6 +208,23 @@ describe("PixieSidePanel 宽度拖拽", () => {
 
     expect(panelEl().style.width).toBe("520px");
   });
+
+  it("启动时量到窄窗口只压显示，不把存下来的宽度写坏", () => {
+    globalThis.localStorage?.setItem(PANEL_WIDTH_KEY, "520");
+    // 首帧：行宽只有 700（窗口尺寸还没恢复到位）→ 显示上限 700−360=340。
+    vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+    stubLayout(700, 340);
+    render(<PixieSidePanel groups={[]} />);
+
+    expect(panelEl().style.width).toBe("340px");
+
+    // 窗口恢复到位再量一次：原偏好要能回来，缓存也不许被这 340 覆盖掉。
+    stubLayout(1400, 520);
+    act(() => fireResize?.());
+
+    expect(panelEl().style.width).toBe("520px");
+    expect(globalThis.localStorage?.getItem(PANEL_WIDTH_KEY)).toBe("520");
+  });
 });
 
 describe("clampPixiePanelWidth", () => {
@@ -228,9 +267,9 @@ describe("PixieSidePanel 展开 / 折叠", () => {
     expect(panelEl()).toHaveAttribute("data-panel-open", "true");
     expect(panelEl().style.marginRight).toBe("0px");
     expect(panelEl()).not.toHaveAttribute("aria-hidden");
-    // 窄容器下不占位这条由 CSS 断点负责（jsdom 不跑样式，只守类名契约）。
-    expect(panelEl().className).toContain("hidden");
-    expect(panelEl().className).toContain("@3xl:flex");
+    // 面板始终留在流里：窄容器不再靠 display:none 摘掉，而是由组件按 672px 阈值
+    // 收起（滑出才有中间态可动画）。
+    expect(panelEl().className).not.toContain("hidden");
     expect(globalThis.localStorage?.getItem(PIXIE_PANEL_COLLAPSED_KEY)).toBeNull();
   });
 
@@ -268,8 +307,9 @@ describe("PixieSidePanel 展开 / 折叠", () => {
     expect(fresh.useAppStore.getState().pixiePanelOpen).toBe(false);
   });
 
-  it("窄容器（量到 0 宽）下开关按钮消失，面板本身不占位", () => {
+  it("行宽不足 672 时自动收起：开关消失，面板滑出到不占位", () => {
     vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+    stubLayout(600, 300);
     render(
       <>
         <PixiePanelToggleButton />
@@ -279,7 +319,116 @@ describe("PixieSidePanel 展开 / 折叠", () => {
 
     expect(useAppStore.getState().pixiePanelWide).toBe(false);
     expect(screen.queryByTestId("pixie-panel-toggle")).toBeNull();
-    expect(panelEl().className).toContain("hidden");
+    // 与手动折叠同一个滑出：负 margin = 自身宽度，不再靠 display:none。
+    expect(panelEl()).toHaveAttribute("data-panel-open", "false");
+    expect(panelEl().style.marginRight).toBe("-300px");
+    expect(panelEl()).toHaveAttribute("aria-hidden");
+    expect(panelEl().className).not.toContain("hidden");
+  });
+
+  it("跨断点：拖窗口边缘才有动画，一次性 resize 瞬变", () => {
+    vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+    vi.useFakeTimers();
+    stubLayout(1400, 404);
+    render(<PixieSidePanel groups={[]} />);
+    expect(panelEl()).toHaveAttribute("data-panel-open", "true");
+
+    // 密集连发（每帧一次）里跨过阈值 = 用户在拖窗口边缘 → 让它动。
+    for (const [row, panel] of [
+      [1000, 404],
+      [800, 404],
+      [600, 300],
+    ] as const) {
+      stubLayout(row, panel);
+      vi.advanceTimersByTime(16);
+      act(() => fireResize?.());
+    }
+    expect(panelEl()).toHaveAttribute("data-panel-open", "false");
+    expect(panelEl()).not.toHaveAttribute("data-panel-instant");
+
+    // 一次孤立的 resize（贴边 / 托盘 / DPI）= 不是用户在驱动 → 瞬变。
+    stubLayout(1400, 404);
+    vi.advanceTimersByTime(1000);
+    act(() => fireResize?.());
+    expect(panelEl()).toHaveAttribute("data-panel-open", "true");
+    expect(panelEl()).toHaveAttribute("data-panel-instant", "true");
+
+    vi.useRealTimers();
+  });
+
+  it("侧栏迟早要弹回来占的那一格先扣掉，面板不在它弹回时被挤没", () => {
+    vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+    useAppStore.setState({
+      sidebarCollapsed: true,
+      sidebarAutoCollapsed: true,
+      sidebarWidth: 268,
+    });
+    // 行宽 800 看着够 672，但侧栏是「窗口宽度自动规则」收起来的，再拉宽一点就会
+    // 自己弹回来拿走 268 → 800−268=532，压根放不下，所以这一步就不该先展开。
+    stubLayout(800, 404);
+    render(
+      <>
+        <PixiePanelToggleButton />
+        <PixieSidePanel groups={[]} />
+      </>,
+    );
+
+    expect(panelEl()).toHaveAttribute("data-panel-open", "false");
+    expect(screen.queryByTestId("pixie-panel-toggle")).toBeNull();
+
+    // 侧栏真的弹回来了：行宽掉到 532、欠账归零，指标没变，状态也不许跟着翻。
+    useAppStore.setState({ sidebarCollapsed: false, sidebarAutoCollapsed: false });
+    stubLayout(532, 404);
+    act(() => fireResize?.());
+
+    expect(panelEl()).toHaveAttribute("data-panel-open", "false");
+    expect(useAppStore.getState().pixiePanelWide).toBe(false);
+  });
+
+  it("侧栏弹回的那 200ms 里不提前放手预留：面板不会闪一下", () => {
+    vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+    vi.useFakeTimers();
+    useAppStore.setState({
+      sidebarCollapsed: true,
+      sidebarAutoCollapsed: true,
+      sidebarWidth: 268,
+    });
+    stubLayout(900, 404);
+    render(<PixieSidePanel groups={[]} />);
+    expect(panelEl()).toHaveAttribute("data-panel-open", "false");
+
+    // 侧栏开始弹回：store 的标志先翻，行宽要 200ms 才掉到位。途中量到 760 ——
+    // 预留要是跟着标志一起放手，760 就够展开了，接着落位 632 又得收回去（闪一下）。
+    useAppStore.setState({ sidebarCollapsed: false, sidebarAutoCollapsed: false });
+    stubLayout(760, 404);
+    act(() => fireResize?.());
+    expect(panelEl()).toHaveAttribute("data-panel-open", "false");
+
+    // 撑过侧栏的过渡期才放手；放手后行宽已经落到位，指标不再跳。
+    act(() => vi.advanceTimersByTime(300));
+    stubLayout(632, 404);
+    act(() => fireResize?.());
+    expect(panelEl()).toHaveAttribute("data-panel-open", "false");
+
+    // 真放得下了才展开。
+    stubLayout(700, 404);
+    act(() => fireResize?.());
+    expect(panelEl()).toHaveAttribute("data-panel-open", "true");
+
+    vi.useRealTimers();
+  });
+
+  it("手动收起的侧栏不会被自动弹回，不给它预留宽度", () => {
+    vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+    useAppStore.setState({
+      sidebarCollapsed: true,
+      sidebarAutoCollapsed: false,
+      sidebarWidth: 268,
+    });
+    stubLayout(800, 404);
+    render(<PixieSidePanel groups={[]} />);
+
+    expect(panelEl()).toHaveAttribute("data-panel-open", "true");
   });
 });
 

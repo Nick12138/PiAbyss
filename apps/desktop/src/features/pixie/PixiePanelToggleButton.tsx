@@ -5,8 +5,8 @@
  * 东西——那个管工作区 dock（文件 / 终端 / 改动），这个管小精灵的随行面板，所以
  * 不复用、也不共用状态。
  *
- * 面板窄于 `@3xl` 时不占位（CSS 断点），此时这个开关没有意义：`pixiePanelWide`
- * 由面板自己量出来，为 false 时直接不渲染。
+ * 行宽不足 672（`PIXIE_PANEL_BREAKPOINT_PX`）时面板自动收起，此时这个开关没有意义：
+ * `pixiePanelWide` 由面板量出行了宽后写进 store，为 false 时直接不渲染。
  */
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useT } from "../../lib/i18n/use-t";

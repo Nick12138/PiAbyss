@@ -501,6 +501,12 @@ export type AppState = EpochState & {
    *  width on every open"). Every auto action sets this to `!animated`;
    *  every manual action clears it (manual toggles always animate). */
   sidebarAutoInstant: boolean;
+  /** 左导航栏**展开时**的实时宽度（用户在 220–420 之间拖出来的那个值），由
+   *  `Sidebar` 在本地状态变化时镜像出来。0 = 还没发布（首帧 / 无布局环境）。
+   *  存在的理由：内容区宽度会在侧栏自动弹回的那一瞬间掉一个 `sidebarWidth`，
+   *  只按当前内容宽度做决定的面板会被这个台阶翻烙饼——`PixieSidePanel` 需要
+   *  「按侧栏弹回之后的宽度」判定自己的断点。 */
+  sidebarWidth: number;
   packageProgress: PackageProgressState | null;
   packageRetry: PackageRetryState | null;
   thinkingLevels: string[];
@@ -605,6 +611,7 @@ export type AppState = EpochState & {
   setPixiePanelOpen: (open: boolean) => void;
   setPixiePanelWide: (wide: boolean) => void;
   setSidebarCollapsed: (open: boolean) => void;
+  setSidebarWidth: (sidebarWidth: number) => void;
   toggleSidebar: () => void;
   /** Window-width auto rule: collapse the sidebar and remember the collapse
    *  was automatic (no-op when already collapsed — a manual collapse must
@@ -764,6 +771,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   sidebarCollapsed: sidebarPref("piabyss.sidebar.collapsed"),
   sidebarAutoCollapsed: sidebarPref("piabyss.sidebar.autoCollapsed"),
   sidebarAutoInstant: false,
+  sidebarWidth: 0,
   packageProgress: null,
   packageRetry: null,
   thinkingLevels: [],
@@ -1367,6 +1375,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     setSidebarPref("piabyss.sidebar.autoCollapsed", false);
     set({ sidebarCollapsed: open, sidebarAutoCollapsed: false, sidebarAutoInstant: false });
   },
+  setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
   toggleSidebar: () =>
     set((state) => {
       const next = !state.sidebarCollapsed;
