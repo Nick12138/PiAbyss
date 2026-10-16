@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>小精灵三合一 · 方案 C：右栏随行面板 + 待办中心（A 结构 × B 交互）</title>
+<style>
+  :root{
+    --bg:#ffffff;
+    --sidebar:#f5f5f6;
+    --surface:#ffffff;
+    --overlay:rgba(16,16,22,.045);
+    --overlay-strong:rgba(16,16,22,.08);
+    --border:rgba(16,16,22,.12);
+    --border-subtle:rgba(16,16,22,.07);
+    --fg:#17171b;
+    --fg-90:rgba(23,23,27,.9);
+    --muted:#787883;
+    --muted-2:#9c9ca6;
+    --accent:#5b5bd6;
+    --accent-hover:#4a4ac5;
+    --accent-fg:#ffffff;
+    --accent-soft:rgba(91,91,214,.10);
+    --accent-line:rgba(91,91,214,.35);
+    --success:#158a55;
+    --warning:#b1740f;
+    --warning-soft:rgba(177,116,15,.12);
+    --danger:#c33a33;
+    --danger-soft:rgba(195,58,51,.10);
+    --nav-active:rgba(16,16,22,.07);
+    --r:8px;
+    --r-lg:12px;
+    --shadow:0 1px 2px rgba(16,16,22,.06), 0 6px 20px rgba(16,16,22,.06);
+    --mono:ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --rail:clamp(340px, 31%, 404px);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:13px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", sans-serif;-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+  input,textarea,select{font:inherit;color:inherit}
+  .ic{width:1em;height:1em;flex:0 0 auto;stroke:currentColor;fill:none;
+      stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;display:block}
+  .scroll{overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(16,16,22,.18) transparent}
+  .scroll::-webkit-scrollbar{width:8px;height:8px}
+  .scroll::-webkit-scrollbar-thumb{background:rgba(16,16,22,.16);border-radius:99px;
+    border:2px solid transparent;background-clip:content-box}
+  .scroll::-webkit-scrollbar-thumb:hover{background:rgba(16,16,22,.3);background-clip:content-box}
+
+  .app{display:flex;height:100vh;overflow:hidden}
+
+  /* ── sidebar（与 A 相同：三个入口收敛成一个） ───────────── */
+  .sidebar{width:238px;flex:0 0 auto;background:var(--sidebar);
+    border-right:1px solid var(--border-subtle);display:flex;flex-direction:column;
+    padding:10px 8px 8px;gap:2px;overflow:hidden}
+  .sb-new{height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;border-radius:var(--r);
+    border:1px solid var(--border);background:var(--surface);margin:0 2px 10px;font-size:13px}
+  .sb-new:hover{background:var(--overlay)}
+  .sb-item{height:38px;display:flex;align-items:center;gap:10px;padding:0 10px;border-radius:var(--r);
+    font-size:13px;color:var(--fg-90)}
+  .sb-item .ic{font-size:17px;color:var(--muted)}
+  .sb-item:hover{background:var(--overlay)}
+  .sb-item.on{background:var(--nav-active);font-weight:600;color:var(--fg)}
+  .sb-item.on .ic{color:var(--accent)}
+  .sb-item.merged{color:var(--muted-2);cursor:default}
+  .sb-item.merged:hover{background:none}
+  .sb-tag{margin-left:auto;font-size:10px;font-weight:500;color:var(--muted-2);
+    background:var(--overlay);border-radius:99px;padding:1px 6px}
+  .sb-sep{height:1px;background:var(--border-subtle);margin:10px 4px}
+
+  /* 工作区选择器（真实实现：WorkspacePicker） */
+  .sb-ws-head{display:flex;align-items:center;height:28px;padding:0 6px 0 8px;margin-bottom:2px}
+  .sb-ws-head .tt{display:flex;align-items:center;gap:4px;font-size:13px;font-weight:500;
+    color:var(--muted);padding:2px 2px;border-radius:5px}
+  .sb-ws-head .tt:hover{color:var(--fg)}
+  .sb-ws-head .tt .ic{font-size:12px}
+  .sb-ws-head .add{margin-left:auto;width:26px;height:26px;border-radius:7px;display:flex;
+    align-items:center;justify-content:center;color:var(--muted)}
+  .sb-ws-head .add:hover{background:var(--overlay);color:var(--fg)}
+  .sb-ws-head .add .ic{font-size:14px}
+  .ws-row{height:32px;display:flex;align-items:center;gap:9px;padding:0 9px;border-radius:var(--r);
+    font-size:12.5px;color:var(--fg-90)}
+  .ws-row .ic{font-size:15px;color:var(--muted)}
+  .ws-row:hover{background:var(--overlay)}
+  .ws-row .p{margin-left:auto;font-size:10px;color:var(--muted-2)}
+
+  /* 会话列表（左下，真实实现：SessionList，keepPage） */
+  .sb-sessions{flex:1;min-height:0;overflow-y:auto;padding:2px 2px 10px;
+    scrollbar-width:thin;scrollbar-color:rgba(16,16,22,.18) transparent}
+  .sb-sessions::-webkit-scrollbar{width:8px}
+  .sb-sessions::-webkit-scrollbar-thumb{background:rgba(16,16,22,.16);border-radius:99px;
+    border:2px solid transparent;background-clip:content-box}
+  .sb-sess-head{display:flex;align-items:center;gap:4px;height:26px;width:100%;
+    padding:0 7px;margin-bottom:1px;font-size:12.5px;font-weight:500;color:var(--muted)}
+  .sb-sess-head:hover{color:var(--fg)}
+  .sb-sess-head .ic{font-size:11px;transition:transform .15s}
+  .sb-sess-head .ic.closed{transform:rotate(-90deg)}
+  .sb-sess-head .n{margin-left:auto;font-size:10px;color:var(--muted-2);font-weight:400}
+  .sb-sessions.closed .slist{display:none}
+  .slist{list-style:none;margin:0;padding:0}
+  .srow{height:36px;display:flex;align-items:center;border-radius:var(--r);font-size:13px}
+  .srow:hover{background:var(--overlay)}
+  .srow.on{background:var(--nav-active);font-weight:600;color:var(--fg)}
+  .srow-btn{flex:1;min-width:0;display:flex;align-items:center;gap:8px;padding:0 2px 0 10px;
+    text-align:left}
+  .srow .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .srow .d{flex:0 0 auto;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .srow.on .d{color:var(--muted)}
+  .srow .slot{width:22px;height:22px;flex:0 0 auto;margin-right:2px;display:flex;
+    align-items:center;justify-content:center}
+  .srow .slot i{width:6px;height:6px;border-radius:99px;background:var(--success);display:block}
+  .srow .slot.live i{background:var(--accent);animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{50%{opacity:.35}}
+
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .topbar{height:48px;flex:0 0 auto;display:flex;align-items:center;gap:10px;
+    padding:0 14px 0 16px;border-bottom:1px solid var(--border-subtle);background:var(--surface)}
+  .tb-title{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600}
+  .tb-title .ic{font-size:16px;color:var(--accent)}
+  .tb-actions{margin-left:auto;display:flex;align-items:center;gap:6px}
+  .tb-btn{height:28px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border-radius:7px;
+    border:1px solid var(--border);font-size:12px;color:var(--fg-90);background:var(--surface)}
+  .tb-btn:hover{background:var(--overlay)}
+  .tb-btn .ic{font-size:13px}
+
+  .content{flex:1;min-height:0;display:flex}
+
+  /* ── conversation ────────────────────────────────────────── */
+  .conv{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+  .transcript{flex:1;min-height:0;padding:18px 22px 8px}
+  .tcol{max-width:740px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+  .seg{display:flex;align-items:center;gap:10px;color:var(--muted-2);font-size:11px;cursor:pointer}
+  .seg::before,.seg::after{content:"";height:1px;background:var(--border-subtle);flex:1}
+  .seg span{display:inline-flex;align-items:center;gap:4px}
+  .seg .ic{font-size:11px}
+  .row{display:flex;gap:10px}
+  .row.me{flex-direction:row-reverse}
+  .av{width:24px;height:24px;flex:0 0 auto;border-radius:7px;display:flex;align-items:center;
+    justify-content:center;background:var(--accent-soft);color:var(--accent);margin-top:1px}
+  .av .ic{font-size:14px}
+  .bubble{max-width:min(560px,88%);border-radius:var(--r-lg);padding:9px 13px;font-size:13.5px;
+    line-height:1.65;word-break:break-word}
+  .row.me .bubble{background:var(--overlay);border:1px solid var(--border-subtle)}
+  .row.px .bubble{background:var(--surface);border:1px solid var(--border-subtle);box-shadow:var(--shadow)}
+  .bubble b{font-weight:600}
+  .bubble ol{margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
+  .bubble .dim{color:var(--muted)}
+  .toolcard{border:1px solid var(--border-subtle);background:var(--surface);border-radius:var(--r);
+    font-size:12px;overflow:hidden}
+  .toolcard summary{display:flex;align-items:center;gap:7px;padding:6px 10px;cursor:pointer;
+    color:var(--muted);list-style:none}
+  .toolcard summary::-webkit-details-marker{display:none}
+  .toolcard summary .ic{font-size:12px}
+  .toolcard summary .name{font-family:var(--mono);font-size:11.5px;color:var(--fg-90)}
+
+  .draft{border:1px solid var(--accent-line);background:var(--surface);border-radius:var(--r-lg);
+    overflow:hidden;margin-top:8px;box-shadow:var(--shadow);max-width:560px}
+  .draft-head{display:flex;align-items:center;gap:8px;padding:8px 12px;
+    background:var(--accent-soft);border-bottom:1px solid var(--accent-line)}
+  .draft-head .ic{font-size:14px;color:var(--accent)}
+  .draft-head h4{margin:0;font-size:12.5px;font-weight:600}
+  .pill{margin-left:auto;font-size:10.5px;font-weight:600;border-radius:99px;padding:2px 8px;
+    background:var(--warning-soft);color:var(--warning)}
+  .draft-body{padding:10px 12px;display:flex;flex-direction:column;gap:7px}
+  .drow{display:flex;gap:10px;font-size:12px;align-items:baseline}
+  .drow .k{width:62px;flex:0 0 auto;color:var(--muted)}
+  .drow .v{min-width:0;flex:1;word-break:break-word}
+  .drow .v.def{color:var(--muted)}
+  .draft-prompt{border:1px solid var(--border-subtle);border-radius:var(--r);background:var(--bg);
+    padding:8px 10px;font-size:12px;line-height:1.7;color:var(--fg-90);white-space:pre-wrap;
+    max-height:80px;overflow:auto}
+  .draft-note{font-size:11px;color:var(--muted-2)}
+  .draft-foot{display:flex;align-items:center;gap:8px;padding:0 12px 12px}
+  .btn{height:30px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;border-radius:7px;
+    font-size:12.5px;font-weight:500;border:1px solid var(--border);background:var(--surface)}
+  .btn:hover{background:var(--overlay)}
+  .btn .ic{font-size:13px}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+  .btn.primary:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
+  .btn.done{background:var(--overlay);border-color:transparent;color:var(--success);cursor:default}
+
+  .composer{flex:0 0 auto;padding:6px 22px 16px}
+  .cbox{max-width:740px;margin:0 auto;border:1.5px solid var(--border);border-radius:14px;
+    background:var(--surface);box-shadow:var(--shadow);padding:8px}
+  .cbox textarea{width:100%;border:0;outline:none;resize:none;background:transparent;
+    min-height:44px;max-height:180px;padding:4px 6px;font-size:13.5px;line-height:1.6}
+  .cbar{display:flex;align-items:center;gap:8px;padding:2px 2px 0}
+  .chip{height:24px;display:inline-flex;align-items:center;gap:5px;padding:0 8px;border-radius:99px;
+    font-size:11.5px;color:var(--muted);background:var(--overlay)}
+  .chip .ic{font-size:11px}
+  .cbar .right{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .send{width:28px;height:28px;border-radius:99px;background:var(--fg);color:var(--bg);
+    display:flex;align-items:center;justify-content:center}
+  .send .ic{font-size:15px;stroke-width:2.2}
+  .send[disabled]{opacity:.3;cursor:not-allowed}
+
+  /* ── right rail ──────────────────────────────────────────── */
+  .rail{width:var(--rail);flex:0 0 auto;min-width:0;border-left:1px solid var(--border-subtle);
+    background:var(--surface);display:flex;flex-direction:column}
+  .rail-head{height:40px;flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:0 12px;
+    border-bottom:1px solid var(--border-subtle);font-size:11.5px;color:var(--muted)}
+  .rail-head .ic{font-size:13px}
+  .rail-head .st{margin-left:auto;font-size:10.5px;color:var(--muted-2)}
+  .rail-body{flex:1;min-height:0;padding:10px 12px 16px;display:flex;flex-direction:column;gap:12px}
+
+  .section{border:1px solid var(--border-subtle);border-radius:var(--r-lg);background:var(--surface);
+    overflow:hidden;flex:0 0 auto}
+  .sec-head{display:flex;align-items:center;gap:2px;padding:5px 8px 5px 4px}
+  .sec-toggle{display:flex;align-items:center;gap:7px;min-width:0;flex:1;
+    padding:3px 6px;border-radius:6px;text-align:left}
+  .sec-toggle:hover{background:var(--overlay)}
+  .sec-head .chev{font-size:12px;color:var(--muted-2);transition:transform .15s}
+  .section[data-open="1"] .sec-head .chev{transform:rotate(90deg)}
+  .sec-head .lead{font-size:13px;color:var(--muted)}
+  .sec-head h3{margin:0;font-size:12px;font-weight:600}
+  .sec-head .count{font-size:10.5px;font-weight:600;color:var(--muted);background:var(--overlay);
+    border-radius:99px;padding:1px 6px;font-variant-numeric:tabular-nums}
+  .sec-toggle .hint{margin-left:auto;font-size:10.5px;color:var(--muted-2);white-space:nowrap;
+    font-variant-numeric:tabular-nums}
+  .sec-head .mini{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;
+    justify-content:center;color:var(--muted);flex:0 0 auto}
+  .sec-head .mini:hover{background:var(--overlay);color:var(--fg)}
+  .sec-head .mini .ic{font-size:13px}
+  .sec-body{padding:0 8px 8px}
+  .section[data-open="0"] .sec-body{display:none}
+
+  /* 概览数字（一行三格） */
+  .overview{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:2px 1px 8px}
+  .ov{border:1px solid var(--border-subtle);border-radius:var(--r);padding:5px 7px}
+  .ov .num{font-size:15px;font-weight:650;line-height:1.2;font-variant-numeric:tabular-nums}
+  .ov .lb{font-size:10px;color:var(--muted);margin-top:1px;white-space:nowrap}
+  .ov.hot .num{color:var(--accent)}
+  .ov.warn .num{color:var(--warning)}
+
+  .mini-tabs{display:flex;align-items:center;gap:2px;padding:0 2px 6px}
+  .mtab{height:24px;display:inline-flex;align-items:center;gap:5px;padding:0 8px;border-radius:6px;
+    font-size:11.5px;color:var(--muted)}
+  .mtab:hover{background:var(--overlay);color:var(--fg)}
+  .mtab.on{background:var(--nav-active);color:var(--fg);font-weight:600}
+  .mtab .n{font-size:10.5px;opacity:.75;font-variant-numeric:tabular-nums}
+
+  /* 日期分组 */
+  .grp{margin:0 4px 2px;padding-top:8px;font-size:10px;font-weight:600;letter-spacing:.04em;
+    color:var(--muted-2);display:flex;align-items:center;gap:6px}
+  .grp .ln{flex:1;height:1px;background:var(--border-subtle)}
+  .grp.over{color:var(--danger)}
+
+  /* 待办条目 + 就地详情 */
+  .item{border-radius:var(--r)}
+  .item + .item{margin-top:1px}
+  .item-head{display:flex;align-items:flex-start;gap:8px;padding:6px 7px;border-radius:var(--r)}
+  .item-head:hover{background:var(--overlay)}
+  .item.open .item-head{background:var(--accent-soft)}
+  .tick{width:16px;height:16px;flex:0 0 auto;margin-top:2px;color:var(--muted-2);position:relative}
+  .tick .ic{font-size:16px}
+  .tick .on{position:absolute;inset:0;opacity:0;transition:opacity .12s}
+  .item-head:hover .tick .on{opacity:1;color:var(--accent)}
+  .item-main{min-width:0;flex:1;text-align:left}
+  .item-title{font-size:12.5px;line-height:1.45;word-break:break-word}
+  .item-meta{margin-top:2px;display:flex;align-items:center;flex-wrap:wrap;gap:6px;
+    font-size:10.5px;color:var(--muted)}
+  .tag{font-size:10.5px;font-weight:500;border-radius:4px;padding:1px 5px;
+    background:var(--accent-soft);color:var(--accent)}
+  .badge{font-size:10px;font-weight:600;border-radius:4px;padding:1px 5px;
+    background:var(--danger-soft);color:var(--danger)}
+  .badge.doing{background:var(--accent-soft);color:var(--accent)}
+  .caret{width:16px;height:16px;flex:0 0 auto;margin-top:2px;display:flex;align-items:center;
+    justify-content:center;color:var(--muted-2);transition:transform .15s}
+  .item.open .caret{transform:rotate(90deg)}
+  .caret .ic{font-size:11px}
+  .spin{animation:spin 1.1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .item-detail{display:none;margin:2px 7px 6px 31px;padding:8px 9px;border-radius:var(--r);
+    background:var(--bg);border:1px solid var(--border-subtle)}
+  .item.open .item-detail{display:block}
+  .item-detail .body{font-size:11.5px;line-height:1.6;color:var(--fg-90);white-space:pre-wrap}
+  .item-detail dl{margin:7px 0 0;display:grid;grid-template-columns:52px 1fr;gap:3px 8px;font-size:11px}
+  .item-detail dt{color:var(--muted)}
+  .item-detail dd{margin:0;color:var(--fg-90)}
+  .item-detail .acts{display:flex;align-items:center;gap:6px;margin-top:8px;
+    padding-top:7px;border-top:1px dashed var(--border)}
+  .mini-btn{height:24px;display:inline-flex;align-items:center;gap:5px;padding:0 8px;border-radius:6px;
+    border:1px solid var(--border);font-size:11.5px;background:var(--surface)}
+  .mini-btn:hover{background:var(--overlay)}
+  .mini-btn.acc{color:var(--accent);border-color:var(--accent-line);background:var(--accent-soft)}
+  .mini-btn.acc:hover{background:rgba(91,91,214,.16)}
+  .mini-btn .ic{font-size:12px}
+
+  .done-row{display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:var(--r);
+    color:var(--muted)}
+  .done-row .item-title{flex:1;text-decoration:line-through;text-decoration-color:var(--border)}
+  .done-row .at{font-size:10.5px}
+
+  /* 新建待办 · 两个入口：速记框（快记）+ 标题行「＋」开的多功能表单 */
+  .newzone{margin:9px 4px 0}
+  /* ① 快记：与方案 A 同一套 —— 虚线输入框，Enter 直接落一条 */
+  .quick{border-top:1px dashed var(--border);padding:8px 7px 2px}
+  .quick.hide{display:none}
+  .quick textarea{width:100%;border:1px dashed transparent;border-radius:var(--r);background:transparent;
+    outline:none;resize:none;padding:5px 7px;font-size:12.5px;line-height:1.55;min-height:30px;
+    max-height:96px;caret-color:var(--accent)}
+  .quick textarea:hover{border-color:var(--border-subtle)}
+  .quick textarea:focus{border-color:var(--border)}
+  .quick textarea::placeholder{color:var(--muted-2)}
+  /* ② 多功能表单：标题 / 截止 / 标签 / 工作区 */
+  .form{border:1px solid var(--border);border-radius:var(--r-lg);padding:9px;
+    background:var(--surface);box-shadow:var(--shadow);display:none;flex-direction:column;gap:7px}
+  .form.on{display:flex}
+  .form input[type=text]{width:100%;height:30px;border:0;border-bottom:1px solid var(--border-subtle);
+    outline:none;background:transparent;font-size:13px;padding:0 2px}
+  .form input[type=text]:focus{border-bottom-color:var(--accent)}
+  .form input::placeholder{color:var(--muted-2)}
+  .frow{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);min-width:0}
+  .frow select,.frow input[type=text].mini{height:26px;border:1px solid var(--border);border-radius:6px;
+    padding:0 6px;font-size:11.5px;background:transparent;color:var(--fg-90);min-width:0}
+  .frow input[type=text].mini{flex:1}
+  .form .fbtn{display:flex;align-items:center;gap:6px;padding-top:2px}
+  .form .fbtn .sp{margin-left:auto}
+  .note{padding:4px 6px 2px;font-size:10.5px;line-height:1.55;color:var(--muted-2)}
+
+  /* 折叠：周期计划 / 委派任务 */
+  .job{display:flex;align-items:flex-start;gap:7px;padding:7px;border-radius:var(--r);
+    border:1px solid var(--border-subtle);margin-bottom:6px}
+  .job:hover{background:var(--overlay)}
+  .dot{width:6px;height:6px;border-radius:99px;flex:0 0 auto;margin-top:6px}
+  .job-main{min-width:0;flex:1}
+  .job-name{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .job-trig{margin-top:2px;font-size:11px;color:var(--accent);display:flex;gap:5px}
+  .job-trig .cd{color:var(--muted)}
+  .job-meta{margin-top:2px;font-size:10.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .sw{width:26px;height:15px;border-radius:99px;background:var(--accent);position:relative;
+    flex:0 0 auto;margin-top:3px}
+  .sw::after{content:"";position:absolute;top:2px;left:13px;width:11px;height:11px;border-radius:99px;
+    background:#fff}
+  .sw.off{background:rgba(16,16,22,.18)}
+  .sw.off::after{left:2px}
+  .tree-head{display:flex;align-items:center;gap:6px;width:100%;padding:3px 2px;text-align:left;
+    font-size:11px;font-weight:600;color:var(--muted)}
+  .tree-head:hover{color:var(--fg)}
+  .tree-head .ic{font-size:11px}
+  .tree-head .n{margin-left:auto;font-weight:400;font-variant-numeric:tabular-nums}
+  .tree-head .jump{width:20px;height:20px;border-radius:5px;display:flex;align-items:center;
+    justify-content:center;color:var(--muted)}
+  .tree-head .jump:hover{background:var(--overlay);color:var(--fg)}
+  .task{margin:0 0 4px 12px;border:1px solid var(--border-subtle);border-radius:6px;
+    padding:4px 7px;display:flex;align-items:center;gap:6px;font-size:11.5px}
+  .task .s{margin-left:auto;font-size:10.5px;color:var(--muted)}
+  .task .s.warn{color:var(--warning);font-weight:600}
+  .task .t{font-size:10.5px;color:var(--muted-2);font-variant-numeric:tabular-nums}
+
+  /* ── prototype chrome ────────────────────────────────────── */
+  .ctl{position:fixed;left:14px;bottom:14px;z-index:60;display:flex;align-items:center;gap:6px;
+    background:rgba(255,255,255,.94);border:1px solid var(--border);border-radius:99px;
+    padding:5px 6px;box-shadow:var(--shadow);backdrop-filter:blur(8px)}
+  .ctl button{height:24px;padding:0 10px;border-radius:99px;font-size:11.5px;color:var(--muted)}
+  .ctl button:hover{background:var(--overlay)}
+  .ctl button.on{background:var(--fg);color:var(--bg);font-weight:600}
+
+  .anno{display:none;width:15px;height:15px;border-radius:99px;background:var(--accent);
+    color:#fff;font-size:9.5px;font-weight:700;align-items:center;justify-content:center;
+    margin-left:5px;font-variant-numeric:tabular-nums;cursor:help;flex:0 0 auto}
+  body.anno-on .anno{display:inline-flex}
+  .legend{position:fixed;right:14px;bottom:14px;z-index:60;width:452px;max-height:64vh;
+    background:rgba(255,255,255,.97);border:1px solid var(--border);border-radius:var(--r-lg);
+    box-shadow:var(--shadow);display:none;flex-direction:column;overflow:hidden}
+  body.anno-on .legend{display:flex}
+  .legend header{display:flex;align-items:center;gap:8px;padding:10px 12px;
+    border-bottom:1px solid var(--border-subtle);font-size:12px;font-weight:600}
+  .legend header button{margin-left:auto;color:var(--muted)}
+  .legend ol{margin:0;padding:10px 14px 14px 30px;overflow:auto;display:flex;flex-direction:column;gap:7px}
+  .legend li{font-size:11.5px;line-height:1.65;color:var(--fg-90)}
+  .legend li b{font-weight:600}
+
+  @media (max-width:1180px){ :root{--rail:clamp(310px,30%,350px)} }
+  @media (max-width:940px){
+    .sidebar{display:none}
+    .content{flex-direction:column}
+    .rail{width:auto;border-left:0;border-top:1px solid var(--border-subtle);max-height:54vh}
+    .transcript{padding:14px}
+    .composer{padding:6px 14px 12px}
+    .legend{width:auto;left:14px;right:14px}
+  }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-sparkles" viewBox="0 0 24 24">
+    <path d="M12 3l1.9 4.9L18.8 9.8l-4.9 1.9L12 16.6l-1.9-4.9L5.2 9.8l4.9-1.9z"/>
+    <path d="M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>
+  </symbol>
+  <symbol id="i-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.3 2.3 4.7-5"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M8 3v3.5M16 3v3.5M3 10h18M12 13.5v3.5l2 1.2"/></symbol>
+  <symbol id="i-list-todo" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M7.5 9.5l1.4 1.4 2.6-2.8M7.5 15.5l1.4 1.4 2.6-2.8M14.5 10h3.5M14.5 16h3.5"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+  <symbol id="i-crosshair" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 002-2V9a2 2 0 00-2-2h-7.5a2 2 0 01-1.6-.8l-1-1.4A2 2 0 008.3 4H4a2 2 0 00-2 2v12a2 2 0 002 2z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 1.8"/></symbol>
+  <symbol id="i-loader" viewBox="0 0 24 24"><path d="M12 3a9 9 0 019 9" stroke-width="2.2"/><circle cx="12" cy="12" r="9" opacity=".22"/></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.4M12 18.8v2.4M4.6 7.2l2 1.2M17.4 15.6l2 1.2M4.6 16.8l2-1.2M17.4 8.4l2-1.2"/></symbol>
+  <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M15.5 4a5 5 0 00-4.4 7.4L4 18.5 5.5 20l7.1-7.1A5 5 0 0019 8.5l-2.4 2.4-2-2z"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20h4l10-10-4-4L4 16zM14.5 5.5l4 4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4.8h6V7M6.5 7l1 13h9l1-13"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-message" viewBox="0 0 24 24"><path d="M20 12a7.5 7.5 0 01-11 6.6L4.5 20l1.4-4.3A7.5 7.5 0 1120 12z"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 10-2.6 5.9M20 12V6.5M20 12h-5.5"/></symbol>
+</svg>
+
+<div class="app">
+
+  <!-- ── sidebar ───────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <button class="sb-new"><svg class="ic"><use href="#i-plus"/></svg>新会话</button>
+    <button class="sb-item on" data-anno="1">
+      <svg class="ic"><use href="#i-sparkles"/></svg><span>小精灵</span>
+    </button>
+    <button class="sb-item merged" tabindex="-1" aria-disabled="true">
+      <svg class="ic"><use href="#i-calendar"/></svg><span>周期计划</span>
+      <span class="sb-tag">已并入</span>
+    </button>
+    <button class="sb-item merged" tabindex="-1" aria-disabled="true">
+      <svg class="ic"><use href="#i-list-todo"/></svg><span>方寸间</span>
+      <span class="sb-tag">已并入</span>
+    </button>
+    <button class="sb-item"><svg class="ic"><use href="#i-settings"/></svg><span>设置</span></button>
+
+    <div class="sb-sep"></div>
+
+    <!-- 工作区（WorkspacePicker）：小精灵工作区刻意不进这张列表，
+         否则会读成「第二个选中的小精灵」，所以这里没有选中态。 -->
+    <div class="sb-ws-head">
+      <button class="tt">工作区<svg class="ic"><use href="#i-chevron-down"/></svg></button>
+      <button class="add" title="添加工作区"><svg class="ic"><use href="#i-plus"/></svg></button>
+    </div>
+    <button class="ws-row"><svg class="ic"><use href="#i-folder"/></svg><span>PiAbyss</span></button>
+    <button class="ws-row"><svg class="ic"><use href="#i-folder"/></svg><span>okxbot</span></button>
+    <button class="ws-row"><svg class="ic"><use href="#i-folder"/></svg><span>文案库</span></button>
+
+    <!-- 会话列表：留在左下，与普通工作区同款（keepPage —— 点行留在本页，
+         不跳回 chat 页；「回到最新」在顶栏） -->
+    <div class="sb-sessions" id="sbSessions">
+      <button class="sb-sess-head" id="sessHead">
+        <svg class="ic" id="sessChev"><use href="#i-chevron-down"/></svg>
+        <span>最近会话</span>
+        <span class="anno" data-anno="11">11</span>
+        <span class="n">6</span>
+      </button>
+      <ul class="slist">
+        <li class="srow on">
+          <button class="srow-btn"><span class="t">今天有什么工作？</span><span class="d">刚刚</span></button>
+          <span class="slot"><i></i></span>
+        </li>
+        <li class="srow">
+          <button class="srow-btn"><span class="t">帮我建个每天 9 点的 CI 计划</span><span class="d">9/28</span></button>
+          <span class="slot"></span>
+        </li>
+        <li class="srow">
+          <button class="srow-btn"><span class="t">复盘材料的格式怎么定</span><span class="d">9/26</span></button>
+          <span class="slot"></span>
+        </li>
+        <li class="srow">
+          <button class="srow-btn"><span class="t">okxbot 的登录态问题</span><span class="d">9/20</span></button>
+          <span class="slot"></span>
+        </li>
+        <li class="srow">
+          <button class="srow-btn"><span class="t">环境变量读不到</span><span class="d">9/18</span></button>
+          <span class="slot"></span>
+        </li>
+        <li class="srow">
+          <button class="srow-btn"><span class="t">目录结构梳理</span><span class="d">9/15</span></button>
+          <span class="slot"></span>
+        </li>
+      </ul>
+    </div>
+  </aside>
+
+  <div class="main">
+
+    <header class="topbar">
+      <div class="tb-title">
+        <svg class="ic"><use href="#i-sparkles"/></svg><span>小精灵</span>
+        <span class="anno" data-anno="2">2</span>
+      </div>
+      <div class="tb-actions">
+        <button class="tb-btn"><svg class="ic"><use href="#i-crosshair"/></svg>回到最新</button>
+        <button class="tb-btn"><svg class="ic"><use href="#i-plus"/></svg>新会话</button>
+        <button class="tb-btn"><svg class="ic"><use href="#i-message"/></svg>会话列表</button>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- ── conversation ───────────────────────────────────── -->
+      <section class="conv">
+        <div class="transcript scroll">
+          <div class="tcol">
+
+            <div class="seg">
+              <span><svg class="ic"><use href="#i-chevron-right"/></svg>上一段回顾 · 9月28日</span>
+            </div>
+
+            <div class="row me"><div class="bubble">今天有什么工作？</div></div>
+
+            <div class="row px">
+              <div class="av"><svg class="ic"><use href="#i-sparkles"/></svg></div>
+              <div style="min-width:0;display:flex;flex-direction:column">
+                <div class="bubble">早上好。右栏里 <b>5 条未完成</b>，其中 <b>1 条已经在跑了</b>，还有一条已经逾期。
+                  <ol>
+                    <li>修复登录态串号 bug <span class="dim">· 进行中（okxbot）</span></li>
+                    <li>回复张工关于接口鉴权的邮件 <span class="dim">· 已逾期</span></li>
+                    <li>订周五的会议室 <span class="dim">· 今天</span></li>
+                    <li>整理 Q4 复盘材料 <span class="dim">· 明天 09:00</span></li>
+                    <li>每周五收一次周报 <span class="dim">· 本周</span></li>
+                  </ol>
+                  <span class="dim">要我把哪一条交给对应工作区去做？</span>
+                  <span class="anno" data-anno="3">3</span>
+                </div>
+                <details class="toolcard">
+                  <summary><svg class="ic"><use href="#i-wrench"/></svg>
+                    <span class="name">piabyss_memo · list</span>
+                    <span style="margin-left:auto">5 条未完成</span>
+                  </summary>
+                </details>
+              </div>
+            </div>
+
+            <div class="row me"><div class="bubble">帮我建个每天 9 点检查 CI 的计划</div></div>
+
+            <div class="row px">
+              <div class="av"><svg class="ic"><use href="#i-sparkles"/></svg></div>
+              <div style="min-width:0;display:flex;flex-direction:column">
+                <div class="bubble">好，我按你的说法整理成一份计划草稿，确认一下：
+                  <span class="anno" data-anno="8">8</span>
+                </div>
+
+                <div class="draft" id="draft">
+                  <div class="draft-head">
+                    <svg class="ic"><use href="#i-calendar"/></svg>
+                    <h4>计划草稿</h4>
+                    <span class="pill" id="draftPill">待确认</span>
+                  </div>
+                  <div class="draft-body">
+                    <div class="drow"><span class="k">名称</span><span class="v">每日 CI 巡检</span></div>
+                    <div class="drow"><span class="k">类型</span><span class="v def">Prompt 计划（在全新会话里执行，走模型）</span></div>
+                    <div class="drow"><span class="k">触发</span><span class="v">周期 · 每 1d（每天 09:00）</span></div>
+                    <div class="drow"><span class="k">工作区</span><span class="v">okxbot</span></div>
+                    <div class="drow"><span class="k">权限</span><span class="v def">只读</span></div>
+                    <div class="drow"><span class="k">模型</span><span class="v def">宿主默认（claude-sonnet-4.5）</span></div>
+                    <div class="drow" style="align-items:flex-start">
+                      <span class="k">计划书</span>
+                      <span class="v"><span class="draft-prompt">检查最近 24 小时的 CI 结果，列出失败的任务、失败的用例与首次失败时间；
+若全部通过，只回一行「全绿」。</span></span>
+                    </div>
+                    <div class="draft-note">灰色字段是插件默认值，你没有指定，我不会改。</div>
+                  </div>
+                  <div class="draft-foot" id="draftFoot">
+                    <button class="btn primary" id="confirmPlan"><svg class="ic"><use href="#i-check"/></svg>确认创建</button>
+                    <button class="btn"><svg class="ic"><use href="#i-pencil"/></svg>手动编辑</button>
+                    <button class="btn">继续讨论</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="composer">
+          <div class="cbox">
+            <textarea rows="1" placeholder="跟小精灵说点什么…（Enter 发送，Shift+Enter 换行）"></textarea>
+            <div class="cbar">
+              <span class="chip"><svg class="ic"><use href="#i-sparkles"/></svg>宿主默认模型</span>
+              <div class="right">
+                <button class="send" aria-label="发送"><svg class="ic"><use href="#i-arrow-up"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── right rail ─────────────────────────────────────── -->
+      <aside class="rail">
+        <div class="rail-head">
+          <svg class="ic"><use href="#i-panel"/></svg>
+          <span>随行面板</span>
+          <span class="st">与对话同屏，不切页</span>
+        </div>
+
+        <div class="rail-body scroll">
+
+          <!-- 待办 · 方寸间 -->
+          <section class="section" data-open="1" id="secTodo">
+            <div class="sec-head">
+              <button class="sec-toggle">
+                <svg class="ic chev"><use href="#i-chevron-right"/></svg>
+                <svg class="ic lead"><use href="#i-list-todo"/></svg>
+                <h3>待办 · 方寸间</h3>
+                <span class="count" id="todoCount">5</span>
+                <span class="anno" data-anno="4">4</span>
+              </button>
+              <button class="mini" id="newBtnTop" title="新建待办（可设截止 / 标签 / 工作区）">
+                <svg class="ic"><use href="#i-plus"/></svg>
+              </button>
+            </div>
+
+            <div class="sec-body">
+
+              <!-- 概览数字（一行三格） -->
+              <div class="overview">
+                <div class="ov hot"><div class="num" id="ovOpen">5</div><div class="lb">待处理</div></div>
+                <div class="ov"><div class="num" id="ovDoing">1</div><div class="lb">进行中</div></div>
+                <div class="ov warn"><div class="num" id="ovOver">1</div><div class="lb">已逾期</div></div>
+              </div>
+              <span class="anno" data-anno="5">5</span>
+
+              <!-- 只有两个页签：进行中不再是独立分区，混在「待处理」里用转圈标识 -->
+              <div class="mini-tabs">
+                <button class="mtab on" data-mtab="open">待处理 <span class="n" id="nOpen">5</span></button>
+                <button class="mtab" data-mtab="done">已完成 <span class="n">2</span></button>
+              </div>
+
+              <!-- 待处理（按日期分组） -->
+              <div data-pane="open">
+
+                <div class="grp over">逾期<span class="ln"></span></div>
+                <div class="item" data-overdue="1">
+                  <div class="item-head">
+                    <button class="tick" title="标记完成"><svg class="ic"><use href="#i-circle"/></svg>
+                      <svg class="ic on"><use href="#i-check-circle"/></svg></button>
+                    <div class="item-main">
+                      <div class="item-title">回复张工关于接口鉴权的邮件</div>
+                      <div class="item-meta"><span class="badge">逾期</span><span>文案库</span><span>昨天</span></div>
+                    </div>
+                    <div class="caret"><svg class="ic"><use href="#i-chevron-right"/></svg></div>
+                  </div>
+                  <div class="item-detail">
+                    <div class="body">他说网关那边不支持自定义 header 透传，需要给一个替代方案。先看下我们现在的 token 是怎么带的。</div>
+                    <dl>
+                      <dt>标签</dt><dd>#邮件</dd>
+                      <dt>工作区</dt><dd>文案库</dd>
+                      <dt>截止</dt><dd>昨天 18:00</dd>
+                    </dl>
+                    <div class="acts">
+                      <button class="mini-btn acc"><svg class="ic"><use href="#i-sparkles"/></svg>交给小精灵</button>
+                      <button class="mini-btn"><svg class="ic"><use href="#i-pencil"/></svg>编辑</button>
+                      <button class="mini-btn" title="删除"><svg class="ic"><use href="#i-trash"/></svg></button>
+                    </div>
+                    <span class="anno" data-anno="6">6</span>
+                  </div>
+                </div>
+
+                <div class="grp">今天<span class="ln"></span></div>
+                <!-- 进行中不单独分区：就排在待处理列表里，靠转圈标识状态 -->
+                <div class="item" data-doing="1">
+                  <div class="item-head">
+                    <button class="tick" title="标记完成"><svg class="ic"><use href="#i-circle"/></svg>
+                      <svg class="ic on"><use href="#i-check-circle"/></svg></button>
+                    <div class="item-main">
+                      <div class="item-title">修复登录态串号 bug</div>
+                      <div class="item-meta">
+                        <svg class="ic spin" style="font-size:11px;color:var(--accent)"><use href="#i-loader"/></svg>
+                        <span style="color:var(--accent)">Agent 处理中</span><span>okxbot</span>
+                      </div>
+                    </div>
+                    <div class="caret"><svg class="ic"><use href="#i-chevron-right"/></svg></div>
+                  </div>
+                  <div class="item-detail">
+                    <div class="body">okxbot 的会话里已经在跑了，等它回填总结。</div>
+                    <div class="acts">
+                      <button class="mini-btn"><svg class="ic"><use href="#i-arrow-right"/></svg>打开会话</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="item">
+                  <div class="item-head">
+                    <button class="tick" title="标记完成"><svg class="ic"><use href="#i-circle"/></svg>
+                      <svg class="ic on"><use href="#i-check-circle"/></svg></button>
+                    <div class="item-main">
+                      <div class="item-title">订周五的会议室</div>
+                      <div class="item-meta"><span>10 月 16 日</span></div>
+                    </div>
+                    <div class="caret"><svg class="ic"><use href="#i-chevron-right"/></svg></div>
+                  </div>
+                  <div class="item-detail">
+                    <div class="body">三个人，投影要能用。</div>
+                    <div class="acts">
+                      <button class="mini-btn acc"><svg class="ic"><use href="#i-sparkles"/></svg>交给小精灵</button>
+                      <button class="mini-btn"><svg class="ic"><use href="#i-pencil"/></svg>编辑</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="grp">明天<span class="ln"></span></div>
+                <div class="item">
+                  <div class="item-head">
+                    <button class="tick" title="标记完成"><svg class="ic"><use href="#i-circle"/></svg>
+                      <svg class="ic on"><use href="#i-check-circle"/></svg></button>
+                    <div class="item-main">
+                      <div class="item-title">整理 Q4 复盘材料</div>
+                      <div class="item-meta">
+                        <span class="tag">#工作</span><span>PiAbyss</span>
+                        <span><svg class="ic" style="font-size:10px;display:inline-block;vertical-align:-1px"><use href="#i-clock"/></svg> 明天 09:00</span>
+                      </div>
+                    </div>
+                    <div class="caret"><svg class="ic"><use href="#i-chevron-right"/></svg></div>
+                  </div>
+                  <div class="item-detail">
+                    <div class="body">把三条业务线的指标拉齐，先写结论页，再补数据附录。</div>
+                    <div class="acts">
+                      <button class="mini-btn acc"><svg class="ic"><use href="#i-sparkles"/></svg>交给小精灵</button>
+                      <button class="mini-btn"><svg class="ic"><use href="#i-pencil"/></svg>编辑</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="grp">本周<span class="ln"></span></div>
+                <div class="item">
+                  <div class="item-head">
+                    <button class="tick" title="标记完成"><svg class="ic"><use href="#i-circle"/></svg>
+                      <svg class="ic on"><use href="#i-check-circle"/></svg></button>
+                    <div class="item-main">
+                      <div class="item-title">每周五收一次周报</div>
+                      <div class="item-meta">
+                        <span class="tag">#例行</span>
+                        <span><svg class="ic" style="font-size:10px;display:inline-block;vertical-align:-1px"><use href="#i-clock"/></svg> 每 1w · 下次 10月23日</span>
+                      </div>
+                    </div>
+                    <div class="caret"><svg class="ic"><use href="#i-chevron-right"/></svg></div>
+                  </div>
+                  <div class="item-detail">
+                    <div class="body">周期记录：完成本轮后自动滚到下一轮。</div>
+                    <div class="acts">
+                      <button class="mini-btn acc"><svg class="ic"><use href="#i-sparkles"/></svg>交给小精灵</button>
+                      <button class="mini-btn"><svg class="ic"><use href="#i-pencil"/></svg>编辑</button>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              <!-- 已完成 -->
+              <div data-pane="done" style="display:none">
+                <div class="done-row">
+                  <svg class="ic" style="font-size:15px;color:var(--success)"><use href="#i-check-circle"/></svg>
+                  <div class="item-title">更新 README 的启动说明</div>
+                  <span class="at">昨天</span>
+                </div>
+                <div class="done-row">
+                  <svg class="ic" style="font-size:15px;color:var(--success)"><use href="#i-check-circle"/></svg>
+                  <div class="item-title">归档 9 月会议纪要</div>
+                  <span class="at">10 月 14 日</span>
+                </div>
+                <div class="note">已完成的记录在这里保留 30 天；搜索、标签/工作区筛选在「编辑」打开的完整方寸间里。</div>
+              </div>
+
+              <!-- 新建待办 · 两个入口常驻（不分页签）：
+                   ① 速记框：Enter 直接落一条，与方案 A 同一套；
+                   ② 标题行「＋」：展开多功能表单（截止 / 标签 / 工作区）。 -->
+              <div class="newzone">
+
+                <div class="quick" id="quickZone">
+                  <textarea id="quickAdd" rows="1"
+                    placeholder="记一条待办… Enter 保存，#标签 自动识别"></textarea>
+                  <span class="anno" data-anno="7">7</span>
+                </div>
+
+                <div class="form" id="newForm">
+                  <input type="text" id="fTitle" placeholder="要做什么？" />
+                  <div class="frow">
+                    <span>截止</span>
+                    <select id="fDue">
+                      <option value="">不定</option>
+                      <option value="今天">今天</option>
+                      <option value="明天" selected>明天</option>
+                      <option value="本周">本周</option>
+                    </select>
+                    <input type="text" class="mini" id="fTag" placeholder="#标签" />
+                  </div>
+                  <div class="frow">
+                    <span>工作区</span>
+                    <input type="text" class="mini" id="fWs" placeholder="PiAbyss（可不填）" />
+                  </div>
+                  <div class="fbtn">
+                    <button class="btn primary" id="fSave"><svg class="ic"><use href="#i-check"/></svg>保存</button>
+                    <button class="btn" id="fCancel">取消</button>
+                    <span class="sp"></span>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+          </section>
+
+          <!-- 周期计划（默认折叠） -->
+          <section class="section" data-open="0" id="secSchedule">
+            <div class="sec-head">
+              <button class="sec-toggle">
+                <svg class="ic chev"><use href="#i-chevron-right"/></svg>
+                <svg class="ic lead"><use href="#i-calendar"/></svg>
+                <h3>周期计划</h3>
+                <span class="count" id="planCount">2</span>
+                <span class="anno" data-anno="9">9</span>
+                <span class="hint">下次 3h12m 后</span>
+              </button>
+              <button class="mini" id="newPlan" title="让精灵新建计划">
+                <svg class="ic"><use href="#i-plus"/></svg>
+              </button>
+            </div>
+            <div class="sec-body">
+              <div class="job">
+                <span class="dot" style="background:var(--success)"></span>
+                <div class="job-main">
+                  <div class="job-name">每日 CI 巡检</div>
+                  <div class="job-trig"><span>周期 · 每 1d</span><span class="cd">· 3h12m后</span></div>
+                  <div class="job-meta">
+                    <svg class="ic" style="font-size:10px"><use href="#i-folder"/></svg><span>okxbot</span><span>· 上次成功</span>
+                  </div>
+                </div>
+                <span class="sw" title="启用"></span>
+              </div>
+              <div class="job">
+                <span class="dot" style="background:var(--success)"></span>
+                <div class="job-main">
+                  <div class="job-name">周五周报提醒</div>
+                  <div class="job-trig"><span>Cron · 0 18 * * 5</span><span class="cd">· 1d4h后</span></div>
+                  <div class="job-meta">
+                    <svg class="ic" style="font-size:10px"><use href="#i-folder"/></svg><span>PiAbyss</span><span>· 上次成功</span>
+                  </div>
+                </div>
+                <span class="sw" title="启用"></span>
+              </div>
+              <div class="note">计划的创建与修改都在对话里跟小精灵谈，右栏只负责查看与开关。</div>
+            </div>
+          </section>
+
+          <!-- 委派任务（默认折叠） -->
+          <section class="section" data-open="0" id="secDispatch">
+            <div class="sec-head">
+              <button class="sec-toggle">
+                <svg class="ic chev"><use href="#i-chevron-right"/></svg>
+                <svg class="ic lead"><use href="#i-crosshair"/></svg>
+                <h3>委派任务</h3>
+                <span class="count">2</span>
+                <span class="anno" data-anno="10">10</span>
+                <span class="hint">1 进行中 · 1 等你回复</span>
+              </button>
+            </div>
+            <div class="sec-body">
+              <div class="tree-head">
+                <svg class="ic"><use href="#i-chevron-right"/></svg>
+                <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">okxbot · 修复登录态串号</span>
+                <span class="n">1</span>
+                <button class="jump" title="打开这个会话"><svg class="ic"><use href="#i-crosshair"/></svg></button>
+              </div>
+              <div class="task">
+                <span class="dot" style="background:var(--accent)"></span>
+                <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">定位串号根因并出补丁</span>
+                <span class="s">进行中</span><span class="t">12 分钟前</span>
+              </div>
+              <div class="tree-head">
+                <svg class="ic"><use href="#i-chevron-right"/></svg>
+                <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">文案库 · 生成宣传文案</span>
+                <span class="n">1</span>
+                <button class="jump" title="打开这个会话"><svg class="ic"><use href="#i-crosshair"/></svg></button>
+              </div>
+              <div class="task">
+                <span class="dot" style="background:var(--warning)"></span>
+                <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">三版标题各写 5 条</span>
+                <span class="s warn">等你回复</span><span class="t">34 分钟前</span>
+              </div>
+              <div class="note">行尾按钮把用户送回那条会话；插话、叫停、重试都在会话里说。</div>
+            </div>
+          </section>
+
+        </div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<div class="ctl">
+  <button id="btnDefault" class="on">默认态</button>
+  <button id="btnAll">全部展开</button>
+  <button id="btnAnno">设计标注</button>
+</div>
+
+<div class="legend">
+  <header>
+    <svg class="ic" style="font-size:14px;color:var(--accent)"><use href="#i-sparkles"/></svg>
+    方案 C · 右栏随行面板 + 待办中心
+    <button id="legendClose" aria-label="关闭"><svg class="ic" style="font-size:14px"><use href="#i-x"/></svg></button>
+  </header>
+  <ol>
+    <li><b>架构</b>：A 的骨架 —— 侧栏三入口收敛为一个「小精灵」，对话在左（约 69%），右栏是「随行面板」，不切页、不叠覆盖层。</li>
+    <li><b>顶栏不变</b>：仍是小精灵原有的「回到最新 / 新会话 / 会话列表」，没有页面级切换。</li>
+    <li><b>对话占主位</b>：小精灵的「标准会话」机制原样保留 —— 转写、流式、工具卡、段分隔线、<code>&lt;pixie-context&gt;</code> 前导全部沿用，只多了一块右栏。</li>
+    <li><b>右栏第一块固定是待办</b>：进小精灵就能看见待办，这是合并的核心诉求。它不只是列表，而是一个完整的待办中心：按日期分组（逾期 / 今天 / 明天 / 本周），<b>只有「待处理 / 已完成」两个页签</b> —— <b>「进行中」不再单独分区</b>，进行中的条目就直接排在待处理列表里，用转圈 + 强调色文字标识状态；状态靠图标表达，不靠分区。概览里的「进行中 / 已逾期」两格是「待处理」的子集，只做计数提示，不改变列表结构。</li>
+    <li><b>概览数字</b>（来自 B）：待处理 / 进行中 / 已逾期 三格。折叠态由标题上的计数徽章承担，展开态看这三格。</li>
+    <li><b>就地展开详情</b>（来自 B）：点条目在其下方展开正文、标签、工作区、截止，以及「交给小精灵 / 编辑 / 删除」。<b>方寸间的「列表 + 详情」在这一栏里就合并完了</b>，不再需要「右栏加宽为完整方寸间」那套模式。需要正文 Markdown、图片、周期设置时点「编辑」打开完整编辑器（沿用今天的 MemoPage 详情表单）。</li>
+    <li><b>新建待办 · 两个入口</b>：① <b>速记框</b>（与方案 A 同一套）—— 列表下方虚线输入框，<b>Enter 直接落一条</b>，title = 首行、<code>#标签</code> 自动识别、Shift+Enter 换行，管「先记下来」；② <b>标题行右侧的「＋」</b> —— 展开<b>多功能表单</b>，可一次设好标题 / 截止 / 标签 / 工作区，管「记的时候就分好类」。两个入口都常驻、不分页签；表单展开时速记框收起，避免两块新建 UI 叠在一起。落位：带截止的进对应日期分组（逾期 / 今天 / 明天 / 本周），不定的置顶。</li>
+    <li><b>计划创建在对话里</b>：小精灵产出「计划草稿卡」内联在消息中，确认即 <code>schedule.createJob</code>（编辑则 <code>updateJob</code>）。原来 <code>schedule-agent</code> 整页 + 它自带的独立会话与模型通道整条删除。</li>
+    <li><b>周期计划默认折叠</b>：折叠时只留一行「2 · 下次 3h12m 后」；展开是已有计划的列表与开关，创建入口只有「＋ 让精灵新建」（把引导语塞进对话输入框）。</li>
+    <li><b>委派任务默认折叠</b>：汇总行直接写「1 进行中 · 1 等你回复」，展开才是原来的两层任务树，行尾仍是唯一的定位动作。</li>
+    <li><b>会话列表留在左下</b>：侧栏下方仍是与普通工作区<b>同一套</b>的 <code>SessionList</code>（含「最近会话」分组头、行内日期、行尾状态点、右键菜单），只是 <code>keepPage</code> —— 点一行留在小精灵页加载那条历史段，不跳回 chat 页；「回到最新」在顶栏。它上面是 <code>WorkspacePicker</code>：小精灵工作区刻意不进工作区列表（否则会读成「第二个选中的小精灵」），所以那里没有选中态。</li>
+    <li><b>折叠状态持久化</b>：按分组存 <code>sidebarPref</code>，与现有周期计划页的分组折叠同一套（会话列表的折叠也一样）。</li>
+    <li><b>窄屏（&lt;940px）</b>：侧栏收起，右栏落到对话区下方，三块分组纵向堆叠；输入框始终贴底。</li>
+  </ol>
+</div>
+
+<script>
+(function(){
+  // ── section collapse ────────────────────────────────────────
+  document.querySelectorAll('.section').forEach(function(sec){
+    sec.querySelector('.sec-toggle').addEventListener('click', function(){
+      sec.dataset.open = sec.dataset.open === '1' ? '0' : '1';
+    });
+  });
+
+  // ── 侧栏会话列表折叠（与普通工作区同款） ─────────────────────
+  var sbSessions = document.getElementById('sbSessions');
+  document.getElementById('sessHead').addEventListener('click', function(){
+    sbSessions.classList.toggle('closed');
+    document.getElementById('sessChev').classList.toggle('closed');
+  });
+  // 点会话行：留在本页（keepPage），只切高亮
+  document.querySelectorAll('.srow').forEach(function(row){
+    row.querySelector('.srow-btn').addEventListener('click', function(){
+      document.querySelectorAll('.srow').forEach(function(x){ x.classList.remove('on'); });
+      row.classList.add('on');
+    });
+  });
+
+  // ── memo tabs ───────────────────────────────────────────────
+  var panes = document.querySelectorAll('[data-pane]');
+  document.querySelectorAll('.mtab[data-mtab]').forEach(function(tab){
+    tab.addEventListener('click', function(){
+      document.querySelectorAll('.mtab[data-mtab]').forEach(function(x){ x.classList.remove('on'); });
+      tab.classList.add('on');
+      panes.forEach(function(p){
+        p.style.display = p.dataset.pane === tab.dataset.mtab ? '' : 'none';
+      });
+    });
+  });
+
+  // ── item detail expand ──────────────────────────────────────
+  function bindItem(item){
+    item.querySelector('.item-head').addEventListener('click', function(ev){
+      if (ev.target.closest('.tick')) return;
+      item.classList.toggle('open');
+    });
+    item.querySelector('.tick').addEventListener('click', function(ev){
+      ev.stopPropagation();
+      item.style.transition = 'opacity .18s, transform .18s';
+      item.style.opacity = '0';
+      item.style.transform = 'translateX(8px)';
+      setTimeout(function(){ item.remove(); refreshCounts(); }, 180);
+    });
+  }
+  document.querySelectorAll('.item').forEach(bindItem);
+
+  function refreshCounts(){
+    var pane = '[data-pane="open"]';
+    var open = document.querySelectorAll(pane + ' .item').length;
+    var over = document.querySelectorAll(pane + ' .item[data-overdue="1"]').length;
+    var doing = document.querySelectorAll(pane + ' .item[data-doing="1"]').length;
+    document.getElementById('nOpen').textContent = open;
+    document.getElementById('ovOpen').textContent = open;
+    document.getElementById('ovDoing').textContent = doing;   // 进行中是待处理的子集
+    document.getElementById('ovOver').textContent = over;    // 逾期同理
+    document.getElementById('todoCount').textContent = open; // 未完成总数（含进行中）
+  }
+
+  // ── 两个新建入口共用的构造 / 落位 ───────────────────────────
+  /** 建一条待办条目。标签、工作区按有没有值决定显不显示；截止交给分组标题表达。 */
+  function buildItem(opts){
+    var item = document.createElement('div');
+    item.className = 'item';
+    item.innerHTML =
+      '<div class="item-head">' +
+        '<button class="tick" title="标记完成"><svg class="ic"><use href="#i-circle"/></svg>' +
+        '<svg class="ic on"><use href="#i-check-circle"/></svg></button>' +
+        '<div class="item-main"><div class="item-title"></div>' +
+        '<div class="item-meta">' +
+          '<span class="tag" style="display:none"></span>' +
+          '<span class="ws" style="display:none"></span>' +
+          '<span>刚刚</span>' +
+        '</div></div>' +
+        '<div class="caret"><svg class="ic"><use href="#i-chevron-right"/></svg></div>' +
+      '</div>' +
+      '<div class="item-detail"><div class="body">还没有正文。</div>' +
+        '<div class="acts">' +
+          '<button class="mini-btn acc"><svg class="ic"><use href="#i-sparkles"/></svg>交给小精灵</button>' +
+          '<button class="mini-btn"><svg class="ic"><use href="#i-pencil"/></svg>编辑</button>' +
+        '</div>' +
+      '</div>';
+    item.querySelector('.item-title').textContent = opts.title;
+    if (opts.tag){
+      var tagEl = item.querySelector('.tag');
+      tagEl.style.display = ''; tagEl.textContent = opts.tag;
+    }
+    if (opts.ws){
+      var wsEl = item.querySelector('.ws');
+      wsEl.style.display = ''; wsEl.textContent = opts.ws;
+    }
+    bindItem(item);
+    return item;
+  }
+
+  /** 按截止落位：有对应分组就进那个分组（排在组尾），没有（不定）就置顶。 */
+  function insertIntoGroup(item, due){
+    var pane = document.querySelector('[data-pane="open"]');
+    if (!due){ pane.insertBefore(item, pane.firstChild); return; }
+    var grps = [].slice.call(pane.querySelectorAll('.grp'));
+    var at = -1;
+    for (var i = 0; i < grps.length; i++){
+      if (grps[i].textContent.replace(/\s/g, '').indexOf(due) === 0){ at = i; break; }
+    }
+    if (at < 0){ pane.insertBefore(item, pane.firstChild); return; }
+    var next = grps[at + 1];
+    if (next) pane.insertBefore(item, next);
+    else pane.appendChild(item);
+  }
+
+  /** 新建永远落在「待处理」页签里，否则在已完成页签里记一条会看不见。 */
+  function landItem(item, due){
+    document.querySelector('.mtab[data-mtab="open"]').click();
+    insertIntoGroup(item, due);
+    item.scrollIntoView({ block: 'nearest' });
+    refreshCounts();
+  }
+
+  // ── 入口 ①：速记框，Enter 直接落一条（与方案 A 同一套） ──────
+  var quick = document.getElementById('quickAdd');
+  function autoGrow(el){ el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 96) + 'px'; }
+  quick.addEventListener('input', function(){ autoGrow(quick); });
+  quick.addEventListener('keydown', function(ev){
+    if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing){
+      ev.preventDefault();
+      var text = quick.value.trim();
+      if (!text) return;
+      var firstLine = text.split('\n')[0];
+      var tags = (text.match(/#[^\s#]+/g) || []).slice(0, 3);
+      landItem(buildItem({ title: firstLine, tag: tags[0] || '' }), '');  // 无截止 → 置顶
+      quick.value = '';
+      autoGrow(quick);
+    }
+  });
+
+  // ── 入口 ②：标题行「＋」开的多功能表单（标题 / 截止 / 标签 / 工作区） ──
+  var quickZone = document.getElementById('quickZone');
+  var newForm = document.getElementById('newForm');
+  var fTitle = document.getElementById('fTitle');
+  var fDue = document.getElementById('fDue');
+  var fTag = document.getElementById('fTag');
+  var fWs = document.getElementById('fWs');
+
+  function openForm(){
+    quickZone.classList.add('hide');   // 两个入口不叠着显示：表单展开时收起速记框
+    newForm.classList.add('on');
+    fTitle.focus();
+  }
+  function closeForm(){
+    newForm.classList.remove('on');
+    quickZone.classList.remove('hide');
+    fTitle.value = ''; fTag.value = ''; fWs.value = '';
+  }
+  document.getElementById('newBtnTop').addEventListener('click', function(ev){
+    ev.stopPropagation();
+    document.getElementById('secTodo').dataset.open = '1';
+    document.querySelector('.mtab[data-mtab="open"]').click();
+    if (newForm.classList.contains('on')) { fTitle.focus(); return; }
+    openForm();
+  });
+  document.getElementById('fCancel').addEventListener('click', closeForm);
+  document.getElementById('fSave').addEventListener('click', function(){
+    var title = fTitle.value.trim();
+    if (!title){ fTitle.focus(); return; }
+    landItem(
+      buildItem({ title: title, tag: fTag.value.trim(), ws: fWs.value.trim() }),
+      fDue.value,
+    );
+    closeForm();
+  });
+  fTitle.addEventListener('keydown', function(ev){
+    if (ev.key === 'Enter' && !ev.isComposing){ ev.preventDefault(); document.getElementById('fSave').click(); }
+    if (ev.key === 'Escape') closeForm();
+  });
+
+  // ── 让精灵新建计划 → 引导语塞进对话输入框 ────────────────────
+  var convInput = document.querySelector('.cbox textarea');
+  document.getElementById('newPlan').addEventListener('click', function(ev){
+    ev.stopPropagation();
+    document.getElementById('secSchedule').dataset.open = '1';
+    convInput.value = '帮我新建一个周期计划：';
+    convInput.focus();
+    convInput.setSelectionRange(convInput.value.length, convInput.value.length);
+  });
+
+  // ── confirm plan draft ──────────────────────────────────────
+  document.getElementById('confirmPlan').addEventListener('click', function(){
+    document.getElementById('draftFoot').innerHTML =
+      '<button class="btn done"><svg class="ic"><use href="#i-check"/></svg>' +
+      '已创建「每日 CI 巡检」，下次触发 3h12m 后</button>';
+    var pill = document.getElementById('draftPill');
+    pill.textContent = '已创建';
+    pill.style.background = 'rgba(21,138,85,.12)';
+    pill.style.color = 'var(--success)';
+    var sec = document.getElementById('secSchedule');
+    sec.dataset.open = '1';
+    var body = sec.querySelector('.sec-body');
+    var job = document.createElement('div');
+    job.className = 'job';
+    job.innerHTML =
+      '<span class="dot" style="background:var(--success)"></span>' +
+      '<div class="job-main"><div class="job-name">每日 CI 巡检</div>' +
+      '<div class="job-trig"><span>周期 · 每 1d</span><span class="cd">· 3h12m后</span></div>' +
+      '<div class="job-meta"><svg class="ic" style="font-size:10px"><use href="#i-folder"/></svg>' +
+      '<span>okxbot</span><span>· 还没执行</span></div></div>' +
+      '<span class="sw" title="启用"></span>';
+    body.insertBefore(job, body.firstChild);
+    var cnt = document.getElementById('planCount');
+    cnt.textContent = Number(cnt.textContent) + 1;
+  });
+
+  // ── prototype controls ──────────────────────────────────────
+  var btnDefault = document.getElementById('btnDefault');
+  var btnAll = document.getElementById('btnAll');
+  function setSections(map){
+    Object.keys(map).forEach(function(id){
+      document.getElementById(id).dataset.open = map[id] ? '1' : '0';
+    });
+  }
+  btnDefault.addEventListener('click', function(){
+    setSections({ secTodo: true, secSchedule: false, secDispatch: false });
+    btnDefault.classList.add('on'); btnAll.classList.remove('on');
+  });
+  btnAll.addEventListener('click', function(){
+    setSections({ secTodo: true, secSchedule: true, secDispatch: true });
+    btnAll.classList.add('on'); btnDefault.classList.remove('on');
+  });
+
+  var btnAnno = document.getElementById('btnAnno');
+  btnAnno.addEventListener('click', function(){
+    document.body.classList.toggle('anno-on');
+    btnAnno.classList.toggle('on', document.body.classList.contains('anno-on'));
+  });
+  document.getElementById('legendClose').addEventListener('click', function(){
+    document.body.classList.remove('anno-on');
+    btnAnno.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>
