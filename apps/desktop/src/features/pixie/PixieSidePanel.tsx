@@ -11,14 +11,19 @@
  * 不该动的场合挂 `data-panel-instant="true"` 把过渡整体压掉——正在拖宽度（要跟手）、
  * 以及一次性 resize 跨断点（见下面的 `layout-motion` 口径）。
  *
- * 面板内容是「可折叠分组」栈，顺序同设计稿 `pixie-merge-C.html`：
- *   1. 方寸间（常驻展开）        —— `PixieTodoSection`
- *   2. 周期计划（默认折叠）      —— `PixieScheduleSection`
- *   3. 委派任务（默认折叠）      —— 本文件，数据由 `PixiePage` 轮询后传入
- * 三块共用 `PixiePanelSection` 的视觉外壳；再加分组只要往这个栈里插一个 section。
- * 栈本身**不留内缩**（面板已有 `border-l` + 分组各自的 `px-3`），分组之间只画一条
- * `divide-y` 细线——曾经这里是 `p-3` + 每块一圈圆角边框，左右各白吃 ~10px、上下各
- * 多 24px，窄面板里不值。
+ * 面板内容是**横排的三块页签**（设计稿 `pixie-merge-C.html` 的三块，竖排折叠已改成这个）：
+ *   1. 方寸间        —— `PixieTodoSection`
+ *   2. 周期计划      —— `PixieScheduleSection`
+ *   3. 委派任务      —— 本文件，数据由 `PixiePage` 轮询后传入
+ * 一次只看一块，导航就是顶栏那 32px（面板标题「随行面板」随之删掉，名字留给 `aria-label`）。
+ * 三块都留在 DOM 里、未选中的只摘显示，所以每块自己拉的数据一直活着、页签上的计数不会停更。
+ * 再加分组只要往 `tabs` 里插一项 + 插一个 section（外壳 `PixiePanelTabs` 已经统一）。
+ *
+ * 插件门在这里，不在各块里：被禁用的那块**连页签都不该有**，所以 `usePluginEnabled` /
+ * `useSchedulePluginEnabled` 由面板判，块本身不再各自 return null。
+ *
+ * 内容区**不留内缩**（面板已有 `border-l`，各块自己 `px-3`）；曾经这里是 `p-3` +
+ * 每块一圈圆角边框，左右各白吃 ~10px、上下各多 24px，窄面板里不值。
  *
  * 断点：扣完侧栏欠账的行宽不足 `PIXIE_PANEL_BREAKPOINT_PX` 时面板**自动收起**（不是
  * `display:none`，见下），够宽时是否展开才由手动开关决定。手动开关在窄容器下没有意义，
@@ -41,15 +46,24 @@
  * 缓存削到下限（见 `panelWidth`）。
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Crosshair, PanelRight } from "lucide-react";
+import { CalendarClock, Crosshair, ListTodo } from "lucide-react";
 import type { PixieTaskTreeWorkspace } from "@piabyss/protocol";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 import { classifyDragResize } from "../../lib/layout-motion";
-import { PixiePanelSection, usePanelSection } from "./PixiePanelSection";
+import { usePluginEnabled } from "../plugin-library/plugin-gate";
+import { useSchedulePluginEnabled } from "../schedule/schedule-plugin-gate";
+import {
+  PixiePanelBody,
+  PixiePanelTabBar,
+  type PixiePanelTab,
+  type PixiePanelTabId,
+} from "./PixiePanelTabs";
 import { PixieScheduleSection } from "./PixieScheduleSection";
 import { PixieTaskTree } from "./PixieTaskTree";
 import { PixieTodoSection } from "./PixieTodoSection";
+
+const MEMO_PLUGIN_ID = "piabyss-memo";
 
 /** 用户拖出来的面板宽度（localStorage）；没拖过就用 CSS 的 `clamp(...)`。 */
 export const PANEL_WIDTH_KEY = "piabyss.pixie.panelWidth.v1";
@@ -149,6 +163,8 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
   const sidebarCollapsed = useAppStore((state) => state.sidebarCollapsed);
   const sidebarAutoCollapsed = useAppStore((state) => state.sidebarAutoCollapsed);
   const navSidebarWidth = useAppStore((state) => state.sidebarWidth);
+  const memoEnabled = usePluginEnabled(MEMO_PLUGIN_ID);
+  const scheduleEnabled = useSchedulePluginEnabled();
   const asideRef = useRef<HTMLElement>(null);
   const [measuredWidth, setMeasuredWidth] = useState(0);
   const [customWidth, setCustomWidth] = useState<number | null>(readStoredPanelWidth);
@@ -156,6 +172,25 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
   const [resizing, setResizing] = useState(false);
   const [wide, setWide] = useState(true);
   const [programmatic, setProgrammatic] = useState(false);
+  const [tab, setTab] = useState<PixiePanelTabId>("todo");
+  /**
+   * 三块的计数住在各块里（数据也在那里），页签只是把报上来的数字画出来。
+   * 未选中的那块仍然挂载（见 `PixiePanelBody`），所以页签上的计数一直跟着数据走。
+   */
+  const [counts, setCounts] = useState<Record<PixiePanelTabId, number>>({
+    todo: 0,
+    schedule: 0,
+    dispatch: 0,
+  });
+  const onCount = useMemo<Record<PixiePanelTabId, (count: number) => void>>(
+    () => ({
+      // 同值直接返回原对象：否则子组件的 effect 会被父组件的重渲染再喂一轮。
+      todo: (count) => setCounts((c) => (c.todo === count ? c : { ...c, todo: count })),
+      schedule: (count) => setCounts((c) => (c.schedule === count ? c : { ...c, schedule: count })),
+      dispatch: (count) => setCounts((c) => (c.dispatch === count ? c : { ...c, dispatch: count })),
+    }),
+    [],
+  );
   const resizeStart = useRef<{ pointerId: number; x: number; width: number } | null>(null);
   /** 行宽读数与「这次变化是不是用户在拖窗口边缘」：断点判定与动画门都靠它。 */
   const layoutRead = useRef({ at: 0, count: 0, rowWidth: 0, isDrag: false });
@@ -285,6 +320,38 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
   const availableWidth = (): number =>
     asideRef.current?.parentElement?.getBoundingClientRect().width || window.innerWidth;
 
+  const tabs = useMemo<PixiePanelTab[]>(() => {
+    const list: PixiePanelTab[] = [];
+    if (memoEnabled) {
+      list.push({
+        id: "todo",
+        icon: ListTodo,
+        title: t("pixieTodoSectionTitle"),
+        count: counts.todo,
+      });
+    }
+    if (scheduleEnabled) {
+      list.push({
+        id: "schedule",
+        icon: CalendarClock,
+        title: t("scheduleTitle"),
+        count: counts.schedule,
+      });
+    }
+    list.push({
+      id: "dispatch",
+      icon: Crosshair,
+      title: t("pixieDispatchPanelTitle"),
+      count: counts.dispatch,
+    });
+    return list;
+  }, [memoEnabled, scheduleEnabled, counts, t]);
+
+  /** 记住用户停在哪个页签；被禁用的那块不许留下一个点不开的空页签，退回第一块。 */
+  const activeTab: PixiePanelTabId = tabs.some((item) => item.id === tab)
+    ? tab
+    : (tabs[0]?.id ?? "dispatch");
+
   const applyWidth = (next: number): void => {
     setCustomWidth(clampPixiePanelWidth(next, availableWidth()));
   };
@@ -352,33 +419,45 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
         />
       )}
 
+      <PixiePanelTabBar tabs={tabs} active={activeTab} onSelect={setTab} />
       <div
         data-pixie-panel-content
-        className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3 text-[11px] text-muted"
+        className="scrollbar-subtle flex min-h-0 flex-1 flex-col overflow-y-auto pb-2"
       >
-        <PanelRight size={13} className="shrink-0" aria-hidden="true" />
-        <span>{t("pixiePanelTitle")}</span>
-      </div>
-      <div
-        data-pixie-panel-content
-        className="scrollbar-subtle flex min-h-0 flex-1 flex-col divide-y divide-border overflow-y-auto pb-2"
-      >
-        <PixieTodoSection />
-        <PixieScheduleSection />
-        <PixieDispatchSection groups={groups} />
+        {memoEnabled && <PixieTodoSection active={activeTab === "todo"} onCount={onCount.todo} />}
+        {scheduleEnabled && (
+          <PixieScheduleSection active={activeTab === "schedule"} onCount={onCount.schedule} />
+        )}
+        <PixieDispatchSection
+          groups={groups}
+          active={activeTab === "dispatch"}
+          onCount={onCount.dispatch}
+        />
       </div>
     </aside>
   );
 }
 
 /**
- * 「委派任务」分组：折叠态只有一行（箭头 + 图标 + 标题 + 计数 + 汇总），展开才是
- * 原来的两层任务树。汇总必须在折叠态可读——它是折叠时唯一的状态信息。
+ * 「委派任务」页签：任务树本身归 `PixieTaskTree`，这里只把汇总（进行中 / 等你回复）
+ * 报给页签计数、并在树上面留一行 hint——折叠态那行曾经是唯一能同时看到三块状态的
+ * 地方，横排成页签之后，每块的汇总只在自己那块里说。
  */
-function PixieDispatchSection({ groups }: { groups: PixieTaskTreeWorkspace[] }) {
+function PixieDispatchSection({
+  groups,
+  active,
+  onCount,
+}: {
+  groups: PixieTaskTreeWorkspace[];
+  active: boolean;
+  onCount: (count: number) => void;
+}) {
   const t = useT();
-  const [open, toggle] = usePanelSection(false);
   const summary = useMemo(() => summarizePixieTasks(groups), [groups]);
+
+  useEffect(() => {
+    onCount(summary.total);
+  }, [summary.total, onCount]);
 
   const hint = useMemo(() => {
     const parts: string[] = [];
@@ -388,21 +467,13 @@ function PixieDispatchSection({ groups }: { groups: PixieTaskTreeWorkspace[] }) 
     if (summary.awaiting > 0) {
       parts.push(t("pixieDispatchSummaryAwaiting", { awaiting: summary.awaiting }));
     }
-    // 两者都为 0：不显示 hint，只留计数徽章。
+    // 两者都为 0：不显示 hint，只留页签上的计数。
     return parts.join(" · ");
   }, [summary.running, summary.awaiting, t]);
 
   return (
-    <PixiePanelSection
-      testId="pixie-dispatch-section"
-      icon={Crosshair}
-      title={t("pixieDispatchPanelTitle")}
-      count={summary.total}
-      hint={hint}
-      open={open}
-      onToggle={toggle}
-    >
+    <PixiePanelBody tab="dispatch" active={active} hint={hint}>
       <PixieTaskTree groups={groups} />
-    </PixiePanelSection>
+    </PixiePanelBody>
   );
 }

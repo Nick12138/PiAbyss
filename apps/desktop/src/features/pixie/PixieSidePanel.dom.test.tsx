@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -16,6 +16,9 @@ import {
   MAX_PIXIE_PANEL_WIDTH,
   MIN_PIXIE_PANEL_WIDTH,
   PANEL_WIDTH_KEY,
+  PIXIE_PANEL_BREAKPOINT_PX,
+  PIXIE_PANEL_EXPAND_HYSTERESIS_PX,
+  PIXIE_PANEL_EXPAND_WIDTH_PX,
   PixieSidePanel,
   summarizePixieTasks,
 } from "./PixieSidePanel";
@@ -24,8 +27,8 @@ import {
  * 小精灵页「随行面板」：
  *   - 面板本身可展开 / 折叠（负 margin 滑出，状态持久化）；
  *   - 宽度可拖拽 / 键盘调整，有下限与「给对话区留位」的上限，并持久化；
- *   - 面板内是「可折叠分组」栈：方寸间（常驻展开）/ 周期计划 / 委派任务；
- *   - 委派任务分组默认折叠，汇总信息在折叠态就能读到；
+ *   - 面板内是**横排的三块页签**：方寸间 / 周期计划 / 委派任务，一次只看一块；
+ *     未选中的那块仍挂着（计数不停更），只是不显示；
  *   - 行宽不足 672 时面板自动收起（与手动折叠同一个滑出），顶栏开关跟着消失。
  */
 const DISPATCH_EXPANDED_PREF = "piabyss.pixie.dispatchExpanded";
@@ -35,10 +38,11 @@ Element.prototype.setPointerCapture = vi.fn();
 Element.prototype.releasePointerCapture = vi.fn();
 Element.prototype.hasPointerCapture = vi.fn(() => false);
 
-// 待办 / 周期计划两块各自还有一道插件门（与侧栏入口同一道）；这里放行，
-// 好把「面板能装下三块分组」这件事单独断言出来。
+// 插件门现在由面板自己判（被禁用的那块连页签都不该有）；这里放行，
+// 好把「页签栏装得下三块」这件事单独断言出来。`memo` 可以按用例关掉，验页签的退回路径。
+const gateState = { memo: true };
 vi.mock("../plugin-library/plugin-gate", () => ({
-  usePluginEnabled: () => true,
+  usePluginEnabled: (id: string) => (id === "piabyss-memo" ? gateState.memo : true),
   usePluginCatalogData: () => ({ catalog: null, packages: null }),
 }));
 
@@ -104,9 +108,7 @@ class ResizeObserverStub {
  * 首帧常量到一个偏小的行宽。这里用它模拟「先窄后宽」。
  */
 function stubLayout(rowWidth: number, panelWidth: number) {
-  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
-    this: Element,
-  ) {
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
     const width = this.hasAttribute("data-pixie-side-panel") ? panelWidth : rowWidth;
     return { width } as DOMRect;
   });
@@ -246,19 +248,72 @@ describe("clampPixiePanelWidth", () => {
   });
 });
 
-describe("PixieSidePanel 展开 / 折叠", () => {
-  it("面板内是「方寸间 → 周期计划 → 委派任务」三块分组", () => {
+describe("PixieSidePanel 页签", () => {
+  it("顶栏直接是「方寸间 → 周期计划 → 委派任务」三个页签，不再有面板标题", () => {
     render(<PixieSidePanel groups={[]} />);
 
-    const ids = Array.from(
-      document.querySelectorAll<HTMLElement>("[data-pixie-side-panel] section"),
-    ).map((el) => el.dataset.testid);
-    expect(ids).toEqual(["pixie-todo-section", "pixie-schedule-section", "pixie-dispatch-section"]);
+    const ids = screen
+      .getAllByRole("tab")
+      .map((tab) => tab.getAttribute("aria-controls"))
+      .filter((id): id is string => id !== null);
+    expect(ids).toEqual(["pixie-panel-todo", "pixie-panel-schedule", "pixie-panel-dispatch"]);
 
-    // 待办常驻展开；周期计划与委派任务默认折叠。
-    expect(screen.getByTestId("pixie-todo-section")).toHaveAttribute("data-open", "true");
-    expect(screen.getByTestId("pixie-schedule-section")).toHaveAttribute("data-open", "false");
-    expect(screen.getByTestId("pixie-dispatch-section")).toHaveAttribute("data-open", "false");
+    // 「随行面板」那 40px 的标题条删了：名字只留给 aria-label。
+    expect(screen.queryByText("Side panel")).toBeNull();
+    expect(panelEl()).toHaveAccessibleName("Side panel");
+  });
+
+  it("默认停在方寸间：另两块仍挂在 DOM 里，只是不显示", async () => {
+    const user = userEvent.setup();
+    render(<PixieSidePanel groups={[]} />);
+
+    expect(screen.getByTestId("pixie-panel-tab-todo")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("pixie-panel-body-todo")).toBeVisible();
+    expect(screen.getByTestId("pixie-panel-body-schedule")).not.toBeVisible();
+    expect(screen.getByTestId("pixie-panel-body-dispatch")).not.toBeVisible();
+
+    // 切过去只是把显示换一下：原来那块没被卸载，切回来还在。
+    await user.click(screen.getByTestId("pixie-panel-tab-schedule"));
+    expect(screen.getByTestId("pixie-panel-body-schedule")).toBeVisible();
+    expect(screen.getByTestId("pixie-panel-body-todo")).not.toBeVisible();
+    await user.click(screen.getByTestId("pixie-panel-tab-todo"));
+    expect(screen.getByTestId("pixie-panel-body-todo")).toBeVisible();
+  });
+
+  it("页签上的计数由各块报上来，隐藏的那块也一直在更新", async () => {
+    const user = userEvent.setup();
+    render(<PixieSidePanel groups={groups([task()])} />);
+
+    // 委派任务没被选中，它的总数照样上了页签。
+    await waitFor(() =>
+      expect(screen.getByTestId("pixie-panel-tab-dispatch")).toHaveTextContent("1"),
+    );
+    expect(screen.getByTestId("pixie-panel-tab-todo")).toHaveTextContent("0");
+
+    await user.click(screen.getByTestId("pixie-panel-tab-dispatch"));
+    expect(screen.getByTestId("pixie-panel-tab-dispatch")).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("被禁用的那块连页签一起消失；停在它上面的用户退回第一块", () => {
+    const { rerender } = render(<PixieSidePanel groups={[]} />);
+    expect(screen.getByTestId("pixie-panel-tab-todo")).toHaveAttribute("aria-selected", "true");
+
+    // 插件在别处被关掉：面板重新判门控，方寸间那块连同页签一起没了，
+    // 停在它上面的选中态得跟着退到第一块（周期计划）。
+    gateState.memo = false;
+    rerender(<PixieSidePanel groups={[]} />);
+    expect(screen.queryByTestId("pixie-panel-tab-todo")).toBeNull();
+    expect(screen.getByTestId("pixie-panel-tab-schedule")).toHaveAttribute("aria-selected", "true");
+    gateState.memo = true;
+  });
+});
+
+describe("PixieSidePanel 展开 / 折叠", () => {
+  it("断点两条：收起 672，展开要再让出一条回差带", () => {
+    expect(PIXIE_PANEL_BREAKPOINT_PX).toBe(672);
+    expect(PIXIE_PANEL_EXPAND_WIDTH_PX).toBe(
+      PIXIE_PANEL_BREAKPOINT_PX + PIXIE_PANEL_EXPAND_HYSTERESIS_PX,
+    );
   });
 
   it("默认展开：不写任何偏好，面板滑到位（margin-right 0）", () => {
@@ -432,37 +487,30 @@ describe("PixieSidePanel 展开 / 折叠", () => {
   });
 });
 
-describe("委派任务分组", () => {
-  it("默认折叠：只占一行，任务树不渲染", () => {
+describe("委派任务页签", () => {
+  it("没被选中时不显示：树挂在 DOM 里但读不到", () => {
     render(<PixieSidePanel groups={groups([task()])} />);
 
-    expect(screen.getByTestId("pixie-dispatch-section")).toHaveAttribute("data-open", "false");
-    expect(screen.queryByTestId("pixie-task-tree")).toBeNull();
-    expect(screen.getByTestId("pixie-dispatch-section-toggle")).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    expect(screen.getByTestId("pixie-panel-body-dispatch")).toHaveAttribute("data-active", "false");
+    expect(screen.getByTestId("pixie-panel-body-dispatch")).not.toBeVisible();
+    expect(screen.getByTestId("pixie-task-tree")).not.toBeVisible();
   });
 
-  it("点分组头后展开，渲染出原来的两层任务树；展开状态不写盘", async () => {
+  it("点页签切过去，渲染出原来的两层任务树；停在哪个页签不写盘", async () => {
     const user = userEvent.setup();
     render(<PixieSidePanel groups={groups([task()])} />);
 
-    await user.click(screen.getByTestId("pixie-dispatch-section-toggle"));
+    await user.click(screen.getByTestId("pixie-panel-tab-dispatch"));
 
-    expect(screen.getByTestId("pixie-dispatch-section")).toHaveAttribute("data-open", "true");
-    expect(screen.getByTestId("pixie-dispatch-section-toggle")).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
-    expect(screen.getByTestId("pixie-task-tree")).toBeInTheDocument();
-    expect(screen.getByText("okxbot · 修复登录态串号")).toBeInTheDocument();
-    // 只活在本次挂载里：下次进小精灵仍是「方寸间展开、其余折叠」，不会被他某一次
-    // 顺手点开的那块永久顶掉。
+    expect(screen.getByTestId("pixie-panel-body-dispatch")).toHaveAttribute("data-active", "true");
+    expect(screen.getByTestId("pixie-task-tree")).toBeVisible();
+    expect(screen.getByText("okxbot · 修复登录态串号")).toBeVisible();
+    // 只活在本次挂载里：下次进小精灵仍停在方寸间，不会被他某一次顺手点开的页签永久顶掉。
     expect(globalThis.localStorage?.getItem(DISPATCH_EXPANDED_PREF)).toBeNull();
   });
 
-  it("折叠态就能读到汇总：1 进行中 · 1 等你回复", () => {
+  it("切过去就能读到汇总：1 进行中 · 1 等你回复", async () => {
+    const user = userEvent.setup();
     render(
       <PixieSidePanel
         groups={groups([
@@ -472,35 +520,34 @@ describe("委派任务分组", () => {
       />,
     );
 
-    expect(screen.getByText("1 running · 1 awaiting you")).toBeInTheDocument();
-    // 计数徽章 = 总任务数（折叠态唯一的结构信息）。
-    expect(screen.getByTestId("pixie-dispatch-section-toggle")).toHaveTextContent(
-      "Delegated tasks2",
-    );
+    await user.click(screen.getByTestId("pixie-panel-tab-dispatch"));
+
+    expect(screen.getByText("1 running · 1 awaiting you")).toBeVisible();
+    // 页签徽章 = 总任务数（不用切过去也看得见的那个结构信息）。
+    expect(screen.getByTestId("pixie-panel-tab-dispatch")).toHaveTextContent("Delegated tasks2");
   });
 
-  it("没有活动委派时不给汇总 hint，只留计数徽章", () => {
+  it("没有活动委派时不给汇总 hint，只留页签计数", async () => {
+    const user = userEvent.setup();
     render(
       <PixieSidePanel groups={groups([task({ status: "done", statusDetail: "reported" })])} />,
     );
 
+    await user.click(screen.getByTestId("pixie-panel-tab-dispatch"));
+
     expect(screen.queryByText("1 running")).toBeNull();
     expect(screen.queryByText(/awaiting you/)).toBeNull();
-    expect(screen.getByTestId("pixie-dispatch-section-toggle")).toHaveTextContent(
-      "Delegated tasks1",
-    );
+    expect(screen.getByTestId("pixie-panel-tab-dispatch")).toHaveTextContent("Delegated tasks1");
   });
 
-  it("空树：计数为 0，展开后是空态文案", async () => {
+  it("空树：计数为 0，切过去是空态文案", async () => {
     const user = userEvent.setup();
     render(<PixieSidePanel groups={[]} />);
 
-    expect(screen.getByTestId("pixie-dispatch-section-toggle")).toHaveTextContent(
-      "Delegated tasks0",
-    );
+    expect(screen.getByTestId("pixie-panel-tab-dispatch")).toHaveTextContent("Delegated tasks0");
 
-    await user.click(screen.getByTestId("pixie-dispatch-section-toggle"));
-    expect(screen.getByText("No delegated tasks yet")).toBeInTheDocument();
+    await user.click(screen.getByTestId("pixie-panel-tab-dispatch"));
+    expect(screen.getByText("No delegated tasks yet")).toBeVisible();
   });
 });
 

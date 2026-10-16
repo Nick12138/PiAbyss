@@ -15,12 +15,11 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { PixieScheduleSection } from "./PixieScheduleSection";
 
 /**
- * 随行面板「周期计划」：默认折叠时一行就是全部信息（活跃数 + 下次触发倒计时），
- * 展开是列表与开关，创建走对话（只把引导语塞进输入框）。
+ * 随行面板「周期计划」页签：列表直接摊开，工具条一行说清「下次什么时候」（活跃数交给
+ * 页签徽章），开关就地生效，创建走对话（只把引导语塞进输入框）。
+ * 面板的插件门与页签栏归 `PixieSidePanel`（见它的用例）。
  */
-vi.mock("../schedule/schedule-plugin-gate", () => ({
-  useSchedulePluginEnabled: () => true,
-}));
+const onCount = vi.fn();
 
 vi.mock("../../lib/composer-insert", () => ({
   requestComposerInsert: vi.fn(),
@@ -71,7 +70,7 @@ const JOBS: ScheduleJob[] = [
 ];
 
 function section(): HTMLElement {
-  return screen.getByTestId("pixie-schedule-section");
+  return screen.getByTestId("pixie-panel-body-schedule");
 }
 
 beforeEach(() => {
@@ -124,23 +123,18 @@ afterEach(() => {
 });
 
 describe("PixieScheduleSection", () => {
-  it("默认折叠：只占一行，汇总写清活跃数与下次触发倒计时", async () => {
-    render(<PixieScheduleSection />);
+  it("摊开就是列表：工具条说清下次触发，活跃数报给页签徽章", async () => {
+    render(<PixieScheduleSection active onCount={onCount} />);
 
-    expect(section()).toHaveAttribute("data-open", "false");
-    const header = screen.getByTestId("pixie-schedule-section-toggle");
-    // 折叠态那一行就写清「下次什么时候」：倒计时按现在算，取到「NhNm」即可。
-    await waitFor(() => expect(header.textContent).toMatch(/next in \d+h\d+m/));
     // 计数徽章 = 活跃计划数（停用的不算）。
-    expect(header).toHaveTextContent("1");
-    expect(screen.queryByTestId("pixie-schedule-row")).toBeNull();
+    await waitFor(() => expect(onCount).toHaveBeenLastCalledWith(1));
+    // 工具条那一行说清「下次什么时候」：倒计时按现在算，取到「NhNm」即可。
+    await waitFor(() => expect(section().textContent).toMatch(/next in \d+h\d+m/));
+    await waitFor(() => expect(screen.getAllByTestId("pixie-schedule-row")).toHaveLength(2));
   });
 
-  it("展开后是计划列表：名称 / 触发 / 倒计时 / 工作区 / 开关", async () => {
-    const user = userEvent.setup();
-    render(<PixieScheduleSection />);
-
-    await user.click(screen.getByTestId("pixie-schedule-section-toggle"));
+  it("列表给全：名称 / 触发 / 倒计时 / 工作区 / 开关", async () => {
+    render(<PixieScheduleSection active onCount={onCount} />);
 
     await waitFor(() => expect(screen.getAllByTestId("pixie-schedule-row")).toHaveLength(2));
     expect(screen.getByText("每日构建报告")).toBeInTheDocument();
@@ -161,8 +155,7 @@ describe("PixieScheduleSection", () => {
 
   it("开关直接落到 schedule.setJobEnabled", async () => {
     const user = userEvent.setup();
-    render(<PixieScheduleSection />);
-    await user.click(screen.getByTestId("pixie-schedule-section-toggle"));
+    render(<PixieScheduleSection active onCount={onCount} />);
     await waitFor(() => expect(screen.getAllByTestId("pixie-schedule-row")).toHaveLength(2));
 
     await user.click(screen.getByRole("switch", { name: "手动巡检" }));
@@ -179,14 +172,12 @@ describe("PixieScheduleSection", () => {
 
   it("「＋ 让精灵新建」只把引导语塞进输入框，不新开会话", async () => {
     const user = userEvent.setup();
-    render(<PixieScheduleSection />);
+    render(<PixieScheduleSection active onCount={onCount} />);
 
     await user.click(screen.getByTestId("pixie-schedule-new"));
 
     expect(requestComposerInsert).toHaveBeenCalledTimes(1);
     expect(vi.mocked(requestComposerInsert).mock.calls[0][0]).toContain("Create a scheduled plan");
-    // 折叠态点「＋」顺手展开，用户能看到现有计划。
-    expect(section()).toHaveAttribute("data-open", "true");
     expect(hostClient.request).not.toHaveBeenCalledWith(
       "schedule.createJob",
       expect.anything(),
@@ -202,10 +193,7 @@ describe("PixieScheduleSection", () => {
       }
       return { ok: true, result: null } as never;
     });
-    const user = userEvent.setup();
-    render(<PixieScheduleSection />);
-
-    await user.click(screen.getByTestId("pixie-schedule-section-toggle"));
+    render(<PixieScheduleSection active onCount={onCount} />);
 
     await waitFor(() =>
       expect(screen.getByText("Schedule plugin not running")).toBeInTheDocument(),

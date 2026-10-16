@@ -24,14 +24,12 @@ import { injectMemoReference } from "../memo/memo-agent";
 import { PixieTodoSection } from "./PixieTodoSection";
 
 /**
- * 随行面板「方寸间」：页签 / 三层行（标题 · 摘要 · 标签·工作区·截止）/ 就地 Markdown 正文 / 新建。
+ * 随行面板「方寸间」页签：二级页签 / 三层行（标题 · 摘要 · 标签·工作区·截止）/ 就地 Markdown 正文 / 新建。
  * 数据与方寸间页同源（memo-client），这里只验面板自己的组织方式与动作路由：
  * 行首状态、行尾 ✨、右键编辑 / 删除、已完成页签的勾选式批量删除。
+ * 面板的插件门与页签栏归 `PixieSidePanel`（见它的用例），这里直接以「可见的那块」渲染。
  */
-vi.mock("../plugin-library/plugin-gate", () => ({
-  usePluginEnabled: () => true,
-  usePluginCatalogData: () => ({ catalog: null, packages: null }),
-}));
+const onCount = vi.fn();
 
 vi.mock("../memo/memo-client", () => ({
   listMemoNotes: vi.fn(),
@@ -154,21 +152,21 @@ afterEach(() => {
 });
 
 describe("PixieTodoSection", () => {
-  it("计数只在页签与区块标题上：概览格已删，进行中只在行内转圈", async () => {
-    render(<PixieTodoSection />);
+  it("计数只在二级页签与页签徽章上：概览格已删，进行中只在行内转圈", async () => {
+    render(<PixieTodoSection active onCount={onCount} />);
     await waitForRows();
 
     expect(screen.getByTestId("pixie-todo-tab-open")).toHaveTextContent("2");
     expect(screen.getByTestId("pixie-todo-tab-done")).toHaveTextContent("1");
-    // 折叠态唯一的计数 = 待处理总数。
-    expect(screen.getByTestId("pixie-todo-section-toggle")).toHaveTextContent("2");
+    // 报给随行面板页签的就是待处理总数。
+    await waitFor(() => expect(onCount).toHaveBeenLastCalledWith(2));
     expect(document.querySelector('[data-testid="pixie-todo-overview"]')).toBeNull();
     // 进行中不单独分区、不单独计数：混在待处理里，行内说明状态。
     expect(within(rows()[1]).getByText("In progress")).toBeInTheDocument();
   });
 
   it("日期只用来定顺序，不再渲染分组标题：逾期在前、无日期的沉底", async () => {
-    render(<PixieTodoSection />);
+    render(<PixieTodoSection active onCount={onCount} />);
     const list = await waitForRows();
 
     expect(document.querySelectorAll('[data-testid="pixie-todo-bucket"]')).toHaveLength(0);
@@ -180,7 +178,7 @@ describe("PixieTodoSection", () => {
 
   it("速记框在列表下面、默认两行，两个页签都给", async () => {
     const user = userEvent.setup();
-    render(<PixieTodoSection />);
+    render(<PixieTodoSection active onCount={onCount} />);
     await waitForRows();
 
     const quick = screen.getByTestId("pixie-todo-quick");
@@ -203,7 +201,7 @@ describe("PixieTodoSection", () => {
     vi.mocked(listMemoNotes).mockResolvedValue(
       Array.from({ length: 7 }, (_, index) => note({ id: `x${index}`, title: `随手记 ${index}` })),
     );
-    render(<PixieTodoSection />);
+    render(<PixieTodoSection active onCount={onCount} />);
 
     await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(5));
     const more = screen.getByTestId("pixie-todo-show-more");
@@ -231,7 +229,7 @@ describe("PixieTodoSection", () => {
       ),
       note({ id: "p1", title: "随手记一条" }),
     ]);
-    render(<PixieTodoSection />);
+    render(<PixieTodoSection active onCount={onCount} />);
     await waitFor(() => expect(screen.getByTestId("pixie-todo-tab-done")).toHaveTextContent("8"));
 
     await user.click(screen.getByTestId("pixie-todo-tab-done"));
@@ -256,7 +254,7 @@ describe("PixieTodoSection", () => {
 
   it("已完成行的标记是选中态，点它转回待处理", async () => {
     const user = userEvent.setup();
-    render(<PixieTodoSection />);
+    render(<PixieTodoSection active onCount={onCount} />);
     await waitForRows();
     await user.click(screen.getByTestId("pixie-todo-tab-done"));
 
@@ -269,7 +267,7 @@ describe("PixieTodoSection", () => {
   });
 
   it("折叠态就给三层：标题 / 摘要 / 标签·工作区·截止", async () => {
-    render(<PixieTodoSection />);
+    render(<PixieTodoSection active onCount={onCount} />);
     const list = await waitForRows();
     const first = within(list[0]);
 
@@ -283,7 +281,7 @@ describe("PixieTodoSection", () => {
 
   it("展开只补 Markdown 正文，动作不在展开区里", async () => {
     const user = userEvent.setup();
-    render(<PixieTodoSection />);
+    render(<PixieTodoSection active onCount={onCount} />);
     const list = await waitForRows();
 
     const toggle = within(list[0]).getByTestId("pixie-todo-open-detail");
@@ -303,7 +301,7 @@ describe("PixieTodoSection", () => {
 
   it("只有标题一行的记录展不开：没有正文就不给空壳", async () => {
     const user = userEvent.setup();
-    render(<PixieTodoSection />);
+    render(<PixieTodoSection active onCount={onCount} />);
     const list = await waitForRows();
 
     await user.click(within(list[1]).getByTestId("pixie-todo-open-detail"));
@@ -317,7 +315,7 @@ describe("PixieTodoSection", () => {
 
   it("勾选标记完成，列表随之刷新", async () => {
     const user = userEvent.setup();
-    render(<PixieTodoSection />);
+    render(<PixieTodoSection active onCount={onCount} />);
     await waitForRows();
 
     await user.click(screen.getAllByTestId("pixie-todo-complete")[0]);
@@ -328,7 +326,7 @@ describe("PixieTodoSection", () => {
 
   it("行尾 ✨ 把记录以引用胶囊注入当前会话草稿，不新开会话", async () => {
     const user = userEvent.setup();
-    render(<PixieTodoSection />);
+    render(<PixieTodoSection active onCount={onCount} />);
     const list = await waitForRows();
 
     await user.click(within(list[0]).getByTestId("pixie-todo-handoff"));
@@ -356,7 +354,7 @@ describe("PixieTodoSection", () => {
     render(
       <>
         <MenuHost />
-        <PixieTodoSection />
+        <PixieTodoSection active onCount={onCount} />
       </>,
     );
     await waitFor(() => expect(rows()).toHaveLength(1));
@@ -372,7 +370,7 @@ describe("PixieTodoSection", () => {
 
   it("速记框 Enter 落一条：标题取首行、#标签 自动识别", async () => {
     const user = userEvent.setup();
-    render(<PixieTodoSection />);
+    render(<PixieTodoSection active onCount={onCount} />);
     await waitForRows();
 
     await user.type(screen.getByTestId("pixie-todo-quick"), "订周五的会议室 #会议{Enter}");
@@ -389,7 +387,7 @@ describe("PixieTodoSection", () => {
 
   it("Shift+Enter 换行不落条", async () => {
     const user = userEvent.setup();
-    render(<PixieTodoSection />);
+    render(<PixieTodoSection active onCount={onCount} />);
     await waitForRows();
 
     await user.type(screen.getByTestId("pixie-todo-quick"), "第一行{Shift>}{Enter}{/Shift}第二行");
@@ -400,7 +398,7 @@ describe("PixieTodoSection", () => {
 
   it("多功能表单一次设好标题 / 截止 / 标签 / 工作区", async () => {
     const user = userEvent.setup();
-    render(<PixieTodoSection />);
+    render(<PixieTodoSection active onCount={onCount} />);
     await waitForRows();
 
     await user.click(screen.getByTestId("pixie-todo-new"));
@@ -427,7 +425,7 @@ describe("PixieTodoSection", () => {
     render(
       <>
         <MenuHost />
-        <PixieTodoSection />
+        <PixieTodoSection active onCount={onCount} />
       </>,
     );
     const list = await waitForRows();
@@ -456,7 +454,7 @@ describe("PixieTodoSection", () => {
     render(
       <>
         <MenuHost />
-        <PixieTodoSection />
+        <PixieTodoSection active onCount={onCount} />
       </>,
     );
     const list = await waitForRows();
@@ -508,7 +506,7 @@ describe("PixieTodoSection", () => {
     render(
       <>
         <MenuHost />
-        <PixieTodoSection />
+        <PixieTodoSection active onCount={onCount} />
       </>,
     );
     await user.click(screen.getByTestId("pixie-todo-tab-done"));
@@ -543,7 +541,7 @@ describe("PixieTodoSection", () => {
 
   it("已完成页签：批量删除是勾选式的，确认后才逐条落 memo.delete", async () => {
     const user = userEvent.setup();
-    render(<PixieTodoSection />);
+    render(<PixieTodoSection active onCount={onCount} />);
     await waitForRows();
 
     await user.click(screen.getByTestId("pixie-todo-tab-done"));
@@ -583,7 +581,7 @@ describe("PixieTodoSection", () => {
         }),
       ),
     );
-    render(<PixieTodoSection />);
+    render(<PixieTodoSection active onCount={onCount} />);
     await waitFor(() => expect(screen.getByTestId("pixie-todo-tab-done")).toHaveTextContent("8"));
 
     await user.click(screen.getByTestId("pixie-todo-tab-done"));

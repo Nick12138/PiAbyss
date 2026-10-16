@@ -222,12 +222,12 @@ function mockPixieHost() {
 }
 
 /**
- * 随行面板里的「委派任务」分组默认折叠（折叠态只有一行汇总），要看任务树得先
- * 点开分组头——与用户真实操作同一条路径。
+ * 随行面板的三块是横排页签，一次只看一块：要看任务树得先切到「委派任务」那一格——
+ * 与用户真实操作同一条路径。
  */
 async function expandDispatchSection() {
   const user = userEvent.setup();
-  await user.click(await screen.findByTestId("pixie-dispatch-section-toggle"));
+  await user.click(await screen.findByTestId("pixie-panel-tab-dispatch"));
   await screen.findByTestId("pixie-task-tree");
 }
 
@@ -448,7 +448,7 @@ describe("PixiePage 适配提问与子代理（对齐 ChatPage 挂载面）", ()
 });
 
 /* ------------------------------------------------------------------ */
-/* 随行面板 → 委派分组＝任务树：只显示短名 + 四态，正文一概不进面板。   */
+/* 随行面板 → 委派页签＝任务树：只显示短名 + 四态，正文一概不进面板。   */
 /* ------------------------------------------------------------------ */
 
 describe("PixiePage 委派面板（任务树）", () => {

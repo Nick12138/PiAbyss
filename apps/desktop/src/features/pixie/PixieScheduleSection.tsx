@@ -1,16 +1,17 @@
 /**
- * 随行面板 ·「周期计划」分组（默认折叠）。
+ * 随行面板 ·「周期计划」页签（三块横排的第二块）。
  *
- * 只读 + 开关：折叠时那一行就是全部信息（活跃计划数 + 下一次触发倒计时），展开是
- * 已有计划的列表与启用开关。**创建与修改都在对话里跟小精灵谈**——标题行的「＋」
- * 只把引导语塞进小精灵的输入框，用户补完描述后自己发出去。所以这里不引入
- * `ScheduleJobDialog`，也不碰 schedule 的智能创建会话（那是独立页面的事）。
+ * 只读 + 开关：列表直接摊开（原来折叠态那一行说的「活跃数 + 下次触发倒计时」，现在
+ * 活跃数在页签徽章上、倒计时在这一块顶上的工具条里）。**创建与修改都在对话里跟小精灵
+ * 谈**——工具条尾部的「＋」只把引导语塞进小精灵的输入框，用户补完描述后自己发出去。
+ * 所以这里不引入 `ScheduleJobDialog`，也不碰 schedule 的智能创建会话（那是独立页面的事）。
  *
  * 数据与周期计划页同源（`schedule.status` / `schedule.listJobs` /
- * `schedule.setJobEnabled`），展示辅助复用 `schedule-model` 的纯函数。
+ * `schedule.setJobEnabled`），展示辅助复用 `schedule-model` 的纯函数。插件门在
+ * `PixieSidePanel`（连页签一起消失），这里不再自判。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarClock, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import type { ScheduleJob } from "@piabyss/protocol";
 import { Switch } from "../../components/Switch";
 import { hostClient } from "../../lib/bridge/host-client";
@@ -18,9 +19,8 @@ import { hostContext } from "../../lib/bridge/host-context";
 import { requestComposerInsert } from "../../lib/composer-insert";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
-import { useSchedulePluginEnabled } from "../schedule/schedule-plugin-gate";
 import { formatCountdown, formatIntervalEvery, triggerSummary } from "../schedule/schedule-model";
-import { PixiePanelSection, usePanelSection } from "./PixiePanelSection";
+import { PixiePanelBody } from "./PixiePanelTabs";
 
 const LIST_TIMEOUT_MS = 15_000;
 const NOW_TICK_MS = 30_000;
@@ -36,11 +36,16 @@ function jobOrder(a: ScheduleJob, b: ScheduleJob): number {
   return (a.nextRunAt ?? "~").localeCompare(b.nextRunAt ?? "~");
 }
 
-export function PixieScheduleSection() {
+export function PixieScheduleSection({
+  active,
+  onCount,
+}: {
+  active: boolean;
+  /** 活跃计划数报给随行面板的页签徽章（插件门也在那里）。 */
+  onCount: (count: number) => void;
+}) {
   const t = useT();
-  const scheduleEnabled = useSchedulePluginEnabled();
   const hostInstanceId = useAppStore((s) => s.host?.hostInstanceId ?? null);
-  const [open, toggle] = usePanelSection(false);
   const [jobs, setJobs] = useState<ScheduleJob[] | null>(null);
   const [available, setAvailable] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -77,21 +82,25 @@ export function PixieScheduleSection() {
   }, []);
 
   useEffect(() => {
-    if (!hostInstanceId || !scheduleEnabled) return;
+    if (!hostInstanceId) return;
     void refresh();
-  }, [hostInstanceId, scheduleEnabled, refresh]);
+  }, [hostInstanceId, refresh]);
 
-  // 倒计时与列表只在展开时刷新：折叠态那行 hint 由 now 每 30s 重算即可。
+  // 30s 滴答同时喂倒计时与列表：列表只在**这一页签可见时**才刷 RPC，隐藏时只重算倒计时
+  // （页签上的计数是活跃数，不跟着分钟走）。
   useEffect(() => {
     const timer = setInterval(() => {
       setNow(Date.now());
-      if (open) void refresh();
+      if (active) void refresh();
     }, NOW_TICK_MS);
     return () => clearInterval(timer);
-  }, [open, refresh]);
+  }, [active, refresh]);
 
   const ordered = useMemo(() => [...(jobs ?? [])].sort(jobOrder), [jobs]);
   const activeCount = useMemo(() => ordered.filter(isActive).length, [ordered]);
+  useEffect(() => {
+    onCount(activeCount);
+  }, [activeCount, onCount]);
   const nextRunAt = useMemo(() => {
     const upcoming = ordered
       .filter((job) => isActive(job) && job.nextRunAt)
@@ -129,8 +138,6 @@ export function PixieScheduleSection() {
     [busyId],
   );
 
-  if (!scheduleEnabled) return null;
-
   const countdown = nextRunAt ? formatCountdown(nextRunAt, now) : null;
   const hint = !available
     ? ""
@@ -141,14 +148,10 @@ export function PixieScheduleSection() {
         : t("pixieScheduleNextHint", { value: countdown });
 
   return (
-    <PixiePanelSection
-      testId="pixie-schedule-section"
-      icon={CalendarClock}
-      title={t("scheduleTitle")}
-      count={activeCount}
+    <PixiePanelBody
+      tab="schedule"
+      active={active}
       hint={hint}
-      open={open}
-      onToggle={toggle}
       action={
         <button
           type="button"
@@ -157,7 +160,6 @@ export function PixieScheduleSection() {
           aria-label={t("pixieScheduleNew")}
           className="flex size-[22px] shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none"
           onClick={() => {
-            if (!open) toggle();
             // 计划的创建走对话：只把引导语放进输入框，用户补完再发。
             requestComposerInsert(t("pixieScheduleNewPrompt"));
           }}
@@ -185,7 +187,7 @@ export function PixieScheduleSection() {
         )}
         <p className="px-1 pt-0.5 text-[11px] leading-5 text-muted">{t("pixieScheduleNote")}</p>
       </div>
-    </PixiePanelSection>
+    </PixiePanelBody>
   );
 }
 
