@@ -2035,6 +2035,40 @@ export const en = {
   pixieInputPlaceholder: "Say something to Pixie… (Enter to send, Shift+Enter for newline)",
   pixieDispatchPanelTitle: "Delegated tasks",
   pixieDispatchEmpty: "No delegated tasks yet",
+  // Side panel: shared title + top-bar toggle + the dispatch group's collapsed summary.
+  pixiePanelTitle: "Side panel",
+  pixiePanelCollapse: "Collapse panel",
+  pixiePanelExpand: "Expand panel",
+  pixiePanelResize: "Drag to resize the panel",
+  pixieDispatchSummaryRunning: "{running} running",
+  pixieDispatchSummaryAwaiting: "{awaiting} awaiting you",
+  // Side panel · the "To-dos · Nook" group (overview / tabs / date buckets / capture).
+  pixieTodoSectionTitle: "To-dos · Nook",
+  pixieTodoOverviewOverdue: "Overdue",
+  pixieTodoOverdueHint: "{count} overdue",
+  pixieTodoBucketOverdue: "Overdue",
+  pixieTodoBucketToday: "Today",
+  pixieTodoBucketTomorrow: "Tomorrow",
+  pixieTodoBucketWeek: "This week",
+  pixieTodoBucketLater: "Later",
+  pixieTodoBucketNone: "No date",
+  pixieTodoDoneEmpty: "Nothing completed yet",
+  pixieTodoNew: "New to-do (due date, tags, workspace)",
+  pixieTodoFormTitle: "Title",
+  pixieTodoFormTitlePlaceholder: "What needs doing?",
+  pixieTodoFormDue: "Due",
+  pixieTodoFormNone: "None",
+  pixieTodoFormCreate: "Create",
+  pixieTodoFormCancel: "Cancel",
+  pixieTodoHandOff: "Hand to Pixie",
+  pixieTodoHandOffHint: "Added to Pixie's input box — send it to hand over",
+  // Side panel · the "Scheduled plans" group (read-only + toggle; creation is in chat).
+  pixieScheduleNew: "Ask Pixie to create",
+  pixieScheduleNewPrompt:
+    "Create a scheduled plan for me.\nWhat it should do:\nHow often:\nWhich workspace:\n(fill these in and send — I'll create it)",
+  pixieScheduleNote:
+    "Plans are created and edited in the conversation with Pixie; this panel only views and toggles them.",
+  pixieScheduleNextHint: "next in {value}",
   // The task tree collapses the lifecycle into four states; "waiting on you"
   // is the one cell of Running the panel calls out by name.
   pixieTaskQueued: "Queued",

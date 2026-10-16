@@ -7,9 +7,10 @@
  * session.snapshot / agent.event 推送驱动——与普通会话同一套机制，仅展示不同：
  *   - 顶部动作（回到最新会话）在 AppTopBar；会话列表在侧边栏左下，
  *     与普通工作区同款（点行留在本页，keepPage）；
- *   - 右侧保留委派面板（pixie.dispatches + pixie.taskTree 轮询，面板是
- *     「工作区 · 会话 → 任务」两层树：只显示短名 + 四态，唯一的动作是定位到
- *     会话里的锚点消息，操作全部留给小精灵）；
+ *   - 右侧是可展开 / 折叠的「随行面板」（PixieSidePanel）：共同小标题 + 可折叠
+ *     分组，本次只有「委派任务」一组（pixie.dispatches + pixie.taskTree 轮询，
+ *     展开后是「工作区 · 会话 → 任务」两层树：只显示短名 + 四态，唯一的动作是
+ *     定位到会话里的锚点消息，操作全部留给小精灵）；
  *   - ask 待回复时把输入框发送改道 pixie.reply；
  *   - 内嵌扩展 UI（ask_user_question 问卷等）与子代理对话视图对齐 ChatPage
  *     的挂载方式——小精灵会话是标准会话，两类工具的交互面必须同样可用。
@@ -36,7 +37,7 @@ import {
   type ComposerRuntime,
 } from "../chat/composer-runtime";
 import { usePixieViewStore } from "./pixie-store";
-import { PixieTaskTree } from "./PixieTaskTree";
+import { PixieSidePanel } from "./PixieSidePanel";
 import { isSamePixiePath } from "../../lib/pixie-path";
 
 const DISPATCH_POLL_IDLE_MS = 5_000;
@@ -328,16 +329,11 @@ export function PixiePage() {
           )}
         </div>
 
-        {/* Delegation panel (30%)：「工作区 · 会话 → 任务」两层，只有短名 + 四态；
-         * 唯一的动作是行尾定位按钮，把用户送回会话里的锚点消息。 */}
-        <div className="hidden min-h-0 flex-col border-l border-border @3xl:flex @3xl:w-[30%]">
-          <div className="shrink-0 border-b border-border px-3 py-2 text-xs font-medium text-muted">
-            {t("pixieDispatchPanelTitle")}
-          </div>
-          <div className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto p-3">
-            <PixieTaskTree groups={taskTree} />
-          </div>
-        </div>
+        {/* 随行面板（30%，可展开 / 折叠）：共同小标题 + 可折叠分组。本次只有
+         * 「委派任务」一个分组——展开后就是原来的「工作区 · 会话 → 任务」两层
+         * 树，唯一的动作仍是行尾定位按钮；插话 / 叫停 / 重试都在会话里说。
+         * 开关在顶栏（AppTopBar 的 PixiePanelToggleButton）。 */}
+        <PixieSidePanel groups={taskTree} />
       </div>
     </div>
   );

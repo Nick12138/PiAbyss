@@ -188,6 +188,9 @@ beforeEach(() => {
   });
   dispatchesMock.length = 0;
   resetPixiePanelSessionForTests();
+  // 面板折叠 / 委派分组折叠都持久化在 localStorage：用例之间必须清干净，
+  // 否则前一个用例展开过的分组会让后一个用例的「默认折叠」断言失真。
+  globalThis.localStorage?.clear();
   usePixieViewStore.setState({
     current: null,
     dispatches: [],
@@ -216,6 +219,16 @@ afterEach(() => {
 
 function mockPixieHost() {
   return mockPixieHostWithParams();
+}
+
+/**
+ * 随行面板里的「委派任务」分组默认折叠（折叠态只有一行汇总），要看任务树得先
+ * 点开分组头——与用户真实操作同一条路径。
+ */
+async function expandDispatchSection() {
+  const user = userEvent.setup();
+  await user.click(await screen.findByTestId("pixie-dispatch-section-toggle"));
+  await screen.findByTestId("pixie-task-tree");
 }
 
 /** 同 mockPixieHost，但每次 pixie.dispatches 调用把 params 交给 onDispatches（归属断言用）。 */
@@ -435,7 +448,7 @@ describe("PixiePage 适配提问与子代理（对齐 ChatPage 挂载面）", ()
 });
 
 /* ------------------------------------------------------------------ */
-/* 委派面板＝任务树：只显示短名 + 四态，正文一概不进面板。             */
+/* 随行面板 → 委派分组＝任务树：只显示短名 + 四态，正文一概不进面板。   */
 /* ------------------------------------------------------------------ */
 
 describe("PixiePage 委派面板（任务树）", () => {
@@ -465,6 +478,7 @@ describe("PixiePage 委派面板（任务树）", () => {
     mockPixieHost();
     render(<PixiePage />);
     await screen.findByTestId("pixie-input");
+    await expandDispatchSection();
 
     const rows = document.querySelectorAll('[data-testid="pixie-task-row"]');
     expect(rows.length).toBe(2);
@@ -483,6 +497,7 @@ describe("PixiePage 委派面板（任务树）", () => {
     const request = mockPixieHost();
     render(<PixiePage />);
     await screen.findByTestId("pixie-input");
+    await expandDispatchSection();
 
     const row = document.querySelector('[data-testid="pixie-task-row"]')!;
     expect(row.querySelectorAll("button").length).toBe(0);

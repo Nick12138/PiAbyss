@@ -13,6 +13,7 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
 import { usePixieViewStore, resetPixiePanelSessionForTests } from "./pixie-store";
 import { PixieBackToCurrentButton } from "./PixieBackToCurrentButton";
+import { PixiePanelToggleButton } from "./PixiePanelToggleButton";
 
 const HOST_ID = "11111111-1111-4111-8111-111111111111";
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
@@ -200,5 +201,36 @@ describe("PixieBackToCurrentButton（回到最新会话）", () => {
 
     await waitFor(() => expect(createSpy).toHaveBeenCalled());
     expect(openSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("PixiePanelToggleButton（随行面板开关）", () => {
+  it("开关状态跟着 store 走：点一下收起，再点一下展开", async () => {
+    useAppStore.setState({ pixiePanelOpen: true, pixiePanelWide: true });
+    const user = userEvent.setup();
+    render(<PixiePanelToggleButton />);
+
+    const button = screen.getByTestId("pixie-panel-toggle");
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    expect(button).toHaveAttribute("aria-controls", "pixie-side-panel");
+    expect(button).toHaveAccessibleName("Collapse panel");
+
+    await user.click(button);
+
+    expect(useAppStore.getState().pixiePanelOpen).toBe(false);
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(button).toHaveAccessibleName("Expand panel");
+
+    await user.click(button);
+
+    expect(useAppStore.getState().pixiePanelOpen).toBe(true);
+    expect(button).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("面板够不着 @3xl 断点（pixiePanelWide=false）时开关不渲染", () => {
+    useAppStore.setState({ pixiePanelOpen: true, pixiePanelWide: false });
+    render(<PixiePanelToggleButton />);
+
+    expect(screen.queryByTestId("pixie-panel-toggle")).toBeNull();
   });
 });

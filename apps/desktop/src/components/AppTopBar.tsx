@@ -11,6 +11,7 @@ import { MemoSyncHeaderActions } from "../features/memo/MemoSyncHeaderActions";
 import { MemoSyncStatusDot } from "../features/memo/memo-sync-status";
 import { SubagentTitleMenu } from "../features/subagents/SubagentTitleMenu";
 import { PixieBackToCurrentButton } from "../features/pixie/PixieBackToCurrentButton";
+import { PixiePanelToggleButton } from "../features/pixie/PixiePanelToggleButton";
 import { clampSessionTitleForDisplay } from "../lib/session-title-display";
 
 /** Single full-width app-level top bar replacing the three independent header
@@ -273,10 +274,12 @@ export function AppTopBar({
       </div>
 
       {/* Right segment: download-and-update (while an update is available) +
-          right-panel toggle (chat only) + native window controls. */}
+          right-panel toggle (chat = workspace dock, pixie = side panel) +
+          native window controls. */}
       <div className="flex shrink-0 items-center gap-1" data-app-topbar-right>
         <AppUpdateButton />
         {page === "chat" && <DockToggleButton />}
+        {page === "pixie" && <PixiePanelToggleButton />}
         {platform === "windows" && <WindowControls platform="windows" />}
       </div>
     </header>

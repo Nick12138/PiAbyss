@@ -67,7 +67,7 @@ function TaskRow({ task }: { task: PixieTaskTreeTask }) {
   return (
     <div
       data-testid="pixie-task-row"
-      className={`rounded-md border bg-surface-raised text-xs ${
+      className={`rounded-md border bg-surface-raised text-[11px] ${
         task.stale && live ? "border-l-2 border-l-warning border-border" : "border-border"
       }`}
     >
@@ -150,7 +150,7 @@ export function PixieTaskTree({ groups }: { groups: PixieTaskTreeWorkspace[] }) 
     [lines],
   );
   if (taskCount === 0) {
-    return <p className="py-6 text-center text-xs text-muted">{t("pixieDispatchEmpty")}</p>;
+    return <p className="py-6 text-center text-[11px] text-muted">{t("pixieDispatchEmpty")}</p>;
   }
   const toggle = (key: string): void =>
     setCollapsed((current) => {

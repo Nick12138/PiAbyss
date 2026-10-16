@@ -78,6 +78,13 @@ export type NavPage =
  *  sessions don't reallocate a new Map on every reset. */
 const EMPTY_PROVIDER_NAMES: ReadonlyMap<string, string> = new Map<string, string>();
 
+/**
+ * 小精灵「随行面板」的折叠状态（localStorage，未设置 = 展开）。与侧边栏、
+ * 周期计划的分组折叠同一套 `sidebarPref` 写法：存「折叠」而不是「展开」，
+ * 这样「没写过」天然落在默认的展开态上。
+ */
+export const PIXIE_PANEL_COLLAPSED_KEY = "piabyss.pixie.panelCollapsed";
+
 const EMPTY_SUBAGENTS_STATUS: SubagentsStatusSnapshot = {
   version: 1,
   available: false,
@@ -465,6 +472,15 @@ export type AppState = EpochState & {
   dockOpen: boolean;
   /** Dock state to restore when the auto-opened panel closes (null = user took over). */
   dockRestoreOnPanelClose: boolean | null;
+  /** Pixie 「随行面板」 expanded state. Backed by localStorage so it survives
+   *  reloads; promoted out of PixiePage-local state because the toggle lives in
+   *  the app-level top bar (outside the page). Starts expanded. */
+  pixiePanelOpen: boolean;
+  /** Whether the pixie page's container is wide enough for the side panel to
+   *  show at all (mirrors the page's `@3xl` container query). The top-bar
+   *  toggle hides while false — the manual switch only decides "expanded once
+   *  there is room for it". */
+  pixiePanelWide: boolean;
   /** Whether the global left aside is collapsed. Backed by localStorage so it
    *  survives reloads; promoted out of Sidebar-local state so the app-level
    *  top bar can both read and toggle it. */
@@ -586,6 +602,8 @@ export type AppState = EpochState & {
   openExtensionTerminal: (t: ExtensionTerminalState) => void;
   closeExtensionTerminal: (requestId: string) => void;
   setDockOpen: (open: boolean) => void;
+  setPixiePanelOpen: (open: boolean) => void;
+  setPixiePanelWide: (wide: boolean) => void;
   setSidebarCollapsed: (open: boolean) => void;
   toggleSidebar: () => void;
   /** Window-width auto rule: collapse the sidebar and remember the collapse
@@ -741,6 +759,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   shellJobs: [],
   dockOpen: false,
   dockRestoreOnPanelClose: null,
+  pixiePanelOpen: !sidebarPref(PIXIE_PANEL_COLLAPSED_KEY),
+  pixiePanelWide: true,
   sidebarCollapsed: sidebarPref("piabyss.sidebar.collapsed"),
   sidebarAutoCollapsed: sidebarPref("piabyss.sidebar.autoCollapsed"),
   sidebarAutoInstant: false,
@@ -1335,6 +1355,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Manual toggle takes over — the panel close no longer restores.
       dockRestoreOnPanelClose: null,
     }),
+  setPixiePanelOpen: (open) => {
+    setSidebarPref(PIXIE_PANEL_COLLAPSED_KEY, !open);
+    set({ pixiePanelOpen: open });
+  },
+  setPixiePanelWide: (pixiePanelWide) => set({ pixiePanelWide }),
   setSidebarCollapsed: (open) => {
     // Explicit set (reveal flow, programmatic opens): a user-visible action
     // always overrides the window-width rule's memory.
@@ -1622,7 +1647,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       else delete draftTexts[key];
       return {
         draftTexts,
-        draftEditVersions: { ...state.draftEditVersions, [key]: (state.draftEditVersions[key] ?? 0) + 1 },
+        draftEditVersions: {
+          ...state.draftEditVersions,
+          [key]: (state.draftEditVersions[key] ?? 0) + 1,
+        },
       };
     });
   },
