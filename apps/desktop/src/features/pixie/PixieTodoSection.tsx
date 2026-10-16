@@ -2,41 +2,63 @@
  * 随行面板 ·「方寸间」分组。
  *
  * 与方寸间页（`MemoPage`）共用同一套数据、模型与胶囊：`memo-client` 的 memo.* RPC、
- * `memo-model` 的判定与派生、`memo-agent` 的引用胶囊注入。区别只在形态——这里是
- * 右栏里的**待办中心**：「待处理 / 已完成」两页签 + 每行三层（标题 / 摘要 /
- * 标签·工作区·截止）+ 就地展开详情（完整正文 + 交给小精灵 / 编辑 / 删除）+
- * 两个新建入口（速记框、多功能表单）。
+ * `memo-model` 的判定与派生、`memo-agent` 的引用胶囊注入、`MemoEditor` 的编辑实现。
+ * 区别只在形态——这里是右栏里的**待办中心**：「待处理 / 已完成」两页签 + 每行三层
+ * （标题 / 摘要 / 标签·工作区·截止）+ 就地展开的 Markdown 正文 + 两个新建入口（速记框、
+ * 多功能表单）。
+ *
+ * ## 行首一个状态，行尾一个悬停图标
+ *
+ * 行首圆圈 = 状态（待处理行点它标记完成；已完成行它已经是选中态，点它退回待处理）。
+ * 中间整块 = 展开/收起正文。摊开时整行连同正文合成**同一张卡片**（正文与标题左对齐，中间一条
+ * 虚线分隔），不是再叠一张大小不一的卡片。行尾只留 ✨（引用给小精灵），**悬停或键盘
+ * 落到这一行才现形**，平时行尾是空的——列表读起来仍然只有文字。
+ * **编辑 / 复制 / 删除全收进右键菜单**，展开区里不再画动作按钮——正文才是展开的意义。
+ * 编辑开 `MemoNoteDialog` 弹窗（离开面板去方寸间页编辑这条路就此结束），删除走一次
+ * danger 确认弹窗；菜单本身已经是「主动作二阶」，不再叠二次点击确认。
+ * 带 Agent 总结的已完成记录，菜单第一行是「完成总结」，开的是方寸间页那个 `MemoResultDialog`；
+ * 里面的「继续讨论」**不跳回产出总结的会话**——用户就坐在小精灵会话里，直接把「记录 + 总结」
+ * 引用进当前输入框（与 ✨ 同一条通道）。
+ *
+ * 已完成页签另有**勾选式批量删除**：入口是页签行尾的删除图标，点它进入；进入后行首圆圈
+ * 换成复选框、点整行即选中，页签下方出现「全选 / 已选 N / 删除所选 / ✕ 退出」，删完自动退出。
  *
  * 「进行中」不单独分区也不单独计数：它混在「待处理」里，用转圈 + 强调色文字标识。
- * 已完成页签里每行的圆圈直接是**选中态**，点它把记录转回待处理（`memo.update`），
- * 与待处理页签的「点空圈 = 标记完成」（`memo.complete`，周期记录会滚下一轮）对称。
  * 逾期数由区块标题右侧的提示承担、待处理数由页签角标承担，所以顶部不再放概览格。
  * 日期只用来排序（逾期在前、无日期沉底），不渲染分段标题——10 条时两个标题行
  * 吃掉的高度抵不上它们提供的信息。截断两档各一套：待处理只截排在最后的「无日期」
- * 那一档（前 5 条常驻），已完成整列只先给 5 条，其余收进列表下方的「查看更多」；
+ * 那一档（前 5 条常驻），已完成整列只先给 5 条，其余收进列表下方的「查看更多」——
+ * 摊开后同一个位置换成「收起」，不再挂第二个入口；
  * 两个新建入口也在列表下面（速记框的虚线框常驻）。
  *
- * 「编辑」不在这里重造编辑器——跳到方寸间页并就地展开那条记录（完整正文、图片、
- * 周期设置都在那边），这样两个页面永远只有一份编辑实现。
+ * 展开区的正文按 Markdown 渲染（`MemoMarkdown` + `panel-markdown` 的 11px 档），
+ * 与方寸间页详情同源；只有标题一行、没有正文的记录展开不出任何东西，点了不动。
  *
  * 方寸间插件没启用时整块不渲染（与侧栏入口同一道门）。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import {
   Circle,
   CircleCheck,
-  ChevronRight,
-  Loader2,
+  Copy,
   ListTodo,
+  Loader2,
   Pencil,
   Plus,
+  ScrollText,
   Sparkles,
+  Square,
+  SquareCheck,
   Trash2,
+  X,
 } from "lucide-react";
 import type { MemoNote } from "@piabyss/protocol";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
+import { Dialog } from "../../components/Dialog";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
+import { contextMenuTrigger, openContextMenu, type MenuItem } from "../../lib/context-menu";
+import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import { draftTargetFor } from "../../lib/draft-target";
 import { usePluginEnabled } from "../plugin-library/plugin-gate";
 import {
@@ -47,17 +69,24 @@ import {
   updateMemoNote,
 } from "../memo/memo-client";
 import { injectMemoReference } from "../memo/memo-agent";
-import { requestMemoReveal } from "../memo/memo-reveal";
 import {
+  buildWorkspaceComboOptions,
+  collectWorkspaces,
   composeMemoPrompt,
+  composeMemoResultSection,
   deriveTitle,
   extractTags,
   isMemoOverdue,
+  memoFullContentMd,
   noteExcerpt,
+  pathBasename,
   sortNotesForList,
   withMemoPrompt,
 } from "../memo/memo-model";
+import { MemoNoteDialog } from "../memo/MemoNoteDialog";
+import { MemoResultDialog } from "../memo/MemoResultDialog";
 import { TagChip, WorkspaceChip } from "../memo/MemoChips";
+import { MemoMarkdown } from "../memo/MemoMarkdown";
 import { formatMemoDue } from "../memo/MemoScheduleEditor";
 import { PixiePanelSection, usePanelSection } from "./PixiePanelSection";
 import {
@@ -82,6 +111,7 @@ export function PixieTodoSection() {
   const t = useT();
   const memoEnabled = usePluginEnabled(MEMO_PLUGIN_ID);
   const hostInstanceId = useAppStore((s) => s.host?.hostInstanceId ?? null);
+  const workspace = useAppStore((s) => s.workspace);
   const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces ?? []);
   const pushNotification = useAppStore((s) => s.pushNotification);
 
@@ -90,7 +120,15 @@ export function PixieTodoSection() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"open" | "done">("open");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  /** 编辑弹窗里的那条记录；null = 没开。 */
+  const [editing, setEditing] = useState<MemoNote | null>(null);
+  /** 完成总结弹窗里的那条记录；null = 没开。 */
+  const [resultNote, setResultNote] = useState<MemoNote | null>(null);
+  /** 待确认删除的 id 集合（右键单删与批量删共用这一次确认）。 */
+  const [pendingDelete, setPendingDelete] = useState<string[] | null>(null);
+  /** 已完成页签的勾选模式与勾选集合（切页签即退出）。 */
+  const [batchMode, setBatchMode] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [quickText, setQuickText] = useState("");
   const [formOpen, setFormOpen] = useState(false);
@@ -126,7 +164,10 @@ export function PixieTodoSection() {
   );
   // 日期分组只负责定顺序（逾期 → 今天 → 明天 → 本周 → 更晚 → 无日期沉底），不渲染分段
   // 标题。截断两个页签各一套：待处理只截排在最后的「无日期」那一档（逾期的、已经定了
-  // 日期的必须全给），已完成整列只先给 5 条；剩下的都收进列表下方的「查看更多」。
+  // 日期的必须全给），已完成整列只先给 5 条。
+  // `hiddenCount` 一律是「收起来时藏了几条」，与当前是否摊开无关：摊开后列表下方的位置
+  // 换成「收起」继续占着，既不出现第二个「查看更多」（已完成的旧 bug），也不会像待处理
+  // 那样把计数清零、连收起的入口一起弄没。
   const { ordered, hiddenCount } = useMemo(() => {
     if (tab === "done") {
       return {
@@ -134,18 +175,30 @@ export function PixieTodoSection() {
         hiddenCount: Math.max(0, visible.length - TODO_PREVIEW),
       };
     }
+    const groups = groupTodoNotes(visible, now);
+    const noDate = groups.find((group) => group.bucket === "none");
     const list: MemoNote[] = [];
-    let hidden = 0;
-    for (const group of groupTodoNotes(visible, now)) {
-      if (group.bucket === "none" && !showAll) {
-        list.push(...group.notes.slice(0, TODO_PREVIEW));
-        hidden = Math.max(0, group.notes.length - TODO_PREVIEW);
-      } else {
-        list.push(...group.notes);
-      }
+    for (const group of groups) {
+      if (group.bucket === "none" && !showAll) list.push(...group.notes.slice(0, TODO_PREVIEW));
+      else list.push(...group.notes);
     }
-    return { ordered: list, hiddenCount: hidden };
+    return { ordered: list, hiddenCount: Math.max(0, (noDate?.notes.length ?? 0) - TODO_PREVIEW) };
   }, [visible, now, tab, showAll]);
+
+  // 编辑弹窗的工作区候选：与方寸间页同一套派生（当前工作区排第一，其后按记录里的提示去重）。
+  const workspaceOptions = useMemo(
+    () =>
+      buildWorkspaceComboOptions(
+        workspace?.canonicalCwd ? pathBasename(workspace.canonicalCwd) : "",
+        collectWorkspaces(all),
+      ),
+    [all, workspace],
+  );
+  const availableWorkspaces = useMemo(() => {
+    const current = workspace?.canonicalCwd;
+    const candidates = current ? [current, ...knownWorkspaces] : knownWorkspaces;
+    return candidates.map((cwd, index) => ({ id: `workspace-${index}`, name: pathBasename(cwd) }));
+  }, [knownWorkspaces, workspace]);
 
   const runAction = useCallback(
     async (action: () => Promise<unknown>) => {
@@ -202,6 +255,131 @@ export function PixieTodoSection() {
     [pushNotification, t],
   );
 
+  /** 复制整条记录（标题 + 正文，口径同编辑态的 `memoFullContentMd`），不只是正文。 */
+  const copyNote = useCallback(
+    (note: MemoNote) => {
+      // 剪贴板在某些环境不可用：与代码块的复制一样静默失败，不为它造一条错误提示。
+      void navigator.clipboard.writeText(memoFullContentMd(note)).then(
+        () => pushNotification(t("commonCopied"), "info"),
+        () => undefined,
+      );
+    },
+    [pushNotification, t],
+  );
+
+  /**
+   * 「继续讨论」：不跳回产出总结的那条会话（那是方寸间页的动作），而是把「记录 + 完成总结」
+   * 以引用胶囊放进当前小精灵草稿——与 ✨ 同一条通道，发送那一刻才展开并绑定会话。
+   */
+  const continueWithResult = useCallback(
+    (note: MemoNote) => {
+      const state = useAppStore.getState();
+      const target = draftTargetFor(state.workspace, state.session);
+      if (!target) {
+        pushNotification(t("memoAgentNoWorkspace"), "warning");
+        return;
+      }
+      const block = [
+        composeMemoPrompt(note, state.host?.agentDir ?? null),
+        composeMemoResultSection(note),
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      injectMemoReference(target, note, withMemoPrompt("", block, t("memoFollowupPrompt")));
+      setResultNote(null);
+      pushNotification(t("pixieTodoHandOffHint"), "info");
+    },
+    [pushNotification, t],
+  );
+
+  /** 右键菜单：完成总结（只跟着有没有 result 走）/ 编辑 / 复制 / 删除。 */
+  const openRowMenu = useCallback(
+    (event: MouseEvent<HTMLDivElement>, note: MemoNote) => {
+      if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const items: MenuItem[] = [];
+      // 手动标记完成不产生总结，所以这一项只以有没有 result 为准。
+      if (note.status === "done" && note.result !== null) {
+        items.push({
+          id: "memo.result",
+          label: t("memoActionResult"),
+          icon: ScrollText,
+          onSelect: () => setResultNote(note),
+        });
+      }
+      items.push(
+        {
+          id: "memo.edit",
+          label: t("memoActionEdit"),
+          icon: Pencil,
+          onSelect: () => setEditing(note),
+        },
+        { id: "memo.copy", label: t("pixieTodoCopy"), icon: Copy, onSelect: () => copyNote(note) },
+        {
+          id: "memo.delete",
+          label: t("memoActionDelete"),
+          icon: Trash2,
+          danger: true,
+          separatorBefore: true,
+          onSelect: () => setPendingDelete([note.id]),
+        },
+      );
+      openContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        trigger: contextMenuTrigger(event.target),
+        items,
+      });
+    },
+    [copyNote, t],
+  );
+
+  const switchTab = useCallback((next: "open" | "done") => {
+    setTab(next);
+    setBatchMode(false);
+    setSelected([]);
+  }, []);
+
+  const toggleBatch = useCallback(() => {
+    setBatchMode((current) => !current);
+    setSelected([]);
+    // 进入勾选模式先把整列摊开：「全选」要覆盖这一档全部记录，不能只覆盖屏上先给的 5 条。
+    setExpandedTab("done");
+  }, []);
+
+  const visibleIds = useMemo(() => ordered.map((note) => note.id), [ordered]);
+  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.includes(id));
+  const toggleSelectAll = useCallback(() => {
+    setSelected(allSelected ? [] : visibleIds);
+  }, [allSelected, visibleIds]);
+
+  /** 逐条 `memo.delete`：协议没有批量入口，顺序删完再一次性刷新，失败条数如实报。 */
+  const confirmDelete = useCallback(async () => {
+    const ids = pendingDelete ?? [];
+    setPendingDelete(null);
+    setBatchMode(false);
+    setSelected([]);
+    setExpandedId((current) => (current && ids.includes(current) ? null : current));
+    if (ids.length === 0) return;
+    let failed = 0;
+    await runAction(async () => {
+      for (const id of ids) {
+        try {
+          await deleteMemoNote(id);
+        } catch {
+          failed += 1;
+        }
+      }
+      if (failed > 0) {
+        pushNotification(
+          t("pixieTodoBatchPartFail", { done: ids.length - failed, failed }),
+          "warning",
+        );
+      }
+    });
+  }, [pendingDelete, pushNotification, runAction, t]);
+
   if (!memoEnabled) return null;
 
   const hint = overview.overdue > 0 ? t("pixieTodoOverdueHint", { count: overview.overdue }) : "";
@@ -245,7 +423,7 @@ export function PixieTodoSection() {
                   ? "bg-nav-active font-semibold text-foreground"
                   : "text-muted hover:bg-surface-overlay hover:text-foreground"
               }`}
-              onClick={() => setTab(candidate)}
+              onClick={() => switchTab(candidate)}
             >
               {candidate === "open" ? t("memoFilterTodo") : t("memoFilterDone")}
               <span className="text-[10px] tabular-nums opacity-75">
@@ -253,7 +431,60 @@ export function PixieTodoSection() {
               </span>
             </button>
           ))}
+          {tab === "done" && visible.length > 0 ? (
+            <button
+              type="button"
+              data-testid="pixie-todo-batch-toggle"
+              aria-pressed={batchMode}
+              title={t("pixieTodoBatch")}
+              aria-label={t("pixieTodoBatch")}
+              className="ml-auto flex size-[22px] shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-danger focus-visible:outline-none"
+              onClick={toggleBatch}
+            >
+              <Trash2 size={13} aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
+
+        {batchMode ? (
+          <div
+            data-testid="pixie-todo-batch-bar"
+            className="flex items-center gap-1.5 border-b border-dashed border-border pb-1.5 text-[10px] text-muted"
+          >
+            <button
+              type="button"
+              data-testid="pixie-todo-select-all"
+              className="rounded px-1 transition-colors hover:text-foreground focus-visible:outline-none"
+              onClick={toggleSelectAll}
+            >
+              {allSelected ? t("pixieTodoBatchDeselectAll") : t("pixieTodoBatchSelectAll")}
+            </button>
+            <span className="ml-auto tabular-nums">
+              {t("pixieTodoBatchSelected", { count: selected.length })}
+            </span>
+            <button
+              type="button"
+              data-testid="pixie-todo-batch-delete"
+              disabled={selected.length === 0 || busy}
+              title={selected.length === 0 ? t("pixieTodoBatchNothingSelected") : undefined}
+              className="flex h-5 items-center gap-1 rounded border border-danger/40 px-1.5 text-danger transition-colors hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={() => setPendingDelete(selected)}
+            >
+              <Trash2 size={10} aria-hidden="true" />
+              {t("pixieTodoBatchDeleteSelected")}
+            </button>
+            <button
+              type="button"
+              data-testid="pixie-todo-batch-exit"
+              title={t("pixieTodoBatchExit")}
+              aria-label={t("pixieTodoBatchExit")}
+              className="flex size-5 shrink-0 items-center justify-center rounded text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none"
+              onClick={toggleBatch}
+            >
+              <X size={11} aria-hidden="true" />
+            </button>
+          </div>
+        ) : null}
 
         {error ? <p className="px-1 text-[11px] text-danger">{error}</p> : null}
 
@@ -269,12 +500,19 @@ export function PixieTodoSection() {
                 note={note}
                 now={now}
                 expanded={expandedId === note.id}
-                confirmingDelete={confirmDeleteId === note.id}
+                selecting={batchMode}
+                checked={selected.includes(note.id)}
                 busy={busy}
                 onToggleDetail={() => {
-                  setConfirmDeleteId(null);
                   setExpandedId((current) => (current === note.id ? null : note.id));
                 }}
+                onToggleSelect={() =>
+                  setSelected((current) =>
+                    current.includes(note.id)
+                      ? current.filter((id) => id !== note.id)
+                      : [...current, note.id],
+                  )
+                }
                 onToggleComplete={() =>
                   void runAction(() =>
                     note.status === "done"
@@ -283,19 +521,7 @@ export function PixieTodoSection() {
                   )
                 }
                 onHandOff={() => handOff(note)}
-                onEdit={() => {
-                  requestMemoReveal(note.id);
-                  useAppStore.getState().setPage("memo");
-                }}
-                onDelete={() => {
-                  if (confirmDeleteId !== note.id) {
-                    setConfirmDeleteId(note.id);
-                    return;
-                  }
-                  setConfirmDeleteId(null);
-                  setExpandedId(null);
-                  void runAction(() => deleteMemoNote(note.id));
-                }}
+                onContextMenu={(event) => openRowMenu(event, note)}
               />
             ))}
           </div>
@@ -304,11 +530,13 @@ export function PixieTodoSection() {
         {hiddenCount > 0 ? (
           <button
             type="button"
-            data-testid="pixie-todo-show-more"
+            data-testid={showAll ? "pixie-todo-show-less" : "pixie-todo-show-more"}
             className="w-full py-1 text-center text-[11px] text-muted transition-colors hover:text-foreground focus-visible:outline-none"
-            onClick={() => setExpandedTab(tab)}
+            onClick={() => setExpandedTab(showAll ? null : tab)}
           >
-            {t("pixieTodoShowMore", { count: hiddenCount })}
+            {/* hiddenCount 记的是「收起来时藏了几条」，不随摊开清零，所以按钮靠 showAll 换含义，
+             * 而不是摊开后继续挂着第二个「查看更多」。 */}
+            {showAll ? t("pixieTodoShowLess") : t("pixieTodoShowMore", { count: hiddenCount })}
           </button>
         ) : null}
 
@@ -350,6 +578,40 @@ export function PixieTodoSection() {
           />
         )}
       </div>
+
+      {editing ? (
+        <MemoNoteDialog
+          note={editing}
+          workspaceOptions={workspaceOptions}
+          availableWorkspaces={availableWorkspaces}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void refresh();
+          }}
+        />
+      ) : null}
+
+      {resultNote ? (
+        <MemoResultDialog
+          note={resultNote}
+          onClose={() => setResultNote(null)}
+          onContinue={() => continueWithResult(resultNote)}
+          onCleared={() => void refresh()}
+        />
+      ) : null}
+
+      {pendingDelete ? (
+        <Dialog
+          title={t("pixieTodoDeleteConfirmTitle")}
+          tone="danger"
+          confirmLabel={t("memoActionDelete")}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => void confirmDelete()}
+        >
+          {t("pixieTodoDeleteConfirmHint", { count: pendingDelete.length })}
+        </Dialog>
+      ) : null}
     </PixiePanelSection>
   );
 }
@@ -358,24 +620,27 @@ function TodoRow({
   note,
   now,
   expanded,
-  confirmingDelete,
+  selecting,
+  checked,
   busy,
   onToggleDetail,
+  onToggleSelect,
   onToggleComplete,
   onHandOff,
-  onEdit,
-  onDelete,
+  onContextMenu,
 }: {
   note: MemoNote;
   now: number;
   expanded: boolean;
-  confirmingDelete: boolean;
+  /** 批量删除的勾选模式：整行改成选中 / 取消选中，行首圆圈换成复选框。 */
+  selecting: boolean;
+  checked: boolean;
   busy: boolean;
   onToggleDetail: () => void;
+  onToggleSelect: () => void;
   onToggleComplete: () => void;
   onHandOff: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
+  onContextMenu: (event: MouseEvent<HTMLDivElement>) => void;
 }) {
   const t = useT();
   const overdue = isMemoOverdue(note, now);
@@ -387,37 +652,74 @@ function TodoRow({
   // 行内只给一行摘要，完整正文留在展开区；两者同源，摘要不会和正文各说一套。
   const excerpt = noteExcerpt(note);
 
-  const actionClass =
-    "flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted transition-colors hover:bg-surface-overlay hover:text-foreground";
+  /** 行主体点下去：勾选模式里是选中，否则是展开（只有真的有正文时才展开得出东西）。 */
+  const onToggleBody = () => {
+    if (selecting) {
+      onToggleSelect();
+      return;
+    }
+    if (body) onToggleDetail();
+  };
+
+  // 行尾的 ✨ 只在悬停 / 键盘落到这一行时才现形：平时行尾是空的，整块读起来就是纯列表。
+  const cornerClass =
+    "pointer-events-none mt-0.5 flex size-[18px] shrink-0 items-center justify-center rounded text-muted opacity-0 transition-[opacity,color] group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100";
 
   return (
-    <div data-testid="pixie-todo-row" className="rounded-md">
-      <div className="flex items-start gap-2 rounded-md px-1.5 py-1.5 transition-colors hover:bg-surface-overlay">
-        <button
-          type="button"
-          data-testid="pixie-todo-complete"
-          title={done ? t("memoActionReopen") : t("memoActionDone")}
-          aria-label={done ? t("memoActionReopen") : t("memoActionDone")}
-          disabled={busy}
-          className="group/tick mt-0.5 flex size-4 shrink-0 items-center justify-center text-muted transition-colors hover:text-accent disabled:opacity-40"
-          onClick={onToggleComplete}
-        >
-          {/* 已完成行直接给选中态（点它转回待处理）；未完成行仍是空圈，悬停预览打勾。 */}
-          {done ? (
-            <CircleCheck size={15} className="text-accent" aria-hidden="true" />
-          ) : (
-            <>
-              <Circle size={15} className="group-hover/tick:hidden" aria-hidden="true" />
-              <CircleCheck size={15} className="hidden group-hover/tick:block" aria-hidden="true" />
-            </>
-          )}
-        </button>
+    <div
+      data-testid="pixie-todo-row"
+      className={`rounded-md ${expanded ? "bg-surface-inset" : ""}`}
+      onContextMenu={onContextMenu}
+    >
+      <div className="group flex items-start gap-2 rounded-md px-1.5 py-1.5 transition-colors hover:bg-surface-overlay">
+        {selecting ? (
+          <button
+            type="button"
+            data-testid="pixie-todo-select"
+            aria-pressed={checked}
+            title={checked ? t("pixieTodoBatchUnselect") : t("pixieTodoBatchSelect")}
+            aria-label={checked ? t("pixieTodoBatchUnselect") : t("pixieTodoBatchSelect")}
+            disabled={busy}
+            className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-muted transition-colors hover:text-accent disabled:opacity-40"
+            onClick={onToggleSelect}
+          >
+            {checked ? (
+              <SquareCheck size={15} className="text-accent" aria-hidden="true" />
+            ) : (
+              <Square size={15} aria-hidden="true" />
+            )}
+          </button>
+        ) : (
+          <button
+            type="button"
+            data-testid="pixie-todo-complete"
+            title={done ? t("memoActionReopen") : t("memoActionDone")}
+            aria-label={done ? t("memoActionReopen") : t("memoActionDone")}
+            disabled={busy}
+            className="group/tick mt-0.5 flex size-4 shrink-0 items-center justify-center text-muted transition-colors hover:text-accent disabled:opacity-40"
+            onClick={onToggleComplete}
+          >
+            {/* 已完成行直接给选中态（点它转回待处理）；未完成行仍是空圈，悬停预览打勾。 */}
+            {done ? (
+              <CircleCheck size={15} className="text-accent" aria-hidden="true" />
+            ) : (
+              <>
+                <Circle size={15} className="group-hover/tick:hidden" aria-hidden="true" />
+                <CircleCheck
+                  size={15}
+                  className="hidden group-hover/tick:block"
+                  aria-hidden="true"
+                />
+              </>
+            )}
+          </button>
+        )}
         <button
           type="button"
           data-testid="pixie-todo-open-detail"
           aria-expanded={expanded}
           className="min-w-0 flex-1 text-left"
-          onClick={onToggleDetail}
+          onClick={onToggleBody}
         >
           <div className="truncate text-[12px] font-medium leading-5 text-foreground">
             {note.title}
@@ -453,62 +755,26 @@ function TodoRow({
             {note.workspaceHint ? <WorkspaceChip name={note.workspaceHint} size="compact" /> : null}
           </div>
         </button>
-        <ChevronRight
-          size={11}
-          aria-hidden="true"
-          className={`mt-1 shrink-0 text-muted transition-transform duration-150 ${
-            expanded ? "rotate-90" : ""
-          }`}
-        />
+        <button
+          type="button"
+          data-testid="pixie-todo-handoff"
+          title={t("pixieTodoHandOff")}
+          aria-label={t("pixieTodoHandOff")}
+          className={`${cornerClass} hover:bg-surface-overlay hover:text-primary focus-visible:outline-none`}
+          onClick={onHandOff}
+        >
+          <Sparkles size={12} aria-hidden="true" />
+        </button>
       </div>
 
       <CollapsibleRegion open={expanded}>
+        {/* 摊开不是另起一张卡片：整行连同正文就是这一张（外层的 bg-surface-inset），正文与标题
+         * 左对齐——行内边距 6px + 圆圈 16px + 间距 8px = 30px——中间一条虚线分开。 */}
         <div
           data-testid="pixie-todo-detail"
-          className="mx-1.5 mb-1.5 rounded-md border border-border bg-surface-inset p-2"
+          className="mb-1.5 ml-[30px] mr-1.5 break-words border-t border-dashed border-border pt-1.5 text-[11px] leading-5 text-foreground/90"
         >
-          {body ? (
-            <div className="whitespace-pre-wrap break-words text-[11px] leading-5 text-foreground/90">
-              {body}
-            </div>
-          ) : null}
-          <div
-            className={`flex items-center gap-1.5 border-t border-dashed border-border pt-2 ${
-              body ? "mt-2" : ""
-            }`}
-          >
-            <button
-              type="button"
-              data-testid="pixie-todo-handoff"
-              className={`${actionClass} border-primary/40 text-primary hover:bg-primary/10 hover:text-primary`}
-              onClick={onHandOff}
-            >
-              <Sparkles size={12} aria-hidden="true" />
-              {t("pixieTodoHandOff")}
-            </button>
-            <button
-              type="button"
-              data-testid="pixie-todo-edit"
-              className={actionClass}
-              onClick={onEdit}
-            >
-              <Pencil size={12} aria-hidden="true" />
-              {t("memoActionEdit")}
-            </button>
-            <button
-              type="button"
-              data-testid="pixie-todo-delete"
-              className={`${actionClass} ml-auto ${
-                confirmingDelete ? "border-danger/40 text-danger" : ""
-              }`}
-              title={t("memoActionDelete")}
-              aria-label={t("memoActionDelete")}
-              onClick={onDelete}
-            >
-              <Trash2 size={12} aria-hidden="true" />
-              {confirmingDelete ? t("memoActionDeleteConfirm") : null}
-            </button>
-          </div>
+          <MemoMarkdown content={body} className="panel-markdown" />
         </div>
       </CollapsibleRegion>
     </div>

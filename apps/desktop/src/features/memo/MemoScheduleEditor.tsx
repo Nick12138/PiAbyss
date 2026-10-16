@@ -7,6 +7,7 @@
  *   时区固定 Asia/Shanghai（Host 侧时刻计算不依赖设备本地时区）。
  * - `formatRecurrenceText` / `formatMemoDue` / `noteScheduleSummary`：人读描述，供列表与详情复用。
  */
+import type { ReactNode } from "react";
 import type { MemoNote, MemoRecurrence, MemoRecurrenceFrequency } from "@piabyss/protocol";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 
@@ -144,20 +145,25 @@ type FrequencyChoice = "none" | MemoRecurrenceFrequency;
 /**
  * 计划设置行：截止时间 + 重复频率；选择重复后展开频率细节
  * （间隔 / 星期或每月几号 / 时刻）。
+ *
+ * `leading` 给编辑弹窗留了一个同排的前置控件（工作区）——那一排是
+ * 「工作区 · 计划 · 截止 · 重复」，频率细节仍然整行折回左侧，不跟着缩进。
  */
 export function MemoScheduleEditor({
   value,
   onChange,
+  leading,
 }: {
   value: MemoScheduleValue;
   onChange: (next: MemoScheduleValue) => void;
+  leading?: ReactNode;
 }) {
   const t = useT();
   const rule = value.recurrence;
   const frequency: FrequencyChoice = rule?.frequency ?? "none";
 
   const inputClass =
-    "h-7 min-w-0 rounded-md border border-border bg-transparent px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-focus";
+    "h-8 min-w-0 rounded-md border border-border bg-transparent px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-focus";
 
   function setDue(next: string) {
     onChange({ ...value, dueAt: fromLocalInputValue(next) });
@@ -184,9 +190,10 @@ export function MemoScheduleEditor({
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border px-3 py-2">
+    <div className="flex shrink-0 flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[11px] text-muted">{t("memoPlanSection")}</span>
+        {leading}
+        <span className="shrink-0 text-[11px] text-muted">{t("memoPlanSection")}</span>
         <input
           type="datetime-local"
           value={toLocalInputValue(value.dueAt)}
@@ -194,7 +201,7 @@ export function MemoScheduleEditor({
           aria-label={t("memoPlanDue")}
           title={t("memoPlanDue")}
           data-testid="memo-schedule-due"
-          className={`${inputClass} flex-1`}
+          className={`${inputClass} w-48 shrink-0`}
         />
         <select
           value={frequency}

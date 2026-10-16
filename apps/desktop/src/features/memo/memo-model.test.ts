@@ -11,6 +11,7 @@ import {
   filterNotes,
   noteExcerpt,
   noteMatchesWorkspace,
+  memoFullContentMd,
   memoImagePath,
   pathBasename,
   resolveWorkspaceHint,
@@ -76,6 +77,17 @@ describe("deriveTitle", () => {
   });
   it("truncates to maxLength", () => {
     expect(deriveTitle("a".repeat(120))).toHaveLength(100);
+  });
+});
+
+describe("memoFullContentMd", () => {
+  it("keeps the content as-is when its first line already is the title", () => {
+    const n = note({ title: "回复邮件", contentMd: "回复邮件\n正文两行" });
+    expect(memoFullContentMd(n)).toBe("回复邮件\n正文两行");
+  });
+  it("prepends the title when the content starts elsewhere", () => {
+    const n = note({ title: "点2杯美式", contentMd: "提醒：点 2 杯美式 ☕" });
+    expect(memoFullContentMd(n)).toBe("点2杯美式\n\n提醒：点 2 杯美式 ☕");
   });
 });
 

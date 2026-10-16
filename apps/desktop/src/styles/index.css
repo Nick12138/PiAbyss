@@ -2452,6 +2452,43 @@ html.light .pi-working-marquee {
   margin-top: 0;
 }
 
+/*
+ * 窄栏档位（随行面板的展开预览、编辑弹窗的预览态）：栏宽只有 300–640px，
+ * 沿用 13px 会把展开块撑成半屏，所以降到面板的 11px 档并收紧块间距。
+ * 三类选择器稳压上面的双类 .memo-markdown，标题也不让它在窄栏里喊。
+ */
+.chat-markdown.memo-markdown.panel-markdown {
+  --code-font-size: 10px;
+
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.chat-markdown.memo-markdown.panel-markdown p,
+.chat-markdown.memo-markdown.panel-markdown ul,
+.chat-markdown.memo-markdown.panel-markdown ol,
+.chat-markdown.memo-markdown.panel-markdown blockquote {
+  margin: 0.25rem 0;
+}
+
+.chat-markdown.memo-markdown.panel-markdown h1,
+.chat-markdown.memo-markdown.panel-markdown h2,
+.chat-markdown.memo-markdown.panel-markdown h3,
+.chat-markdown.memo-markdown.panel-markdown h4,
+.chat-markdown.memo-markdown.panel-markdown h5,
+.chat-markdown.memo-markdown.panel-markdown h6 {
+  margin: 0.5rem 0 0.25rem;
+  font-size: 12px;
+}
+
+.chat-markdown.memo-markdown.panel-markdown [data-streamdown="code-block"] {
+  margin: 0.5rem 0;
+}
+
+.chat-markdown.memo-markdown.panel-markdown > :last-child {
+  margin-bottom: 0;
+}
+
 .chat-markdown .katex {
   display: inline-block;
   max-width: 100%;

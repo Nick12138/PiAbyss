@@ -36,6 +36,8 @@ export function Dialog({
   headerExtra,
   footerExtra,
   maxWidthClass = "max-w-lg",
+  maxHeightClass = "max-h-[min(680px,90vh)]",
+  fillBody = false,
   onCancel,
   onConfirm,
 }: {
@@ -56,6 +58,14 @@ export function Dialog({
   footerExtra?: ReactNode;
   /** Override the dialog's max-width Tailwind class (default 512px / max-w-lg). */
   maxWidthClass?: string;
+  /** Override the dialog's max-height Tailwind class. */
+  maxHeightClass?: string;
+  /**
+   * Let the body own the scrolling: the panel stops being a scroll container and
+   * the body becomes a `flex-1 min-h-0` column, so the header (and any footer)
+   * stays pinned while a tall editor inside it scrolls on its own.
+   */
+  fillBody?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -112,10 +122,12 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="app-dialog-title"
-        className={`theme-floating-surface max-h-[min(680px,90vh)] w-full overflow-auto rounded-xl border border-border bg-surface-raised p-5 shadow-2xl ${maxWidthClass}`}
+        className={`theme-floating-surface w-full rounded-xl border border-border bg-surface-raised p-5 shadow-2xl ${
+          fillBody ? "flex min-h-0 flex-col overflow-hidden" : "overflow-auto"
+        } ${maxWidthClass} ${maxHeightClass}`}
       >
         {/* Header: icon + title share one row; close icon sits at the end. */}
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-3">
           <div className={`rounded-md p-1.5 ${ICON_CHIP[tone]}`}>
             {tone === "default" ? <Icon size={18} /> : <AlertTriangle size={18} />}
           </div>
@@ -136,9 +148,13 @@ export function Dialog({
           )}
         </div>
         {/* Body: full width below the header row. */}
-        <div className="mt-3 text-sm text-muted">{children}</div>
+        <div
+          className={`mt-3 text-sm text-muted ${fillBody ? "flex min-h-0 flex-1 flex-col" : ""}`}
+        >
+          {children}
+        </div>
         {!hideActions && (
-          <div className="mt-5 flex items-center justify-between gap-2">
+          <div className="mt-5 flex shrink-0 items-center justify-between gap-2">
             <div className="min-w-0">{footerExtra}</div>
             <div className="flex shrink-0 justify-end gap-2">
               {showCancel && (

@@ -23,6 +23,18 @@ export function noteExcerpt(note: MemoNote, maxLength = 96): string {
   return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
 }
 
+/**
+ * 记录的完整正文：正文首行不是标题时（旧数据标题独立存储、或标题被改过），把标题补成首行。
+ *
+ * 「这条记录作为一段文本是什么」的唯一口径——复制与进入编辑态都用它，
+ * 否则会出现复制丢了标题、编辑器里却看得到。
+ */
+export function memoFullContentMd(note: MemoNote): string {
+  return deriveTitle(note.contentMd) === note.title
+    ? note.contentMd
+    : `${note.title}\n\n${note.contentMd}`;
+}
+
 /** 标题派生：第一个非空行，去掉 Markdown 标题井号，超长截断。 */
 export function deriveTitle(contentMd: string, maxLength = 100): string {
   const line = contentMd
@@ -270,6 +282,28 @@ export function collectWorkspaces(notes: readonly MemoNote[]): string[] {
     result.push(hint);
   }
   return result;
+}
+
+/**
+ * 工作区输入框的下拉选项：当前工作区排第一（标 `current`），其后是历史出现过的提示，
+ * 按小写去重。方寸间页与随行面板的编辑弹窗共用，选项顺序两边必须一致。
+ */
+export function buildWorkspaceComboOptions(
+  currentHint: string,
+  hints: readonly string[],
+): { value: string; current?: boolean }[] {
+  const seen = new Set<string>();
+  const options: { value: string; current?: boolean }[] = [];
+  const push = (hint: string, isCurrent: boolean) => {
+    if (!hint) return;
+    const key = hint.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    options.push(isCurrent ? { value: hint, current: true } : { value: hint });
+  };
+  push(currentHint, true);
+  for (const hint of hints) push(hint, false);
+  return options;
 }
 
 /** 列表/详情用的时间格式：YYYY-MM-DD HH:mm（本地时区）。 */

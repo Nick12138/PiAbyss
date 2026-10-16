@@ -5,41 +5,25 @@
  *       宽屏（容器 ≥ @2xl/672px）左列表（卡片摘要）+ 右详情（查看/编辑一体）；
  *       窄屏自动切单栏：列表与详情互斥显示，详情左上角返回列表。
  * 数据全部经 pi-host 的 memo.* 协议方法落盘（v1 纯本地）。
+ * 编辑视图与它的状态模型在 `./MemoEditor`（随行面板的编辑弹窗共用同一份）。
  */
 import {
-  ArrowLeft,
   Bot,
-  Check,
   CheckCircle2,
   ChevronDown,
   CircleAlert,
   Clock,
-  Eraser,
   Loader2,
   Pencil,
   Plus,
   RotateCcw,
   ScrollText,
-  Sparkles,
   StickyNote,
   Trash2,
-  X,
 } from "lucide-react";
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ClipboardEvent,
-  type KeyboardEvent,
-} from "react";
-import { createPortal } from "react-dom";
-import type { MemoNote, MemoNoteStatus, MemoRecurrence } from "@piabyss/protocol";
-import { Dialog, primaryButton } from "../../components/Dialog";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MemoNote, MemoNoteStatus } from "@piabyss/protocol";
+import { primaryButton } from "../../components/Dialog";
 import { LightboxImage } from "../../components/ImageLightbox";
 import { Select } from "../../components/Select";
 import { useT, type Translate } from "../../lib/i18n/use-t";
@@ -60,7 +44,6 @@ import {
   clearMemoDraft,
   completeMemoNote,
   createMemoNote,
-  optimizeMemo,
   deleteMemoNote,
   getMemoDraft,
   listMemoNotes,
@@ -72,6 +55,7 @@ import { injectMemoReference, openMemoWithAgent, resolveMemoTargetCwd } from "./
 import { MEMO_SYNCED_EVENT } from "./memo-sync-status";
 import { subscribeMemoReveal } from "./memo-reveal";
 import {
+  buildWorkspaceComboOptions,
   collectTags,
   collectWorkspaces,
   composeMemoPrompt,
@@ -91,68 +75,23 @@ import {
   type MemoStatusFilter,
 } from "./memo-model";
 import { TagChip, WorkspaceChip } from "./MemoChips";
+import { MemoMarkdown } from "./MemoMarkdown";
+import { MemoResultDialog } from "./MemoResultDialog";
+import { formatRecurrenceText, noteScheduleSummary } from "./MemoScheduleEditor";
 import {
-  emptySchedule,
-  formatRecurrenceText,
-  MemoScheduleEditor,
-  noteScheduleSummary,
-} from "./MemoScheduleEditor";
+  addEditorImages,
+  BackToListButton,
+  type EditorState,
+  editorStateFromNote,
+  MemoEditor,
+  newEditorState,
+  newImageKey,
+  type PendingImage,
+  removeEditorImage,
+  saveMemoEditorNote,
+} from "./MemoEditor";
 
 const STATUS_TABS: readonly MemoStatusFilter[] = ["open", "in_progress", "done"];
-
-/**
- * 查看态的 Markdown 渲染器（Streamdown + shiki/mermaid，体积可观）。
- * 与文件标签的「预览」模式同源，按需加载以免拖慢备忘录首屏；
- * 组件内部带渲染边界，增强失败时自行回退为纯文本。
- */
-const Markdown = lazy(() =>
-  import("../chat/MarkdownMessage").then((m) => ({ default: m.MarkdownMessage })),
-);
-
-/** Markdown 渲染器加载中的占位（高度贴紧，避免内容跳动）。 */
-function MarkdownPending() {
-  return (
-    <div className="flex items-center gap-2 py-1 text-xs text-muted" role="status">
-      <Loader2 size={14} className="animate-spin" aria-hidden />
-    </div>
-  );
-}
-
-/** 编辑器内图片：新上传的（保存时随请求上传）或已有图片的回显（existingId 非空）。 */
-type PendingImage = {
-  key: string;
-  fileName: string;
-  mediaType: string;
-  dataBase64: string;
-  previewUrl: string;
-  /** 已保存图片的 id：删除时记入 removedImageIds，保存时不重复上传。 */
-  existingId?: string;
-};
-
-type EditorState = {
-  id: string | null;
-  contentMd: string;
-  workspaceHint: string;
-  /** 计划：一次性截止时刻（epoch ms）；null = 无截止。 */
-  dueAt: number | null;
-  /** 计划：周期规则；null = 非周期记录。 */
-  recurrence: MemoRecurrence | null;
-  pendingImages: PendingImage[];
-  removedImageIds: string[];
-};
-
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-/** 可接受的图片 MIME 类型（也用于过滤粘贴/拖拽进来的非图片文件）。 */
-const IMAGE_INPUT_TYPES = /image\/(png|jpeg|gif|webp|bmp|avif|svg\+xml)/;
-/** 暂存图片的唯一键序号（粘贴的截图文件名可能重复）。 */
-let pendingImageSeq = 0;
-
-/** 粘贴的截图往往没有有意义的文件名，按 MIME 推断一个。 */
-function imageFileName(file: File): string {
-  if (file.name && /\.[a-z0-9]+$/i.test(file.name)) return file.name;
-  const ext = file.type.split("/")[1]?.replace("svg+xml", "svg").replace("jpeg", "jpg");
-  return `image.${ext || "png"}`;
-}
 
 export function MemoPage() {
   const t = useT();
@@ -173,7 +112,6 @@ export function MemoPage() {
   const [draftEpoch, setDraftEpoch] = useState(0);
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [confirmingClearResult, setConfirmingClearResult] = useState(false);
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
   const [dragOver, setDragOver] = useState(false);
   const [resultModalOpen, setResultModalOpen] = useState(false);
@@ -335,21 +273,14 @@ export function MemoPage() {
   }, [desktopSettings, workspace]);
 
   // 工作区输入框的下拉选项：当前工作区优先，其后是历史出现过的提示（按小写去重）。
-  const workspaceComboOptions = useMemo(() => {
-    const current = workspace?.canonicalCwd ? pathBasename(workspace.canonicalCwd) : "";
-    const seen = new Set<string>();
-    const options: { value: string; current?: boolean }[] = [];
-    const push = (hint: string, isCurrent: boolean) => {
-      if (!hint) return;
-      const key = hint.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-      options.push(isCurrent ? { value: hint, current: true } : { value: hint });
-    };
-    push(current, true);
-    for (const hint of workspaceOptions) push(hint, false);
-    return options;
-  }, [workspaceOptions, workspace]);
+  const workspaceComboOptions = useMemo(
+    () =>
+      buildWorkspaceComboOptions(
+        workspace?.canonicalCwd ? pathBasename(workspace.canonicalCwd) : "",
+        workspaceOptions,
+      ),
+    [workspaceOptions, workspace],
+  );
 
   const visibleNotes = useMemo(
     () =>
@@ -390,18 +321,6 @@ export function MemoPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNote?.id, selectedNote?.images.length]);
 
-  /** 新建表单的初始状态。 */
-  function newEditorState(cwd: string | null | undefined): EditorState {
-    return {
-      id: null,
-      contentMd: "",
-      workspaceHint: cwd ? pathBasename(cwd) : "",
-      ...emptySchedule(),
-      pendingImages: [],
-      removedImageIds: [],
-    };
-  }
-
   /** 保存/取消查看后回到全新的新建表单（epoch 变化触发重新挂载以 autofocus）；窄屏下同时回到列表栏。 */
   function resetToCreate() {
     setConfirmingDelete(false);
@@ -414,27 +333,7 @@ export function MemoPage() {
   function startEdit(note: MemoNote) {
     setConfirmingDelete(false);
     setPane("detail");
-    // 旧数据标题独立存储：若正文首行不是标题，补一行作为标题种子。
-    const seeded =
-      deriveTitle(note.contentMd) === note.title
-        ? note.contentMd
-        : `${note.title}\n\n${note.contentMd}`;
-    setEditor({
-      id: note.id,
-      contentMd: seeded,
-      workspaceHint: note.workspaceHint ?? "",
-      dueAt: note.dueAt,
-      recurrence: note.recurrence,
-      pendingImages: note.images.map((image) => ({
-        key: `existing:${image.id}`,
-        fileName: image.fileName,
-        mediaType: image.mediaType,
-        dataBase64: "",
-        previewUrl: imageUrls[`${note.id}:${image.id}`] ?? "",
-        existingId: image.id,
-      })),
-      removedImageIds: [],
-    });
+    setEditor(editorStateFromNote(note, imageUrls));
     setSelectedId(note.id);
     // 已有图片的 data URL 可能尚未加载：补拉并回填到编辑器状态。
     for (const image of note.images) {
@@ -460,18 +359,7 @@ export function MemoPage() {
 
   /** 删除编辑器里的图片：新上传的直接移除，已有图片同时记入 removedImageIds。 */
   function removePendingImage(key: string) {
-    setEditor((current) => {
-      if (!current) return current;
-      const target = current.pendingImages.find((image) => image.key === key);
-      return {
-        ...current,
-        pendingImages: current.pendingImages.filter((image) => image.key !== key),
-        removedImageIds:
-          target?.existingId && !current.removedImageIds.includes(target.existingId)
-            ? [...current.removedImageIds, target.existingId]
-            : current.removedImageIds,
-      };
-    });
+    removeEditorImage(key, updateEditor);
   }
 
   /** 清空新建表单：清正文与图片（保留工作区），并删除本地草稿文件。 */
@@ -514,26 +402,7 @@ export function MemoPage() {
         });
       } else {
         const original = (notes ?? []).find((entry) => entry.id === editor.id) ?? null;
-        await updateMemoNote(editor.id, {
-          title,
-          contentMd: editor.contentMd,
-          tags,
-          workspaceHint: hint,
-          // 计划字段仅在真正变化时提交：否则仅改正文也会触发 nextDueAt 重算
-          // （Host 侧更新 recurrence 时会以当前时刻滚动下一轮）。
-          ...(original && original.dueAt !== editor.dueAt ? { dueAt: editor.dueAt } : {}),
-          ...(original && JSON.stringify(original.recurrence) !== JSON.stringify(editor.recurrence)
-            ? { recurrence: editor.recurrence }
-            : {}),
-          addImages: editor.pendingImages
-            .filter((image) => image.existingId === undefined)
-            .map(({ fileName, mediaType, dataBase64 }) => ({
-              fileName,
-              mediaType,
-              dataBase64,
-            })),
-          removeImageIds: editor.removedImageIds,
-        });
+        if (!(await saveMemoEditorNote(editor, original))) return;
       }
       await refresh();
       if (editor.id === null) {
@@ -607,27 +476,6 @@ export function MemoPage() {
     } catch (error) {
       pushNotification(
         `${t("memoDeleteFailed")}: ${error instanceof Error ? error.message : String(error)}`,
-        "error",
-      );
-    }
-  }
-
-  /** 清空 Agent 结果总结（弹窗内二次确认后执行）；成功后关闭弹窗并刷新详情。 */
-  async function clearResult(note: MemoNote) {
-    if (!confirmingClearResult) {
-      setConfirmingClearResult(true);
-      return;
-    }
-    try {
-      const updated = await updateMemoNote(note.id, { clearResult: true });
-      setConfirmingClearResult(false);
-      setResultModalOpen(false);
-      setNotes((current) =>
-        current ? current.map((entry) => (entry.id === updated.id ? updated : entry)) : current,
-      );
-    } catch (error) {
-      pushNotification(
-        `${t("memoResultClearFail")}: ${error instanceof Error ? error.message : String(error)}`,
         "error",
       );
     }
@@ -806,42 +654,20 @@ export function MemoPage() {
     state.setPage("chat");
   }
 
+  /** 方寸间页的编辑器可以「不存在」：包一层写入函数，编辑器 helper 只认非空形态。 */
+  const updateEditor = useCallback(
+    (update: (current: EditorState) => EditorState) =>
+      setEditor((current) => (current === null ? current : update(current))),
+    [],
+  );
+
   /** 把文件加入当前编辑器的待上传图片（粘贴/拖拽共用的入口）。 */
   const addImages = useCallback(
-    (files: File[]) => {
-      const valid = files.filter((file) => IMAGE_INPUT_TYPES.test(file.type));
-      let remaining = valid.length;
-      if (remaining === 0) return;
-      const pending: PendingImage[] = [];
-      for (const file of valid) {
-        if (file.size > MAX_IMAGE_BYTES) {
-          pushNotification(t("memoImageTooLarge"), "warning");
-          remaining -= 1;
-          continue;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = typeof reader.result === "string" ? reader.result : "";
-          pending.push({
-            key: `img-${(pendingImageSeq += 1)}`,
-            fileName: imageFileName(file),
-            mediaType: file.type || "image/png",
-            dataBase64: result.split(",")[1] ?? "",
-            previewUrl: result,
-          });
-          remaining -= 1;
-          if (remaining === 0 && pending.length > 0) {
-            setEditor((current) =>
-              current
-                ? { ...current, pendingImages: [...current.pendingImages, ...pending] }
-                : current,
-            );
-          }
-        };
-        reader.readAsDataURL(file);
-      }
-    },
-    [pushNotification, t],
+    (files: File[]) =>
+      addEditorImages(files, updateEditor, () =>
+        pushNotification(t("memoImageTooLarge"), "warning"),
+      ),
+    [pushNotification, t, updateEditor],
   );
 
   /**
@@ -858,7 +684,7 @@ export function MemoPage() {
             continue;
           }
           const pending: PendingImage = {
-            key: `img-${(pendingImageSeq += 1)}`,
+            key: newImageKey(),
             fileName: info.name,
             mediaType: info.mediaType,
             dataBase64: info.data,
@@ -1078,10 +904,7 @@ export function MemoPage() {
               onOpenSession={() => void openBoundSession(selectedNote)}
               onComplete={() => void completeNote(selectedNote)}
               onReopen={() => void setStatus(selectedNote, "open")}
-              onResult={() => {
-                setConfirmingClearResult(false);
-                setResultModalOpen(true);
-              }}
+              onResult={() => setResultModalOpen(true)}
               onDelete={() => void removeNote(selectedNote)}
             />
           ) : (
@@ -1107,54 +930,14 @@ export function MemoPage() {
       </div>
 
       {/* Agent 完成总结弹窗（轻量临时浮层）：查看总结 + 继续讨论。 */}
-      {resultModalOpen && selectedNote?.result && (
-        <Dialog
-          title={t("memoResultTitle")}
-          icon={ScrollText}
-          showCancel={false}
-          showCloseIcon
-          confirmLabel={t("memoActionContinue")}
-          footerExtra={
-            <button
-              type="button"
-              onClick={() => void clearResult(selectedNote)}
-              title={t("memoResultClearHint")}
-              aria-label={t("memoResultClearHint")}
-              data-testid="memo-result-clear"
-              className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs ${
-                confirmingClearResult
-                  ? "border border-danger bg-danger/10 text-danger"
-                  : "border border-border text-muted hover:border-danger hover:text-danger"
-              }`}
-            >
-              <Trash2 size={14} className="shrink-0" />
-              <span>
-                {confirmingClearResult ? t("memoActionDeleteConfirm") : t("memoResultClear")}
-              </span>
-            </button>
-          }
-          onCancel={() => setResultModalOpen(false)}
-          onConfirm={() => void continueWithAgent(selectedNote)}
-        >
-          <div className="flex flex-col gap-3 text-left">
-            <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
-              <span>
-                {t("memoResultFromSession", {
-                  name: selectedNote.result.sessionTitle ?? selectedNote.result.sessionId,
-                })}
-              </span>
-              <span>·</span>
-              <span>{t("memoResultAt", { time: formatMemoDateTime(selectedNote.result.at) })}</span>
-            </div>
-            {/* 总结同为 Markdown 文本，与详情正文共用渲染器（查看态即渲染态）。 */}
-            <div className="scrollbar-subtle max-h-80 overflow-y-auto break-words rounded-md border border-border bg-surface-overlay px-3 py-2.5 text-[13px] leading-relaxed text-foreground">
-              <Suspense fallback={<MarkdownPending />}>
-                <Markdown content={selectedNote.result.resultMd} className="memo-markdown" />
-              </Suspense>
-            </div>
-          </div>
-        </Dialog>
-      )}
+      {resultModalOpen && selectedNote?.result ? (
+        <MemoResultDialog
+          note={selectedNote}
+          onClose={() => setResultModalOpen(false)}
+          onContinue={() => void continueWithAgent(selectedNote)}
+          onCleared={() => void refresh()}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1247,23 +1030,6 @@ function MemoListItem({
         <span className="sr-only">{t("memoTitle")}</span>
       </div>
     </li>
-  );
-}
-
-/** 窄屏单栏模式的返回列表按钮（宽屏自动隐藏）。 */
-function BackToListButton({ onClick }: { onClick: () => void }) {
-  const t = useT();
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={t("memoBackToList")}
-      aria-label={t("memoBackToList")}
-      data-testid="memo-back-to-list"
-      className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-foreground transition-colors hover:bg-surface-overlay @2xl:hidden"
-    >
-      <ArrowLeft size={14} />
-    </button>
   );
 }
 
@@ -1490,404 +1256,9 @@ function MemoDetail({
 
         {/* 查看态即渲染态：正文按 Markdown 渲染；编辑态仍为源码（见 MemoEditor）。 */}
         <div className="break-words text-[13px] leading-relaxed text-foreground">
-          <Suspense fallback={<MarkdownPending />}>
-            <Markdown content={note.contentMd} className="memo-markdown" />
-          </Suspense>
+          <MemoMarkdown content={note.contentMd} />
         </div>
       </div>
-    </div>
-  );
-}
-
-/** 编辑器（新建 / 编辑共用）。 */
-function MemoEditor({
-  editor,
-  saving,
-  workspaceOptions,
-  availableWorkspaces,
-  onChange,
-  onSave,
-  onClear,
-  onAddImages,
-  onRemoveImage,
-  dragOver,
-  onBack,
-}: {
-  editor: EditorState;
-  saving: boolean;
-  /** 工作区输入框的下拉选项（当前工作区 + 历史提示）。 */
-  workspaceOptions: { value: string; current?: boolean }[];
-  availableWorkspaces: { id: string; name: string }[];
-  onChange: (next: EditorState) => void;
-  onSave: () => void;
-  /** 仅新建模式传入：清空未保存的新建内容（正文与图片）。 */
-  onClear: () => void;
-  onAddImages: (files: File[]) => void;
-  onRemoveImage: (key: string) => void;
-  dragOver: boolean;
-  onBack: () => void;
-}) {
-  const t = useT();
-  const [optimizing, setOptimizing] = useState(false);
-  const [undoSnapshot, setUndoSnapshot] = useState<EditorState | null>(null);
-  const canSave = editor.contentMd.trim().length > 0;
-  const canClear =
-    editor.id === null && (editor.contentMd.trim().length > 0 || editor.pendingImages.length > 0);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  /** 只拦截图片粘贴；文本粘贴走默认行为。 */
-  function handlePaste(event: ClipboardEvent<HTMLDivElement>) {
-    const files = [...event.clipboardData.items]
-      .filter((item) => item.kind === "file")
-      .map((item) => item.getAsFile())
-      .filter((file): file is File => file !== null)
-      .filter((file) => IMAGE_INPUT_TYPES.test(file.type));
-    if (files.length > 0) {
-      event.preventDefault();
-      setUndoSnapshot(null);
-      onAddImages(files);
-    }
-  }
-
-  function patch(partial: Partial<EditorState>) {
-    setUndoSnapshot(null);
-    onChange({ ...editor, ...partial });
-  }
-
-  async function runOptimization() {
-    if (optimizing || !editor.contentMd.trim()) return;
-    setOptimizing(true);
-    const before = {
-      ...editor,
-      pendingImages: [...editor.pendingImages],
-      removedImageIds: [...editor.removedImageIds],
-    };
-    try {
-      const result = await optimizeMemo({
-        contentMd: editor.contentMd,
-        workspaceHint: editor.workspaceHint ? pathBasename(editor.workspaceHint) : null,
-        workspaces: availableWorkspaces,
-      });
-      const chosenIndex = result.workspaceId?.startsWith("workspace-")
-        ? Number(result.workspaceId.slice("workspace-".length))
-        : -1;
-      const chosen = Number.isInteger(chosenIndex)
-        ? availableWorkspaces[chosenIndex]?.name
-        : undefined;
-      setUndoSnapshot(before);
-      onChange({
-        ...editor,
-        contentMd: result.contentMd,
-        ...(chosen ? { workspaceHint: chosen } : {}),
-      });
-    } catch (error) {
-      useAppStore
-        .getState()
-        .pushNotification(
-          `${t("memoOptimizeFailed")}: ${error instanceof Error ? error.message : String(error)}`,
-          "error",
-        );
-    } finally {
-      setOptimizing(false);
-    }
-  }
-
-  /** Ctrl+S / ⌘S 快捷保存：输入框（正文/工作区）聚焦时也能触发，拦截浏览器默认保存。 */
-  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "s") {
-      event.preventDefault();
-      if (canSave && !saving) onSave();
-    }
-  }
-  return (
-    <div
-      className="flex h-full flex-col"
-      data-testid="memo-editor"
-      onPaste={handlePaste}
-      onKeyDown={handleKeyDown}
-    >
-      <div className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border px-4 py-2">
-        <BackToListButton onClick={onBack} />
-        <WorkspaceCombobox
-          value={editor.workspaceHint}
-          onChange={(value) => patch({ workspaceHint: value })}
-          options={workspaceOptions}
-          placeholder={t("memoFieldWorkspacePlaceholder")}
-          ariaLabel={t("memoFieldWorkspace")}
-          className="w-28 shrink-0 @2xl:w-44"
-        />
-        <div className="hidden min-w-0 flex-1 @2xl:block" />
-        {undoSnapshot ? (
-          <button
-            type="button"
-            onClick={() => {
-              onChange(undoSnapshot);
-              setUndoSnapshot(null);
-            }}
-            title={t("memoUndoOptimize")}
-            aria-label={t("memoUndoOptimize")}
-            className="flex h-8 shrink-0 items-center gap-1 rounded-md border border-border px-2 text-xs text-muted hover:bg-surface-overlay"
-          >
-            <ArrowLeft size={14} />
-            {t("memoUndoOptimize")}
-          </button>
-        ) : (
-          editor.contentMd.trim() && (
-            <button
-              type="button"
-              onClick={() => void runOptimization()}
-              disabled={optimizing}
-              title={t("memoOptimize")}
-              aria-label={t("memoOptimize")}
-              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-accent hover:bg-surface-overlay disabled:opacity-50"
-            >
-              {optimizing ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
-            </button>
-          )
-        )}
-        {canClear && (
-          <button
-            type="button"
-            onClick={() => {
-              setUndoSnapshot(null);
-              onClear();
-            }}
-            title={t("memoActionClearHint")}
-            aria-label={t("memoActionClearHint")}
-            data-testid="memo-editor-clear"
-            className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-danger transition-colors hover:border-danger hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger"
-          >
-            <Eraser size={16} />
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={saving || !canSave}
-          title={t("memoActionSaveHint")}
-          aria-label={t("memoActionSaveHint")}
-          data-testid="memo-editor-save"
-          className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-success transition-colors hover:border-success hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={18} />}
-        </button>
-      </div>
-
-      <div
-        className="flex min-h-0 flex-1 flex-col gap-3 px-5 py-4"
-        onClick={(event) => {
-          // 点击输入框下方的空白区域时，把焦点还给输入框（纸面化后输入框不再铺满）。
-          if (event.target === event.currentTarget) textareaRef.current?.focus();
-        }}
-      >
-        <textarea
-          ref={textareaRef}
-          value={editor.contentMd}
-          onChange={(event) => patch({ contentMd: event.target.value })}
-          placeholder={t("memoFieldContentPlaceholder")}
-          aria-label={t("memoFieldContentPlaceholder")}
-          rows={2}
-          autoFocus={editor.id === null}
-          className={`memo-editor-input scrollbar-subtle field-sizing-content max-h-[70vh] min-h-[84px] w-full resize-none rounded-lg border border-dashed bg-transparent px-3 py-2.5 text-[13px] leading-relaxed outline-none caret-focus placeholder:text-muted ${
-            dragOver ? "border-accent" : "border-transparent"
-          }`}
-        />
-
-        {editor.pendingImages.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {editor.pendingImages.map((image) => (
-              <div key={image.key} className="group relative">
-                {image.previewUrl ? (
-                  <LightboxImage
-                    url={image.previewUrl}
-                    alt={image.fileName}
-                    className="size-14 rounded-md border border-border object-cover"
-                  />
-                ) : (
-                  <div className="flex size-14 items-center justify-center rounded-md border border-border text-muted">
-                    <Loader2 size={14} className="animate-spin" />
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUndoSnapshot(null);
-                    onRemoveImage(image.key);
-                  }}
-                  aria-label={t("memoActionDelete")}
-                  className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted hover:text-destructive"
-                >
-                  <X size={11} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <MemoScheduleEditor
-          value={{ dueAt: editor.dueAt, recurrence: editor.recurrence }}
-          onChange={(next) => patch({ dueAt: next.dueAt, recurrence: next.recurrence })}
-        />
-      </div>
-    </div>
-  );
-}
-
-/**
- * 工作区输入框：可自由手输 + 下拉选择（combobox）。
- * 聚焦或点右侧箭头展开选项浮层（portal，不被工具栏裁剪），点选回填；不匹配时直接保留手输内容。
- */
-function WorkspaceCombobox({
-  value,
-  onChange,
-  options,
-  placeholder,
-  ariaLabel,
-  className = "",
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; current?: boolean }[];
-  placeholder: string;
-  ariaLabel: string;
-  className?: string;
-}) {
-  const t = useT();
-  const [open, setOpen] = useState(false);
-  const [menuStyle, setMenuStyle] = useState<{
-    left: number;
-    minWidth: number;
-    maxHeight: number;
-    top?: number;
-    bottom?: number;
-  } | null>(null);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  // 打开时定位浮层：默认向下展开，下方空间不足时向上翻转（用 bottom 定位避免两段式修正）。
-  useLayoutEffect(() => {
-    if (!open) return;
-    const reposition = () => {
-      const input = inputRef.current;
-      if (!input) return;
-      const rect = input.getBoundingClientRect();
-      const gutter = 8;
-      const below = Math.max(0, window.innerHeight - rect.bottom - gutter);
-      const above = Math.max(0, rect.top - gutter);
-      const opensUpward = below < 160 && above > below;
-      const maxHeight = Math.max(1, Math.min(240, (opensUpward ? above : below) || 240));
-      setMenuStyle(
-        opensUpward
-          ? {
-              left: rect.left,
-              minWidth: rect.width,
-              maxHeight,
-              bottom: window.innerHeight - rect.top + 4,
-            }
-          : { left: rect.left, minWidth: rect.width, maxHeight, top: rect.bottom + 4 },
-      );
-    };
-    reposition();
-    window.addEventListener("resize", reposition);
-    window.addEventListener("scroll", reposition, true);
-    return () => {
-      window.removeEventListener("resize", reposition);
-      window.removeEventListener("scroll", reposition, true);
-    };
-  }, [open]);
-
-  // 浮层打开时：点外部 / Escape 关闭。
-  useEffect(() => {
-    if (!open) return;
-    const closeOnPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (!wrapRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
-    };
-    const closeOnEscape = (event: DocumentEventMap["keydown"]) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOnPointerDown);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnPointerDown);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open]);
-
-  return (
-    <div ref={wrapRef} className={`relative min-w-0 ${className}`}>
-      <input
-        ref={inputRef}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        onFocus={() => setOpen(true)}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown" && !open) {
-            event.preventDefault();
-            setOpen(true);
-          }
-        }}
-        placeholder={placeholder}
-        aria-label={ariaLabel}
-        role="combobox"
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        autoComplete="off"
-        spellCheck={false}
-        className="h-8 w-full rounded-md border border-border bg-transparent pl-2.5 pr-7 text-[12px] outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-focus"
-      />
-      <button
-        type="button"
-        tabIndex={-1}
-        aria-hidden
-        className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted transition-colors hover:text-foreground"
-        onClick={() => setOpen((current) => !current)}
-      >
-        <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open &&
-        menuStyle &&
-        options.length > 0 &&
-        createPortal(
-          <div
-            ref={menuRef}
-            role="listbox"
-            aria-label={ariaLabel}
-            className="theme-floating-surface scrollbar-subtle fixed z-[100] max-w-[calc(100vw-16px)] overflow-y-auto overscroll-contain rounded-md border border-border bg-surface-raised py-1 shadow-lg"
-            style={menuStyle}
-          >
-            {options.map((option) => {
-              const isSelected = option.value.toLowerCase() === value.trim().toLowerCase();
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="option"
-                  aria-selected={isSelected}
-                  // 阻止 pointerdown 抢走输入框焦点（否则点击选项时输入框先失焦）。
-                  onPointerDown={(event) => event.preventDefault()}
-                  className={`flex h-8 w-full items-center gap-1.5 whitespace-nowrap px-2.5 text-left text-xs transition-colors hover:bg-surface-overlay ${
-                    isSelected ? "font-medium text-foreground" : "text-muted"
-                  }`}
-                  onClick={() => {
-                    onChange(option.value);
-                    setOpen(false);
-                  }}
-                >
-                  <span className="min-w-0 flex-1 truncate">{option.value}</span>
-                  {option.current && (
-                    <span className="shrink-0 text-[10px] text-muted">
-                      {t("memoWorkspaceCurrent")}
-                    </span>
-                  )}
-                  {isSelected && <Check size={14} strokeWidth={2.5} className="shrink-0" />}
-                </button>
-              );
-            })}
-          </div>,
-          document.body,
-        )}
     </div>
   );
 }
