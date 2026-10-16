@@ -305,8 +305,7 @@ body,
 }
 
 [data-schedule-page],
-[data-schedule-agent-page],
-[data-memo-page] {
+[data-schedule-agent-page] {
   min-width: 25rem;
 }
 
