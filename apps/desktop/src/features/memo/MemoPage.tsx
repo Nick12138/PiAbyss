@@ -87,10 +87,10 @@ import {
   resolveWorkspaceHint,
   sortNotesForList,
   statusCounts,
-  tagHue,
   withMemoPrompt,
   type MemoStatusFilter,
 } from "./memo-model";
+import { TagChip, WorkspaceChip } from "./MemoChips";
 import {
   emptySchedule,
   formatRecurrenceText,
@@ -1156,38 +1156,6 @@ export function MemoPage() {
         </Dialog>
       )}
     </div>
-  );
-}
-
-/** 标签胶囊：按内容哈希固定色相（同色逻辑跨列表/详情一致）。 */
-function TagChip({ tag }: { tag: string }) {
-  const hue = tagHue(tag);
-  return (
-    <span
-      className="rounded px-1.5 py-0.5 text-[11px] font-medium"
-      style={{
-        color: `hsl(${hue} 65% 42%)`,
-        backgroundColor: `hsl(${hue} 70% 50% / 0.14)`,
-      }}
-    >
-      #{tag}
-    </span>
-  );
-}
-
-/** 工作区胶囊：与标签同一套稳定配色逻辑。 */
-function WorkspaceChip({ name }: { name: string }) {
-  const hue = tagHue(name);
-  return (
-    <span
-      className="rounded px-1.5 py-0.5 text-[11px] font-medium"
-      style={{
-        color: `hsl(${hue} 45% 48%)`,
-        backgroundColor: `hsl(${hue} 45% 50% / 0.14)`,
-      }}
-    >
-      {name}
-    </span>
   );
 }
 

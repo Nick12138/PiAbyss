@@ -122,11 +122,6 @@ export function isMemoOverdue(note: MemoNote, now: number): boolean {
   return target !== null && target <= now;
 }
 
-/** 展示用标签串（#a #b）。 */
-export function formatTags(tags: readonly string[]): string {
-  return tags.map((tag) => `#${tag}`).join(" ");
-}
-
 /**
  * 标签的稳定色相：同一内容永远同一颜色（djb2 哈希 → 0-359）。
  * 展示层用 `hsl(hue … / alpha)` 半透明着色，兼容明暗主题。

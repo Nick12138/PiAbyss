@@ -9,7 +9,6 @@ import {
   deriveTitle,
   extractTags,
   filterNotes,
-  formatTags,
   noteExcerpt,
   noteMatchesWorkspace,
   memoImagePath,
@@ -135,10 +134,7 @@ describe("filterNotes / statusCounts / sortNotesForList", () => {
   });
 });
 
-describe("tags", () => {
-  it("formats tags for display", () => {
-    expect(formatTags(["a", "b"])).toBe("#a #b");
-  });
+describe("tagHue", () => {
   it("assigns stable hues per tag content", () => {
     expect(tagHue("测试")).toBe(tagHue("测试"));
     expect(tagHue("a")).not.toBe(tagHue("b"));

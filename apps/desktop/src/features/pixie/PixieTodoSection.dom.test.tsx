@@ -21,7 +21,7 @@ import { injectMemoReference } from "../memo/memo-agent";
 import { PixieTodoSection } from "./PixieTodoSection";
 
 /**
- * 随行面板「待办 · 方寸间」：概览 / 页签 / 日期分组 / 就地详情 / 两个新建入口。
+ * 随行面板「待办 · 方寸间」：页签 / 三层行（标题 · 摘要 · 标签·工作区·截止）/ 就地详情 / 新建。
  * 数据与方寸间页同源（memo-client），这里只验面板自己的组织方式与动作路由。
  */
 vi.mock("../plugin-library/plugin-gate", () => ({
@@ -96,14 +96,14 @@ const FIXTURE: MemoNote[] = [
   note({ id: "n-done", title: "订会议室", status: "done", completedAt: 1 }),
 ];
 
-function overviewCell(cell: string): HTMLElement {
-  return document.querySelector<HTMLElement>(`[data-cell="${cell}"]`)!;
+function rows(): HTMLElement[] {
+  return screen.getAllByTestId("pixie-todo-row");
 }
 
-function buckets(): string[] {
-  return Array.from(
-    document.querySelectorAll<HTMLElement>('[data-testid="pixie-todo-bucket"]'),
-  ).map((el) => el.dataset.bucket ?? "");
+/** 列表加载完 = 两行待处理（已完成那条不在这档）；顺带把行数组给出去。 */
+async function waitForRows(): Promise<HTMLElement[]> {
+  await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(2));
+  return rows();
 }
 
 beforeEach(() => {
@@ -144,24 +144,26 @@ afterEach(() => {
 });
 
 describe("PixieTodoSection", () => {
-  it("概览三格与页签计数来自同一份数据（进行中不单独分区）", async () => {
+  it("计数只在页签与区块标题上：概览格已删，进行中只在行内转圈", async () => {
     render(<PixieTodoSection />);
-    await waitFor(() => expect(overviewCell("open")).toBeInTheDocument());
+    await waitForRows();
 
-    expect(overviewCell("open")).toHaveTextContent("2");
-    expect(overviewCell("inProgress")).toHaveTextContent("1");
-    expect(overviewCell("overdue")).toHaveTextContent("1");
-    // 分组头计数 = 待处理总数；折叠态唯一的状态信息。
+    expect(screen.getByTestId("pixie-todo-tab-open")).toHaveTextContent("2");
+    expect(screen.getByTestId("pixie-todo-tab-done")).toHaveTextContent("1");
+    // 折叠态唯一的计数 = 待处理总数。
     expect(screen.getByTestId("pixie-todo-section-toggle")).toHaveTextContent("2");
+    expect(document.querySelector('[data-testid="pixie-todo-overview"]')).toBeNull();
+    // 进行中不单独分区、不单独计数：混在待处理里，行内说明状态。
+    expect(within(rows()[1]).getByText("In progress")).toBeInTheDocument();
   });
 
-  it("待处理按日期落位：逾期在前、无日期的沉底", async () => {
+  it("日期只用来定顺序，不再渲染分组标题：逾期在前、无日期的沉底", async () => {
     render(<PixieTodoSection />);
-    await waitFor(() => expect(buckets().length).toBeGreaterThan(0));
+    const list = await waitForRows();
 
-    expect(buckets()).toEqual(["overdue", "none"]);
-    expect(screen.getByText("回复张工的邮件")).toBeInTheDocument();
-    expect(screen.getByText("修复登录态串号")).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-testid="pixie-todo-bucket"]')).toHaveLength(0);
+    expect(list[0].textContent).toContain("回复张工的邮件");
+    expect(list[1].textContent).toContain("修复登录态串号");
     // 已完成不进「待处理」页签。
     expect(screen.queryByText("订会议室")).toBeNull();
   });
@@ -169,7 +171,7 @@ describe("PixieTodoSection", () => {
   it("切到「已完成」页签看已完成的记录", async () => {
     const user = userEvent.setup();
     render(<PixieTodoSection />);
-    await waitFor(() => expect(buckets().length).toBeGreaterThan(0));
+    await waitForRows();
 
     await user.click(screen.getByTestId("pixie-todo-tab-done"));
 
@@ -177,20 +179,31 @@ describe("PixieTodoSection", () => {
     expect(screen.queryByText("回复张工的邮件")).toBeNull();
   });
 
-  it("就地展开详情：正文 / 标签 / 工作区 / 截止 + 三个动作", async () => {
+  it("折叠态就给三层：标题 / 摘要 / 标签·工作区·截止", async () => {
+    render(<PixieTodoSection />);
+    const list = await waitForRows();
+    const first = within(list[0]);
+
+    expect(first.getByTestId("pixie-todo-excerpt")).toHaveTextContent(
+      "网关不支持自定义 header 透传",
+    );
+    expect(first.getByText("#邮件")).toBeInTheDocument();
+    expect(first.getByText("文案库")).toBeInTheDocument();
+    expect(first.getByTestId("pixie-todo-due")).toHaveTextContent(/^Yesterday \d{2}:\d{2}$/);
+  });
+
+  it("展开只补完整正文 + 三个动作，不再重复标签 / 工作区 / 截止", async () => {
     const user = userEvent.setup();
     render(<PixieTodoSection />);
-    await waitFor(() => expect(buckets().length).toBeGreaterThan(0));
+    const list = await waitForRows();
 
-    const rows = screen.getAllByTestId("pixie-todo-open-detail");
-    await user.click(rows[0]);
+    const toggle = within(list[0]).getByTestId("pixie-todo-open-detail");
+    await user.click(toggle);
 
-    expect(rows[0]).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByText(/网关不支持自定义 header 透传/)).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
     const detail = screen.getByTestId("pixie-todo-detail");
-    expect(within(detail).getByText("#邮件")).toBeInTheDocument();
-    expect(within(detail).getByText("文案库")).toBeInTheDocument();
-    expect(within(detail).getByText("Due")).toBeInTheDocument();
+    expect(within(detail).getByText(/网关不支持自定义 header 透传/)).toBeInTheDocument();
+    expect(within(detail).queryByText("#邮件")).toBeNull();
     expect(screen.getByTestId("pixie-todo-handoff")).toBeInTheDocument();
     expect(screen.getByTestId("pixie-todo-edit")).toBeInTheDocument();
     expect(screen.getByTestId("pixie-todo-delete")).toBeInTheDocument();
@@ -199,7 +212,7 @@ describe("PixieTodoSection", () => {
   it("勾选标记完成，列表随之刷新", async () => {
     const user = userEvent.setup();
     render(<PixieTodoSection />);
-    await waitFor(() => expect(buckets().length).toBeGreaterThan(0));
+    await waitForRows();
 
     await user.click(screen.getAllByTestId("pixie-todo-complete")[0]);
 
@@ -210,7 +223,7 @@ describe("PixieTodoSection", () => {
   it("「交给小精灵」把记录以引用胶囊注入当前会话草稿，不新开会话", async () => {
     const user = userEvent.setup();
     render(<PixieTodoSection />);
-    await waitFor(() => expect(buckets().length).toBeGreaterThan(0));
+    await waitForRows();
 
     await user.click(screen.getAllByTestId("pixie-todo-open-detail")[0]);
     await user.click(screen.getByTestId("pixie-todo-handoff"));
@@ -230,7 +243,7 @@ describe("PixieTodoSection", () => {
   it("速记框 Enter 落一条：标题取首行、#标签 自动识别", async () => {
     const user = userEvent.setup();
     render(<PixieTodoSection />);
-    await waitFor(() => expect(buckets().length).toBeGreaterThan(0));
+    await waitForRows();
 
     await user.type(screen.getByTestId("pixie-todo-quick"), "订周五的会议室 #会议{Enter}");
 
@@ -247,7 +260,7 @@ describe("PixieTodoSection", () => {
   it("Shift+Enter 换行不落条", async () => {
     const user = userEvent.setup();
     render(<PixieTodoSection />);
-    await waitFor(() => expect(buckets().length).toBeGreaterThan(0));
+    await waitForRows();
 
     await user.type(screen.getByTestId("pixie-todo-quick"), "第一行{Shift>}{Enter}{/Shift}第二行");
 
@@ -258,7 +271,7 @@ describe("PixieTodoSection", () => {
   it("多功能表单一次设好标题 / 截止 / 标签 / 工作区", async () => {
     const user = userEvent.setup();
     render(<PixieTodoSection />);
-    await waitFor(() => expect(buckets().length).toBeGreaterThan(0));
+    await waitForRows();
 
     await user.click(screen.getByTestId("pixie-todo-new"));
     expect(screen.getByTestId("pixie-todo-form")).toBeInTheDocument();
@@ -282,7 +295,7 @@ describe("PixieTodoSection", () => {
   it("删除要再点一次确认", async () => {
     const user = userEvent.setup();
     render(<PixieTodoSection />);
-    await waitFor(() => expect(buckets().length).toBeGreaterThan(0));
+    await waitForRows();
 
     await user.click(screen.getAllByTestId("pixie-todo-open-detail")[0]);
     await user.click(screen.getByTestId("pixie-todo-delete"));

@@ -3,7 +3,7 @@
  *
  * 与方寸间页（`MemoPage`）共用 `memo-model` 的判定（逾期、排序、标题/标签派生），
  * 这里只补面板特有的两块：按「逾期 / 今天 / 明天 / 本周 / 更晚 / 无日期」落位，
- * 以及折叠态概览的三格计数。全部纯函数，便于单测。
+ * 以及待处理 / 逾期两个计数。全部纯函数，便于单测。
  */
 import type { MemoNote } from "@piabyss/protocol";
 import { isMemoOverdue } from "../memo/memo-model";
@@ -65,23 +65,20 @@ export function groupTodoNotes(notes: readonly MemoNote[], now: number): TodoGro
 }
 
 export type TodoOverview = {
-  /** 「待处理」= open + in_progress（进行中不再单独分区，见设计稿）。 */
+  /** 「待处理」= open + in_progress（进行中不单独分区，也不单独计数）。 */
   open: number;
-  inProgress: number;
   overdue: number;
 };
 
 export function todoOverview(notes: readonly MemoNote[], now: number): TodoOverview {
   let open = 0;
-  let inProgress = 0;
   let overdue = 0;
   for (const note of notes) {
     if (note.status === "done") continue;
     open += 1;
-    if (note.status === "in_progress") inProgress += 1;
     if (isMemoOverdue(note, now)) overdue += 1;
   }
-  return { open, inProgress, overdue };
+  return { open, overdue };
 }
 
 /** 面板里的「待处理 / 已完成」两档：进行中混在待处理里。 */

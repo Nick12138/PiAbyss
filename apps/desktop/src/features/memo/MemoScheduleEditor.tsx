@@ -5,11 +5,10 @@
  *   子表单）。规则为结构化字段（frequency / interval / weekdays / monthDay /
  *   time / tz），与 pi-host 的 recurrence.ts 及 piabyss_memo 插件保持同一形状；
  *   时区固定 Asia/Shanghai（Host 侧时刻计算不依赖设备本地时区）。
- * - `formatRecurrenceText` / `noteScheduleSummary`：人读描述，供列表与详情复用。
+ * - `formatRecurrenceText` / `formatMemoDue` / `noteScheduleSummary`：人读描述，供列表与详情复用。
  */
 import type { MemoNote, MemoRecurrence, MemoRecurrenceFrequency } from "@piabyss/protocol";
 import { useT, type Translate } from "../../lib/i18n/use-t";
-import { formatMemoDateTime } from "./memo-model";
 
 /** 记录的计划值（截止 + 周期）。 */
 export type MemoScheduleValue = {
@@ -91,10 +90,51 @@ export function formatRecurrenceText(rule: MemoRecurrence, t: Translate): string
   }
 }
 
-/** 列表/详情用的一行计划摘要；无计划返回 null。 */
+const DAY_MS = 86_400_000;
+
+/** 本地日历日界；跨夏令时留下的那一小时偏移用四舍五入消化掉。 */
+function startOfDay(timestamp: number): number {
+  const date = new Date(timestamp);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+/**
+ * 时刻的口语写法：今天 / 昨天 / 明天 + 时:分；同年其余「10月18日 09:20」；跨年才补上年份。
+ * 列表行一行要塞下状态、时间和标签，绝对日期太长——详情页仍用 `formatMemoDateTime` 给完整时间。
+ */
+export function formatMemoDue(timestamp: number, now: number, t: Translate): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+  const clock = `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  const shift = Math.round((startOfDay(timestamp) - startOfDay(now)) / DAY_MS);
+  const day =
+    shift === 0
+      ? t("memoDayToday")
+      : shift === -1
+        ? t("memoDayYesterday")
+        : shift === 1
+          ? t("memoDayTomorrow")
+          : null;
+  if (day !== null) return `${day} ${clock}`;
+  const month = date.getMonth() + 1;
+  const stamp =
+    date.getFullYear() === new Date(now).getFullYear()
+      ? t("memoDateMonthDay", { month, day: date.getDate() })
+      : t("memoDateWithYear", { year: date.getFullYear(), month, day: date.getDate() });
+  return `${stamp} ${clock}`;
+}
+
+/** 列表用的一行计划摘要；无计划返回 null。 */
 export function noteScheduleSummary(note: MemoNote, t: Translate): string | null {
   if (note.recurrence !== null) return formatRecurrenceText(note.recurrence, t);
-  if (note.dueAt !== null) return t("memoDueLabel", { time: formatMemoDateTime(note.dueAt) });
+  if (note.dueAt !== null) {
+    return t("memoDueLabel", { time: formatMemoDue(note.dueAt, Date.now(), t) });
+  }
   return null;
 }
 

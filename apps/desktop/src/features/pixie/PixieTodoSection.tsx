@@ -1,13 +1,17 @@
 /**
  * 随行面板 ·「待办 · 方寸间」分组。
  *
- * 与方寸间页（`MemoPage`）共用同一套数据与模型：`memo-client` 的 memo.* RPC、
+ * 与方寸间页（`MemoPage`）共用同一套数据、模型与胶囊：`memo-client` 的 memo.* RPC、
  * `memo-model` 的判定与派生、`memo-agent` 的引用胶囊注入。区别只在形态——这里是
- * 右栏里的**待办中心**：概览三格 + 「待处理 / 已完成」两页签 + 按日期分组 +
- * 就地展开详情（正文 / 标签 / 工作区 / 截止 + 交给小精灵 / 编辑 / 删除）+
+ * 右栏里的**待办中心**：「待处理 / 已完成」两页签 + 每行三层（标题 / 摘要 /
+ * 标签·工作区·截止）+ 就地展开详情（完整正文 + 交给小精灵 / 编辑 / 删除）+
  * 两个新建入口（速记框、多功能表单）。
  *
- * 「进行中」不单独分区：它混在「待处理」里，用转圈 + 强调色文字标识（设计稿口径）。
+ * 「进行中」不单独分区也不单独计数：它混在「待处理」里，用转圈 + 强调色文字标识。
+ * 逾期数由区块标题右侧的提示承担、待处理数由页签角标承担，所以顶部不再放概览格。
+ * 日期只用来排序（逾期在前、无日期沉底），不渲染分段标题——10 条时两个标题行
+ * 吃掉的高度抵不上它们提供的信息。
+ *
  * 「编辑」不在这里重造编辑器——跳到方寸间页并就地展开那条记录（完整正文、图片、
  * 周期设置都在那边），这样两个页面永远只有一份编辑实现。
  *
@@ -43,12 +47,13 @@ import {
   composeMemoPrompt,
   deriveTitle,
   extractTags,
-  formatMemoDateTime,
-  formatTags,
   isMemoOverdue,
+  noteExcerpt,
   sortNotesForList,
   withMemoPrompt,
 } from "../memo/memo-model";
+import { TagChip, WorkspaceChip } from "../memo/MemoChips";
+import { formatMemoDue } from "../memo/MemoScheduleEditor";
 import { PixiePanelSection, usePanelSection } from "./PixiePanelSection";
 import {
   datetimeLocalValue,
@@ -58,23 +63,13 @@ import {
   todoOverview,
   todoTabNotes,
   todoTargetAt,
-  type TodoBucket,
 } from "./pixie-todo-model";
 
 const MEMO_PLUGIN_ID = "piabyss-memo";
 
-/** 分组展开状态 + 时间重算周期（分钟级就够：分组只到「今天/明天/本周」）。 */
+/** 排序 + 时间重算周期（分钟级就够：排序只到「今天/明天/本周」这一档）。 */
 const TODO_EXPANDED_PREF = "piabyss.pixie.todoExpanded";
 const NOW_TICK_MS = 60_000;
-
-const BUCKET_LABEL_KEY = {
-  overdue: "pixieTodoBucketOverdue",
-  today: "pixieTodoBucketToday",
-  tomorrow: "pixieTodoBucketTomorrow",
-  week: "pixieTodoBucketWeek",
-  later: "pixieTodoBucketLater",
-  none: "pixieTodoBucketNone",
-} as const satisfies Record<TodoBucket, string>;
 
 export function PixieTodoSection() {
   const t = useT();
@@ -119,7 +114,11 @@ export function PixieTodoSection() {
     () => sortNotesForList(todoTabNotes(all, tab), tab === "done" ? "done" : "open"),
     [all, tab],
   );
-  const groups = useMemo(() => groupTodoNotes(visible, now), [visible, now]);
+  // 日期分组只负责定顺序（逾期在前、无日期沉底），不再渲染分段标题。
+  const ordered = useMemo(
+    () => groupTodoNotes(visible, now).flatMap((group) => group.notes),
+    [visible, now],
+  );
 
   const runAction = useCallback(
     async (action: () => Promise<unknown>) => {
@@ -206,23 +205,8 @@ export function PixieTodoSection() {
       }
     >
       <div className="flex flex-col gap-2">
-        {/* 概览：折叠态由标题上的计数徽章承担，展开态看这三格。 */}
-        <div className="grid grid-cols-3 gap-1.5 pt-0.5">
-          <OverviewCell cell="open" value={overview.open} label={t("memoFilterTodo")} tone="hot" />
-          <OverviewCell
-            cell="inProgress"
-            value={overview.inProgress}
-            label={t("memoFilterInProgress")}
-          />
-          <OverviewCell
-            cell="overdue"
-            value={overview.overdue}
-            label={t("pixieTodoOverviewOverdue")}
-            tone="warn"
-          />
-        </div>
-
-        <div className="flex items-center gap-0.5">
+        {/* 计数只在这里出现一次：待处理数在页签角标上，逾期数在区块标题右侧的提示里。 */}
+        <div className="flex items-center gap-0.5 pt-0.5">
           {(["open", "done"] as const).map((candidate) => (
             <button
               key={candidate}
@@ -246,54 +230,42 @@ export function PixieTodoSection() {
 
         {error ? <p className="px-1 text-[11px] text-danger">{error}</p> : null}
 
-        {groups.length === 0 ? (
+        {ordered.length === 0 ? (
           <p className="px-1 py-2 text-center text-[11px] text-muted">
             {tab === "open" ? t("memoEmptyList") : t("pixieTodoDoneEmpty")}
           </p>
         ) : (
-          groups.map((group) => (
-            <div key={group.bucket} className="flex flex-col gap-0.5">
-              <div
-                data-testid="pixie-todo-bucket"
-                data-bucket={group.bucket}
-                className="flex items-center gap-1.5 px-1 pt-1 text-[10px] font-semibold tracking-wide text-muted"
-              >
-                <span className={group.bucket === "overdue" ? "text-danger" : ""}>
-                  {t(BUCKET_LABEL_KEY[group.bucket])}
-                </span>
-                <span className="h-px flex-1 bg-border" />
-              </div>
-              {group.notes.map((note) => (
-                <TodoRow
-                  key={note.id}
-                  note={note}
-                  now={now}
-                  expanded={expandedId === note.id}
-                  confirmingDelete={confirmDeleteId === note.id}
-                  busy={busy}
-                  onToggleDetail={() => {
-                    setConfirmDeleteId(null);
-                    setExpandedId((current) => (current === note.id ? null : note.id));
-                  }}
-                  onComplete={() => void runAction(() => completeMemoNote(note.id))}
-                  onHandOff={() => handOff(note)}
-                  onEdit={() => {
-                    requestMemoReveal(note.id);
-                    useAppStore.getState().setPage("memo");
-                  }}
-                  onDelete={() => {
-                    if (confirmDeleteId !== note.id) {
-                      setConfirmDeleteId(note.id);
-                      return;
-                    }
-                    setConfirmDeleteId(null);
-                    setExpandedId(null);
-                    void runAction(() => deleteMemoNote(note.id));
-                  }}
-                />
-              ))}
-            </div>
-          ))
+          <div className="flex flex-col gap-0.5">
+            {ordered.map((note) => (
+              <TodoRow
+                key={note.id}
+                note={note}
+                now={now}
+                expanded={expandedId === note.id}
+                confirmingDelete={confirmDeleteId === note.id}
+                busy={busy}
+                onToggleDetail={() => {
+                  setConfirmDeleteId(null);
+                  setExpandedId((current) => (current === note.id ? null : note.id));
+                }}
+                onComplete={() => void runAction(() => completeMemoNote(note.id))}
+                onHandOff={() => handOff(note)}
+                onEdit={() => {
+                  requestMemoReveal(note.id);
+                  useAppStore.getState().setPage("memo");
+                }}
+                onDelete={() => {
+                  if (confirmDeleteId !== note.id) {
+                    setConfirmDeleteId(note.id);
+                    return;
+                  }
+                  setConfirmDeleteId(null);
+                  setExpandedId(null);
+                  void runAction(() => deleteMemoNote(note.id));
+                }}
+              />
+            ))}
+          </div>
         )}
 
         {/* 新建：速记框（管「先记下来」）与多功能表单（管「记的时候就分好类」）
@@ -340,32 +312,6 @@ export function PixieTodoSection() {
   );
 }
 
-function OverviewCell({
-  cell,
-  value,
-  label,
-  tone,
-}: {
-  cell: "open" | "inProgress" | "overdue";
-  value: number;
-  label: string;
-  tone?: "hot" | "warn";
-}) {
-  const toneClass = tone === "hot" ? "text-accent" : tone === "warn" ? "text-warning" : "";
-  return (
-    <div
-      data-testid="pixie-todo-overview"
-      data-cell={cell}
-      className="rounded-md border border-border px-1.5 py-1"
-    >
-      <div className={`text-[15px] font-semibold leading-tight tabular-nums ${toneClass}`}>
-        {value}
-      </div>
-      <div className="mt-px truncate text-[10px] text-muted">{label}</div>
-    </div>
-  );
-}
-
 function TodoRow({
   note,
   now,
@@ -395,6 +341,8 @@ function TodoRow({
   const inProgress = note.status === "in_progress";
   // 正文去掉首行（首行是标题）——标题行已经在上面的列表里显示了。
   const body = note.contentMd.split("\n").slice(1).join("\n").trim();
+  // 行内只给一行摘要，完整正文留在展开区；两者同源，摘要不会和正文各说一套。
+  const excerpt = noteExcerpt(note);
 
   const actionClass =
     "flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted transition-colors hover:bg-surface-overlay hover:text-foreground";
@@ -421,8 +369,18 @@ function TodoRow({
           className="min-w-0 flex-1 text-left"
           onClick={onToggleDetail}
         >
-          <div className="break-words text-[12px] leading-5 text-foreground/90">{note.title}</div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-muted">
+          <div className="truncate text-[12px] font-medium leading-5 text-foreground">
+            {note.title}
+          </div>
+          {excerpt ? (
+            <div
+              data-testid="pixie-todo-excerpt"
+              className="truncate text-[11px] leading-4 text-muted"
+            >
+              {excerpt}
+            </div>
+          ) : null}
+          <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-muted">
             {overdue ? (
               <span className="rounded bg-danger/15 px-1 font-medium text-danger">
                 {t("memoOverdueBadge")}
@@ -434,8 +392,15 @@ function TodoRow({
                 {t("memoFilterInProgress")}
               </span>
             ) : null}
-            {note.workspaceHint ? <span className="truncate">{note.workspaceHint}</span> : null}
-            {target !== null ? <span>{formatMemoDateTime(target)}</span> : null}
+            {target !== null ? (
+              <span data-testid="pixie-todo-due" className="tabular-nums">
+                {formatMemoDue(target, now, t)}
+              </span>
+            ) : null}
+            {note.tags.map((tag) => (
+              <TagChip key={tag} tag={tag} size="compact" />
+            ))}
+            {note.workspaceHint ? <WorkspaceChip name={note.workspaceHint} size="compact" /> : null}
           </div>
         </button>
         <ChevronRight
@@ -448,28 +413,20 @@ function TodoRow({
       </div>
 
       <CollapsibleRegion open={expanded}>
-        <div className="mx-1.5 mb-1.5 rounded-md border border-border bg-surface-inset p-2">
+        <div
+          data-testid="pixie-todo-detail"
+          className="mx-1.5 mb-1.5 rounded-md border border-border bg-surface-inset p-2"
+        >
           {body ? (
             <div className="whitespace-pre-wrap break-words text-[11px] leading-5 text-foreground/90">
               {body}
             </div>
           ) : null}
-          <dl
-            data-testid="pixie-todo-detail"
-            className="mt-1.5 grid grid-cols-[52px_1fr] gap-x-2 gap-y-0.5 text-[10px]"
+          <div
+            className={`flex items-center gap-1.5 border-t border-dashed border-border pt-2 ${
+              body ? "mt-2" : ""
+            }`}
           >
-            <dt className="text-muted">{t("memoFieldTags")}</dt>
-            <dd className="break-words text-foreground/90">
-              {note.tags.length > 0 ? formatTags(note.tags) : "—"}
-            </dd>
-            <dt className="text-muted">{t("memoFieldWorkspace")}</dt>
-            <dd className="break-words text-foreground/90">{note.workspaceHint ?? "—"}</dd>
-            <dt className="text-muted">{t("memoPlanDue")}</dt>
-            <dd className="text-foreground/90">
-              {target !== null ? formatMemoDateTime(target) : t("memoPlanNone")}
-            </dd>
-          </dl>
-          <div className="mt-2 flex items-center gap-1.5 border-t border-dashed border-border pt-2">
             <button
               type="button"
               data-testid="pixie-todo-handoff"

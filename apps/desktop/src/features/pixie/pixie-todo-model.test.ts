@@ -100,7 +100,7 @@ describe("todoOverview", () => {
       note({ id: "b", status: "in_progress" }),
       note({ id: "c", status: "done", completedAt: 1, dueAt: at(2026, 10, 15) }),
     ];
-    expect(todoOverview(notes, NOW)).toEqual({ open: 2, inProgress: 1, overdue: 1 });
+    expect(todoOverview(notes, NOW)).toEqual({ open: 2, overdue: 1 });
   });
 });
 
