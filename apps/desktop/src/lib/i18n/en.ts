@@ -2042,10 +2042,11 @@ export const en = {
   pixiePanelResize: "Drag to resize the panel",
   pixieDispatchSummaryRunning: "{running} running",
   pixieDispatchSummaryAwaiting: "{awaiting} awaiting you",
-  // Side panel · the "To-dos · Nook" group (tabs / three-line rows / capture).
-  pixieTodoSectionTitle: "To-dos · Nook",
+  // Side panel · the "Nook" group (tabs / three-line rows / capture).
+  pixieTodoSectionTitle: "Nook",
   pixieTodoOverdueHint: "{count} overdue",
   pixieTodoDoneEmpty: "Nothing completed yet",
+  pixieTodoShowMore: "Show more ({count})",
   pixieTodoNew: "New to-do (due date, tags, workspace)",
   pixieTodoFormTitle: "Title",
   pixieTodoFormTitlePlaceholder: "What needs doing?",

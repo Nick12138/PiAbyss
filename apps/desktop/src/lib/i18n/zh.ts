@@ -1954,10 +1954,11 @@ export const zh: Record<MessageKey, string> = {
   pixiePanelResize: "拖拽调整面板宽度",
   pixieDispatchSummaryRunning: "{running} 进行中",
   pixieDispatchSummaryAwaiting: "{awaiting} 等你回复",
-  // 随行面板 ·「待办 · 方寸间」分组（待办中心：页签 / 三层行 / 新建）
-  pixieTodoSectionTitle: "待办 · 方寸间",
+  // 随行面板 ·「方寸间」分组（待办中心：页签 / 三层行 / 新建）
+  pixieTodoSectionTitle: "方寸间",
   pixieTodoOverdueHint: "{count} 逾期",
   pixieTodoDoneEmpty: "还没有已完成的记录",
+  pixieTodoShowMore: "查看更多（{count}）",
   pixieTodoNew: "新建待办（可设截止 / 标签 / 工作区）",
   pixieTodoFormTitle: "标题",
   pixieTodoFormTitlePlaceholder: "要做什么？",

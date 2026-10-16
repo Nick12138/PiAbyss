@@ -24,7 +24,7 @@ import {
  * 小精灵页「随行面板」：
  *   - 面板本身可展开 / 折叠（负 margin 滑出，状态持久化）；
  *   - 宽度可拖拽 / 键盘调整，有下限与「给对话区留位」的上限，并持久化；
- *   - 面板内是「可折叠分组」栈：待办 · 方寸间（常驻展开）/ 周期计划 / 委派任务；
+ *   - 面板内是「可折叠分组」栈：方寸间（常驻展开）/ 周期计划 / 委派任务；
  *   - 委派任务分组默认折叠，汇总信息在折叠态就能读到；
  *   - 窄容器下面板不占位（CSS @3xl 断点），顶栏开关跟着消失。
  */
@@ -208,7 +208,7 @@ describe("clampPixiePanelWidth", () => {
 });
 
 describe("PixieSidePanel 展开 / 折叠", () => {
-  it("面板内是「待办 · 方寸间 → 周期计划 → 委派任务」三块分组", () => {
+  it("面板内是「方寸间 → 周期计划 → 委派任务」三块分组", () => {
     render(<PixieSidePanel groups={[]} />);
 
     const ids = Array.from(
@@ -293,10 +293,9 @@ describe("委派任务分组", () => {
       "aria-expanded",
       "false",
     );
-    expect(globalThis.localStorage?.getItem(DISPATCH_EXPANDED_PREF)).toBeNull();
   });
 
-  it("点分组头后展开，渲染出原来的两层任务树", async () => {
+  it("点分组头后展开，渲染出原来的两层任务树；展开状态不写盘", async () => {
     const user = userEvent.setup();
     render(<PixieSidePanel groups={groups([task()])} />);
 
@@ -309,7 +308,9 @@ describe("委派任务分组", () => {
     );
     expect(screen.getByTestId("pixie-task-tree")).toBeInTheDocument();
     expect(screen.getByText("okxbot · 修复登录态串号")).toBeInTheDocument();
-    expect(globalThis.localStorage?.getItem(DISPATCH_EXPANDED_PREF)).toBe("1");
+    // 只活在本次挂载里：下次进小精灵仍是「方寸间展开、其余折叠」，不会被他某一次
+    // 顺手点开的那块永久顶掉。
+    expect(globalThis.localStorage?.getItem(DISPATCH_EXPANDED_PREF)).toBeNull();
   });
 
   it("折叠态就能读到汇总：1 进行中 · 1 等你回复", () => {

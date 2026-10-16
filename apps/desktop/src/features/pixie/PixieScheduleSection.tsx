@@ -22,7 +22,6 @@ import { useSchedulePluginEnabled } from "../schedule/schedule-plugin-gate";
 import { formatCountdown, formatIntervalEvery, triggerSummary } from "../schedule/schedule-model";
 import { PixiePanelSection, usePanelSection } from "./PixiePanelSection";
 
-const SCHEDULE_EXPANDED_PREF = "piabyss.pixie.scheduleExpanded";
 const LIST_TIMEOUT_MS = 15_000;
 const NOW_TICK_MS = 30_000;
 
@@ -41,7 +40,7 @@ export function PixieScheduleSection() {
   const t = useT();
   const scheduleEnabled = useSchedulePluginEnabled();
   const hostInstanceId = useAppStore((s) => s.host?.hostInstanceId ?? null);
-  const [open, toggle] = usePanelSection(SCHEDULE_EXPANDED_PREF, false);
+  const [open, toggle] = usePanelSection(false);
   const [jobs, setJobs] = useState<ScheduleJob[] | null>(null);
   const [available, setAvailable] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -156,7 +155,7 @@ export function PixieScheduleSection() {
           data-testid="pixie-schedule-new"
           title={t("pixieScheduleNew")}
           aria-label={t("pixieScheduleNew")}
-          className="flex size-[22px] shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
+          className="flex size-[22px] shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none"
           onClick={() => {
             if (!open) toggle();
             // 计划的创建走对话：只把引导语放进输入框，用户补完再发。

@@ -16,12 +16,13 @@ import {
   createMemoNote,
   deleteMemoNote,
   listMemoNotes,
+  updateMemoNote,
 } from "../memo/memo-client";
 import { injectMemoReference } from "../memo/memo-agent";
 import { PixieTodoSection } from "./PixieTodoSection";
 
 /**
- * 随行面板「待办 · 方寸间」：页签 / 三层行（标题 · 摘要 · 标签·工作区·截止）/ 就地详情 / 新建。
+ * 随行面板「方寸间」：页签 / 三层行（标题 · 摘要 · 标签·工作区·截止）/ 就地详情 / 新建。
  * 数据与方寸间页同源（memo-client），这里只验面板自己的组织方式与动作路由。
  */
 vi.mock("../plugin-library/plugin-gate", () => ({
@@ -33,6 +34,7 @@ vi.mock("../memo/memo-client", () => ({
   listMemoNotes: vi.fn(),
   createMemoNote: vi.fn(),
   completeMemoNote: vi.fn(),
+  updateMemoNote: vi.fn(),
   deleteMemoNote: vi.fn(),
 }));
 
@@ -111,6 +113,7 @@ beforeEach(() => {
   vi.mocked(listMemoNotes).mockResolvedValue(FIXTURE);
   vi.mocked(createMemoNote).mockResolvedValue(note());
   vi.mocked(completeMemoNote).mockResolvedValue(note({ status: "done" }));
+  vi.mocked(updateMemoNote).mockResolvedValue(note({ status: "open" }));
   vi.mocked(deleteMemoNote).mockResolvedValue(undefined);
   useAppStore.setState({
     host,
@@ -168,15 +171,83 @@ describe("PixieTodoSection", () => {
     expect(screen.queryByText("订会议室")).toBeNull();
   });
 
-  it("切到「已完成」页签看已完成的记录", async () => {
+  it("速记框在列表下面、默认两行，两个页签都给", async () => {
     const user = userEvent.setup();
     render(<PixieTodoSection />);
     await waitForRows();
 
+    const quick = screen.getByTestId("pixie-todo-quick");
+    expect(quick).toHaveAttribute("rows", "2");
+    // 列表之后：它是这一块的最后一行，不在页签上面。
+    const row = rows()[0];
+    expect(row.compareDocumentPosition(quick) & Node.DOCUMENT_POSITION_FOLLOWING).toBeGreaterThan(
+      0,
+    );
+    expect(screen.getByTestId("pixie-todo-new")).toBeInTheDocument();
+
     await user.click(screen.getByTestId("pixie-todo-tab-done"));
 
     expect(screen.getByText("订会议室")).toBeInTheDocument();
-    expect(screen.queryByText("回复张工的邮件")).toBeNull();
+    expect(screen.getByTestId("pixie-todo-quick")).toHaveAttribute("rows", "2");
+  });
+
+  it("无日期那一档只先给 5 条，点「查看更多」补齐", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listMemoNotes).mockResolvedValue(
+      Array.from({ length: 7 }, (_, index) => note({ id: `x${index}`, title: `随手记 ${index}` })),
+    );
+    render(<PixieTodoSection />);
+
+    await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(5));
+    const more = screen.getByTestId("pixie-todo-show-more");
+    expect(more).toHaveTextContent("2");
+
+    await user.click(more);
+    await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(7));
+    expect(screen.queryByTestId("pixie-todo-show-more")).toBeNull();
+  });
+
+  it("已完成整列也只先给 5 条；「查看更多」两个页签各记一份", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listMemoNotes).mockResolvedValue([
+      ...Array.from({ length: 8 }, (_, index) =>
+        note({
+          id: `d${index}`,
+          title: `办完 ${index}`,
+          status: "done",
+          completedAt: index + 1,
+        }),
+      ),
+      note({ id: "p1", title: "随手记一条" }),
+    ]);
+    render(<PixieTodoSection />);
+    await waitFor(() => expect(screen.getByTestId("pixie-todo-tab-done")).toHaveTextContent("8"));
+
+    await user.click(screen.getByTestId("pixie-todo-tab-done"));
+    await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(5));
+    expect(screen.getByTestId("pixie-todo-show-more")).toHaveTextContent("3");
+
+    await user.click(screen.getByTestId("pixie-todo-show-more"));
+    await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(8));
+
+    // 切回待处理重新收起：一边点开不影响另一边。
+    await user.click(screen.getByTestId("pixie-todo-tab-open"));
+    expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(1);
+    expect(screen.queryByTestId("pixie-todo-show-more")).toBeNull();
+  });
+
+  it("已完成行的标记是选中态，点它转回待处理", async () => {
+    const user = userEvent.setup();
+    render(<PixieTodoSection />);
+    await waitForRows();
+    await user.click(screen.getByTestId("pixie-todo-tab-done"));
+
+    const tick = within(screen.getByTestId("pixie-todo-row")).getByTestId("pixie-todo-complete");
+    expect(tick).toHaveAccessibleName("Reopen");
+
+    await user.click(tick);
+    await waitFor(() => expect(updateMemoNote).toHaveBeenCalledWith("n-done", { status: "open" }));
+    expect(completeMemoNote).not.toHaveBeenCalled();
   });
 
   it("折叠态就给三层：标题 / 摘要 / 标签·工作区·截止", async () => {

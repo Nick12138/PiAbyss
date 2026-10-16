@@ -1,5 +1,5 @@
 /**
- * 随行面板 ·「待办 · 方寸间」分组。
+ * 随行面板 ·「方寸间」分组。
  *
  * 与方寸间页（`MemoPage`）共用同一套数据、模型与胶囊：`memo-client` 的 memo.* RPC、
  * `memo-model` 的判定与派生、`memo-agent` 的引用胶囊注入。区别只在形态——这里是
@@ -8,9 +8,13 @@
  * 两个新建入口（速记框、多功能表单）。
  *
  * 「进行中」不单独分区也不单独计数：它混在「待处理」里，用转圈 + 强调色文字标识。
+ * 已完成页签里每行的圆圈直接是**选中态**，点它把记录转回待处理（`memo.update`），
+ * 与待处理页签的「点空圈 = 标记完成」（`memo.complete`，周期记录会滚下一轮）对称。
  * 逾期数由区块标题右侧的提示承担、待处理数由页签角标承担，所以顶部不再放概览格。
  * 日期只用来排序（逾期在前、无日期沉底），不渲染分段标题——10 条时两个标题行
- * 吃掉的高度抵不上它们提供的信息。
+ * 吃掉的高度抵不上它们提供的信息。截断两档各一套：待处理只截排在最后的「无日期」
+ * 那一档（前 5 条常驻），已完成整列只先给 5 条，其余收进列表下方的「查看更多」；
+ * 两个新建入口也在列表下面（速记框的虚线框常驻）。
  *
  * 「编辑」不在这里重造编辑器——跳到方寸间页并就地展开那条记录（完整正文、图片、
  * 周期设置都在那边），这样两个页面永远只有一份编辑实现。
@@ -40,6 +44,7 @@ import {
   createMemoNote,
   deleteMemoNote,
   listMemoNotes,
+  updateMemoNote,
 } from "../memo/memo-client";
 import { injectMemoReference } from "../memo/memo-agent";
 import { requestMemoReveal } from "../memo/memo-reveal";
@@ -68,8 +73,10 @@ import {
 const MEMO_PLUGIN_ID = "piabyss-memo";
 
 /** 排序 + 时间重算周期（分钟级就够：排序只到「今天/明天/本周」这一档）。 */
-const TODO_EXPANDED_PREF = "piabyss.pixie.todoExpanded";
 const NOW_TICK_MS = 60_000;
+
+/** 一屏先给几条：面板高度有限，剩下的收进「查看更多」（两个页签都截，见下）。 */
+const TODO_PREVIEW = 5;
 
 export function PixieTodoSection() {
   const t = useT();
@@ -78,7 +85,7 @@ export function PixieTodoSection() {
   const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces ?? []);
   const pushNotification = useAppStore((s) => s.pushNotification);
 
-  const [open, toggle] = usePanelSection(TODO_EXPANDED_PREF, true);
+  const [open, toggle] = usePanelSection(true);
   const [notes, setNotes] = useState<MemoNote[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"open" | "done">("open");
@@ -87,6 +94,9 @@ export function PixieTodoSection() {
   const [now, setNow] = useState(() => Date.now());
   const [quickText, setQuickText] = useState("");
   const [formOpen, setFormOpen] = useState(false);
+  // 「查看更多」两个页签各记一份：切页签就重新收起来，不会一边点开、另一边也跟着摊平。
+  const [expandedTab, setExpandedTab] = useState<"open" | "done" | null>(null);
+  const showAll = expandedTab === tab;
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -114,11 +124,28 @@ export function PixieTodoSection() {
     () => sortNotesForList(todoTabNotes(all, tab), tab === "done" ? "done" : "open"),
     [all, tab],
   );
-  // 日期分组只负责定顺序（逾期在前、无日期沉底），不再渲染分段标题。
-  const ordered = useMemo(
-    () => groupTodoNotes(visible, now).flatMap((group) => group.notes),
-    [visible, now],
-  );
+  // 日期分组只负责定顺序（逾期 → 今天 → 明天 → 本周 → 更晚 → 无日期沉底），不渲染分段
+  // 标题。截断两个页签各一套：待处理只截排在最后的「无日期」那一档（逾期的、已经定了
+  // 日期的必须全给），已完成整列只先给 5 条；剩下的都收进列表下方的「查看更多」。
+  const { ordered, hiddenCount } = useMemo(() => {
+    if (tab === "done") {
+      return {
+        ordered: showAll ? visible : visible.slice(0, TODO_PREVIEW),
+        hiddenCount: Math.max(0, visible.length - TODO_PREVIEW),
+      };
+    }
+    const list: MemoNote[] = [];
+    let hidden = 0;
+    for (const group of groupTodoNotes(visible, now)) {
+      if (group.bucket === "none" && !showAll) {
+        list.push(...group.notes.slice(0, TODO_PREVIEW));
+        hidden = Math.max(0, group.notes.length - TODO_PREVIEW);
+      } else {
+        list.push(...group.notes);
+      }
+    }
+    return { ordered: list, hiddenCount: hidden };
+  }, [visible, now, tab, showAll]);
 
   const runAction = useCallback(
     async (action: () => Promise<unknown>) => {
@@ -194,7 +221,7 @@ export function PixieTodoSection() {
           data-testid="pixie-todo-new"
           title={t("pixieTodoNew")}
           aria-label={t("pixieTodoNew")}
-          className="flex size-[22px] shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
+          className="flex size-[22px] shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none"
           onClick={() => {
             if (!open) toggle();
             setFormOpen((current) => !current);
@@ -248,7 +275,13 @@ export function PixieTodoSection() {
                   setConfirmDeleteId(null);
                   setExpandedId((current) => (current === note.id ? null : note.id));
                 }}
-                onComplete={() => void runAction(() => completeMemoNote(note.id))}
+                onToggleComplete={() =>
+                  void runAction(() =>
+                    note.status === "done"
+                      ? updateMemoNote(note.id, { status: "open" })
+                      : completeMemoNote(note.id),
+                  )
+                }
                 onHandOff={() => handOff(note)}
                 onEdit={() => {
                   requestMemoReveal(note.id);
@@ -268,45 +301,54 @@ export function PixieTodoSection() {
           </div>
         )}
 
-        {/* 新建：速记框（管「先记下来」）与多功能表单（管「记的时候就分好类」）
-         * 互斥展开，避免两块新建 UI 叠在一起。 */}
-        <div className="mt-1 border-t border-dashed border-border pt-2">
-          {formOpen ? (
-            <TodoForm
-              workspaces={knownWorkspaces}
-              busy={busy}
-              onCancel={() => setFormOpen(false)}
-              onSubmit={async (input) => {
-                await runAction(async () => {
-                  await createMemoNote({
-                    title: input.title,
-                    contentMd: input.title,
-                    tags: input.tags,
-                    workspaceHint: input.workspaceHint,
-                    dueAt: input.dueAt,
-                  });
-                  setFormOpen(false);
+        {hiddenCount > 0 ? (
+          <button
+            type="button"
+            data-testid="pixie-todo-show-more"
+            className="w-full py-1 text-center text-[11px] text-muted transition-colors hover:text-foreground focus-visible:outline-none"
+            onClick={() => setExpandedTab(tab)}
+          >
+            {t("pixieTodoShowMore", { count: hiddenCount })}
+          </button>
+        ) : null}
+
+        {/* 新建在列表下面：速记框（先记下来）与多功能表单（记的时候就分好类）互斥展开。
+         * 虚线框常驻，不再等悬停 / 聚焦才显形。 */}
+        {formOpen ? (
+          <TodoForm
+            workspaces={knownWorkspaces}
+            busy={busy}
+            onCancel={() => setFormOpen(false)}
+            onSubmit={async (input) => {
+              await runAction(async () => {
+                await createMemoNote({
+                  title: input.title,
+                  contentMd: input.title,
+                  tags: input.tags,
+                  workspaceHint: input.workspaceHint,
+                  dueAt: input.dueAt,
                 });
-              }}
-            />
-          ) : (
-            <textarea
-              data-testid="pixie-todo-quick"
-              rows={1}
-              value={quickText}
-              placeholder={t("memoWidgetInputPlaceholder")}
-              className="w-full resize-none rounded-md border border-dashed border-transparent bg-transparent px-1.5 py-1 text-[12px] leading-5 outline-none transition-colors placeholder:text-muted hover:border-border focus:border-border"
-              onChange={(event) => setQuickText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" || event.shiftKey) return;
-                // 输入法组词中的回车是「选字」，不是「保存」。
-                if (event.nativeEvent.isComposing) return;
-                event.preventDefault();
-                void submitQuick();
-              }}
-            />
-          )}
-        </div>
+                setFormOpen(false);
+              });
+            }}
+          />
+        ) : (
+          <textarea
+            data-testid="pixie-todo-quick"
+            rows={2}
+            value={quickText}
+            placeholder={t("memoWidgetInputPlaceholder")}
+            className="w-full resize-none rounded-md border border-dashed border-border bg-transparent px-1.5 py-1 text-[12px] leading-5 outline-none transition-colors placeholder:text-muted focus-visible:outline-none"
+            onChange={(event) => setQuickText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.shiftKey) return;
+              // 输入法组词中的回车是「选字」，不是「保存」。
+              if (event.nativeEvent.isComposing) return;
+              event.preventDefault();
+              void submitQuick();
+            }}
+          />
+        )}
       </div>
     </PixiePanelSection>
   );
@@ -319,7 +361,7 @@ function TodoRow({
   confirmingDelete,
   busy,
   onToggleDetail,
-  onComplete,
+  onToggleComplete,
   onHandOff,
   onEdit,
   onDelete,
@@ -330,7 +372,7 @@ function TodoRow({
   confirmingDelete: boolean;
   busy: boolean;
   onToggleDetail: () => void;
-  onComplete: () => void;
+  onToggleComplete: () => void;
   onHandOff: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -339,6 +381,7 @@ function TodoRow({
   const overdue = isMemoOverdue(note, now);
   const target = todoTargetAt(note);
   const inProgress = note.status === "in_progress";
+  const done = note.status === "done";
   // 正文去掉首行（首行是标题）——标题行已经在上面的列表里显示了。
   const body = note.contentMd.split("\n").slice(1).join("\n").trim();
   // 行内只给一行摘要，完整正文留在展开区；两者同源，摘要不会和正文各说一套。
@@ -353,14 +396,21 @@ function TodoRow({
         <button
           type="button"
           data-testid="pixie-todo-complete"
-          title={t("memoActionDone")}
-          aria-label={t("memoActionDone")}
+          title={done ? t("memoActionReopen") : t("memoActionDone")}
+          aria-label={done ? t("memoActionReopen") : t("memoActionDone")}
           disabled={busy}
           className="group/tick mt-0.5 flex size-4 shrink-0 items-center justify-center text-muted transition-colors hover:text-accent disabled:opacity-40"
-          onClick={onComplete}
+          onClick={onToggleComplete}
         >
-          <Circle size={15} className="group-hover/tick:hidden" aria-hidden="true" />
-          <CircleCheck size={15} className="hidden group-hover/tick:block" aria-hidden="true" />
+          {/* 已完成行直接给选中态（点它转回待处理）；未完成行仍是空圈，悬停预览打勾。 */}
+          {done ? (
+            <CircleCheck size={15} className="text-accent" aria-hidden="true" />
+          ) : (
+            <>
+              <Circle size={15} className="group-hover/tick:hidden" aria-hidden="true" />
+              <CircleCheck size={15} className="hidden group-hover/tick:block" aria-hidden="true" />
+            </>
+          )}
         </button>
         <button
           type="button"

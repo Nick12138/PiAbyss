@@ -7,21 +7,6 @@ export function sidebarPref(key: string): boolean {
   }
 }
 
-/**
- * Same storage as `sidebarPref`, but for switches whose **default is not
- * "off"**: an unwritten key yields `fallback` instead of `false`. Used by the
- * pixie side panel's groups, where 「待办」 starts expanded while 「周期计划」/
- * 「委派任务」 start collapsed.
- */
-export function sidebarPrefDefault(key: string, fallback: boolean): boolean {
-  try {
-    const raw = globalThis.localStorage?.getItem(key);
-    return raw === null ? fallback : raw === "1";
-  } catch {
-    return fallback;
-  }
-}
-
 export function setSidebarPref(key: string, value: boolean): void {
   try {
     globalThis.localStorage?.setItem(key, value ? "1" : "0");

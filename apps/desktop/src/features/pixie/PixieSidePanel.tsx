@@ -6,11 +6,14 @@
  * overflow-hidden 负责裁掉滑出去的那部分。开关在顶栏（`AppTopBar`），所以展开
  * 状态放在 app-store（`pixiePanelOpen`），与 `dockOpen` 并排。
  *
- * 面板内容是「可折叠分组」栈，从上到下与设计稿 `pixie-merge-C.html` 一致：
- *   1. 待办 · 方寸间（常驻展开）—— `PixieTodoSection`
+ * 面板内容是「可折叠分组」栈，顺序同设计稿 `pixie-merge-C.html`：
+ *   1. 方寸间（常驻展开）        —— `PixieTodoSection`
  *   2. 周期计划（默认折叠）      —— `PixieScheduleSection`
  *   3. 委派任务（默认折叠）      —— 本文件，数据由 `PixiePage` 轮询后传入
  * 三块共用 `PixiePanelSection` 的视觉外壳；再加分组只要往这个栈里插一个 section。
+ * 栈本身**不留内缩**（面板已有 `border-l` + 分组各自的 `px-3`），分组之间只画一条
+ * `divide-y` 细线——曾经这里是 `p-3` + 每块一圈圆角边框，左右各白吃 ~10px、上下各
+ * 多 24px，窄面板里不值。
  *
  * 断点：窄于 `@3xl` 时整块 `display:none`（不占位），手动开关只决定「够宽时是否
  * 展开」。面板自己的宽度就是这条断点的探针：被 CSS 藏掉时量到 0，据此让顶栏开关
@@ -29,9 +32,6 @@ import { PixiePanelSection, usePanelSection } from "./PixiePanelSection";
 import { PixieScheduleSection } from "./PixieScheduleSection";
 import { PixieTaskTree } from "./PixieTaskTree";
 import { PixieTodoSection } from "./PixieTodoSection";
-
-/** 委派分组的展开状态（localStorage；默认折叠——委派列表不常打开）。 */
-const DISPATCH_EXPANDED_PREF = "piabyss.pixie.dispatchExpanded";
 
 /** 用户拖出来的面板宽度（localStorage）；没拖过就用 CSS 的 `clamp(...)`。 */
 export const PANEL_WIDTH_KEY = "piabyss.pixie.panelWidth.v1";
@@ -230,7 +230,7 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
         <PanelRight size={13} className="shrink-0" aria-hidden="true" />
         <span>{t("pixiePanelTitle")}</span>
       </div>
-      <div className="scrollbar-subtle flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
+      <div className="scrollbar-subtle flex min-h-0 flex-1 flex-col divide-y divide-border overflow-y-auto pb-2">
         <PixieTodoSection />
         <PixieScheduleSection />
         <PixieDispatchSection groups={groups} />
@@ -245,7 +245,7 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
  */
 function PixieDispatchSection({ groups }: { groups: PixieTaskTreeWorkspace[] }) {
   const t = useT();
-  const [open, toggle] = usePanelSection(DISPATCH_EXPANDED_PREF, false);
+  const [open, toggle] = usePanelSection(false);
   const summary = useMemo(() => summarizePixieTasks(groups), [groups]);
 
   const hint = useMemo(() => {
