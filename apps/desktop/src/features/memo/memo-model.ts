@@ -1,5 +1,5 @@
 /**
- * 备忘录纯模型层：过滤、分组、展示辅助与「用 Agent 处理」的提示词组装。
+ * 备忘录纯模型层：排序、展示辅助与「用 Agent 处理」的提示词组装。
  * 全部为纯函数，便于单元测试。
  */
 import type { MemoNote, MemoNoteStatus } from "@piabyss/protocol";
@@ -75,32 +75,6 @@ export function extractTags(contentMd: string): string[] {
   return result;
 }
 
-export type MemoFilter = {
-  status: MemoStatusFilter;
-  /** 小写 tag；null = 不筛选。 */
-  tag: string | null;
-  /** 工作区提示（按目录名或路径包含匹配）；null = 不筛选。 */
-  workspace: string | null;
-  /** 标题/正文包含的查询词。 */
-  query: string;
-};
-
-export function filterNotes(notes: MemoNote[], filter: MemoFilter): MemoNote[] {
-  const query = filter.query.trim().toLowerCase();
-  const tagKey = filter.tag?.toLowerCase() ?? null;
-  const workspaceKey = filter.workspace?.toLowerCase() ?? null;
-  return notes.filter((note) => {
-    if (note.status !== filter.status) return false;
-    if (tagKey && !note.tags.some((tag) => tag.toLowerCase() === tagKey)) return false;
-    if (workspaceKey && !noteMatchesWorkspace(note, workspaceKey)) return false;
-    if (query) {
-      const haystack = `${note.title}\n${note.contentMd}\n${note.tags.join("\n")}`.toLowerCase();
-      if (!haystack.includes(query)) return false;
-    }
-    return true;
-  });
-}
-
 /** 列表排序：已完成按 completedAt 倒序，其余按 updatedAt 倒序。 */
 export function sortNotesForList(notes: MemoNote[], status: MemoStatusFilter): MemoNote[] {
   const sorted = [...notes];
@@ -110,17 +84,6 @@ export function sortNotesForList(notes: MemoNote[], status: MemoStatusFilter): M
     sorted.sort((a, b) => b.updatedAt - a.updatedAt);
   }
   return sorted;
-}
-
-/** 状态计数（归类页签的角标）。 */
-export function statusCounts(notes: MemoNote[]): Record<MemoNoteStatus, number> {
-  const counts: Record<MemoNoteStatus, number> = {
-    open: 0,
-    in_progress: 0,
-    done: 0,
-  };
-  for (const note of notes) counts[note.status] += 1;
-  return counts;
 }
 
 /**
@@ -188,13 +151,6 @@ export function noteMatchesWorkspace(note: MemoNote, workspaceCwd: string): bool
   return pathContainsHint(workspaceCwd, hintSegments);
 }
 
-/** 详情页工作区关联提示：与当前工作区不一致时展示。 */
-export function workspaceMismatch(note: MemoNote, workspaceCwd: string | null): string | null {
-  if (!note.workspaceHint) return null;
-  if (workspaceCwd && noteMatchesWorkspace(note, workspaceCwd)) return null;
-  return note.workspaceHint;
-}
-
 /**
  * 把工作区提示解析成具体的工作区路径（供「执行」跨工作区跳转使用）。
  * 候选来自 knownWorkspaces 等已知路径；匹配优先级：路径完全一致（忽略大小写）
@@ -254,21 +210,6 @@ export function memoImagePath(
   );
 }
 
-/** 全部记录里出现过的标签（小写去重，保序）。 */
-export function collectTags(notes: readonly MemoNote[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const note of notes) {
-    for (const tag of note.tags) {
-      const key = tag.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      result.push(tag);
-    }
-  }
-  return result;
-}
-
 /** 全部记录里出现过的工作区提示。 */
 export function collectWorkspaces(notes: readonly MemoNote[]): string[] {
   const seen = new Set<string>();
@@ -286,7 +227,7 @@ export function collectWorkspaces(notes: readonly MemoNote[]): string[] {
 
 /**
  * 工作区输入框的下拉选项：当前工作区排第一（标 `current`），其后是历史出现过的提示，
- * 按小写去重。方寸间页与随行面板的编辑弹窗共用，选项顺序两边必须一致。
+ * 按小写去重。随行面板的「新建」与「编辑」弹窗共用同一份顺序。
  */
 export function buildWorkspaceComboOptions(
   currentHint: string,

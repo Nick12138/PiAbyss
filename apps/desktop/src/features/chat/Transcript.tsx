@@ -44,6 +44,7 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { requestFork } from "../../lib/fork-actions";
 import { openSystemUrl } from "../../lib/open-system-url";
 import { isSafeExternalUrl, sanitizeAgentText } from "./markdown-utils";
+import { PixiePlanCard } from "../pixie/PixiePlanCard";
 import { ToolView } from "./ToolView";
 import { formatDuration } from "./ToolCard";
 import { formatTokenCount } from "../../lib/format-token-count";
@@ -1789,6 +1790,10 @@ function AssistantBlock({
   if (block.kind === "extension") {
     return <ExtensionMessageRow row={block.row} />;
   }
+  if (block.kind === "plan") {
+    // 周期计划草案：只有 assistant 的话会被投影成这种块（见 transcript-model）。
+    return <PixiePlanCard block={block} />;
+  }
   return <ToolTraceBlock tool={block.tool} />;
 }
 
@@ -1853,6 +1858,11 @@ function ContentBlockView({ block }: { block: TranscriptContentBlock }) {
         className="max-h-64 max-w-full rounded-md border border-border object-contain"
       />
     );
+  }
+  if (block.kind === "plan") {
+    // 工具输出或用户消息里的围栏**不是草案**（只有 assistant 的话才是）：
+    // 原样给出来，绝不渲染成能点的确认卡。
+    return <UnknownBlock block={{ kind: "unknown", type: "schedule-plan", value: block.raw }} />;
   }
   return <UnknownBlock block={block} />;
 }

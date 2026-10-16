@@ -11,6 +11,7 @@ export type GraphOperationKind =
   | "session.open"
   | "session.reload"
   | "session.setName"
+  | "session.appendCustomMessage"
   | "session.rename"
   | "session.export"
   | "session.archive"

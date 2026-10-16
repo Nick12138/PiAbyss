@@ -2542,6 +2542,9 @@ function isScheduleRunSummary(value: unknown): boolean {
       "durationMs",
       "model",
       "permission",
+      "tools",
+      "sessionPath",
+      "command",
       "forkOf",
       "summary",
       "error",
@@ -2559,6 +2562,10 @@ function isScheduleRunSummary(value: unknown): boolean {
       (typeof value.durationMs === "number" && Number.isSafeInteger(value.durationMs))) &&
     (value.model === null || isScheduleModelRef(value.model)) &&
     isSchedulePermission(value.permission) &&
+    Array.isArray(value.tools) &&
+    value.tools.every(isString) &&
+    (value.sessionPath === null || isString(value.sessionPath)) &&
+    (value.command === null || isString(value.command)) &&
     (value.forkOf === null || isString(value.forkOf)) &&
     isString(value.summary) &&
     (value.error === null || isString(value.error)) &&
@@ -3136,6 +3143,10 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
     case "agent.setAutoRetry":
     case "model.setThinkingLevel":
       return isSessionSnapshot(result) ? null : `${method} must return SessionSnapshot`;
+    case "session.appendCustomMessage":
+      return isPlainObject(result) && hasExactKeys(result, ["appended"]) && result.appended === true
+        ? null
+        : "session.appendCustomMessage result must be { appended: true }";
     case "session.rename":
       return isPlainObject(result) &&
         hasExactKeys(result, ["sessionId", "name"], ["session"]) &&
@@ -3721,6 +3732,23 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         result.entries.every(isScheduleTranscriptEntry)
         ? null
         : "invalid schedule.getRunTranscript result";
+    case "schedule.runMessages":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["found", "sessionPath", "running", "messages"]) &&
+        isBoolean(result.found) &&
+        (result.sessionPath === null || isString(result.sessionPath)) &&
+        isBoolean(result.running) &&
+        Array.isArray(result.messages) &&
+        result.messages.every(isScheduleAgentMessage)
+        ? null
+        : "invalid schedule.runMessages result";
+    case "schedule.abortRun":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["aborted", "run"]) &&
+        isBoolean(result.aborted) &&
+        isScheduleRunSummary(result.run)
+        ? null
+        : "invalid schedule.abortRun result";
     case "schedule.validateCron":
       return isPlainObject(result) &&
         hasExactKeys(result, ["valid"], ["reason"]) &&

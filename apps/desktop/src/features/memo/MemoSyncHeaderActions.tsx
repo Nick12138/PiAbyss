@@ -1,22 +1,20 @@
 /**
- * 顶栏云同步操作区（仅备忘录页显示，渲染在 AppTopBar 的
- * data-settings-header-actions 槽位）：刷新（立即同步）按钮 + 云同步设置按钮。
+ * 顶栏云同步入口（仅小精灵页显示，渲染在 AppTopBar 的
+ * data-settings-header-actions 槽位）：一个图标，点开就是同步弹窗。
+ * 方寸间只剩随行面板那一处入口，同步入口因此跟着搬到小精灵页。
  *
- * 状态点含义：灰 = 未配置/尚未同步；绿 = 最近同步成功；红 = 最近同步失败。
- * 同步成功后广播 MEMO_SYNCED_EVENT，备忘录页据此刷新列表。
+ * 状态写在图标上：最近同步失败 → 变红（可访问名补「同步失败」）；未配置 → 常态但可访问名
+ * 补「未配置」；成功就是普通图标——「没有坏」不需要提示，「坏了」要一眼看得见。原来旁边
+ * 还有「立即同步」按钮与一颗绿色状态点，两个入口加两颗点读起来分不清，都撤了；立即同步
+ * 只在弹窗里做。
+ * 同步成功后广播 MEMO_SYNCED_EVENT，随行面板「方寸间」据此刷新列表；本组件同时是
+ * `useMemoSyncStatus` 30s 轮询的挂载方——顶栏不渲染它，后台 autoSync 落地就没人播报。
  *
  * v2：同步引擎与 R2 密钥配置都由 piabyss-memo 插件自持——本弹窗只保留
  * 状态展示、测试连接与立即同步；密钥/自动同步改到「设置 → 插件 →
  * PiAbyss 方寸间」的配置表单里，弹窗内提供跳转按钮（深链直达配置弹窗）。
  */
-import {
-  CheckCircle2,
-  CircleAlert,
-  CloudUpload,
-  ExternalLink,
-  Loader2,
-  RefreshCw,
-} from "lucide-react";
+import { CheckCircle2, CircleAlert, CloudUpload, ExternalLink, Loader2 } from "lucide-react";
 import { useState } from "react";
 import type { MemoSyncSettings } from "@piabyss/protocol";
 import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
@@ -40,11 +38,22 @@ export function MemoSyncHeaderActions() {
   const [syncSettings, setSyncSettings] = useState<MemoSyncSettings | null>(null);
   const [syncBusy, setSyncBusy] = useState<"test" | "sync" | null>(null);
   const [syncMessage, setSyncMessage] = useState<SyncFeedback | null>(null);
-  // 状态点/配置判断用共享订阅（标题旁的点与本按钮共用一个 30s 轮询）。
+  // 配置判断与状态着色用共享订阅（这个按钮是唯一的挂载方，30s 轮询也靠它活着——
+  // 没人挂就没有 MEMO_SYNCED_EVENT，随行面板也就收不到「同步落地」）。
   const syncStatus = useMemoSyncStatus();
-  const [toolbarSyncing, setToolbarSyncing] = useState(false);
 
   const syncConfigured = syncStatus?.configured === true;
+  /**
+   * 一次只留一个图标，状态就写在它的可访问名上：最近同步失败 → 红色 + 「同步失败」，
+   * 未配置 → 常态 + 「未配置」。成功不标色也不表扬——「没有坏」不需要提示，「坏了」必须
+   * 一眼看得见。轮询还没回来（或读不到状态）时只报默认名，不瞎猜。
+   */
+  const syncFailed = syncConfigured && syncStatus?.lastSyncOk === false;
+  const syncLabel = syncFailed
+    ? `${t("memoSyncTitle")} · ${t("memoSyncDotFail")}`
+    : syncStatus !== null && !syncConfigured
+      ? `${t("memoSyncTitle")} · ${t("memoSyncDotDisabled")}`
+      : t("memoSyncTitle");
 
   /** 打开云同步弹窗：读取插件控制面回报的同步状态（密钥不回传）。 */
   async function openSyncModal() {
@@ -66,29 +75,6 @@ export function MemoSyncHeaderActions() {
     requestPluginConfigDeepLink(MEMO_PLUGIN_ID);
     useAppStore.getState().openSettingsSection("plugins");
     setSyncModalOpen(false);
-  }
-
-  /** 顶栏刷新按钮：立即双向同步一次（成功不弹全局通知，失败才提示）。 */
-  async function handleToolbarSync() {
-    if (toolbarSyncing) return;
-    if (!syncConfigured) {
-      pushNotification(t("memoSyncDotDisabled"), "warning");
-      return;
-    }
-    setToolbarSyncing(true);
-    try {
-      await syncMemoNow();
-      refreshMemoSyncStatus();
-      window.dispatchEvent(new Event(MEMO_SYNCED_EVENT));
-    } catch (error) {
-      refreshMemoSyncStatus();
-      pushNotification(
-        `${t("memoSyncNowFail")}: ${error instanceof Error ? error.message : String(error)}`,
-        "error",
-      );
-    } finally {
-      setToolbarSyncing(false);
-    }
   }
 
   /** 用插件当前保存的配置测一次 R2 连通性（配置在设置的插件配置里）。 */
@@ -147,26 +133,23 @@ export function MemoSyncHeaderActions() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => void handleToolbarSync()}
-        disabled={toolbarSyncing}
-        title={t("memoSyncNow")}
-        aria-label={t("memoSyncNow")}
-        data-testid="memo-sync-refresh"
-        className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
-      >
-        <RefreshCw size={15} className={toolbarSyncing ? "animate-spin" : ""} />
-      </button>
+      {/* 顶栏只留这一个图标：点它开同步弹窗（里面有立即同步 / 测试连接 / 跳转配置）。
+        状态画在图标上——最近同步失败就整体转红，正常与未配置都是常态。 */}
       <button
         type="button"
         onClick={() => void openSyncModal()}
-        title={t("memoSyncTitle")}
-        aria-label={t("memoSyncTitle")}
+        title={syncLabel}
+        aria-label={syncLabel}
         data-testid="memo-sync-open"
-        className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
+        data-sync-state={syncFailed ? "fail" : syncConfigured ? "idle" : "unconfigured"}
+        className={`flex size-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-surface-overlay ${
+          syncFailed ? "bg-danger/10 text-danger" : "text-muted hover:text-foreground"
+        }`}
       >
-        <CloudUpload size={15} className="shrink-0" />
+        <CloudUpload
+          size={15}
+          className={`shrink-0 ${syncBusy === "sync" ? "animate-spin" : ""}`}
+        />
       </button>
 
       {/* 云同步弹窗（轻量临时浮层）：状态 + 测试/立即同步 + 跳转插件配置。 */}

@@ -36,14 +36,13 @@ describe("Sidebar", () => {
     expect(html).toContain("Recent conversations");
   });
 
-  it("hides plugin-backed entries (memo, pixie) while their plugins are not known-enabled", () => {
+  it("hides plugin-backed entries (pixie) while their plugins are not known-enabled", () => {
     // The plugin gate resolves to false in SSR (no host/catalog yet), so the
-    // memo and pixie entries render only once their plugins are enabled.
+    // pixie entry renders only once its plugin is enabled.
     const html = renderToStaticMarkup(
       createElement(SidebarLayout, { page: "chat", setPage: vi.fn() }),
     );
 
-    expect(html).not.toContain('data-testid="sidebar-memo-entry"');
     expect(html).not.toContain('data-testid="sidebar-pixie-entry"');
   });
 

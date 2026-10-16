@@ -1,14 +1,15 @@
 /**
  * 云同步状态的共享订阅层：
- * - 多个组件（顶栏标题旁的状态点、云同步设置按钮等）共用同一个 30s 轮询；
+ * - 小精灵页顶栏那一个云同步图标是唯一挂载方，30s 轮询由它维持；
  * - 轮询发现 lastSyncAt 变化（后台 autoSync/启动同步刚发生）时广播
- *   MEMO_SYNCED_EVENT，备忘录列表据此刷新。
+ *   MEMO_SYNCED_EVENT，随行面板「方寸间」据此刷新列表。轮询只在有挂载者时活着
+ *   （`stopPollingIfIdle`），所以顶栏这一处也是「同步落地有人播报」的前提。
  */
 import { useEffect, useState } from "react";
 import type { MemoSyncSettings } from "@piabyss/protocol";
 import { getMemoSyncSettings } from "./memo-client";
 
-/** 同步完成后广播的事件名（备忘录页监听后刷新列表）。 */
+/** 同步完成后广播的事件名（随行面板「方寸间」监听后刷新列表）。 */
 export const MEMO_SYNCED_EVENT = "piabyss:memo-synced";
 
 type Listener = (settings: MemoSyncSettings | null) => void;
@@ -69,31 +70,4 @@ export function useMemoSyncStatus(): MemoSyncSettings | null {
 /** 同步动作完成后立即刷新共享状态（不等下一个 30s 周期）。 */
 export function refreshMemoSyncStatus(): void {
   poll();
-}
-
-/** 状态点本体：灰=未配置/未同步，绿=最近同步成功，红=最近同步失败。 */
-export function MemoSyncStatusDot() {
-  const status = useMemoSyncStatus();
-  // 密钥不进协议层：由插件控制面回报的 configured 判断是否已配齐。
-  const configured = status?.configured === true;
-  const dotClass =
-    !configured || status?.lastSyncOk === null
-      ? "bg-muted"
-      : status?.lastSyncOk === true
-        ? "bg-success"
-        : "bg-danger";
-  const stateKey = !configured
-    ? "memoSyncDotDisabled"
-    : status?.lastSyncOk === true
-      ? "memoSyncDotOk"
-      : status?.lastSyncOk === false
-        ? "memoSyncDotFail"
-        : "memoSyncDotNone";
-  return (
-    <span
-      aria-hidden
-      data-sync-state={stateKey}
-      className={`size-2 shrink-0 rounded-full ${dotClass}`}
-    />
-  );
 }

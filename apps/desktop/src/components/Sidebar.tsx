@@ -1,7 +1,6 @@
 import {
   MessageCirclePlus,
   CalendarClock,
-  ListTodo,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
@@ -22,9 +21,8 @@ import { subscribeSessionReveal } from "../lib/session-reveal";
 import { useSchedulePluginEnabled } from "../features/schedule/schedule-plugin-gate";
 import { usePluginEnabled } from "../features/plugin-library/plugin-gate";
 
-/** The plugin-library entries backing the Pixie and Memo pages. */
+/** The plugin-library entry backing the Pixie page（方寸间已并入它右侧的随行面板）. */
 const PIXIE_PLUGIN_ID = "pi-pixie";
-const MEMO_PLUGIN_ID = "piabyss-memo";
 import { resolveConversationMinWidth } from "../features/chat/conversation-layout";
 import {
   createNewSession,
@@ -153,7 +151,6 @@ export function SidebarLayout({
 }) {
   const t = useT();
   const scheduleEnabled = useSchedulePluginEnabled();
-  const memoEnabled = usePluginEnabled(MEMO_PLUGIN_ID);
   const pixieEnabled = usePluginEnabled(PIXIE_PLUGIN_ID);
   const hostReady = Boolean(useAppStore((s) => s.host?.hostInstanceId));
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
@@ -547,29 +544,8 @@ export function SidebarLayout({
               </div>
             )}
 
-            {memoEnabled && (
-              <div className="px-2 pb-2">
-                <button
-                  type="button"
-                  disabled={!hostReady}
-                  onClick={() => setPage(page === "memo" ? "chat" : "memo")}
-                  data-ui="nav-item"
-                  data-testid="sidebar-memo-entry"
-                  data-state={page === "memo" ? "active" : "inactive"}
-                  title={hostReady ? t("memoTitle") : `${t("memoTitle")} · host not ready`}
-                  aria-label={t("memoTitle")}
-                  aria-pressed={page === "memo"}
-                  className={`flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] transition-colors ${
-                    page === "memo"
-                      ? "theme-nav-active bg-nav-active text-nav-active-foreground"
-                      : "text-foreground hover:bg-surface-overlay"
-                  } disabled:cursor-not-allowed disabled:opacity-40`}
-                >
-                  <ListTodo size={18} className="shrink-0" />
-                  <span>{t("memoTitle")}</span>
-                </button>
-              </div>
-            )}
+            {/* 方寸间不再单独占一个导航项：它只有小精灵页右侧随行面板那一处入口
+              （`PixieTodoSection`），从侧栏进来的那条路随备忘页一起下线。 */}
 
             <div className="px-2 pb-2">
               <button

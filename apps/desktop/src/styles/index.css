@@ -1109,6 +1109,20 @@ html[data-theme-family="transparent"] [data-settings-content] {
   background-color: var(--theme-content-material) !important;
 }
 
+/* 这一族主题的卡片是 0% 着色的玻璃（上面那条 0% 的 material），唯一可见的是它自己的
+   `backdrop-filter`；而卡片按 `--app-content-gap` 在右、下各留 8px。那 8px 里没有任何
+   玻璃（外壳 `--app-shell-bg` 也是 transparent），露出来的是**未经模糊 / 未加饱和**的
+   原生窗口材质——和卡片不是一种材质，于是右缘读成一条竖着的渐变色带（实测：卡片侧
+   124px→136px 是一条缓坡，靠边 12 设备 px 却是一段完全平坦的色块，两者之间一道硬边）。
+   左侧同样有 8px，但那一格早就被侧栏那层同族玻璃（saturate 145% / blur 18px）盖住了，
+   所以看不出来；右、下没人盖。这里把右、下留白收掉，让玻璃铺满窗口的下沿与右沿
+   （顶部那条本来就没有留白；左留白保留给侧栏）。窗口圆角由 app 根节点的
+   `border-radius` + `overflow: hidden` 负责，卡片贴边不会把圆角削方。 */
+html[data-theme-family="transparent"] [data-content-frame] {
+  margin-right: 0;
+  margin-bottom: 0;
+}
+
 html[data-theme-family="transparent"] [data-content-main],
 html[data-theme-family="transparent"] [data-chat-content],
 html[data-theme-family="transparent"] [data-dock-content] {
@@ -2877,6 +2891,38 @@ svg[data-piabyss-mermaid-theme="neutral"] {
    刻意的——与前几条同特异度，后出现者胜。 */
 [data-pixie-side-panel][data-panel-instant="true"],
 [data-pixie-side-panel][data-panel-instant="true"] [data-pixie-panel-content] {
+  transition: none;
+}
+
+/* ── 窄容器下的浮层抽屉兜底 ──────────────────────────────────────────────
+   行宽不足阈值时面板不再是并排的一栏，而是盖在对话上的浮层（`PixieSidePanel` 挂
+   `data-panel-overlay`，开合归 `pixiePanelDrawerOpen`）。方寸间只有这一处入口之后，
+   窄窗口不能把它整个关掉。
+   · 布局改 fixed 是为了让位给对话：in-flow 的面板即便收成 0 宽也要占一格。
+   · 滑出方向换成 translateX——fixed 元素吃 margin 但不影响兄弟，用 margin 动画会
+     白位移一次；`margin-right: 0` 由组件的内联样式保证。
+   · 宽度默认跟着视口（88vw 封顶、380px 为上限），用户拖出来的偏好走内联样式，
+     再由 `max-width` 拦住窄窗口里的溢出。遮罩由组件渲染，比面板低一格。 */
+[data-pixie-side-panel][data-panel-overlay="true"] {
+  position: fixed;
+  top: var(--theme-toolbar-height);
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  width: min(88vw, 380px);
+  max-width: 88vw;
+  height: auto;
+  margin-right: 0;
+  box-shadow: -12px 0 32px rgb(0 0 0 / 35%);
+  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-pixie-side-panel][data-panel-overlay="true"][data-panel-open="false"] {
+  transform: translateX(100%);
+  transition: transform 180ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+[data-pixie-side-panel][data-panel-overlay="true"][data-panel-instant="true"] {
   transition: none;
 }
 

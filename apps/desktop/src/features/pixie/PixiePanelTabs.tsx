@@ -3,13 +3,13 @@
  *
  * 三块（方寸间 / 周期计划 / 委派任务）横着排，一次只看一块——取代原来的竖排「可折叠
  * 分组」栈：那三行分组头一共 84px 全是导航，却只有一块能放内容。现在导航只有这一行
- * 32px，且它上面不再有别的东西（面板标题「随行面板」已删，它的名字留给 `aria-label`）。
+ * 一行（`h-10` = 35px），且它上面不再有别的东西（面板标题「随行面板」已删，它的名字留给 `aria-label`）。
  *
  * 未选中的那块**不卸载**，只把显示摘掉（`hidden`）：切回去不用重新拉 `memo.list` /
  * `schedule.listJobs`，也不会丢掉「列表摊开到哪条、勾选了哪几条、当前是哪个二级页签」。
  * 计数徽章常驻在页签上、要一直跟着数据走，所以三块的数据都得活着。
  *
- * 尺寸口径：栏高 `h-8`（32px），三格 `flex-1` 等分。面板最窄 300px → 每格 ~98px，
+ * 尺寸口径：栏高 `h-10`（35px，不是 40px），三格 `flex-1` 等分。面板最窄 300px → 每格 ~98px，
  * 图标 13 + 间距 5 + 标题（11px 四字 ≈ 44）+ 间距 4 + 计数 ≈ 8 + 左右内缩 16 ≈ 90，
  * 放得下。英文标题（"Scheduled Tasks"）放不下，靠 `truncate` 截断、`title` 给全称。
  *
@@ -17,6 +17,10 @@
  *
  * 面板窄（300–640px）且信息密，字号一律用**显式 px**、不走 Tailwind 的命名档位：
  * 本应用 `:root` 是 14px，`text-xs` 实际等于 10.5px 而不是 12px，混用必然错位。
+ *
+ * 同一条口径也管**高度**：Tailwind 的间距档位是 rem（`--spacing: 0.25rem`），在这 14px
+ * 根字号下要按 `px = 档位 × 3.5` 折——`h-7` 是 24.5px 不是 28px，`h-10` 是 35px 不是 40px。
+ * 按 16px 心算会一路算错（本文件曾经就这么写着「32px」）。
  *
  * | 档 | 类 | 用途 |
  * |---|---|---|
@@ -55,7 +59,7 @@ export function PixiePanelTabBar({
       role="tablist"
       data-pixie-panel-content
       data-testid="pixie-panel-tabs"
-      className="flex h-8 shrink-0 items-stretch gap-1 border-b border-border px-1"
+      className="flex h-10 shrink-0 items-stretch gap-1 border-b border-border px-1"
     >
       {tabs.map((tab) => {
         const Icon = tab.icon;

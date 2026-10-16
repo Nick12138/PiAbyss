@@ -18,14 +18,16 @@ import {
   createMemoNote,
   deleteMemoNote,
   listMemoNotes,
+  readMemoImageDataUrl,
   updateMemoNote,
 } from "../memo/memo-client";
 import { injectMemoReference } from "../memo/memo-agent";
+import { MEMO_SYNCED_EVENT } from "../memo/memo-sync-status";
 import { PixieTodoSection } from "./PixieTodoSection";
 
 /**
  * 随行面板「方寸间」页签：二级页签 / 三层行（标题 · 摘要 · 标签·工作区·截止）/ 就地 Markdown 正文 / 新建。
- * 数据与方寸间页同源（memo-client），这里只验面板自己的组织方式与动作路由：
+ * 数据走 memo-client，这里只验面板自己的组织方式与动作路由：
  * 行首状态、行尾 ✨、右键编辑 / 删除、已完成页签的勾选式批量删除。
  * 面板的插件门与页签栏归 `PixieSidePanel`（见它的用例），这里直接以「可见的那块」渲染。
  */
@@ -291,7 +293,7 @@ describe("PixieTodoSection", () => {
     const detail = screen.getByTestId("pixie-todo-detail");
     // 渲染器按需加载：Suspense 解析后正文才出现。
     await within(detail).findByText(/网关不支持自定义 header 透传/, undefined, { timeout: 5_000 });
-    // 面板档位（11px）而不是方寸间页详情的 13px。
+    // 面板档位（11px），不是弹窗预览那个 13px。
     expect(detail.querySelector(".chat-markdown.memo-markdown.panel-markdown")).not.toBeNull();
     expect(within(detail).queryByText("#邮件")).toBeNull();
     // 编辑 / 删除都收进了右键菜单，展开区不再画动作按钮。
@@ -396,28 +398,32 @@ describe("PixieTodoSection", () => {
     expect(screen.getByTestId("pixie-todo-quick")).toHaveValue("第一行\n第二行");
   });
 
-  it("多功能表单一次设好标题 / 截止 / 标签 / 工作区", async () => {
+  it("＋ 开的是完整新建弹窗，落盘走 memo.create（标题从正文首行派生）", async () => {
     const user = userEvent.setup();
     render(<PixieTodoSection active onCount={onCount} />);
     await waitForRows();
 
     await user.click(screen.getByTestId("pixie-todo-new"));
-    expect(screen.getByTestId("pixie-todo-form")).toBeInTheDocument();
-    // 表单展开时速记框收起，两块新建 UI 不叠在一起。
-    expect(screen.queryByTestId("pixie-todo-quick")).toBeNull();
+    const dialog = await screen.findByRole("dialog", { name: "New note" });
+    expect(dialog).toBeInTheDocument();
+    // 速记框不跟着收起：两条新建入口互不遮挡（旧的行内四字段表单已经并进这个弹窗）。
+    expect(screen.getByTestId("pixie-todo-quick")).toBeInTheDocument();
 
-    await user.type(screen.getByTestId("pixie-todo-form-title"), "订会议室");
-    await user.type(screen.getByTestId("pixie-todo-form-due"), "2026-10-16T18:00");
-    await user.type(screen.getByTestId("pixie-todo-form-tags"), "会议, 行政");
-    await user.selectOptions(screen.getByTestId("pixie-todo-form-workspace"), "/work/okxbot");
-    await user.click(screen.getByTestId("pixie-todo-form-submit"));
+    await user.type(
+      within(dialog).getByLabelText("Write it down… #tags become tags. Markdown supported."),
+      "订会议室\n#行政 周五下午两点，网关那条一起问。",
+    );
+    await user.click(within(dialog).getByTestId("memo-editor-save"));
 
     await waitFor(() => expect(createMemoNote).toHaveBeenCalledTimes(1));
     const input = vi.mocked(createMemoNote).mock.calls[0][0];
     expect(input.title).toBe("订会议室");
-    expect(input.tags).toEqual(["会议", "行政"]);
-    expect(input.workspaceHint).toBe("/work/okxbot");
-    expect(input.dueAt).toBe(new Date("2026-10-16T18:00").getTime());
+    expect(input.tags).toEqual(["行政"]);
+    expect(input.recurrence).toBeNull();
+    expect(input.images).toEqual([]);
+    // 保存成功 → 弹窗关掉并重新拉一次列表。
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "New note" })).toBeNull());
+    expect(listMemoNotes).toHaveBeenCalledTimes(2);
   });
 
   it("右键菜单给编辑 / 复制正文 / 删除；删除先过一次确认", async () => {
@@ -449,7 +455,7 @@ describe("PixieTodoSection", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("右键「编辑」开弹窗改这一条，不跳方寸间页", async () => {
+  it("右键「编辑」开弹窗改这一条，页面不动", async () => {
     const user = userEvent.setup();
     render(
       <>
@@ -597,5 +603,68 @@ describe("PixieTodoSection", () => {
     expect(screen.queryByTestId("pixie-todo-batch-bar")).toBeNull();
     // 行首的复选框换回状态圆圈。
     expect(screen.getAllByTestId("pixie-todo-complete")).toHaveLength(8);
+  });
+
+  it("云同步落地（MEMO_SYNCED_EVENT）后重新拉列表，不用等下一次操作", async () => {
+    render(<PixieTodoSection active onCount={onCount} />);
+    await waitForRows();
+    expect(listMemoNotes).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new Event(MEMO_SYNCED_EVENT));
+
+    await waitFor(() => expect(listMemoNotes).toHaveBeenCalledTimes(2));
+  });
+
+  it("带图的记录：行上报张数，摊开才取图并渲染缩略图", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listMemoNotes).mockResolvedValue([
+      note({
+        id: "n-pic",
+        title: "拍下来的白板",
+        contentMd: "拍下来的白板\n箭头是网关那条",
+        images: [{ id: "img-1", fileName: "board.png", mediaType: "image/png", bytes: 10 }],
+      }),
+    ]);
+    vi.mocked(readMemoImageDataUrl).mockResolvedValue("data:image/png;base64,AA==");
+    render(<PixieTodoSection active onCount={onCount} />);
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    // 没摊开也知道这条带图；图本身不提前取。
+    expect(screen.getByTestId("pixie-todo-images")).toHaveTextContent("1");
+    expect(readMemoImageDataUrl).not.toHaveBeenCalled();
+
+    await user.click(within(rows()[0]).getByTestId("pixie-todo-open-detail"));
+    await waitFor(() => expect(readMemoImageDataUrl).toHaveBeenCalledWith("n-pic", "img-1"));
+    const detail = await screen.findByTestId("pixie-todo-detail");
+    expect(within(detail).getByTestId("lightbox-image-trigger")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,AA==",
+    );
+  });
+
+  it("进行中的记录右键给「转回待处理」：解掉会话绑定，不然它出不来", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listMemoNotes).mockResolvedValue([
+      note({ id: "n-stuck", title: "卡在跑批上", status: "in_progress", sessionId: "s-gone" }),
+    ]);
+    render(
+      <>
+        <MenuHost />
+        <PixieTodoSection active onCount={onCount} />
+      </>,
+    );
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    fireEvent.contextMenu(rows()[0]);
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Back to to-do (unbind session)" }),
+    );
+
+    await waitFor(() =>
+      expect(updateMemoNote).toHaveBeenCalledWith("n-stuck", {
+        status: "open",
+        sessionId: null,
+      }),
+    );
   });
 });

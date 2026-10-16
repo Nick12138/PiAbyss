@@ -5,10 +5,10 @@
  *   子表单）。规则为结构化字段（frequency / interval / weekdays / monthDay /
  *   time / tz），与 pi-host 的 recurrence.ts 及 piabyss_memo 插件保持同一形状；
  *   时区固定 Asia/Shanghai（Host 侧时刻计算不依赖设备本地时区）。
- * - `formatRecurrenceText` / `formatMemoDue` / `noteScheduleSummary`：人读描述，供列表与详情复用。
+ * - `formatMemoDue`：人读的截止时间，随行面板的行内计划标记用它。
  */
 import type { ReactNode } from "react";
-import type { MemoNote, MemoRecurrence, MemoRecurrenceFrequency } from "@piabyss/protocol";
+import type { MemoRecurrence, MemoRecurrenceFrequency } from "@piabyss/protocol";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 
 /** 记录的计划值（截止 + 周期）。 */
@@ -68,29 +68,6 @@ function fromLocalInputValue(value: string): number | null {
   return Number.isFinite(ms) && ms > 0 ? ms : null;
 }
 
-/** 周期规则的人读描述，如「每周周一 13:00」「每 2 周的周一、周三 09:30」。 */
-export function formatRecurrenceText(rule: MemoRecurrence, t: Translate): string {
-  const days = rule.weekdays.map((day) => t(WEEKDAY_KEYS[day - 1] ?? "memoWeekdayMon")).join(", ");
-  switch (rule.frequency) {
-    case "daily":
-      return rule.interval === 1
-        ? t("memoRecurDaily", { time: rule.time })
-        : t("memoRecurEveryNDays", { interval: rule.interval, time: rule.time });
-    case "weekly":
-      return rule.interval === 1
-        ? t("memoRecurWeekly", { days, time: rule.time })
-        : t("memoRecurEveryNWeeks", { interval: rule.interval, days, time: rule.time });
-    case "monthly":
-      return rule.interval === 1
-        ? t("memoRecurMonthly", { day: rule.monthDay ?? 1, time: rule.time })
-        : t("memoRecurEveryNMonths", {
-            interval: rule.interval,
-            day: rule.monthDay ?? 1,
-            time: rule.time,
-          });
-  }
-}
-
 const DAY_MS = 86_400_000;
 
 /** 本地日历日界；跨夏令时留下的那一小时偏移用四舍五入消化掉。 */
@@ -128,15 +105,6 @@ export function formatMemoDue(timestamp: number, now: number, t: Translate): str
       ? t("memoDateMonthDay", { month, day: date.getDate() })
       : t("memoDateWithYear", { year: date.getFullYear(), month, day: date.getDate() });
   return `${stamp} ${clock}`;
-}
-
-/** 列表用的一行计划摘要；无计划返回 null。 */
-export function noteScheduleSummary(note: MemoNote, t: Translate): string | null {
-  if (note.recurrence !== null) return formatRecurrenceText(note.recurrence, t);
-  if (note.dueAt !== null) {
-    return t("memoDueLabel", { time: formatMemoDue(note.dueAt, Date.now(), t) });
-  }
-  return null;
 }
 
 /** 频率下拉的可选值（"none" = 不重复）。 */

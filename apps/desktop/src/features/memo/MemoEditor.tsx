@@ -1,13 +1,13 @@
 /**
  * 备忘录编辑器的共用实现：状态模型（`EditorState`）+ 编辑视图（`MemoEditor`）+ 图片入库。
  *
- * 从 `MemoPage` 里搬出来是因为**编辑入口不再只有方寸间页一个**：随行面板「方寸间」
- * 分组要用弹窗编辑同一条记录。方寸间页那份文件头就写着「两个页面永远只有一份编辑
- * 实现」，靠跳转复用已经不够了——弹窗必须自己渲染编辑器、自己保存。
+ * 当初从 `MemoPage` 里搬出来是因为编辑入口不止一个；方寸间页下线之后，剩下的唯一宿主是
+ * 随行面板的 `MemoNoteDialog`（新建与编辑同一份，差别只在 `note` 给不给）。这一层因此
+ * 只留弹窗要的那套形态：底部动作条、编写/预览、计划行。
  *
  * 分工边界：这一层只管**编辑器**（正文源码、工作区、截止/周期、待保存图片、✨整理），
- * 落盘仍由调用方负责——`MemoPage` 拿着 `EditorState` 走 `memo.create` / `memo.update`，
- * 弹窗走同一条 `memo.update`。草稿持久化、Tauri 拖拽监听、保存后的导航留在页面里。
+ * 落盘归调用方——`saveMemoEditorNote` 拼一次 `memo.update` 的 patch，新建走 `memo.create`。
+ * 窗口级拖拽监听、保存后的导航也留在弹窗宿主里。
  */
 import { ArrowLeft, Check, ChevronDown, Eraser, Loader2, Sparkles, X } from "lucide-react";
 import {
@@ -113,8 +113,8 @@ export function editorStateFromNote(
  * 超限时对每个被拒文件回调一次，由调用方决定怎么提示（页面 notification）。
  */
 /**
- * 编辑器状态的写入函数。方寸间页的编辑器可以「不存在」（null），弹窗里始终有一条记录
- * 在编辑（非空）：两边各自把 setState 包成这一种形态，再交给下面的 helper。
+ * 编辑器状态的写入函数：弹窗的 setState 包一层再交给下面的 helper——这一层只管
+ * 「有一条记录在编辑」的形态。
  */
 export type EditorUpdater = (update: (current: EditorState) => EditorState) => void;
 
@@ -171,7 +171,7 @@ export function removeEditorImage(key: string, setEditor: EditorUpdater): void {
 }
 
 /**
- * 把编辑器内容落成一次 `memo.update`——编辑已有记录的唯一实现，方寸间页与编辑弹窗共用。
+ * 把编辑器内容落成一次 `memo.update`——编辑已有记录的唯一实现（新建走 `memo.create`）。
  *
  * 标题 = 正文首行、标签 = 正文内 `#xxx`，都在这里派生，调用方不用再拼一遍 patch。
  * 返回 null 表示「没保存」（新建态没有记录 id，或正文空到派生不出标题），
@@ -200,23 +200,6 @@ export async function saveMemoEditorNote(
       .map(({ fileName, mediaType, dataBase64 }) => ({ fileName, mediaType, dataBase64 })),
     removeImageIds: editor.removedImageIds,
   });
-}
-
-/** 窄屏（容器 < @2xl）在编辑器/详情左上角出现的「返回列表」。 */
-export function BackToListButton({ onClick }: { onClick: () => void }) {
-  const t = useT();
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={t("memoBackToList")}
-      aria-label={t("memoBackToList")}
-      data-testid="memo-back-to-list"
-      className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-foreground transition-colors hover:bg-surface-overlay @2xl:hidden"
-    >
-      <ArrowLeft size={14} />
-    </button>
-  );
 }
 
 /**
@@ -393,10 +376,7 @@ export function MemoEditor({
   onAddImages,
   onRemoveImage,
   dragOver = false,
-  onBack,
   preview = false,
-  showBack = true,
-  toolbarPlacement = "top",
 }: {
   editor: EditorState;
   saving: boolean;
@@ -409,18 +389,10 @@ export function MemoEditor({
   onClear?: () => void;
   onAddImages: (files: File[]) => void;
   onRemoveImage: (key: string) => void;
-  /** 外部文件拖到输入区上方（仅方寸间页接了窗口级拖拽，弹窗省略）。 */
+  /** 外部文件拖到写字区上方（窗口级 `onDragDropEvent` 由弹窗宿主在打开期间接）。 */
   dragOver?: boolean;
-  onBack: () => void;
   /** 预览态：正文区换成渲染后的 Markdown，工具栏与计划区照旧（编辑弹窗的「编写 / 预览」）。 */
   preview?: boolean;
-  /** 窄屏左上角的「返回列表」按钮；弹窗里没有列表可回，传 false。 */
-  showBack?: boolean;
-  /**
-   * 工具栏位置。`"bottom"` = 编辑弹窗：控件挪到正文下方，贴着弹窗内边距画一条
-   * `border-t` 给写字区收个下边界。
-   */
-  toolbarPlacement?: "top" | "bottom";
 }) {
   const t = useT();
   const [optimizing, setOptimizing] = useState(false);
@@ -496,19 +468,16 @@ export function MemoEditor({
   }
 
   /**
-   * 底部动作条模式（弹窗）：工作区挪去和「计划 / 重复」同排，条上左边只剩 ✨整理、
-   * 右边只剩 ✓保存——退出只由头部的 ✕ 与 Esc 承担。
+   * 唯一的形态：底部动作条。工作区挪去和「计划 / 重复」同排，条上左边只剩 ✨整理与
+   * 橡皮擦、右边只剩 ✓保存——退出只由头部的 ✕ 与 Esc 承担。
    */
-  const isFooterToolbar = toolbarPlacement === "bottom";
-  /** 写字区的内缩：页面里靠外层 px-5 让出边距，弹窗里直接贴齐弹窗内边距。 */
-  const fieldPad = isFooterToolbar ? "px-0" : "px-3";
+  /** 写字区的内缩：贴齐弹窗内边距，外层的边距由弹窗给。 */
+  const fieldPad = "px-0";
   /**
-   * 正文区的高度：页面里跟着内容长到 70vh 为止；弹窗里交给 flex 分配——短到 84px 起，
-   * 长到吃掉弹窗剩余高度为止，再长就自己滚（头尾那两排因此永远留在视野里）。
+   * 正文区的高度交给 flex 分配——短到 84px 起，长到吃掉弹窗剩余高度为止，再长就自己滚
+   * （头尾那两排因此永远留在视野里）。
    */
-  const fieldBox = isFooterToolbar
-    ? "min-h-[84px] flex-auto overflow-y-auto"
-    : "max-h-[70vh] min-h-[84px] overflow-y-auto";
+  const fieldBox = "min-h-[84px] flex-auto overflow-y-auto";
 
   const workspaceField = (
     <WorkspaceCombobox
@@ -517,7 +486,7 @@ export function MemoEditor({
       options={workspaceOptions}
       placeholder={t("memoFieldWorkspacePlaceholder")}
       ariaLabel={t("memoFieldWorkspace")}
-      className={isFooterToolbar ? "w-32 shrink-0" : "w-28 shrink-0 @2xl:w-44"}
+      className="w-32 shrink-0"
     />
   );
 
@@ -543,12 +512,10 @@ export function MemoEditor({
         disabled={optimizing}
         title={t("memoOptimize")}
         aria-label={t("memoOptimize")}
-        className={`flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-border text-accent hover:bg-surface-overlay disabled:opacity-50 ${
-          isFooterToolbar ? "px-2 text-xs" : "size-8"
-        }`}
+        className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-border px-2 text-xs text-accent hover:bg-surface-overlay disabled:opacity-50"
       >
         {optimizing ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
-        {isFooterToolbar && t("memoOptimize")}
+        {t("memoOptimize")}
       </button>
     )
   );
@@ -577,49 +544,25 @@ export function MemoEditor({
       title={t("memoActionSaveHint")}
       aria-label={t("memoActionSaveHint")}
       data-testid="memo-editor-save"
-      className={`flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-border text-success transition-colors hover:border-success hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40 ${
-        isFooterToolbar ? "px-2 text-xs" : "size-8"
-      }`}
+      className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-border px-2 text-xs text-success transition-colors hover:border-success hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
     >
-      {saving ? (
-        <Loader2 size={16} className="animate-spin" />
-      ) : (
-        <Check size={isFooterToolbar ? 15 : 18} />
-      )}
-      {isFooterToolbar && t("memoActionSave")}
+      {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={15} />}
+      {t("memoActionSave")}
     </button>
   );
 
   const toolbar = (
-    <div
-      className={
-        isFooterToolbar
-          ? "-mx-5 -mb-5 flex shrink-0 items-center gap-2 border-t border-border px-5 py-2.5"
-          : "flex min-h-12 shrink-0 items-center gap-2 border-b border-border px-4 py-2"
-      }
-    >
-      {showBack ? <BackToListButton onClick={onBack} /> : null}
-      {isFooterToolbar ? (
-        <>
-          {optimizeField}
-          {clearField}
-          <div className="min-w-0 flex-1" />
-        </>
-      ) : (
-        <>
-          {workspaceField}
-          <div className="min-w-0 flex-1" />
-          {optimizeField}
-          {clearField}
-        </>
-      )}
+    <div className="-mx-5 -mb-5 flex shrink-0 items-center gap-2 border-t border-border px-5 py-2.5">
+      {optimizeField}
+      {clearField}
+      <div className="min-w-0 flex-1" />
       {saveField}
     </div>
   );
 
   const body = (
     <div
-      className={`flex min-h-0 flex-1 flex-col gap-3 ${isFooterToolbar ? "py-3" : "px-5 py-4"}`}
+      className="flex min-h-0 flex-1 flex-col gap-3 py-3"
       onClick={(event) => {
         // 点击输入框下方的空白区域时，把焦点还给输入框（纸面化后输入框不再铺满）。
         if (event.target === event.currentTarget) textareaRef.current?.focus();
@@ -685,29 +628,20 @@ export function MemoEditor({
       <MemoScheduleEditor
         value={{ dueAt: editor.dueAt, recurrence: editor.recurrence }}
         onChange={(next) => patch({ dueAt: next.dueAt, recurrence: next.recurrence })}
-        leading={isFooterToolbar ? workspaceField : null}
+        leading={workspaceField}
       />
     </div>
   );
 
   return (
     <div
-      className={`flex flex-col ${isFooterToolbar ? "min-h-0 flex-1" : "h-full"}`}
+      className="flex min-h-0 flex-1 flex-col"
       data-testid="memo-editor"
       onPaste={handlePaste}
       onKeyDown={handleKeyDown}
     >
-      {isFooterToolbar ? (
-        <>
-          {body}
-          {toolbar}
-        </>
-      ) : (
-        <>
-          {toolbar}
-          {body}
-        </>
-      )}
+      {body}
+      {toolbar}
     </div>
   );
 }

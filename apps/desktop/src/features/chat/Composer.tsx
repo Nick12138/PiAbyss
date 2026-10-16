@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   ArrowUp,
+  CalendarClock,
   CircleAlert,
   CircleCheck,
   Bot,
@@ -88,6 +89,7 @@ import {
   readDesktopSmallFile,
   type DesktopFileInfo,
 } from "../../lib/desktop-file-access";
+import { hasDesktopFileDropOwner } from "../../lib/desktop-file-drop";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import { buildTextContextMenuItems } from "../../lib/text-context-menu";
@@ -749,7 +751,9 @@ export function Composer({
         if (!isDesktop || cancelled) return;
         const { getCurrentWebview } = await import("@tauri-apps/api/webview");
         unlisten = await getCurrentWebview().onDragDropEvent((event) => {
-          if (cancelled || disabled) return;
+          // 弹窗宿主（备忘的新建 / 编辑）挂载期间认领了这条通道，输入框让路——
+          // 同一次落下两边都收得到，不认领会把一张图同时塞进记录和输入框。
+          if (cancelled || disabled || hasDesktopFileDropOwner()) return;
           if (event.payload.type === "enter" || event.payload.type === "over") {
             setDragOver(true);
           } else if (event.payload.type === "leave") {
@@ -1694,11 +1698,7 @@ export function Composer({
     // later replaces the marker in place, so there is never a duplicate row.
     let optimisticKey: string | null = null;
     const appendOptimisticMessage = () => {
-      optimisticKey = appendOptimisticUserMessage(
-        outgoingText,
-        session?.sessionId,
-        imagesPayload,
-      );
+      optimisticKey = appendOptimisticUserMessage(outgoingText, session?.sessionId, imagesPayload);
     };
     const removeOptimisticMessage = () => {
       removeOptimisticUserMessage(optimisticKey);
@@ -2021,6 +2021,26 @@ export function Composer({
                       <X size={11} />
                     </button>
                   </div>
+                ) : reference.kind === "schedule" ? (
+                  <div
+                    key={reference.id}
+                    className="group flex h-7 items-center gap-1.5 rounded-md border border-accent/35 bg-accent/5 px-2 text-xs"
+                    title={`@${t("injectedRefScheduleJob")} · ${reference.label}`}
+                  >
+                    <CalendarClock size={12} className="shrink-0 text-accent" />
+                    <span className="max-w-40 truncate">
+                      @{t("injectedRefScheduleJob")} · {reference.label}
+                    </span>
+                    <button
+                      type="button"
+                      title={t("composerReferenceRemove")}
+                      aria-label={t("composerReferenceRemoveNamed", { name: reference.label })}
+                      className="text-muted hover:text-danger"
+                      onClick={() => removeReference(reference.id)}
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
                 ) : (
                   <div
                     key={reference.id}
@@ -2279,7 +2299,9 @@ export function Composer({
                       session?.isCompacting ? t("composerStopCompaction") : t("composerStop")
                     }
                     className="flex size-7 items-center justify-center rounded-full bg-danger/15 text-danger hover:bg-danger/20"
-                    onClick={() => void (session?.isCompacting ? runtime.abortCompaction() : abort())}
+                    onClick={() =>
+                      void (session?.isCompacting ? runtime.abortCompaction() : abort())
+                    }
                   >
                     <Square size={14} fill="currentColor" className="block shrink-0" />
                   </button>

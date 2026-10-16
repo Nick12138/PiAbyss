@@ -46,6 +46,7 @@ export const HOST_METHODS = [
   "session.cleanupArchived",
   "session.getSnapshot",
   "session.setName",
+  "session.appendCustomMessage",
   "session.rename",
   "session.getEntries",
   "session.getTree",
@@ -145,6 +146,8 @@ export const HOST_METHODS = [
   "schedule.runJobNow",
   "schedule.listRuns",
   "schedule.getRunTranscript",
+  "schedule.runMessages",
+  "schedule.abortRun",
   "schedule.replyToRun",
   "schedule.validateCron",
   "schedule.listNotifications",
@@ -274,6 +277,8 @@ export type HostOnlyMethod =
   | "schedule.runJobNow"
   | "schedule.listRuns"
   | "schedule.getRunTranscript"
+  | "schedule.runMessages"
+  | "schedule.abortRun"
   | "schedule.replyToRun"
   | "schedule.validateCron"
   | "schedule.listNotifications"
@@ -352,6 +357,7 @@ export type ActiveSessionMethod =
   | "attachment.get"
   | "attachment.remove"
   | "session.setName"
+  | "session.appendCustomMessage"
   | "session.reload"
   | "session.getEntries"
   | "session.getTree"
@@ -468,6 +474,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "session.cleanupArchived": "workspace",
   "session.getSnapshot": "workspace",
   "session.setName": "activeSession",
+  "session.appendCustomMessage": "activeSession",
   "session.rename": "workspace",
   "session.getEntries": "activeSession",
   "session.getTree": "activeSession",
@@ -564,6 +571,8 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "schedule.runJobNow": "host",
   "schedule.listRuns": "host",
   "schedule.getRunTranscript": "host",
+  "schedule.runMessages": "host",
+  "schedule.abortRun": "host",
   "schedule.replyToRun": "host",
   "schedule.validateCron": "host",
   "schedule.listNotifications": "host",

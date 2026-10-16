@@ -134,6 +134,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "session.cleanupArchived": null,
   "session.getSnapshot": null,
   "session.setName": { name: "n" },
+  "session.appendCustomMessage": { customType: "schedule-plan-receipt", text: "已创建：日报" },
   "session.rename": { sessionId: SESSION_ID, sessionPath: "/s.jsonl", name: "n" },
   "session.getEntries": null,
   "session.getTree": null,
@@ -284,6 +285,8 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "schedule.runJobNow": { id: "a1b2c3d4" },
   "schedule.listRuns": { limit: 50 },
   "schedule.getRunTranscript": { runId: "2fa6a8c56cc8" },
+  "schedule.runMessages": { runId: "2fa6a8c56cc8" },
+  "schedule.abortRun": { runId: "2fa6a8c56cc8" },
   "schedule.replyToRun": { runId: "2fa6a8c56cc8", text: "继续" },
   "schedule.validateCron": { cron: "0 9 * * 1-5" },
   "schedule.listNotifications": { limit: 50 },
@@ -641,8 +644,13 @@ function invalidParams(method: HostMethod): unknown {
     case "schedule.listNotifications":
       return { limit: 0 };
     case "schedule.getRunTranscript":
-    case "schedule.validateCron":
+    case "schedule.runMessages":
+    case "schedule.abortRun":
       return { runId: "", cron: "" };
+    case "schedule.validateCron":
+      return { cron: "" };
+    case "session.appendCustomMessage":
+      return { customType: "", text: "" };
     case "schedule.replyToRun":
       return { runId: "2fa6a8c56cc8", text: "   " };
     case "schedule.agentStart":

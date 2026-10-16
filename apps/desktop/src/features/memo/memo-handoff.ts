@@ -10,7 +10,7 @@
 import type { DraftReference } from "../../lib/draft-target";
 import { updateMemoNote } from "./memo-client";
 
-/** 引用 id 前缀，见 MemoPage 注入时的 `memo:<noteId>`。 */
+/** 引用 id 前缀，见 `injectMemoReference` 注入时的 `memo:<noteId>`。 */
 const MEMO_REFERENCE_PREFIX = "memo:";
 
 /**

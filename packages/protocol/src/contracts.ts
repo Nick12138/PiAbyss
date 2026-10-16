@@ -101,6 +101,7 @@ import type {
   ScheduleJobInput,
   ScheduleJobPatch,
   SchedulePermission,
+  ScheduleRunMessages,
   ScheduleRunSummary,
   ScheduleStatus,
   ScheduleTranscriptEntry,
@@ -172,6 +173,7 @@ export type HostContextMap = {
   "session.cleanupArchived": WorkspaceContext;
   "session.getSnapshot": WorkspaceContext;
   "session.setName": ActiveSessionContext;
+  "session.appendCustomMessage": ActiveSessionContext;
   "session.rename": WorkspaceContext;
   "session.getEntries": ActiveSessionContext;
   "session.getTree": ActiveSessionContext;
@@ -271,6 +273,8 @@ export type HostContextMap = {
   "schedule.runJobNow": HostContext;
   "schedule.listRuns": HostContext;
   "schedule.getRunTranscript": HostContext;
+  "schedule.runMessages": HostContext;
+  "schedule.abortRun": HostContext;
   "schedule.replyToRun": HostContext;
   "schedule.validateCron": HostContext;
   "schedule.listNotifications": HostContext;
@@ -366,6 +370,16 @@ export type HostRequestParams = {
   "session.cleanupArchived": null;
   "session.getSnapshot": null;
   "session.setName": { name: string };
+  /**
+   * 往当前会话追加一条自定义消息，**不触发模型轮次**：小精灵确认后要把回执落在
+   * 对话里（她下一轮看得到），但不能让她接着这条回执自己往下说。
+   * `display` 不归调用方管——这条就是给人看的，恒为 true。
+   */
+  "session.appendCustomMessage": {
+    customType: string;
+    text: string;
+    details?: Record<string, unknown>;
+  };
   "session.rename": { sessionId: string; sessionPath: string; name: string };
   "session.getEntries": { sinceEntryId?: string } | null;
   "session.getTree": null;
@@ -522,6 +536,10 @@ export type HostRequestParams = {
   "schedule.runJobNow": { id: string; permission?: SchedulePermission; timeoutMs?: number };
   "schedule.listRuns": { jobId?: string | null; limit?: number };
   "schedule.getRunTranscript": { runId: string };
+  /** 一次执行的过程（Host 直读 run 的会话文件，保留思考块与工具调用）。 */
+  "schedule.runMessages": { runId: string };
+  /** 叫停正在执行的那一轮：只中止这一轮，任务与排期不动。 */
+  "schedule.abortRun": { runId: string };
   "schedule.replyToRun": { runId: string; text: string };
   "schedule.validateCron": { cron: string; timezone?: string };
   "schedule.listNotifications": { limit?: number };
@@ -681,6 +699,7 @@ export type HostResultMap = {
   "session.cleanupArchived": { deletedCount: number; failedCount: number };
   "session.getSnapshot": SessionSnapshot | null;
   "session.setName": SessionSnapshot;
+  "session.appendCustomMessage": { appended: true };
   "session.rename": { sessionId: string; name: string; session?: SessionSnapshot };
   "session.getEntries": {
     entries: SerializableSessionEntry[];
@@ -840,6 +859,8 @@ export type HostResultMap = {
     entries: ScheduleTranscriptEntry[];
   };
   "schedule.replyToRun": { run: ScheduleRunSummary };
+  "schedule.runMessages": ScheduleRunMessages;
+  "schedule.abortRun": { aborted: boolean; run: ScheduleRunSummary };
   "schedule.validateCron": { valid: boolean; reason: string | null };
   "schedule.listNotifications": { entries: ScheduleNotification[] };
   "schedule.agentStart": { sessionId: string; sessionPath: string };

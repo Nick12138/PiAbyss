@@ -1960,11 +1960,38 @@ export type ScheduleRunSummary = {
   durationMs: number | null;
   model: ScheduleModelRef | null;
   permission: SchedulePermission;
+  /**
+   * 本次实际生效的工具白名单（full 档为 `["*"]`，命令型任务为 `[]`）。
+   * 无人值守执行的底牌：面板要能回答「这一轮到底给了哪些工具」，用户才看得出
+   * 「任务书要用 OCR，可执行会话里根本没有那个工具」。
+   */
+  tools: string[];
+  /** 执行会话文件；命令型任务与尚未建会话的早期 running 为 null。 */
+  sessionPath: string | null;
+  /** 本次执行的命令（仅命令型任务非空）。 */
+  command: string | null;
   forkOf: string | null;
   summary: string;
   error: string | null;
   usage: ScheduleUsageSummary | null;
   toolCalls: number;
+};
+
+/**
+ * schedule.runMessages 结果：一次执行的过程。
+ *
+ * 读法是 Host 直接读 run 的会话 jsonl（`sessionPath`），而不是插件那个拍平的
+ * `/runs/:id/transcript`——后者丢掉 thinking、连 `toolResult` 都不返回，撑不出
+ * 「像普通会话那样折叠展开」。消息形状与智能创建会话同源，前端走同一套
+ * `buildTranscriptRows` 投影。命令型任务没有会话：`messages` 为空，输出看 run 的
+ * `summary`/`outputText`。
+ */
+export type ScheduleRunMessages = {
+  found: boolean;
+  sessionPath: string | null;
+  /** 这一轮是否还在执行中（决定面板显示「停止」还是「已结束」）。 */
+  running: boolean;
+  messages: ScheduleAgentMessage[];
 };
 
 /** 会话转录条目（精简）。 */

@@ -1,9 +1,11 @@
 /**
- * 备忘录「交给 Agent 处理」流程（从 MemoPage 抽出，供多处复用）：
+ * 备忘录「交给 Agent 处理」流程：
  *
- *   - 备忘录页详情的「执行」按钮（原 openWithAgent）；
- *   - 桌面速记小窗的机器人按钮：App.tsx 收到小窗跳转事件（action=agent）后
- *     直接调用 openMemoWithAgentById —— 不经过备忘录页，直接切到会话页。
+ *   - 桌面速记小窗的机器人按钮：App.tsx 收到小窗跳转事件（action=agent）后直接调用
+ *     openMemoWithAgentById —— 不经任何备忘界面，切到会话页；
+ *   - 随行面板「方寸间」的 ✨ 不走这一条：用户本来就坐在小精灵会话里，只借这里的
+ *     `injectMemoReference` 把记录放进当前草稿。`openMemoWithAgent` 那条「切工作区 +
+ *     新建会话」的路是给小窗用的。
  *
  * 流程：解析记录关联的工作区（必要时切换）→ 新建会话 → 注入 `@备忘录`
  * 引用胶囊 → 切到对话页。记录置为「进行中」并绑定会话推迟到消息真正发出时
@@ -48,7 +50,7 @@ type WorkspaceSettingsSnapshot =
  * defaultWorkspace → 内置 DefaultProject（<agentDir>/piabyss/DefaultProject）
  * → lastWorkspace → 当前工作区。提示为空时调用方应直接用当前。
  */
-export function resolveMemoTargetCwd(
+function resolveMemoTargetCwd(
   hint: string,
   currentCwd: string | null,
   settings: WorkspaceSettingsSnapshot,

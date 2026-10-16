@@ -22,8 +22,10 @@ import { hostContext } from "../../lib/bridge/host-context";
 import { markAgentSessionHandled, useScheduleAgentStore } from "./schedule-agent-store";
 import { leaveScheduleAgent } from "./schedule-agent-flow";
 import {
+  latestPlanFence,
   schedulePlanMissingFields,
   schedulePlanPreviewRows,
+  stripPlanFences,
   type SchedulePlanDraft,
 } from "./schedule-model";
 import { ModelControls } from "../chat/ModelControls";
@@ -139,16 +141,8 @@ function extractPlanDraft(
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (message.role !== "assistant") continue;
-    const match = message.text.match(/```schedule-plan\s*\n([\s\S]*?)```/);
-    if (!match) continue;
-    try {
-      const parsed: unknown = JSON.parse(match[1]);
-      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-        return parsed as SchedulePlanDraft;
-      }
-    } catch {
-      /* keep scanning older messages */
-    }
+    const plan = latestPlanFence(message.text);
+    if (plan) return plan;
   }
   return null;
 }
@@ -158,10 +152,7 @@ function extractPlanDraft(
  *  clean, so the block is stripped at render time — including the still-
  *  streaming tail of an unclosed fence. */
 export function stripPlanBlocks(text: string): string {
-  let out = text.replace(/```schedule-plan[^\n]*\n[\s\S]*?```/g, "");
-  const open = out.indexOf("```schedule-plan");
-  if (open >= 0) out = out.slice(0, open);
-  return out.replace(/\n{3,}/g, "\n\n").trim();
+  return stripPlanFences(text);
 }
 
 export type SplitUserMessage = {

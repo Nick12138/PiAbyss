@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { MemoNote } from "@piabyss/protocol";
 import {
-  collectTags,
   collectWorkspaces,
   composeMemoPrompt,
   composeMemoResultSection,
   defaultProjectWorkspacePath,
   deriveTitle,
   extractTags,
-  filterNotes,
   noteExcerpt,
   noteMatchesWorkspace,
   memoFullContentMd,
@@ -16,10 +14,8 @@ import {
   pathBasename,
   resolveWorkspaceHint,
   sortNotesForList,
-  statusCounts,
   tagHue,
   withMemoPrompt,
-  workspaceMismatch,
 } from "./memo-model";
 
 let seq = 0;
@@ -106,7 +102,7 @@ describe("extractTags", () => {
   });
 });
 
-describe("filterNotes / statusCounts / sortNotesForList", () => {
+describe("sortNotesForList", () => {
   const notes = [
     note({ status: "open", tags: ["refactor"], contentMd: "alpha", updatedAt: 3 }),
     note({ status: "in_progress", sessionId: "session-1", updatedAt: 4 }),
@@ -115,31 +111,11 @@ describe("filterNotes / statusCounts / sortNotesForList", () => {
     note({ status: "done", title: "旧想法 archive", updatedAt: 4 }),
   ];
 
-  it("counts statuses", () => {
-    expect(statusCounts(notes)).toEqual({ open: 1, in_progress: 1, done: 3 });
-  });
-
-  it("filters by status, tag, query", () => {
-    expect(
-      filterNotes(notes, { status: "done", tag: null, workspace: null, query: "" }),
-    ).toHaveLength(3);
-    expect(
-      filterNotes(notes, { status: "done", tag: "BUG", workspace: null, query: "" }),
-    ).toHaveLength(2);
-    expect(
-      filterNotes(notes, { status: "done", tag: null, workspace: null, query: "archive" }),
-    ).toHaveLength(1);
-    expect(
-      filterNotes(notes, { status: "open", tag: "bug", workspace: null, query: "" }),
-    ).toHaveLength(0);
-    expect(
-      filterNotes(notes, { status: "in_progress", tag: null, workspace: null, query: "" }),
-    ).toHaveLength(1);
-  });
-
   it("sorts done by completedAt, others by updatedAt", () => {
-    const doneFilter = { status: "done" as const, tag: null, workspace: null, query: "" };
-    const done = sortNotesForList(filterNotes(notes, doneFilter), "done");
+    const done = sortNotesForList(
+      notes.filter((entry) => entry.status === "done"),
+      "done",
+    );
     expect(done.map((entry) => entry.completedAt)).toEqual([9, 5, null]);
     const open = sortNotesForList(notes, "open");
     expect(open.map((entry) => entry.updatedAt)).toEqual([4, 4, 3, 2, 1]);
@@ -156,9 +132,6 @@ describe("tagHue", () => {
       expect(hue).toBeGreaterThanOrEqual(0);
       expect(hue).toBeLessThan(360);
     }
-  });
-  it("collects distinct tags preserving first casing", () => {
-    expect(collectTags([note({ tags: ["A"] }), note({ tags: ["a", "b"] })])).toEqual(["A", "b"]);
   });
 });
 
@@ -196,12 +169,6 @@ describe("workspace hints", () => {
     expect(noteMatchesWorkspace(note({ workspaceHint: "other/PiAbyss" }), "D:/work/PiAbyss")).toBe(
       false,
     );
-  });
-  it("reports mismatches for the detail view", () => {
-    expect(workspaceMismatch(note({ workspaceHint: "Other" }), "D:/work/PiAbyss")).toBe("Other");
-    expect(workspaceMismatch(note({ workspaceHint: "PiAbyss" }), "D:/work/PiAbyss")).toBeNull();
-    expect(workspaceMismatch(note({ workspaceHint: "Other" }), null)).toBe("Other");
-    expect(workspaceMismatch(note({ workspaceHint: null }), null)).toBeNull();
   });
   it("collects distinct workspace hints", () => {
     expect(

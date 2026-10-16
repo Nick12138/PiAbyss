@@ -15,7 +15,7 @@
  *   1. 方寸间        —— `PixieTodoSection`
  *   2. 周期计划      —— `PixieScheduleSection`
  *   3. 委派任务      —— 本文件，数据由 `PixiePage` 轮询后传入
- * 一次只看一块，导航就是顶栏那 32px（面板标题「随行面板」随之删掉，名字留给 `aria-label`）。
+ * 一次只看一块，导航就是顶栏那 `h-10`（35px；面板标题「随行面板」随之删掉，名字留给 `aria-label`）。
  * 三块都留在 DOM 里、未选中的只摘显示，所以每块自己拉的数据一直活着、页签上的计数不会停更。
  * 再加分组只要往 `tabs` 里插一项 + 插一个 section（外壳 `PixiePanelTabs` 已经统一）。
  *
@@ -26,8 +26,10 @@
  * 每块一圈圆角边框，左右各白吃 ~10px、上下各多 24px，窄面板里不值。
  *
  * 断点：扣完侧栏欠账的行宽不足 `PIXIE_PANEL_BREAKPOINT_PX` 时面板**自动收起**（不是
- * `display:none`，见下），够宽时是否展开才由手动开关决定。手动开关在窄容器下没有意义，
- * 所以 `pixiePanelWide` 一并由这条阈值驱动，为 false 时顶栏开关消失。
+ * `display:none`，见下），够宽时是否展开才由手动开关决定。窄容器下它换成**盖在对话上的
+ * 浮层抽屉**（`pixiePanelDrawerOpen`，样式在 index.css 的 `[data-panel-overlay]` 一组）：
+ * 方寸间只有面板这一处入口，开关不能再消失，否则窗口一窄就什么都能看不到。两种形态各记
+ * 一份开合——并排展开的记忆不该在拖窄那一下自己压到对话上，跨越断点一律从关着开始。
  *
  * 为什么断点从 CSS 挪到 JS：`display:none` 没有中间态，跨断点那一下必然是硬切。挪进来
  * 之后自动收起与手动折叠走**同一个滑出**，拖窗口边缘过断点就有动画；而启动 / 托盘 /
@@ -159,6 +161,8 @@ export function summarizePixieTasks(groups: PixieTaskTreeWorkspace[]): PixieDisp
 export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] }) {
   const t = useT();
   const open = useAppStore((state) => state.pixiePanelOpen);
+  const drawerOpen = useAppStore((state) => state.pixiePanelDrawerOpen);
+  const setPixiePanelDrawerOpen = useAppStore((state) => state.setPixiePanelDrawerOpen);
   const setPixiePanelWide = useAppStore((state) => state.setPixiePanelWide);
   const sidebarCollapsed = useAppStore((state) => state.sidebarCollapsed);
   const sidebarAutoCollapsed = useAppStore((state) => state.sidebarAutoCollapsed);
@@ -257,10 +261,10 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
     return () => observer.disconnect();
   }, []);
 
-  /** 手动开关动的是 `open`，永远该有动画：先把「程序性跨越」这个标记擦掉。 */
+  /** 手动开关动的是 `open`（窄容器下是抽屉），永远该有动画：先把「程序性跨越」这个标记擦掉。 */
   useLayoutEffect(() => {
     setProgrammatic(false);
-  }, [open]);
+  }, [open, drawerOpen]);
 
   /**
    * 断点判定。展开与收起差一条回差带（`PIXIE_PANEL_EXPAND_HYSTERESIS_PX`）：窗口
@@ -279,11 +283,18 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
     if (next === null || next === wide) return;
     setWide(next);
     setProgrammatic(!layoutRead.current.isDrag);
-  }, [roomyWidth, rowWidth, wide]);
+    // 跨越断点一律从「关着」开始：并排展开的记忆不该在窗口拖窄那一下变成压住对话的
+    // 浮层，反过来浮层也不该在拉宽时自动占掉一栏。
+    setPixiePanelDrawerOpen(false);
+  }, [roomyWidth, rowWidth, wide, setPixiePanelDrawerOpen]);
 
   useEffect(() => {
     setPixiePanelWide(wide);
   }, [wide, setPixiePanelWide]);
+
+  /** 离开小精灵页 = 面板整个卸载。抽屉状态必须跟着清掉：它是浮层，留着下次进来会直接
+   *  撞上一张遮罩（并排那一栏有 localStorage 偏好，本来就是「该展开就展开」）。 */
+  useEffect(() => () => setPixiePanelDrawerOpen(false), [setPixiePanelDrawerOpen]);
 
   /**
    * 显示宽度 = 用户偏好按当前可用宽度收敛后的值。**只收敛显示，不回写偏好**：
@@ -308,8 +319,27 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
     }
   }, [customWidth]);
 
-  /** 展开态 = 手动展开 **且** 行宽够。侧栏自动收起与手动折叠走同一个滑出。 */
-  const shown = open && wide;
+  /** 展开态 = 手动展开 **且** 行宽够；窄容器下换成手动开的浮层抽屉自己说了算。
+   *  侧栏自动收起与手动折叠走同一个滑出，抽屉共用 `data-panel-open`，只是方向由
+   *  CSS 换成 translateX（见 index.css 的 `[data-panel-overlay]` 一组）。 */
+  const overlay = !wide;
+  const shown = overlay ? drawerOpen : open;
+
+  /**
+   * 抽屉是浮层：Esc 与遮罩都关得掉。但Esc 要先给弹窗——新建 / 编辑弹窗（以及总结、
+   * 删除确认）都挂在 body 上，用户在抽屉里开着弹窗按 Esc，退的是弹窗，不该连带把
+   * 整个抽屉也撤掉。
+   */
+  useEffect(() => {
+    if (!overlay || !shown) return;
+    const onKey = (event: DocumentEventMap["keydown"]) => {
+      if (event.key !== "Escape") return;
+      if (document.querySelector('[role="dialog"]')) return;
+      setPixiePanelDrawerOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [overlay, shown, setPixiePanelDrawerOpen]);
   /** 拖宽度途中（要跟手）与跨越断点那次不是用户拖出来的（启动 / 托盘 / 贴边 / DPI）
    *  都不许有过渡。 */
   const instant = resizing || programmatic;
@@ -364,77 +394,91 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
   };
 
   return (
-    <aside
-      ref={asideRef}
-      id="pixie-side-panel"
-      data-pixie-side-panel
-      data-panel-open={shown ? "true" : "false"}
-      data-panel-instant={instant ? "true" : undefined}
-      aria-label={t("pixiePanelTitle")}
-      aria-hidden={shown ? undefined : true}
-      inert={shown ? undefined : true}
-      style={{ width: panelWidth, marginRight: shown ? 0 : -slideOffset }}
-      className="relative flex min-h-0 w-[clamp(300px,30%,404px)] shrink-0 flex-col border-l border-border bg-surface"
-    >
-      {shown && (
+    <>
+      {/* 窄容器里面板是覆盖式浮层：遮罩负责「点外面就关」，也把这一栏与对话隔开。
+        遮罩从顶栏下沿开始——顶栏那颗开关得留着点得到，否则抽屉只能靠 Esc 退。 */}
+      {overlay && shown ? (
         <div
-          role="separator"
-          tabIndex={0}
-          data-testid="pixie-panel-resize"
-          aria-label={t("pixiePanelResize")}
-          aria-orientation="vertical"
-          aria-valuemin={MIN_PIXIE_PANEL_WIDTH}
-          aria-valuemax={MAX_PIXIE_PANEL_WIDTH}
-          aria-valuenow={Math.round(currentWidth)}
-          className="absolute left-0 top-0 z-30 h-full w-2 cursor-col-resize touch-none"
-          onPointerDown={(event) => {
-            if (event.button !== 0) return;
-            event.preventDefault();
-            resizeStart.current = {
-              pointerId: event.pointerId,
-              x: event.clientX,
-              width: currentWidth,
-            };
-            event.currentTarget.setPointerCapture?.(event.pointerId);
-            setResizing(true);
-          }}
-          onPointerMove={(event) => {
-            const start = resizeStart.current;
-            if (!start || start.pointerId !== event.pointerId) return;
-            applyWidth(start.width + start.x - event.clientX);
-          }}
-          onPointerUp={(event) => finishResize(event.currentTarget, event.pointerId)}
-          onPointerCancel={(event) => finishResize(event.currentTarget, event.pointerId)}
-          onLostPointerCapture={() => {
-            resizeStart.current = null;
-            setResizing(false);
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-            event.preventDefault();
-            applyWidth(
-              currentWidth + (event.key === "ArrowLeft" ? PANEL_RESIZE_STEP : -PANEL_RESIZE_STEP),
-            );
-          }}
+          data-pixie-panel-backdrop
+          data-testid="pixie-panel-backdrop"
+          aria-hidden="true"
+          onClick={() => setPixiePanelDrawerOpen(false)}
+          className="fixed inset-x-0 bottom-0 top-[var(--theme-toolbar-height)] z-40 bg-black/30"
         />
-      )}
-
-      <PixiePanelTabBar tabs={tabs} active={activeTab} onSelect={setTab} />
-      <div
-        data-pixie-panel-content
-        className="scrollbar-subtle flex min-h-0 flex-1 flex-col overflow-y-auto pb-2"
+      ) : null}
+      <aside
+        ref={asideRef}
+        id="pixie-side-panel"
+        data-pixie-side-panel
+        data-panel-overlay={overlay ? "true" : undefined}
+        data-panel-open={shown ? "true" : "false"}
+        data-panel-instant={instant ? "true" : undefined}
+        aria-label={t("pixiePanelTitle")}
+        aria-hidden={shown ? undefined : true}
+        inert={shown ? undefined : true}
+        style={{ width: panelWidth, marginRight: overlay || shown ? 0 : -slideOffset }}
+        className="relative flex min-h-0 w-[clamp(300px,30%,404px)] shrink-0 flex-col border-l border-border bg-surface"
       >
-        {memoEnabled && <PixieTodoSection active={activeTab === "todo"} onCount={onCount.todo} />}
-        {scheduleEnabled && (
-          <PixieScheduleSection active={activeTab === "schedule"} onCount={onCount.schedule} />
+        {shown && !overlay && (
+          <div
+            role="separator"
+            tabIndex={0}
+            data-testid="pixie-panel-resize"
+            aria-label={t("pixiePanelResize")}
+            aria-orientation="vertical"
+            aria-valuemin={MIN_PIXIE_PANEL_WIDTH}
+            aria-valuemax={MAX_PIXIE_PANEL_WIDTH}
+            aria-valuenow={Math.round(currentWidth)}
+            className="absolute left-0 top-0 z-30 h-full w-2 cursor-col-resize touch-none"
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              event.preventDefault();
+              resizeStart.current = {
+                pointerId: event.pointerId,
+                x: event.clientX,
+                width: currentWidth,
+              };
+              event.currentTarget.setPointerCapture?.(event.pointerId);
+              setResizing(true);
+            }}
+            onPointerMove={(event) => {
+              const start = resizeStart.current;
+              if (!start || start.pointerId !== event.pointerId) return;
+              applyWidth(start.width + start.x - event.clientX);
+            }}
+            onPointerUp={(event) => finishResize(event.currentTarget, event.pointerId)}
+            onPointerCancel={(event) => finishResize(event.currentTarget, event.pointerId)}
+            onLostPointerCapture={() => {
+              resizeStart.current = null;
+              setResizing(false);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+              event.preventDefault();
+              applyWidth(
+                currentWidth + (event.key === "ArrowLeft" ? PANEL_RESIZE_STEP : -PANEL_RESIZE_STEP),
+              );
+            }}
+          />
         )}
-        <PixieDispatchSection
-          groups={groups}
-          active={activeTab === "dispatch"}
-          onCount={onCount.dispatch}
-        />
-      </div>
-    </aside>
+
+        <PixiePanelTabBar tabs={tabs} active={activeTab} onSelect={setTab} />
+        <div
+          data-pixie-panel-content
+          className="scrollbar-subtle flex min-h-0 flex-1 flex-col overflow-y-auto pb-2"
+        >
+          {memoEnabled && <PixieTodoSection active={activeTab === "todo"} onCount={onCount.todo} />}
+          {scheduleEnabled && (
+            <PixieScheduleSection active={activeTab === "schedule"} onCount={onCount.schedule} />
+          )}
+          <PixieDispatchSection
+            groups={groups}
+            active={activeTab === "dispatch"}
+            onCount={onCount.dispatch}
+          />
+        </div>
+      </aside>
+    </>
   );
 }
 

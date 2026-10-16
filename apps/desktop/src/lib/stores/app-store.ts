@@ -71,8 +71,8 @@ import {
   type ExtensionUiRequestState,
 } from "./extension-ui-state";
 
-export type NavPage =
-  "chat" | "packages" | "schedule" | "schedule-agent" | "memo" | "pixie" | "settings";
+/** 方寸间不再是独立一页（`"memo"` 已撤），它只有小精灵页右侧随行面板那一处入口。 */
+export type NavPage = "chat" | "packages" | "schedule" | "schedule-agent" | "pixie" | "settings";
 
 /** Frozen empty map shared as the initial `providerNames` value so unrelated
  *  sessions don't reallocate a new Map on every reset. */
@@ -439,6 +439,12 @@ export type AppState = EpochState & {
   page: NavPage;
   /** Scheduler availability from the periodic-tasks page poll (null = not checked yet). */
   scheduleOnline: boolean | null;
+  /**
+   * 计划列表被改动过几次（草案卡确认、详情弹窗里立即执行/停用…）。
+   * 随行面板那页签按 30s 滴答刷新，用户刚点完「确定」不该再等半分钟——
+   * 落库方 bump 一下，页签立刻重拉。
+   */
+  scheduleRevision: number;
   /** Section the Settings overlay should open on (null = default "general"). */
   settingsSection: SettingsSection | null;
   /** Last visited Settings position for the current workspace (see SettingsNavCache). */
@@ -481,6 +487,10 @@ export type AppState = EpochState & {
    *  toggle hides while false — the manual switch only decides "expanded once
    *  there is room for it". */
   pixiePanelWide: boolean;
+  /** 窄容器下的兜底开合：行宽不足时随行面板不再是并排的一栏，而是盖在对话上的浮层
+   *  抽屉，这个开关管的是抽屉。它**不能**复用 `pixiePanelOpen`——那个记的是「宽容器里
+   *  要不要并排展开」，窗口一窄就会自动把抽屉压到对话上。不持久化（一次性浮层）。 */
+  pixiePanelDrawerOpen: boolean;
   /** Whether the global left aside is collapsed. Backed by localStorage so it
    *  survives reloads; promoted out of Sidebar-local state so the app-level
    *  top bar can both read and toggle it. */
@@ -568,6 +578,7 @@ export type AppState = EpochState & {
   clearProviderLogin: () => void;
   setPage: (page: NavPage) => void;
   setScheduleOnline: (online: boolean | null) => void;
+  bumpScheduleRevision: () => void;
   openSettingsSection: (section: SettingsSection) => void;
   setSettingsSection: (section: SettingsSection) => void;
   setSettingsNavCache: (cache: SettingsNavCache) => void;
@@ -610,6 +621,7 @@ export type AppState = EpochState & {
   setDockOpen: (open: boolean) => void;
   setPixiePanelOpen: (open: boolean) => void;
   setPixiePanelWide: (wide: boolean) => void;
+  setPixiePanelDrawerOpen: (open: boolean) => void;
   setSidebarCollapsed: (open: boolean) => void;
   setSidebarWidth: (sidebarWidth: number) => void;
   toggleSidebar: () => void;
@@ -746,6 +758,7 @@ function epochSlice(s: AppState): EpochState {
 export const useAppStore = create<AppState>((set, get) => ({
   page: "chat",
   scheduleOnline: null,
+  scheduleRevision: 0,
   settingsSection: null,
   settingsNavCache: null,
   authBlocked: null,
@@ -768,6 +781,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   dockRestoreOnPanelClose: null,
   pixiePanelOpen: !sidebarPref(PIXIE_PANEL_COLLAPSED_KEY),
   pixiePanelWide: true,
+  pixiePanelDrawerOpen: false,
   sidebarCollapsed: sidebarPref("piabyss.sidebar.collapsed"),
   sidebarAutoCollapsed: sidebarPref("piabyss.sidebar.autoCollapsed"),
   sidebarAutoInstant: false,
@@ -877,6 +891,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   clearProviderLogin: () => set({ providerLogin: null }),
   setScheduleOnline: (online) => set({ scheduleOnline: online }),
+  bumpScheduleRevision: () => set((state) => ({ scheduleRevision: state.scheduleRevision + 1 })),
   setPage: (page) =>
     set((state) => ({
       page,
@@ -1368,6 +1383,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ pixiePanelOpen: open });
   },
   setPixiePanelWide: (pixiePanelWide) => set({ pixiePanelWide }),
+  setPixiePanelDrawerOpen: (pixiePanelDrawerOpen) => set({ pixiePanelDrawerOpen }),
   setSidebarCollapsed: (open) => {
     // Explicit set (reveal flow, programmatic opens): a user-visible action
     // always overrides the window-width rule's memory.

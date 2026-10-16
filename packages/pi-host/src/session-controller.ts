@@ -358,6 +358,63 @@ export function createSessionHandlers(
       }
     },
 
+    /**
+     * 往当前会话追加一条自定义消息，**不触发模型轮次**。
+     *
+     * 用例：小精灵页的计划草案卡——用户点「确定 / 取消」之后，回执要落在对话里
+     * （她下一轮读得到自己建了什么），但绝不能让她接着这条回执自己往下说。
+     * `sendCustomMessage` 的 no-trigger 路径正是为此设计：不在跑就直接追加，
+     * 正在跑则等本轮结束后追加（SDK 自己排队，不会插进 tool 循环中间）。
+     * `display` 恒为 true：这条本来就是给人看的。
+     */
+    "session.appendCustomMessage": async (ctx) => {
+      const server = factory.getServer();
+      if (!server) {
+        return { error: createHostError("HOST_NOT_READY", "Server not bound") };
+      }
+      if (
+        !server.serviceGraphLock.tryAcquire({
+          operationKind: "session.appendCustomMessage",
+          requestId: ctx.id,
+        })
+      ) {
+        return {
+          error: createHostError("SERVICE_GRAPH_BUSY", "Service graph busy", {
+            retryable: true,
+          }),
+        };
+      }
+
+      try {
+        const stale = factory.checkIdentity(ctx.context, {
+          requireWorkspace: true,
+          requireSession: true,
+        });
+        if (stale) return { error: stale };
+        const g = factory.getGraph();
+        if (!g?.agentSession) {
+          return { error: createHostError("AGENT_NOT_READY", "No active session") };
+        }
+        const params = ctx.params as {
+          customType: string;
+          text: string;
+          details?: Record<string, unknown>;
+        };
+        await g.agentSession.sendCustomMessage(
+          {
+            customType: params.customType,
+            content: params.text,
+            display: true,
+            ...(params.details ? { details: params.details } : {}),
+          },
+          { triggerTurn: false },
+        );
+        return { result: { appended: true } };
+      } finally {
+        server.serviceGraphLock.release(ctx.id);
+      }
+    },
+
     "session.rename": async (ctx) => {
       const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
       if (stale) return { error: stale };

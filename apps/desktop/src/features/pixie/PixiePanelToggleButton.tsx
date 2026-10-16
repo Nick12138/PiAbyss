@@ -5,10 +5,14 @@
  * 东西——那个管工作区 dock（文件 / 终端 / 改动），这个管小精灵的随行面板，所以
  * 不复用、也不共用状态。
  *
- * 行宽不足 672（`PIXIE_PANEL_BREAKPOINT_PX`）时面板自动收起，此时这个开关没有意义：
- * `pixiePanelWide` 由面板量出行了宽后写进 store，为 false 时直接不渲染。
+ * 一个按钮管两种形态：行宽够（≥ `PIXIE_PANEL_BREAKPOINT_PX`）时开的是**并排的
+ * 一栏**（`pixiePanelOpen`），行宽不够时开的是**盖在对话上的浮层抽屉**
+ * （`pixiePanelDrawerOpen`）。以前窄容器下这个开关直接不渲染——那时面板在窄窗口
+ * 里根本没有别的入口，方寸间 / 周期计划 / 委派任务全部打不开；面板成为方寸间的
+ * 唯一去处之后，这里必须留着。图标也按形态换：抽屉用 `PanelRight`，与并排的
+ * 开合箭头区分开。
  */
-import { PanelRightClose, PanelRightOpen } from "lucide-react";
+import { PanelRightClose, PanelRightOpen, PanelRight } from "lucide-react";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 
@@ -16,24 +20,29 @@ export function PixiePanelToggleButton() {
   const t = useT();
   const open = useAppStore((state) => state.pixiePanelOpen);
   const wide = useAppStore((state) => state.pixiePanelWide);
+  const drawerOpen = useAppStore((state) => state.pixiePanelDrawerOpen);
   const setPixiePanelOpen = useAppStore((state) => state.setPixiePanelOpen);
+  const setPixiePanelDrawerOpen = useAppStore((state) => state.setPixiePanelDrawerOpen);
 
-  if (!wide) return null;
-
-  const label = open ? t("pixiePanelCollapse") : t("pixiePanelExpand");
+  const shown = wide ? open : drawerOpen;
+  const label = shown ? t("pixiePanelCollapse") : t("pixiePanelExpand");
+  // 并排那一栏用开合箭头（宽度是要回来的），抽屉用一块静态面板（它是盖上来的，
+  // 不是从哪一栏让出来的）。
+  const Icon = !wide ? PanelRight : shown ? PanelRightClose : PanelRightOpen;
 
   return (
     <button
       type="button"
       data-testid="pixie-panel-toggle"
+      data-panel-drawer={wide ? undefined : "true"}
       title={label}
       aria-label={label}
-      aria-expanded={open}
+      aria-expanded={shown}
       aria-controls="pixie-side-panel"
       className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
-      onClick={() => setPixiePanelOpen(!open)}
+      onClick={() => (wide ? setPixiePanelOpen(!open) : setPixiePanelDrawerOpen(!drawerOpen))}
     >
-      {open ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+      <Icon size={15} />
     </button>
   );
 }

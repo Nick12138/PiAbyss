@@ -16,7 +16,7 @@ import { PixieScheduleSection } from "./PixieScheduleSection";
 
 /**
  * 随行面板「周期计划」页签：列表直接摊开，工具条一行说清「下次什么时候」（活跃数交给
- * 页签徽章），开关就地生效，创建走对话（只把引导语塞进输入框）。
+ * 页签徽章），开关就地生效，点行开详情弹窗，「＋」开新建弹窗（两种模式都在里面）。
  * 面板的插件门与页签栏归 `PixieSidePanel`（见它的用例）。
  */
 const onCount = vi.fn();
@@ -130,33 +130,29 @@ describe("PixieScheduleSection", () => {
     await waitFor(() => expect(onCount).toHaveBeenLastCalledWith(1));
     // 工具条那一行说清「下次什么时候」：倒计时按现在算，取到「NhNm」即可。
     await waitFor(() => expect(section().textContent).toMatch(/next in \d+h\d+m/));
-    await waitFor(() => expect(screen.getAllByTestId("pixie-schedule-row")).toHaveLength(2));
+    // 二级页签：默认只看「当前活跃」那一桶，停用的一条不在屏上。
+    await waitFor(() => expect(screen.getAllByTestId("pixie-schedule-row")).toHaveLength(1));
   });
 
   it("列表给全：名称 / 触发 / 倒计时 / 工作区 / 开关", async () => {
     render(<PixieScheduleSection active onCount={onCount} />);
 
-    await waitFor(() => expect(screen.getAllByTestId("pixie-schedule-row")).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByTestId("pixie-schedule-row")).toHaveLength(1));
     expect(screen.getByText("每日构建报告")).toBeInTheDocument();
     expect(screen.getByText("every 1d")).toBeInTheDocument();
-    expect(screen.getByText("手动巡检")).toBeInTheDocument();
     expect(screen.getByText("okxbot")).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "每日构建报告" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
-    expect(screen.getByRole("switch", { name: "手动巡检" })).toHaveAttribute(
-      "aria-checked",
-      "false",
-    );
-    // 创建入口只有「让精灵新建」——计划本身在对话里谈。
-    expect(screen.getByText(/only views and toggles them/)).toBeInTheDocument();
   });
 
   it("开关直接落到 schedule.setJobEnabled", async () => {
     const user = userEvent.setup();
     render(<PixieScheduleSection active onCount={onCount} />);
-    await waitFor(() => expect(screen.getAllByTestId("pixie-schedule-row")).toHaveLength(2));
+    // 停用那条归「已失效」桶，先切过去才看得见它的开关。
+    await user.click(await screen.findByTestId("pixie-schedule-tab-expired"));
+    await waitFor(() => expect(screen.getAllByTestId("pixie-schedule-row")).toHaveLength(1));
 
     await user.click(screen.getByRole("switch", { name: "手动巡检" }));
 
@@ -170,18 +166,136 @@ describe("PixieScheduleSection", () => {
     );
   });
 
-  it("「＋ 让精灵新建」只把引导语塞进输入框，不新开会话", async () => {
+  it("「＋」开新建弹窗（两种模式都在里面），不直接建任务也不塞输入框", async () => {
     const user = userEvent.setup();
     render(<PixieScheduleSection active onCount={onCount} />);
 
     await user.click(screen.getByTestId("pixie-schedule-new"));
 
-    expect(requestComposerInsert).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(requestComposerInsert).mock.calls[0][0]).toContain("Create a scheduled plan");
+    // 弹窗默认落在「智能」模式：需求写进去后交给小精灵出草案，落库仍在卡片上。
+    expect(await screen.findByTestId("schedule-form-smart-requirement")).toBeInTheDocument();
+    expect(requestComposerInsert).not.toHaveBeenCalled();
     expect(hostClient.request).not.toHaveBeenCalledWith(
       "schedule.createJob",
       expect.anything(),
       expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("智能模式：引导语放进输入框由用户发送，不替用户发一条消息进对话", async () => {
+    const user = userEvent.setup();
+    render(<PixieScheduleSection active onCount={onCount} />);
+    await user.click(screen.getByTestId("pixie-schedule-new"));
+
+    await user.type(
+      await screen.findByTestId("schedule-form-smart-requirement"),
+      "每天早9点总结昨天的提交",
+    );
+    await user.click(screen.getByRole("button", { name: "Start analysis" }));
+
+    await waitFor(() => expect(requestComposerInsert).toHaveBeenCalledTimes(1));
+    const inserted = vi.mocked(requestComposerInsert).mock.calls[0][0];
+    expect(inserted).toContain("每天早9点总结昨天的提交");
+    // 默认工作区一起带进框里，用户不用自己找路径
+    expect(inserted).toContain(PIXIE_CWD);
+    // 这条老路必须彻底没有：程序代发用户消息既改不了也撤回不了
+    expect(hostClient.request).not.toHaveBeenCalledWith(
+      "agent.prompt",
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("二级页签分桶：停用的归「已失效」，计数挂在标签上", async () => {
+    const user = userEvent.setup();
+    render(<PixieScheduleSection active onCount={onCount} />);
+
+    const activeTab = await screen.findByTestId("pixie-schedule-tab-active");
+    const expiredTab = screen.getByTestId("pixie-schedule-tab-expired");
+    // 「＋」与两桶在同一行：这一行就是这一块的唯一工具条，不再单开一条 hint 行。
+    expect(screen.getByTestId("pixie-schedule-new").parentElement).toBe(activeTab.parentElement);
+    expect(screen.getByTestId("pixie-schedule-new").parentElement).toBe(expiredTab.parentElement);
+    expect(activeTab).toHaveAttribute("aria-pressed", "true");
+    expect(activeTab.textContent).toContain("1");
+    expect(expiredTab.textContent).toContain("1");
+    expect(screen.queryByText("手动巡检")).not.toBeInTheDocument();
+
+    await user.click(expiredTab);
+
+    expect(expiredTab).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(screen.getAllByTestId("pixie-schedule-row")).toHaveLength(1));
+    expect(screen.getByText("手动巡检")).toBeInTheDocument();
+    // 页签徽章仍然只数活跃那一条。
+    expect(onCount).toHaveBeenLastCalledWith(1);
+  });
+
+  it("僵尸的 running 记录：说「已中断」而不是继续画执行中，也不给停止按钮", async () => {
+    const user = userEvent.setup();
+    vi.mocked(hostClient.request).mockImplementation(async (method) => {
+      if (method === "schedule.status") return { ok: true, result: { available: true } } as never;
+      if (method === "schedule.listJobs") {
+        return { ok: true, result: { jobs: JOBS, activeJobIds: [] } } as never;
+      }
+      if (method === "schedule.listRuns") {
+        return {
+          ok: true,
+          result: {
+            runs: [
+              {
+                runId: "r1",
+                jobId: "j1",
+                jobName: "每日构建报告",
+                trigger: "interval",
+                status: "running",
+                startedAt: new Date().toISOString(),
+                finishedAt: null,
+                durationMs: null,
+                model: null,
+                permission: "read_only",
+                tools: ["read"],
+                sessionPath: null,
+                command: null,
+                forkOf: null,
+                summary: "",
+                error: null,
+                usage: null,
+                toolCalls: 0,
+              },
+            ],
+          },
+        } as never;
+      }
+      return { ok: true, result: null } as never;
+    });
+
+    render(<PixieScheduleSection active onCount={onCount} />);
+    await user.click(await screen.findByText("每日构建报告"));
+
+    // `status:"running"` 单独不作数：调度器（activeJobIds）里没有这一条，就是宿主
+    // 中途退出留下的僵尸记录。给它画「执行中」+ 一个点了只会报 409 的停止按钮，
+    // 等于把坏掉的数据结构转嫁给用户。
+    expect(await screen.findByText(/Interrupted/)).toBeInTheDocument();
+    expect(screen.queryByTestId("pixie-detail-stop")).not.toBeInTheDocument();
+    expect(screen.queryByText(/running/i)).not.toBeInTheDocument();
+  });
+
+  it("点行打开详情弹窗，开关那一格不会跟着打开", async () => {
+    const user = userEvent.setup();
+    render(<PixieScheduleSection active onCount={onCount} />);
+    await user.click(await screen.findByTestId("pixie-schedule-tab-expired"));
+    await waitFor(() => expect(screen.getAllByTestId("pixie-schedule-row")).toHaveLength(1));
+
+    await user.click(screen.getByText("手动巡检"));
+
+    expect(await screen.findByText("Run history")).toBeInTheDocument();
+    // 关闭入口只有右上角那一个 ❌：底部不再排「关闭」，动作条只放动作。
+    expect(screen.getAllByRole("button", { name: "Close" })).toHaveLength(1);
+    expect(hostClient.request).toHaveBeenCalledWith(
+      "schedule.listRuns",
+      expect.anything(),
+      expect.objectContaining({ jobId: "j2" }),
       expect.anything(),
     );
   });

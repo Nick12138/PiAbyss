@@ -1,6 +1,7 @@
 import type { ScheduleJob, ScheduleJobInput, ScheduleTrigger } from "@piabyss/protocol";
 import type { MessageKey } from "../../lib/i18n";
 import type { Translate } from "../../lib/i18n/use-t";
+import type { SchedulePlanDraft } from "./schedule-plan-fence";
 
 /** Matches the plugin's DEFAULTS.timeoutMs (30 minutes). */
 const SCHEDULE_DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
@@ -43,6 +44,12 @@ export type ScheduleFormState = {
   /** 逗号分隔。 */
   tags: string;
   enabled: boolean;
+  /**
+   * 执行会话要不要加载扩展与技能。**默认关**：计划是无人值守的重复执行，
+   * 关掉扩展同时是防递归（执行会话拿不到 `schedule` 工具，就不会自己再建计划）。
+   * 这一位过去被表单写死成 false，用户根本不知道有这档；现在如实暴露、如实承担。
+   */
+  loadExtensions: boolean;
 };
 
 export type ScheduleIntervalUnit = "s" | "m" | "h" | "d" | "w" | "mo";
@@ -67,6 +74,7 @@ export function defaultScheduleForm(cwd: string): ScheduleFormState {
     maxRuns: "",
     tags: "",
     enabled: true,
+    loadExtensions: false,
   };
 }
 
@@ -111,6 +119,7 @@ export function jobToForm(job: ScheduleJob): ScheduleFormState {
     maxRuns: job.maxRuns === null ? "" : String(job.maxRuns),
     tags: job.tags.join(", "),
     enabled: job.enabled,
+    loadExtensions: job.loadExtensions,
   };
 }
 
@@ -186,7 +195,7 @@ export function formToJobInput(
       missedWindow: form.missedWindow,
       timeoutMs,
       maxRuns,
-      loadExtensions: false,
+      loadExtensions: form.loadExtensions,
       tags: form.tags
         .split(/[,，]/)
         .map((tag) => tag.trim())
@@ -275,24 +284,13 @@ export function formatIntervalEvery(every: string): string {
  * kind are dropped instead of rendered empty.
  */
 
-/** Plan-config draft parsed from the assistant's ```schedule-plan block.
- *  `null` means the field was never determined. */
-export type SchedulePlanDraft = {
-  name?: string | null;
-  kind?: "prompt" | "command" | null;
-  prompt?: string | null;
-  command?: string | null;
-  cwd?: string | null;
-  trigger?: ScheduleTrigger | null;
-  permission?: string | null;
-  model?: { provider: string; id: string } | null;
-  missedWindow?: string | null;
-  timeoutMs?: number | null;
-  maxRuns?: number | null;
-  tags?: string[] | null;
-  notify?: string | null;
-  loadExtensions?: boolean | null;
-};
+/**
+ * 草案的线格式（`schedule-plan` 围栏）住在 `schedule-plan-fence` 里：转写投影也要拆它，
+ * 那条路径不许依赖 i18n。这里只做「页面确实用到的」再导出，不是把整个模块转出去——
+ * 全部再导出会养出第二条引用路径，改起来没人报错。
+ */
+export type { SchedulePlanDraft } from "./schedule-plan-fence";
+export { latestPlanFence, stripPlanFences } from "./schedule-plan-fence";
 
 /** Matches the plugin's create path: only an explicit "command" is a command plan. */
 function schedulePlanIsCommand(plan: SchedulePlanDraft): boolean {
@@ -485,6 +483,7 @@ export function planToForm(plan: SchedulePlanDraft, fallbackCwd: string): Schedu
     maxRuns: typeof plan.maxRuns === "number" && plan.maxRuns > 0 ? String(plan.maxRuns) : "",
     tags: Array.isArray(plan.tags) ? plan.tags.join(", ") : "",
     enabled: true,
+    loadExtensions: plan.loadExtensions === true,
   };
 }
 
@@ -511,7 +510,18 @@ export function formToPlan(form: ScheduleFormState): SchedulePlanDraft | null {
     maxRuns: input.maxRuns,
     tags: input.tags,
     notify: input.notify ?? null,
+    loadExtensions: input.loadExtensions,
   };
+}
+
+/**
+ * 工作区路径的短标签：取目录名。列表行、筛选器、详情弹窗都用这一个口径，
+ * 别各处自己 split 一遍（Windows 的反斜杠尤其容易写错）。
+ */
+export function workspaceBaseLabel(cwd: string): string {
+  const trimmed = cwd.replace(/[\\/]+$/, "");
+  const base = trimmed.split(/[\\/]/).pop() ?? trimmed;
+  return base.length > 0 ? base : cwd;
 }
 
 export function formatDurationMs(ms: number | null): string {

@@ -685,8 +685,10 @@ export function SchedulePage() {
             setSelectedJobId(job.id);
             void refreshStatusAndJobs();
           }}
-          onStartSmart={async (cwd, requirement, model) => {
-            const result = await startScheduleAgent(requirement, cwd, model);
+          onStartSmart={async (cwd, requirement) => {
+            // 智能创建不再选分析模型：模型跟随会话当前的设置（这里仍走独立创建页，
+            // 传 null = 宿主默认模型）。
+            const result = await startScheduleAgent(requirement, cwd, null);
             if (result.ok) {
               setDialog(null);
               setPage("schedule-agent");

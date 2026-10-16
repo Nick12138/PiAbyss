@@ -1902,6 +1902,16 @@ function buildSegmentContextPreamble(
     "  - 询问：立刻转述给用户、不要代答；用户的下一条消息就是答复。",
     "- 模型与推理深度：默认不传 model / thinkingLevel（跟随会话当前设置）。仅当用户在对话中明确指定（如「用 xxx 模型跑」「深度调到 high」）时才传，绝不主动更换。",
     "- 委派 cwd：必须来自下方已知工作区列表（或用户当前打开的工作区）；用户手动指令的优先级最高。",
+    // 计划是无人值守的重复执行，写这一笔必须人点头：工具能力在她那边是齐的（pi-schedule
+    // 注册了 schedule 工具，create/run_now 全都调得动），所以约束只能写在这里。
+    // 字段规范也住在这儿——前端不再每条消息重念信封，段内一次注入就够。
+    "- 周期计划（`schedule` 工具）：**只读不写**。可以 list / get / history / status 查现状与结果；create / update / cancel / enable / disable / run_now / reply 一律不许调用，落库由用户在确认卡上点「确认」完成，你只出草案、也不许声称已创建或已更新。",
+    "  要改配置时，输出一个 ```schedule-plan 代码块，内容为完整配置的 JSON（每次都写完整，未确定的字段写 null，用户没说的不要臆造）：",
+    '  name: string；kind: "prompt" | "command"；prompt: string（command 型写 ""）；command: string | null；cwd: string 绝对路径；',
+    '  trigger: { "type": "manual" } | { "type": "once", "at": "<ISO时间>" } | { "type": "interval", "every": "<数字><s|m|h|d|w|mo>" } | { "type": "cron", "cron": "<5段表达式>", "timezone"?: string }；',
+    '  permission: "read_only" | "write" | "full"（仅 prompt 型有意义）；model: { "provider": string, "id": string } | null（null=宿主默认）；',
+    '  missedWindow: "catch_up_one" | "skip"；timeoutMs: number（毫秒）；maxRuns: number | null；tags: string[]；notify: "none" | "system" | "tg"；',
+    "  jobId: string | null（只有这份草案是改现有计划时才带上它的 id，新建一律不写）。",
     ...(workspaces.length > 0
       ? ["已知的 PiAbyss 工作区：", ...workspaces.map((path) => `- ${path}`)]
       : []),

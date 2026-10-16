@@ -83,8 +83,9 @@ export type DraftMutation =
 export type DraftReference = {
   /** Unique within one draft; used as the React key and for removal. */
   id: string;
-  /** Capsule style: "memo" an @Memo chip, "quote" a Quote chip, "relay-mapping" a Bot chip. */
-  kind: "memo" | "quote" | "relay-mapping";
+  /** Capsule style: "memo" an @Memo chip, "quote" a Quote chip, "relay-mapping" a Bot chip,
+   *  "schedule" an @周期计划 chip (a plan handed to Pixie to be modified). */
+  kind: "memo" | "quote" | "relay-mapping" | "schedule";
   /** Capsule caption: the memo title, quote preview, or station name. */
   label: string;
   /** Full prompt text (memo/relay-mapping) or blockquote (quote) prepended to the message. */

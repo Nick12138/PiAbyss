@@ -1,14 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MemoNote } from "@piabyss/protocol";
-import {
-  datetimeLocalValue,
-  groupTodoNotes,
-  parseDatetimeLocal,
-  parseTagInput,
-  todoBucketOf,
-  todoOverview,
-  todoTabNotes,
-} from "./pixie-todo-model";
+import { groupTodoNotes, todoBucketOf, todoOverview, todoTabNotes } from "./pixie-todo-model";
 
 function note(overrides: Partial<MemoNote> = {}): MemoNote {
   return {
@@ -113,26 +105,5 @@ describe("todoTabNotes", () => {
     ];
     expect(todoTabNotes(notes, "open").map((entry) => entry.id)).toEqual(["a", "b"]);
     expect(todoTabNotes(notes, "done").map((entry) => entry.id)).toEqual(["c"]);
-  });
-});
-
-describe("datetime-local 互转", () => {
-  it("往返保持到分钟", () => {
-    const value = datetimeLocalValue(at(2026, 10, 16, 18));
-    expect(value).toBe("2026-10-16T18:00");
-    expect(parseDatetimeLocal(value)).toBe(at(2026, 10, 16, 18));
-  });
-
-  it("空值 / 非法值都当「没有截止」", () => {
-    expect(datetimeLocalValue(null)).toBe("");
-    expect(parseDatetimeLocal("")).toBeNull();
-    expect(parseDatetimeLocal("   ")).toBeNull();
-    expect(parseDatetimeLocal("不是时间")).toBeNull();
-  });
-});
-
-describe("parseTagInput", () => {
-  it("中英文逗号都认，去 # 去重保序", () => {
-    expect(parseTagInput("#邮件, 文案，邮件, ,#接口")).toEqual(["邮件", "文案", "接口"]);
   });
 });

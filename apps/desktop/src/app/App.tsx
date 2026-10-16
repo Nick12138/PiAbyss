@@ -17,15 +17,12 @@ import { ChatPage } from "../features/chat/ChatPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { SchedulePage } from "../features/schedule/SchedulePage";
 import { ScheduleAgentPage } from "../features/schedule/ScheduleAgentPage";
-import { MemoPage } from "../features/memo/MemoPage";
-import { requestMemoReveal } from "../features/memo/memo-reveal";
 import { openMemoWithAgentById } from "../features/memo/memo-agent";
 import { PixiePage } from "../features/pixie/PixiePage";
 import { startPixieAutostart } from "../features/pixie/pixie-autostart";
 import { usePluginEnabled } from "../features/plugin-library/plugin-gate";
 
-/** The plugin-library entries backing the Memo and Pixie pages. */
-const MEMO_PLUGIN_ID = "piabyss-memo";
+/** The plugin-library entry backing the Pixie page（方寸间现在只是它右侧面板的一块）。 */
 const PIXIE_PLUGIN_ID = "pi-pixie";
 import { startSchedulePushPolling } from "../features/schedule/schedule-push";
 import { SettingsTopBarActionsContext } from "../features/settings/settings-top-bar";
@@ -729,19 +726,18 @@ export function App() {
   // Plugin-backed pages fall back to chat while their plugin is disabled —
   // the sidebar hides the entries, but a persisted page (or a deep link)
   // could still land on one.
-  const memoEnabled = usePluginEnabled(MEMO_PLUGIN_ID);
   const pixieEnabled = usePluginEnabled(PIXIE_PLUGIN_ID);
   useEffect(() => {
-    if (page === "memo" && !memoEnabled) setPage("chat");
     if (page === "pixie" && !pixieEnabled) setPage("chat");
-  }, [page, memoEnabled, pixieEnabled, setPage]);
+  }, [page, pixieEnabled, setPage]);
 
   // 桌面速记小窗「在 PiAbyss 中打开」→ 显示主窗口。
   // 事件载荷 { noteId, action }：
-  //   - 预览（点击待办）：登记 memo-reveal 请求并切到备忘录页，MemoPage 打开详情；
-  //   - agent（机器人按钮）：不经备忘录页，直接走「交给 Agent」流程——
+  //   - 预览（点击待办）：切到小精灵页。方寸间现在只有随行面板那一处，noteId 不再单独
+  //     定位到某条记录——原先那条 reveal 通道属于已经下线的备忘页；
+  //   - agent（机器人按钮）：不经任何备忘界面，直接走「交给 Agent」流程——
   //     解析工作区 → 新建会话 → 注入引用 → 切到会话页（见 memo-agent.ts）。
-  // 备忘页不可用（插件被停用）时回退到聊天页，与上面的护栏一致。
+  // 小精灵不可用时由上面的护栏落回聊天页。
   useEffect(() => {
     if (!nativeWindowAvailable) return;
     let unlisten: (() => void) | undefined;
@@ -760,8 +756,7 @@ export function App() {
               if (noteId) void openMemoWithAgentById(noteId);
               return;
             }
-            if (noteId) requestMemoReveal(noteId);
-            setPage(memoEnabled ? "memo" : "chat");
+            setPage("pixie");
           },
         );
       } catch {
@@ -772,7 +767,7 @@ export function App() {
       cancelled = true;
       unlisten?.();
     };
-  }, [memoEnabled, nativeWindowAvailable, setPage]);
+  }, [nativeWindowAvailable, setPage]);
   const settingsSection = useAppStore((s) => s.settingsSection);
   const hostFatal = useAppStore((s) => s.hostFatal);
   const connecting = useAppStore((s) => s.connecting);
@@ -1443,7 +1438,15 @@ export function App() {
     void persistRecentDesktopLocation(workspacePath, activeSessionPath ?? null).catch(
       notifyDesktopSettingsSaveFailure,
     );
-  }, [page, connecting, rehydrating, desynchronized, desktopSettings, workspacePath, activeSessionPath]);
+  }, [
+    page,
+    connecting,
+    rehydrating,
+    desynchronized,
+    desktopSettings,
+    workspacePath,
+    activeSessionPath,
+  ]);
 
   // The sidebar collapse toggle moved into AppTopBar, so App owns the
   // sidebar.toggle command bus subscription that previously lived in Sidebar.
@@ -1495,8 +1498,6 @@ export function App() {
                 <SchedulePage />
               ) : page === "schedule-agent" ? (
                 <ScheduleAgentPage />
-              ) : page === "memo" ? (
-                <MemoPage />
               ) : page === "pixie" ? (
                 <PixiePage />
               ) : (

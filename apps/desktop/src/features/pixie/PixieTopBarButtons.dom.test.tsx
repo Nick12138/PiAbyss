@@ -227,10 +227,26 @@ describe("PixiePanelToggleButton（随行面板开关）", () => {
     expect(button).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("面板够不着 @3xl 断点（pixiePanelWide=false）时开关不渲染", () => {
-    useAppStore.setState({ pixiePanelOpen: true, pixiePanelWide: false });
+  it("窄容器（pixiePanelWide=false）下开关仍在，管的是浮层抽屉而不是并排那一栏", async () => {
+    useAppStore.setState({
+      pixiePanelOpen: true,
+      pixiePanelWide: false,
+      pixiePanelDrawerOpen: false,
+    });
+    const user = userEvent.setup();
     render(<PixiePanelToggleButton />);
 
-    expect(screen.queryByTestId("pixie-panel-toggle")).toBeNull();
+    const button = screen.getByTestId("pixie-panel-toggle");
+    expect(button).toHaveAttribute("data-panel-drawer", "true");
+    expect(button).toHaveAttribute("aria-expanded", "false");
+
+    // 点它开抽屉，`pixiePanelOpen`（宽容器那份并排展开的记忆）不该跟着动。
+    await user.click(button);
+    expect(useAppStore.getState().pixiePanelDrawerOpen).toBe(true);
+    expect(useAppStore.getState().pixiePanelOpen).toBe(true);
+    expect(button).toHaveAttribute("aria-expanded", "true");
+
+    await user.click(button);
+    expect(useAppStore.getState().pixiePanelDrawerOpen).toBe(false);
   });
 });

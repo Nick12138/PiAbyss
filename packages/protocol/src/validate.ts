@@ -1017,6 +1017,15 @@ export function validateRequestParams<M extends HostMethod>(
       return exactObject(params, ["name"]) && isNonEmptyString(params.name)
         ? ok(params)
         : fail("invalid session.setName params", { method });
+    case "session.appendCustomMessage":
+      return exactObject(params, ["customType", "text"], ["details"]) &&
+        isNonEmptyString(params.customType) &&
+        params.customType.length <= 64 &&
+        isNonEmptyString(params.text) &&
+        params.text.length <= 20_000 &&
+        (params.details === undefined || isPlainObject(params.details))
+        ? ok(params)
+        : fail("invalid session.appendCustomMessage params", { method });
     case "session.rename":
       return exactObject(params, ["sessionId", "sessionPath", "name"]) &&
         isUuid(params.sessionId) &&
@@ -1475,6 +1484,18 @@ export function validateRequestParams<M extends HostMethod>(
         params.runId.length <= 64
         ? ok(params)
         : fail("invalid schedule.getRunTranscript params", { method });
+    case "schedule.runMessages":
+      return exactObject(params, ["runId"]) &&
+        isNonEmptyString(params.runId) &&
+        params.runId.length <= 64
+        ? ok(params)
+        : fail("invalid schedule.runMessages params", { method });
+    case "schedule.abortRun":
+      return exactObject(params, ["runId"]) &&
+        isNonEmptyString(params.runId) &&
+        params.runId.length <= 64
+        ? ok(params)
+        : fail("invalid schedule.abortRun params", { method });
     case "schedule.replyToRun":
       return exactObject(params, ["runId", "text"]) &&
         isNonEmptyString(params.runId) &&

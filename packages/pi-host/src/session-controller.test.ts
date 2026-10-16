@@ -736,3 +736,87 @@ describe("session.create（小精灵工作区）", () => {
     }
   });
 });
+
+describe("session.appendCustomMessage", () => {
+  function appendFixture(options: { withSession?: boolean; lockBusy?: boolean } = {}) {
+    const identity = new IdentityState();
+    identity.workspaceId = WORKSPACE_ID;
+    identity.workspaceRevision = 1;
+    identity.sessionId = ACTIVE_SESSION_ID;
+    identity.sessionRevision = 5;
+    const sendCustomMessage = vi.fn(async () => undefined);
+    const agentSession = options.withSession === false ? undefined : { sendCustomMessage };
+    const lock = new TryMutex();
+    if (options.lockBusy) {
+      if (!lock.tryAcquire({ operationKind: "session.setName", requestId: "busy" })) {
+        throw new Error("测试夹具没能占住图形锁");
+      }
+    }
+    const factory = {
+      getServer: () => ({ identity, serviceGraphLock: lock }),
+      checkIdentity: () => null,
+      getGraph: () => (agentSession ? { agentSession } : null),
+    } as unknown as WorkspaceGraphFactory;
+    return { factory, sendCustomMessage };
+  }
+
+  function context() {
+    return {
+      id: "66666666-6666-4666-8666-666666666666",
+      method: "session.appendCustomMessage",
+      context: {},
+    };
+  }
+
+  it("写人不触发的回执：display 为真、triggerTurn 关掉", async () => {
+    const { factory, sendCustomMessage } = appendFixture();
+    const handler = createSessionHandlers(factory)["session.appendCustomMessage"]!;
+
+    const result = await handler({
+      ...context(),
+      params: {
+        customType: "schedule-plan-receipt",
+        text: "已创建周期计划「日报」。",
+        details: { planKey: "7:1", action: "created", jobId: "a1b2c3d4" },
+      },
+    } as HandlerContext);
+
+    expect(result).toEqual({ result: { appended: true } });
+    expect(sendCustomMessage).toHaveBeenCalledWith(
+      {
+        customType: "schedule-plan-receipt",
+        content: "已创建周期计划「日报」。",
+        display: true,
+        details: { planKey: "7:1", action: "created", jobId: "a1b2c3d4" },
+      },
+      { triggerTurn: false },
+    );
+  });
+
+  it("回执写进的是回执自己的锁位，正忙时明确报忙而不是静默排队", async () => {
+    const { factory } = appendFixture({ lockBusy: true });
+    const handler = createSessionHandlers(factory)["session.appendCustomMessage"]!;
+
+    const result = await handler({
+      ...context(),
+      params: { customType: "schedule-plan-receipt", text: "已取消。" },
+    } as HandlerContext);
+
+    if (!("error" in result)) throw new Error("占用中必须报错");
+    expect(result.error.code).toBe("SERVICE_GRAPH_BUSY");
+  });
+
+  it("没有活动会话时报 AGENT_NOT_READY，不落半条消息", async () => {
+    const { factory, sendCustomMessage } = appendFixture({ withSession: false });
+    const handler = createSessionHandlers(factory)["session.appendCustomMessage"]!;
+
+    const result = await handler({
+      ...context(),
+      params: { customType: "schedule-plan-receipt", text: "已创建。" },
+    } as HandlerContext);
+
+    if (!("error" in result)) throw new Error("无会话必须报错");
+    expect(result.error.code).toBe("AGENT_NOT_READY");
+    expect(sendCustomMessage).not.toHaveBeenCalled();
+  });
+});

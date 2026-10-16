@@ -29,7 +29,8 @@ import {
  *   - 宽度可拖拽 / 键盘调整，有下限与「给对话区留位」的上限，并持久化；
  *   - 面板内是**横排的三块页签**：方寸间 / 周期计划 / 委派任务，一次只看一块；
  *     未选中的那块仍挂着（计数不停更），只是不显示；
- *   - 行宽不足 672 时面板自动收起（与手动折叠同一个滑出），顶栏开关跟着消失。
+ *   - 行宽不足 672 时面板自动收起，并换成盖在对话上的浮层抽屉（顶栏开关不消失，
+ *     它改开抽屉）；跨断点一律从关着开始。
  */
 const DISPATCH_EXPANDED_PREF = "piabyss.pixie.dispatchExpanded";
 
@@ -362,7 +363,7 @@ describe("PixieSidePanel 展开 / 折叠", () => {
     expect(fresh.useAppStore.getState().pixiePanelOpen).toBe(false);
   });
 
-  it("行宽不足 672 时自动收起：开关消失，面板滑出到不占位", () => {
+  it("行宽不足 672 时改成浮层抽屉：开关仍在，默认关着且不占位", () => {
     vi.stubGlobal("ResizeObserver", ResizeObserverStub);
     stubLayout(600, 300);
     render(
@@ -373,12 +374,57 @@ describe("PixieSidePanel 展开 / 折叠", () => {
     );
 
     expect(useAppStore.getState().pixiePanelWide).toBe(false);
-    expect(screen.queryByTestId("pixie-panel-toggle")).toBeNull();
-    // 与手动折叠同一个滑出：负 margin = 自身宽度，不再靠 display:none。
+    // 开关不能消失：方寸间只有面板这一处入口，窄窗口把它整个关掉就等于没有。
+    expect(screen.getByTestId("pixie-panel-toggle")).toHaveAttribute("data-panel-drawer", "true");
+    // 窄容器 = 覆盖式浮层（样式在 index.css 的 `[data-panel-overlay]` 一组），
+    // 开合归 pixiePanelDrawerOpen，跨越断点一律从关着开始。
+    expect(panelEl()).toHaveAttribute("data-panel-overlay", "true");
     expect(panelEl()).toHaveAttribute("data-panel-open", "false");
-    expect(panelEl().style.marginRight).toBe("-300px");
+    expect(useAppStore.getState().pixiePanelDrawerOpen).toBe(false);
+    // 浮层不靠负 margin 让位（fixed 之后不占布局），margin-right 恒为 0。
+    expect(panelEl().style.marginRight).toBe("0px");
     expect(panelEl()).toHaveAttribute("aria-hidden");
     expect(panelEl().className).not.toContain("hidden");
+  });
+
+  it("窄容器里点开抽屉、点遮罩或按 Esc 关掉；拉宽之后回到并排一栏且抽屉收起", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+    stubLayout(600, 300);
+    render(
+      <>
+        <PixiePanelToggleButton />
+        <PixieSidePanel groups={[]} />
+      </>,
+    );
+
+    await user.click(screen.getByTestId("pixie-panel-toggle"));
+    expect(panelEl()).toHaveAttribute("data-panel-open", "true");
+    expect(screen.getByTestId("pixie-panel-backdrop")).toBeInTheDocument();
+
+    // 遮罩负责「点外面就关」。
+    await user.click(screen.getByTestId("pixie-panel-backdrop"));
+    expect(panelEl()).toHaveAttribute("data-panel-open", "false");
+    expect(screen.queryByTestId("pixie-panel-backdrop")).toBeNull();
+
+    await user.click(screen.getByTestId("pixie-panel-toggle"));
+    expect(panelEl()).toHaveAttribute("data-panel-open", "true");
+    // 抽屉里开着弹窗（挂在 body 上）时，Esc 先给弹窗，抽屉不能跟着一起撤。
+    const modal = document.createElement("div");
+    modal.setAttribute("role", "dialog");
+    document.body.append(modal);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(panelEl()).toHaveAttribute("data-panel-open", "true");
+    modal.remove();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(panelEl()).toHaveAttribute("data-panel-open", "false");
+
+    // 拉宽跨过展开阈值：并排一栏按手动开关展开，抽屉不带着旧状态过来。
+    stubLayout(1400, 404);
+    act(() => fireResize?.());
+    expect(panelEl()).not.toHaveAttribute("data-panel-overlay");
+    expect(useAppStore.getState().pixiePanelDrawerOpen).toBe(false);
+    expect(panelEl()).toHaveAttribute("data-panel-open", "true");
   });
 
   it("跨断点：拖窗口边缘才有动画，一次性 resize 瞬变", () => {
@@ -429,7 +475,8 @@ describe("PixieSidePanel 展开 / 折叠", () => {
     );
 
     expect(panelEl()).toHaveAttribute("data-panel-open", "false");
-    expect(screen.queryByTestId("pixie-panel-toggle")).toBeNull();
+    // 开关仍在，只是切到抽屉形态（它管的是浮层，不是并排那一栏）。
+    expect(screen.getByTestId("pixie-panel-toggle")).toHaveAttribute("data-panel-drawer", "true");
 
     // 侧栏真的弹回来了：行宽掉到 532、欠账归零，指标没变，状态也不许跟着翻。
     useAppStore.setState({ sidebarCollapsed: false, sidebarAutoCollapsed: false });

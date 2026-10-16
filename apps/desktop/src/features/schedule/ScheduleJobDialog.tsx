@@ -296,13 +296,11 @@ export function ScheduleJobDialog({
   /** AI-optimize an existing plan: (job) → null on success (the dialog
    *  unmounts as the app navigates to the agent page) or an error message. */
   onOptimize?: (job: ScheduleJob) => Promise<string | null>;
-  /** Smart mode: (cwd, requirement) → null on success (the dialog unmounts
-   *  as the app navigates to the agent page) or an error message to display. */
-  onStartSmart?: (
-    cwd: string,
-    requirement: string,
-    model: ScheduleModelChoice,
-  ) => Promise<string | null>;
+  /** Smart mode: (cwd, requirement) → null on success (the caller decides what
+   *  "handing off" means) or an error message to display. No analysis model
+   *  picker: the draft is produced in Pixie's own conversation, on whatever
+   *  model that session is already using. */
+  onStartSmart?: (cwd: string, requirement: string) => Promise<string | null>;
 }) {
   const t = useT();
   const host = useAppStore((s) => s.host);
@@ -317,7 +315,6 @@ export function ScheduleJobDialog({
   const [smartCwd, setSmartCwd] = useState(workspace?.cwd ?? "");
   const [smartRequirement, setSmartRequirement] = useState("");
   const [smartPending, setSmartPending] = useState(false);
-  const [smartModel, setSmartModel] = useState<ScheduleModelChoice>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [optimizePending, setOptimizePending] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -641,25 +638,6 @@ export function ScheduleJobDialog({
                 />
               </Field>
 
-              {/* Model for the smart-analysis session (default = host default). */}
-              <Field label={t("scheduleFormAnalysisModel")}>
-                {models.length > 0 ? (
-                  <ModelSelectWithThinking
-                    value={smartModel}
-                    onChange={setSmartModel}
-                    models={models}
-                    hostDefault={hostDefaultModel}
-                    defaultLabel={defaultModelLabel}
-                    label={t("scheduleFormAnalysisModel")}
-                    depthInTrigger
-                  />
-                ) : (
-                  <div className={`${inputClass} flex items-center text-muted`}>
-                    {defaultModelLabel}
-                  </div>
-                )}
-              </Field>
-
               {saveError && (
                 <span className="text-xs text-danger" data-testid="schedule-smart-error">
                   {saveError}
@@ -680,15 +658,7 @@ export function ScheduleJobDialog({
                   if (!onStartSmart) return;
                   setSmartPending(true);
                   setSaveError(null);
-                  // Default depth is "high": fill it in when the user never
-                  // touched the picker, and pin the host default model so the
-                  // level has a concrete ref to attach to.
-                  const effectiveSmartModel: ScheduleModelChoice = smartModel
-                    ? { ...smartModel, thinkingLevel: smartModel.thinkingLevel ?? "high" }
-                    : hostDefaultModel
-                      ? { ...hostDefaultModel, thinkingLevel: "high" }
-                      : null;
-                  void onStartSmart(smartCwd.trim(), smartRequirement.trim(), effectiveSmartModel)
+                  void onStartSmart(smartCwd.trim(), smartRequirement.trim())
                     .then((error) => {
                       if (error) setSaveError(error);
                     })
@@ -1078,6 +1048,22 @@ export function ScheduleJobDialog({
                         className={inputClass}
                       />
                     </Field>
+                    {form.kind === "prompt" && (
+                      <Field label={t("scheduleFormLoadExtensions")}>
+                        <div className="flex items-start gap-2">
+                          <Switch
+                            checked={form.loadExtensions}
+                            onChange={(value) => patch({ loadExtensions: value })}
+                            label={t("scheduleFormLoadExtensions")}
+                          />
+                          <span className="min-w-0 text-[11px] leading-4 text-muted">
+                            {form.loadExtensions
+                              ? t("scheduleFormLoadExtensionsOn")
+                              : t("scheduleFormLoadExtensionsOff")}
+                          </span>
+                        </div>
+                      </Field>
+                    )}
                   </div>
                 )}
               </div>
