@@ -13,6 +13,7 @@ import { PIXIE_PANEL_COLLAPSED_KEY, useAppStore } from "../../lib/stores/app-sto
 import { PixiePanelToggleButton } from "./PixiePanelToggleButton";
 import {
   clampPixiePanelWidth,
+  DEFAULT_PIXIE_PANEL_WIDTH,
   MAX_PIXIE_PANEL_WIDTH,
   MIN_PIXIE_PANEL_WIDTH,
   PANEL_WIDTH_KEY,
@@ -141,11 +142,11 @@ afterEach(() => {
 });
 
 describe("PixieSidePanel 宽度拖拽", () => {
-  it("没拖过时用 CSS 的 clamp 默认宽度（不写 inline width）", () => {
+  it("没拖过时用默认宽度 460（与右侧 dock 同口径，宽度始终写进 inline style）", () => {
     render(<PixieSidePanel groups={[]} />);
 
-    expect(panelEl().style.width).toBe("");
-    expect(panelEl().className).toContain("w-[clamp(300px,30%,404px)]");
+    expect(panelEl().style.width).toBe(`${DEFAULT_PIXIE_PANEL_WIDTH}px`);
+    // 宽度是「显示口径」不是偏好：没拖过就什么都不该写进 localStorage。
     expect(globalThis.localStorage?.getItem(PANEL_WIDTH_KEY)).toBeNull();
   });
 
@@ -153,16 +154,17 @@ describe("PixieSidePanel 宽度拖拽", () => {
     render(<PixieSidePanel groups={[]} />);
     const handle = screen.getByTestId("pixie-panel-resize");
 
-    // 起点 = 兜底宽度 360（jsdom 量不到真实宽度），往左拖 100px → 460。
+    // 起点 = 默认宽度 460（jsdom 量不到行宽，走偏好值），往左拖 100px → 560。
     fireEvent.pointerDown(handle, { pointerId: 1, clientX: 1000, button: 0 });
     fireEvent.pointerMove(handle, { pointerId: 1, clientX: 900 });
-    expect(panelEl().style.width).toBe("460px");
+    expect(panelEl().style.width).toBe("560px");
 
+    // 再往右拖 150px → 回到 410。
     fireEvent.pointerMove(handle, { pointerId: 1, clientX: 1050 });
-    expect(panelEl().style.width).toBe("310px");
+    expect(panelEl().style.width).toBe("410px");
 
     fireEvent.pointerUp(handle, { pointerId: 1 });
-    expect(globalThis.localStorage?.getItem(PANEL_WIDTH_KEY)).toBe("310");
+    expect(globalThis.localStorage?.getItem(PANEL_WIDTH_KEY)).toBe("410");
   });
 
   it("宽度有下限：怎么拖都不会比最低宽度更窄", () => {
@@ -185,11 +187,11 @@ describe("PixieSidePanel 宽度拖拽", () => {
     const handle = screen.getByTestId("pixie-panel-resize");
 
     fireEvent.keyDown(handle, { key: "ArrowLeft" });
-    expect(panelEl().style.width).toBe("380px");
-    expect(handle).toHaveAttribute("aria-valuenow", "380");
+    expect(panelEl().style.width).toBe("480px");
+    expect(handle).toHaveAttribute("aria-valuenow", "480");
 
     fireEvent.keyDown(handle, { key: "ArrowRight" });
-    expect(panelEl().style.width).toBe("360px");
+    expect(panelEl().style.width).toBe("460px");
   });
 
   it("折叠后手柄不渲染（滑出去的把手不该还能拖）", async () => {
@@ -214,12 +216,13 @@ describe("PixieSidePanel 宽度拖拽", () => {
 
   it("启动时量到窄窗口只压显示，不把存下来的宽度写坏", () => {
     globalThis.localStorage?.setItem(PANEL_WIDTH_KEY, "520");
-    // 首帧：行宽只有 700（窗口尺寸还没恢复到位）→ 显示上限 700−360=340。
+    // 首帧：行宽只有 700（窗口尺寸还没恢复到位）→ 显示上限 700−360=340，但下限是
+    // 默认宽度 460（同 dock），所以压到 460 为止。
     vi.stubGlobal("ResizeObserver", ResizeObserverStub);
-    stubLayout(700, 340);
+    stubLayout(700, 460);
     render(<PixieSidePanel groups={[]} />);
 
-    expect(panelEl().style.width).toBe("340px");
+    expect(panelEl().style.width).toBe("460px");
 
     // 窗口恢复到位再量一次：原偏好要能回来，缓存也不许被这 340 覆盖掉。
     stubLayout(1400, 520);
@@ -231,17 +234,18 @@ describe("PixieSidePanel 宽度拖拽", () => {
 });
 
 describe("clampPixiePanelWidth", () => {
-  it("下限优先于任何上限", () => {
+  it("下限优先于任何上限；非有限值退回默认宽度", () => {
     expect(clampPixiePanelWidth(100, 800)).toBe(MIN_PIXIE_PANEL_WIDTH);
-    expect(clampPixiePanelWidth(Number.NaN, 0)).toBe(MIN_PIXIE_PANEL_WIDTH);
+    expect(clampPixiePanelWidth(Number.NaN, 0)).toBe(DEFAULT_PIXIE_PANEL_WIDTH);
   });
 
-  it("上限取「640」与「可用宽度 − 对话区最小宽度」里更小的那个", () => {
+  it("上限取「720」与「可用宽度 − 对话区最小宽度」里更小的那个，但不低于默认宽度", () => {
     expect(clampPixiePanelWidth(2000, 2000)).toBe(MAX_PIXIE_PANEL_WIDTH);
     // 可用 900 → 最多 540，先保对话区。
     expect(clampPixiePanelWidth(2000, 900)).toBe(540);
-    // 窄到只剩 672（@3xl 边界）→ 上限 312，但仍不低于下限。
-    expect(clampPixiePanelWidth(2000, 672)).toBe(312);
+    // 窄到只剩 672（@3xl 边界）→ 672−360=312 比默认还窄，抬到默认 460：
+    // 面板是收纳式浮层，压到三百出头没有意义（同 dock 的下限优先）。
+    expect(clampPixiePanelWidth(2000, 672)).toBe(DEFAULT_PIXIE_PANEL_WIDTH);
   });
 
   it("区间内的宽度原样保留（四舍五入到整数）", () => {

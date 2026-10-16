@@ -1087,6 +1087,16 @@ html[data-theme-family="transparent"] [data-piabyss-app][data-window-frame] [dat
     background-color: var(--color-surface);
   }
 
+  /* 随行面板同理：降级后根节点已是实心 surface，那层半透明磨砂兜底反而会亮出一块，
+     直接跟 dock 一样回到实心底。 */
+  html[data-theme-family="transparent"]
+    [data-piabyss-app][data-window-frame]
+    [data-pixie-side-panel] {
+    background-color: var(--color-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
   html[data-theme-family="transparent"] :where([data-chat-header], [data-dock-header]) {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
@@ -1197,10 +1207,34 @@ html[data-theme-family="transparent"] [data-right-dock][data-dock-overflow="true
   clip-path: inset(0 round var(--app-content-radius));
 }
 
+/* 小精灵的随行面板和右侧 dock 是同一族（同一套 `border-l border-border bg-surface`
+   外壳、同一套宽度口径），透明主题下也必须同一待遇——否则展开时它会是一块不透明的
+   `bg-surface` 实心板，而旁边的对话是 0% 玻璃。收起态的透明化与 `[data-right-dock]`
+   上面那条完全对称。 */
+html[data-theme-family="transparent"] [data-pixie-side-panel] {
+  background-color: transparent;
+}
+
+/* 而这一形态（窄容器的整页覆盖抽屉）在透明主题下必须自己带底色：它盖住的是整整一页
+   消息界面（含输入框），只借 dock 那层较薄的兜底材质不够——对话文字照样透上来，两页
+   内容会叠在一起。所以取应用里弹窗 / 浮层同一档的密度（`--theme-floating-material`，
+   84% + 28px 模糊），读起来才是「一页」而不是「一层纱」。左侧圆角跟内容卡片对齐
+   （`inset: 0` 之后它的左缘就是卡片左缘）。不挂 clip-path：那会把子层与投影一起裁掉。 */
+html[data-theme-family="transparent"] [data-pixie-side-panel][data-panel-overlay="true"] {
+  background-color: var(--theme-floating-material);
+  border-top-left-radius: var(--app-content-radius);
+  border-bottom-left-radius: var(--app-content-radius);
+}
+
 @supports (backdrop-filter: blur(1px)) {
   html[data-theme-family="transparent"] [data-right-dock][data-dock-overflow="true"] {
     -webkit-backdrop-filter: saturate(140%) blur(var(--theme-toolbar-blur));
     backdrop-filter: saturate(140%) blur(var(--theme-toolbar-blur));
+  }
+
+  html[data-theme-family="transparent"] [data-pixie-side-panel][data-panel-overlay="true"] {
+    -webkit-backdrop-filter: saturate(150%) blur(var(--theme-floating-blur));
+    backdrop-filter: saturate(150%) blur(var(--theme-floating-blur));
   }
 }
 
@@ -2894,26 +2928,32 @@ svg[data-piabyss-mermaid-theme="neutral"] {
   transition: none;
 }
 
-/* ── 窄容器下的浮层抽屉兜底 ──────────────────────────────────────────────
-   行宽不足阈值时面板不再是并排的一栏，而是盖在对话上的浮层（`PixieSidePanel` 挂
-   `data-panel-overlay`，开合归 `pixiePanelDrawerOpen`）。方寸间只有这一处入口之后，
-   窄窗口不能把它整个关掉。
+/* ── 窄容器下的整页覆盖抽屉 ──────────────────────────────────────────────
+   行宽不足阈值时面板不再是并排的一栏，而是**把整个消息界面盖住的一页**
+   （`PixieSidePanel` 挂 `data-panel-overlay`，开合归 `pixiePanelDrawerOpen`）。
+   方寸间只有这一处入口之后，窄窗口不能把它整个关掉。
    · 布局改 fixed 是为了让位给对话：in-flow 的面板即便收成 0 宽也要占一格。
    · 滑出方向换成 translateX——fixed 元素吃 margin 但不影响兄弟，用 margin 动画会
      白位移一次；`margin-right: 0` 由组件的内联样式保证。
-   · 宽度默认跟着视口（88vw 封顶、380px 为上限），用户拖出来的偏好走内联样式，
-     再由 `max-width` 拦住窄窗口里的溢出。遮罩由组件渲染，比面板低一格。 */
+   · 尺寸：**整页覆盖**，不是「一栏」——top/right/bottom/left 全 0，把消息界面整个盖住
+     （含输入框），因此组件在这一形态下也不写 inline width，460 那套口径只归并排那一栏。
+     containing block 是 `[data-pixie-page]`（页根挂 `@container` ⇒ container-type ⇒
+     layout containment，会给 fixed 后代当包含块），也就是消息界面自己那一块：`left: 0`
+     因此正好落在内容卡片左缘，不会盖到侧栏或顶栏——顶栏那颗开关始终点得到，抽屉退得出来。
+   · 不再挂 box-shadow：铺满之后没有「边缘」要和对话分开；当初那条 `-12px 0 32px` 的投影
+     尾巴在收起态会从边界糊回内容区（10-16 夜那条「渐变阴影」），去掉它这类泄漏结构上
+     就不存在了。遮罩由组件渲染，比面板低一格。 */
 [data-pixie-side-panel][data-panel-overlay="true"] {
   position: fixed;
-  top: var(--theme-toolbar-height);
+  top: 0;
   right: 0;
   bottom: 0;
+  left: 0;
   z-index: 50;
-  width: min(88vw, 380px);
-  max-width: 88vw;
+  width: auto;
+  max-width: none;
   height: auto;
   margin-right: 0;
-  box-shadow: -12px 0 32px rgb(0 0 0 / 35%);
   transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -2924,6 +2964,19 @@ svg[data-piabyss-mermaid-theme="neutral"] {
 
 [data-pixie-side-panel][data-panel-overlay="true"][data-panel-instant="true"] {
   transition: none;
+}
+
+/* ── 收起态必须「零绘制」────────────────────────────────────────────────
+   两种收起机制都只是把盒子挪出可视区：in-flow 靠 `margin-right: -<宽度>`（组件的
+   内联样式），整页抽屉靠 `translateX(100%)`——两者都把**边框盒的左边**停在内容区右缘
+   那一列上，于是 `border-l` 这 1px 会落在内容区最后一列像素上（父级 `overflow` 只裁到
+   自己的 padding box，子像素取整后仍有残影），留下一条发丝线。收起态一律不画它；
+   只动颜色、不动布局与宽度，所以开合不会有任何跳动。
+   （原先整页抽屉还挂过一条 `-12px 0 32px` 的投影，它的模糊尾巴在收起态会从边界糊回
+   内容区，就是 10-16 夜那条「页右缘渐变阴影」。抽屉改成整页覆盖后那条投影已删除，
+   这类泄漏结构上不会再出现——这里只留边框这一条。） */
+[data-pixie-side-panel][data-panel-open="false"] {
+  border-left-color: transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {

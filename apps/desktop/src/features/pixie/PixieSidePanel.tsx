@@ -26,8 +26,9 @@
  * 每块一圈圆角边框，左右各白吃 ~10px、上下各多 24px，窄面板里不值。
  *
  * 断点：扣完侧栏欠账的行宽不足 `PIXIE_PANEL_BREAKPOINT_PX` 时面板**自动收起**（不是
- * `display:none`，见下），够宽时是否展开才由手动开关决定。窄容器下它换成**盖在对话上的
- * 浮层抽屉**（`pixiePanelDrawerOpen`，样式在 index.css 的 `[data-panel-overlay]` 一组）：
+ * `display:none`，见下），够宽时是否展开才由手动开关决定。窄容器下它换成**整页覆盖抽屉**
+ * （`pixiePanelDrawerOpen`，样式在 index.css 的 `[data-panel-overlay]` 一组）——把整个消息
+ * 界面盖住（`inset: 0`，宽度也吃满、不写 inline width），只有顶栏留着给开关：
  * 方寸间只有面板这一处入口，开关不能再消失，否则窗口一窄就什么都能看不到。两种形态各记
  * 一份开合——并排展开的记忆不该在拖窄那一下自己压到对话上，跨越断点一律从关着开始。
  *
@@ -41,9 +42,10 @@
  * 弹回之前展开、紧接着被挤没、再拉宽又展开——同一次拉宽里翻三次烙饼。扣掉这笔迟早要还
  * 的宽度之后，指标在侧栏切换的那一瞬间是连续的，面板只在自己该动的时候动。
  *
- * 宽度：默认 `w-[clamp(300px,30%,404px)]`（设计稿 rail 的口径——跟着容器走但有上下
- * 限）；拖左侧边缘（或聚焦后按左右方向键）可改成显式像素宽度，带下限 300px、上限
- * 640px（且至少给对话区留 360px），并持久化。手柄与钳制口径照抄 `RightDock`。
+ * 宽度：默认 460px、下限 350px、上限 720px，并给对话区至少留 360px——**与普通会话的
+ * 右侧 dock（`RightDock` 的 460 / 350 / 720 / 360）逐项同口径**，展开时读起来才是同一
+ * 栏（原先的 rail 口径 `clamp(300px,30%,404px)` 比 dock 窄一截）。宽度**始终**以显式像素
+ * 写在 inline style 上，与 dock 一致；拖左侧边缘（或聚焦后按左右方向键）改宽度并持久化。
  * 持久化的是**偏好**，窄窗口只收敛显示、不回写偏好，否则一次「变窄再变宽」就把
  * 缓存削到下限（见 `panelWidth`）。
  */
@@ -67,8 +69,10 @@ import { PixieTodoSection } from "./PixieTodoSection";
 
 const MEMO_PLUGIN_ID = "piabyss-memo";
 
-/** 用户拖出来的面板宽度（localStorage）；没拖过就用 CSS 的 `clamp(...)`。 */
-export const PANEL_WIDTH_KEY = "piabyss.pixie.panelWidth.v1";
+/** 用户拖出来的面板宽度（localStorage）；没拖过就用默认宽度（见 `readStoredPanelWidth`）。
+ *  v1 存的是 rail 口径（300~404 那档）的偏好，宽度口径与 dock 对齐后直接作废——
+ *  沿用旧值会让老用户永远停在那条比 dock 窄一截的栏上。 */
+export const PANEL_WIDTH_KEY = "piabyss.pixie.panelWidth.v2";
 
 /**
  * 面板**收起**阈值（行宽，已扣掉侧栏欠账，见 `sidebarDebt`）。取 672 是为了和
@@ -93,36 +97,37 @@ export const PIXIE_PANEL_EXPAND_WIDTH_PX =
  */
 const SIDEBAR_SETTLE_MS = 240;
 
-/** 面板宽度下限：比设计稿 rail 的窄屏档（310）再留一点余量。 */
-export const MIN_PIXIE_PANEL_WIDTH = 300;
-/** 面板宽度上限：拖拽时允许比默认更宽，但仍要给对话留主位。 */
-export const MAX_PIXIE_PANEL_WIDTH = 640;
-/** 面板再宽也要给对话区留出的宽度。 */
+/** 面板默认宽度：与右侧 dock 的 `DEFAULT_DOCK_WIDTH` 同口径。 */
+export const DEFAULT_PIXIE_PANEL_WIDTH = 460;
+/** 面板宽度下限：与 dock 的 `MIN_DOCK_WIDTH` 同口径。 */
+export const MIN_PIXIE_PANEL_WIDTH = 350;
+/** 面板宽度上限：与 dock 的 `MAX_DOCK_WIDTH` 同口径。 */
+export const MAX_PIXIE_PANEL_WIDTH = 720;
+/** 面板再宽也要给对话区留出的宽度（dock 同款 360）。 */
 const MIN_CONVERSATION_WIDTH = 360;
 /** 键盘调整的步长（左右方向键），与右侧 dock 同口径。 */
 const PANEL_RESIZE_STEP = 20;
 
 /**
- * 量不到面板宽度时的滑出距离兜底：无布局引擎的环境（jsdom）与首帧。真机上
- * useLayoutEffect 在首次绘制前就量到了真实宽度，用不到这个值。
- */
-const FALLBACK_PANEL_WIDTH = 360;
-
-/**
- * 面板宽度的钳制（同 `RightDock.clampDockWidth` 的思路）：下限固定，上限取
- * 「640px」与「可用宽度 − 对话区最小宽度」里更小的那个——窄窗口下先保对话区，
- * 宽度不够时下限优先。
+ * 面板宽度的钳制（与 `RightDock.clampDockWidth` 逐项同口径）：上限取「720」与
+ * 「可用宽度 − 对话区最小宽度」里更小的那个，但**不低于默认宽度 460**——窄窗口里的
+ * 面板更该是一个能用的宽度（收纳式浮层尤其如此），压到三百出头没有意义，dock 当年
+ * 也是选的下限优先。
  */
 export function clampPixiePanelWidth(width: number, availableWidth: number): number {
   const responsiveMax = Math.max(
-    MIN_PIXIE_PANEL_WIDTH,
+    DEFAULT_PIXIE_PANEL_WIDTH,
     Math.min(MAX_PIXIE_PANEL_WIDTH, Math.round(availableWidth) - MIN_CONVERSATION_WIDTH),
   );
-  if (!Number.isFinite(width)) return Math.min(MIN_PIXIE_PANEL_WIDTH, responsiveMax);
+  if (!Number.isFinite(width)) return Math.min(DEFAULT_PIXIE_PANEL_WIDTH, responsiveMax);
   return Math.min(responsiveMax, Math.max(MIN_PIXIE_PANEL_WIDTH, Math.round(width)));
 }
 
-/** 读回用户拖出来的宽度；没存过 / 存坏了都返回 null（= 用 CSS 默认宽度）。 */
+/**
+ * 读回用户拖出来的宽度；没拖过 / 存坏了都返回 null（= 没偏好，显示走默认宽度）。
+ * 刻意不把默认值写进 localStorage：偏好只记「用户真的拖过的那一次」，否则以后改默认
+ * 宽度，老用户会被自己那条谁也没拖过的记录钉在旧值上。
+ */
 function readStoredPanelWidth(): number | null {
   try {
     const raw = globalThis.localStorage?.getItem(PANEL_WIDTH_KEY);
@@ -170,7 +175,6 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
   const memoEnabled = usePluginEnabled(MEMO_PLUGIN_ID);
   const scheduleEnabled = useSchedulePluginEnabled();
   const asideRef = useRef<HTMLElement>(null);
-  const [measuredWidth, setMeasuredWidth] = useState(0);
   const [customWidth, setCustomWidth] = useState<number | null>(readStoredPanelWidth);
   const [rowWidth, setRowWidth] = useState(0);
   const [resizing, setResizing] = useState(false);
@@ -227,11 +231,9 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
   const roomyWidth = rowWidth > 0 ? Math.max(0, rowWidth - sidebarDebt) : 0;
 
   /**
-   * 面板宽度 = 默认 `w-[clamp(300px,30%,404px)]`（设计稿的 rail 口径：跟着
-   * 容器走但有上下限），用户拖过之后换成显式像素宽度。
-   *
-   * 这里只量、不判定：记下行宽、记下滑出距离、记下落点是不是密集连发（= 用户在拖
-   * 窗口边缘，见 `lib/layout-motion.ts`）。断点判定在下面的 `wide` 那条Effect里。
+   * 宽度只量**行宽**（面板自己是显式像素宽，不再回头量它）：记下行宽、记下落点是不是
+   * 密集连发（= 用户在拖窗口边缘，见 `lib/layout-motion.ts`）。断点判定在下面的
+   * `wide` 那条 Effect 里。
    */
   useLayoutEffect(() => {
     const el = asideRef.current;
@@ -239,8 +241,6 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
     if (!el || typeof ResizeObserver === "undefined") return;
     const parent = el.parentElement;
     const read = () => {
-      const width = el.getBoundingClientRect().width;
-      if (width > 0) setMeasuredWidth(width);
       const available = parent?.getBoundingClientRect().width ?? 0;
       const last = layoutRead.current;
       if (available <= 0 || available === last.rowWidth) return;
@@ -297,17 +297,14 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
   useEffect(() => () => setPixiePanelDrawerOpen(false), [setPixiePanelDrawerOpen]);
 
   /**
-   * 显示宽度 = 用户偏好按当前可用宽度收敛后的值。**只收敛显示，不回写偏好**：
-   * 以前这里直接把收敛结果存回 localStorage，于是「窗口变窄→变宽」一次（= 面板被
-   * 断点自动收起再放出来）就把 520 削成下限并写死，回来时再也长不回去。
+   * 显示宽度 = 偏好按当前可用宽度收敛后的值，**始终是一个数字**（宽度每次都写在
+   * inline style 上，与右侧 dock 同一口径——dock 也不挂 CSS 宽度类）。**只收敛显示，
+   * 不回写偏好**：以前这里直接把收敛结果存回 localStorage，于是「窗口变窄→变宽」一次
+   * （= 面板被断点自动收起再放出来）就把 520 削成下限并写死，回来时再也长不回去。
    * 量不到行宽（jsdom / 首帧）时原样用偏好值。
    */
-  const panelWidth =
-    customWidth === null
-      ? undefined
-      : rowWidth > 0
-        ? clampPixiePanelWidth(customWidth, rowWidth)
-        : customWidth;
+  const preferredWidth = customWidth ?? DEFAULT_PIXIE_PANEL_WIDTH;
+  const panelWidth = rowWidth > 0 ? clampPixiePanelWidth(preferredWidth, rowWidth) : preferredWidth;
 
   // 只有「用户拖 / 按方向键」会落到这里，一处持久化。
   useEffect(() => {
@@ -319,7 +316,7 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
     }
   }, [customWidth]);
 
-  /** 展开态 = 手动展开 **且** 行宽够；窄容器下换成手动开的浮层抽屉自己说了算。
+  /** 展开态 = 手动展开 **且** 行宽够；窄容器下换成手动开的整页覆盖抽屉自己说了算。
    *  侧栏自动收起与手动折叠走同一个滑出，抽屉共用 `data-panel-open`，只是方向由
    *  CSS 换成 translateX（见 index.css 的 `[data-panel-overlay]` 一组）。 */
   const overlay = !wide;
@@ -343,8 +340,8 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
   /** 拖宽度途中（要跟手）与跨越断点那次不是用户拖出来的（启动 / 托盘 / 贴边 / DPI）
    *  都不许有过渡。 */
   const instant = resizing || programmatic;
-  const slideOffset = panelWidth ?? (measuredWidth || FALLBACK_PANEL_WIDTH);
-  const currentWidth = slideOffset;
+  /** 收起时的滑出距离 = 面板宽度本身（宽度始终显式，不需要再兜底量一次）。 */
+  const currentWidth = panelWidth;
 
   /** 可用宽度 = 面板所在那一行的宽度（量不到时退回窗口宽度）。 */
   const availableWidth = (): number =>
@@ -395,15 +392,16 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
 
   return (
     <>
-      {/* 窄容器里面板是覆盖式浮层：遮罩负责「点外面就关」，也把这一栏与对话隔开。
-        遮罩从顶栏下沿开始——顶栏那颗开关得留着点得到，否则抽屉只能靠 Esc 退。 */}
+      {/* 窄容器里面板是**整页覆盖**（`inset: 0`，宽度也不写 inline——见 index.css 的
+        `[data-panel-overlay]`）：把整个消息界面盖满，不并排、不留缝。遮罩还在，负责
+        「点外面就关」；它从顶栏下沿开始，顶栏那颗开关始终点得到，抽屉退得出来。 */}
       {overlay && shown ? (
         <div
           data-pixie-panel-backdrop
           data-testid="pixie-panel-backdrop"
           aria-hidden="true"
           onClick={() => setPixiePanelDrawerOpen(false)}
-          className="fixed inset-x-0 bottom-0 top-[var(--theme-toolbar-height)] z-40 bg-black/30"
+          className="fixed inset-0 z-40 bg-black/30"
         />
       ) : null}
       <aside
@@ -416,8 +414,11 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
         aria-label={t("pixiePanelTitle")}
         aria-hidden={shown ? undefined : true}
         inert={shown ? undefined : true}
-        style={{ width: panelWidth, marginRight: overlay || shown ? 0 : -slideOffset }}
-        className="relative flex min-h-0 w-[clamp(300px,30%,404px)] shrink-0 flex-col border-l border-border bg-surface"
+        style={{
+          width: overlay ? undefined : panelWidth,
+          marginRight: overlay || shown ? 0 : -currentWidth,
+        }}
+        className="relative flex min-h-0 shrink-0 flex-col border-l border-border bg-surface"
       >
         {shown && !overlay && (
           <div
