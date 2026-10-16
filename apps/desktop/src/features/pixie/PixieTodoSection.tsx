@@ -411,17 +411,17 @@ export function PixieTodoSection() {
     >
       <div className="flex flex-col gap-2">
         {/* 计数只在这里出现一次：待处理数在页签角标上，逾期数在区块标题右侧的提示里。 */}
-        <div className="flex items-center gap-0.5 pt-0.5">
+        <div className="flex items-center gap-1 pt-0.5">
           {(["open", "done"] as const).map((candidate) => (
             <button
               key={candidate}
               type="button"
               data-testid={`pixie-todo-tab-${candidate}`}
               aria-pressed={tab === candidate}
-              className={`flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] transition-colors ${
+              className={`flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md border text-[11px] transition-colors focus-visible:outline-none ${
                 tab === candidate
-                  ? "bg-nav-active font-semibold text-foreground"
-                  : "text-muted hover:bg-surface-overlay hover:text-foreground"
+                  ? "border-nav-active/50 bg-nav-active font-semibold text-nav-active-foreground"
+                  : "border-border text-muted hover:bg-surface-overlay hover:text-foreground"
               }`}
               onClick={() => switchTab(candidate)}
             >
@@ -438,7 +438,7 @@ export function PixieTodoSection() {
               aria-pressed={batchMode}
               title={t("pixieTodoBatch")}
               aria-label={t("pixieTodoBatch")}
-              className="ml-auto flex size-[22px] shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-danger focus-visible:outline-none"
+              className="flex size-[22px] shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-danger focus-visible:outline-none"
               onClick={toggleBatch}
             >
               <Trash2 size={13} aria-hidden="true" />
