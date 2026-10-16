@@ -91,6 +91,41 @@ describe("scheduleApi", () => {
   });
 });
 
+describe("scheduleApi without a local token", () => {
+  let savedToken: string | undefined;
+  let savedDir: string | undefined;
+
+  beforeAll(() => {
+    savedToken = process.env.PI_SCHEDULE_TOKEN;
+    savedDir = process.env.PI_SCHEDULE_DIR;
+    delete process.env.PI_SCHEDULE_TOKEN;
+    process.env.PI_SCHEDULE_DIR = "/piabyss-schedule-store-that-does-not-exist";
+  });
+
+  afterAll(() => {
+    if (savedToken !== undefined) process.env.PI_SCHEDULE_TOKEN = savedToken;
+    if (savedDir !== undefined) process.env.PI_SCHEDULE_DIR = savedDir;
+    else delete process.env.PI_SCHEDULE_DIR;
+  });
+
+  it("answers authed requests locally instead of sending them", async () => {
+    lastHeaders = {};
+    const outcome = await scheduleApi<{ echoed: unknown }>("/api/echo", "POST", { body: { a: 1 } });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.status).toBe(401);
+      // 说清是 Host 没 token，而不是让控制面的「缺少或错误的 token」背锅
+      expect(outcome.error).toContain("本地未取到控制面 token");
+    }
+    expect(lastHeaders).toEqual({});
+  });
+
+  it("still probes health, which needs no token", async () => {
+    const outcome = await scheduleApi<{ ok: boolean }>("/api/health", "GET");
+    expect(outcome.ok).toBe(true);
+  });
+});
+
 describe("scheduleApiToken", () => {
   it("prefers the env token", () => {
     expect(scheduleApiToken()).toBe("test-token");

@@ -15,7 +15,9 @@
  * Auth: every endpoint except GET /api/health requires the
  * `X-Pi-Schedule-Token` header. The token lives in `<root>/token`
  * (root = PI_SCHEDULE_DIR or ~/.pi/schedule) or can be provided via the
- * PI_SCHEDULE_TOKEN env var.
+ * PI_SCHEDULE_TOKEN env var. Host startup pins PI_SCHEDULE_TOKEN before any
+ * extension loads (see main.ts), so both sides of this loopback handshake read
+ * one value; the file stays for callers outside the process.
  */
 import * as http from "node:http";
 import { existsSync, readFileSync } from "node:fs";
@@ -130,12 +132,23 @@ function rawRequest(
  * connection refused / timeout) return ok:false with status:null. Non-2xx
  * responses still return their JSON body via ok:true when parseable — the
  * caller decides how to map status codes to protocol errors.
+ *
+ * A request that needs auth but has no token locally is answered here instead
+ * of being sent: the plugin's reply would be the generic "缺少或错误的 token",
+ * which blames the control plane for a token the Host never had.
  */
 export async function scheduleApi<T>(
   path: string,
   method: "GET" | "POST" | "PATCH" | "DELETE",
   options: { body?: unknown; timeoutMs?: number } = {},
 ): Promise<ScheduleApiOutcome<T>> {
+  if (path !== "/api/health" && scheduleApiToken() === null) {
+    return {
+      ok: false,
+      status: 401,
+      error: `本地未取到控制面 token（PI_SCHEDULE_TOKEN 未设置，且 ${join(scheduleRoot(), "token")} 不存在或为空）`,
+    };
+  }
   const raw = await rawRequest(path, method, options.body, options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS);
   if (!raw.ok) return raw;
 

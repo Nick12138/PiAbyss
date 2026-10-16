@@ -35,6 +35,7 @@ import { createExtensionUiHandlers } from "./extension-ui-bridge.js";
 import { createTelegramHandlers } from "./telegram-controller.js";
 import { createTelegramSessionHandlers } from "./telegram-sessions-controller.js";
 import { createScheduleHandlers } from "./schedule-controller.js";
+import { scheduleRoot } from "./schedule-api.js";
 import { startScheduleNotifyWatcher } from "./schedule-notify-watcher.js";
 import { createMemoHandlers } from "./memo-controller.js";
 import { createShellJobHandlers } from "./shelljob-controller.js";
@@ -117,6 +118,41 @@ function ensurePixieControlToken(agentDir: string): string {
     });
   }
   return token;
+}
+
+/**
+ * pi-schedule control-plane token, pinned before the runtime loads extensions.
+ *
+ * The plugin resolves its token lazily (first authenticated request): env →
+ * `<scheduleRoot>/token` → generate and persist, best effort. When that persist
+ * does not land the plugin keeps a secret no file-reading caller can obtain,
+ * and every schedule.* call 401s for the whole life of the process — all the
+ * panel can show is "鉴权失败". Env wins on both sides, so publishing the
+ * resolved value here takes the file out of the handshake; the file is still
+ * written for callers outside this process.
+ */
+function ensureScheduleControlToken(): void {
+  if (process.env.PI_SCHEDULE_TOKEN?.trim()) return;
+  const root = scheduleRoot();
+  const tokenPath = join(root, "token");
+  let token = "";
+  try {
+    token = readFileSync(tokenPath, "utf8").trim();
+  } catch {
+    /* first run */
+  }
+  if (!token) {
+    token = randomBytes(24).toString("hex");
+    try {
+      mkdirSync(root, { recursive: true });
+      writeFileSync(tokenPath, token, { encoding: "utf8", mode: 0o600 });
+    } catch (err) {
+      logger.warn("Failed to persist the schedule control token", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  process.env.PI_SCHEDULE_TOKEN = token;
 }
 
 /**
@@ -236,6 +272,10 @@ async function main(): Promise<void> {
 
   // PiAbyss 0.1.x used to filter superseded packages here; the built-in tools
   // moved to my-pi-plugins so nothing is superseded anymore.
+
+  // Pin the pi-schedule control-plane token before the runtime loads any
+  // extension: the plugin resolves it lazily and the Host reads it per call.
+  ensureScheduleControlToken();
 
   // Cwd-independent services (PROJECT_SPEC §8.1)
   const credentialStore = FileCredentialStore.forAgentDir(agentDir);
