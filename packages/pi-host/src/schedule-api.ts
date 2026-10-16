@@ -29,8 +29,7 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 5_000;
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
 export type ScheduleApiOutcome<T> =
-  | { ok: true; status: number; data: T }
-  | { ok: false; status: number | null; error: string };
+  { ok: true; status: number; data: T } | { ok: false; status: number | null; error: string };
 
 function scheduleApiPort(): number {
   const raw = process.env.PI_SCHEDULE_PORT?.trim();
@@ -63,8 +62,7 @@ export function scheduleApiToken(): string | null {
 }
 
 type RawOutcome =
-  | { ok: true; status: number; body: string }
-  | { ok: false; status: number | null; error: string };
+  { ok: true; status: number; body: string } | { ok: false; status: number | null; error: string };
 
 function rawRequest(
   path: string,
@@ -98,7 +96,11 @@ function rawRequest(
           size += chunk.length;
           if (size > MAX_RESPONSE_BYTES) {
             request.destroy();
-            resolve({ ok: false, status: response.statusCode ?? null, error: "response too large" });
+            resolve({
+              ok: false,
+              status: response.statusCode ?? null,
+              error: "response too large",
+            });
             return;
           }
           chunks.push(chunk);
@@ -149,7 +151,12 @@ export async function scheduleApi<T>(
       error: `本地未取到控制面 token（PI_SCHEDULE_TOKEN 未设置，且 ${join(scheduleRoot(), "token")} 不存在或为空）`,
     };
   }
-  const raw = await rawRequest(path, method, options.body, options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS);
+  const raw = await rawRequest(
+    path,
+    method,
+    options.body,
+    options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+  );
   if (!raw.ok) return raw;
 
   let parsed: unknown = undefined;

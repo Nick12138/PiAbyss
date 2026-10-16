@@ -41,7 +41,13 @@ import { createMemoHandlers } from "./memo-controller.js";
 import { createShellJobHandlers } from "./shelljob-controller.js";
 import { startShellJobWatcher } from "./shelljob-watcher.js";
 import { configureScheduleAgentRuntime } from "./schedule-agent-runner.js";
-import { configurePixieRuntime, configurePixieEventEmitter, pixieDir, startPixieStaleWatcher, stopPixieStaleWatcher } from "./pixie-agent-runner.js";
+import {
+  configurePixieRuntime,
+  configurePixieEventEmitter,
+  pixieDir,
+  startPixieStaleWatcher,
+  stopPixieStaleWatcher,
+} from "./pixie-agent-runner.js";
 import { createPixieHandlers, createPixieControlPlaneDeps } from "./pixie-controller.js";
 import { startPixieControlPlane, type PixieControlPlane } from "./pixie-control-plane.js";
 import { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
