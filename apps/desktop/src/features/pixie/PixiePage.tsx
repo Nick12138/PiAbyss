@@ -303,28 +303,39 @@ export function PixiePage() {
             <SubagentConversation />
           ) : (
             <>
-              {isNewConversation ? (
-                <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
-                  <Sparkles size={20} className="text-primary" />
-                  <p className="text-sm font-medium">{t("pixieEmptyTitle")}</p>
-                  <p className="max-w-sm text-xs text-muted">{t("pixieEmptyHint")}</p>
-                </div>
-              ) : (
-                <Transcript />
-              )}
+              {/* 空会话不再自画一套空状态：招呼语复用 Composer 的 welcome 机制
+               * （`welcomeWorkspaceName` 一给，Composer 自己接管整块高度居中排布
+               *  logo + 按时段抽的问候语），与普通工作区新建会话同一份文案池和
+               *  同一套度量。Transcript 在 welcome 态不挂——它和 Composer 都要
+               *  flex-1，同排必然抢高度。 */}
+              {!isNewConversation && <Transcript />}
               {/* 内嵌扩展 UI（ask_user_question 问卷等）：不挂它时提问请求
                * 照样会进 store 并把 Composer 锁进 decisionBlocked，用户却
                * 看不到问题卡片——死等到超时。与 ChatPage 同位（内容与输入框
                * 之间）。 */}
               <InlineExtensionUiRequest />
-              {/* 四周留白全部交给共享 Composer 自己的 footer（`px-5 pb-5 pt-2`，
+              {/* 四周留白全部交给共享 Composer 自己的 footer（docked `px-5 pb-5 pt-2`，
                * 统计药丸在位时 footer 底部收到 5px），与 ChatPage 完全同一套
                * 度量。这里曾叠着 px-3/sm:px-6 + pt-2 + pb-3/sm:pb-5，是小精灵
-               * V1 自带输入框时代的残留，v5 复用 Composer 后就成了双份间距。 */}
-              <div className="shrink-0">
+               * V1 自带输入框时代的残留，v5 复用 Composer 后就成了双份间距。
+               * welcome 态这层必须换成 flex 列并交出剩余高度——Composer 靠
+               * `flex-1 justify-center` 把招呼语垂直居中，父层给 `shrink-0`
+               * 它就只剩输入框那么高。
+               * 不传 Composer 的 `isNewConversation`：那个 prop 带出的是新会话的
+               * 工具勾选器，而小精灵的工具面（委派/回调）是与 Host 行为绑定的
+               * 契约，不该在这一页被用户手动关掉。 */}
+              <div className={isNewConversation ? "flex min-h-0 flex-1 flex-col" : "shrink-0"}>
                 {error && <p className="mb-2 px-5 text-xs text-danger">{error}</p>}
                 <ComposerRuntimeProvider runtime={runtime}>
-                  <Composer inputTestId="pixie-input" />
+                  <Composer
+                    inputTestId="pixie-input"
+                    welcomeWorkspaceName={isNewConversation ? t("pixieTitle") : undefined}
+                    /* 招呼语上面那颗 mark 换成小精灵自己的 Sparkles（侧栏入口、顶栏
+                     * 都是这一颗），不复用默认的应用 logo——否则这一页和普通工作区
+                     * 的新建会话看起来一模一样，认不出是谁的页面。节点整体替换，
+                     * 尺寸与下边距由这里定。 */
+                    welcomeMark={<Sparkles size={34} className="mb-4 text-primary" aria-hidden />}
+                  />
                   <SessionStatsPills />
                 </ComposerRuntimeProvider>
               </div>

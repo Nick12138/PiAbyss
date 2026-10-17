@@ -291,6 +291,23 @@ describe("PixiePage 复用共享 Composer（v5 标准通道）", () => {
     );
   });
 
+  it("空会话复用 Composer 的 welcome 招呼语，不再自画空状态、也不带会话工具勾选器", async () => {
+    mockPixieHost();
+    const { container } = render(<PixiePage />);
+
+    // 招呼语来自共享的 composerWelcome 文案池（按时段随机），断言「有一条」即可。
+    const heading = await screen.findByRole("heading", { level: 2 });
+    expect(heading.textContent).toBeTruthy();
+    // 旧的小精灵专属空状态已随复用下线。
+    expect(screen.queryByText("Hi, I'm Pixie")).not.toBeInTheDocument();
+    // welcome 块顶部的 mark 换成小精灵自己的 Sparkles，不用默认的应用 logo。
+    expect(container.querySelector(".new-conversation-copy svg")).toBeInTheDocument();
+    expect(container.querySelector(".pi-mark-light")).not.toBeInTheDocument();
+    // welcome 态给 Composer 传 isNewConversation 会带出「本次会话使用的工具」勾选器，
+    // 小精灵的委派/回调工具面不该在这页被手动关掉。
+    expect(screen.queryByLabelText("Tools for this conversation")).not.toBeInTheDocument();
+  });
+
   it("有 ask 待回复时，发送改道 pixie.reply", async () => {
     dispatchesMock.push(
       dispatchRecord({ status: "awaiting_user", kind: "ask", question: "选哪个方案？" }),

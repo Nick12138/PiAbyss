@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type ClipboardEvent,
+  type ReactNode,
 } from "react";
 import {
   ArrowUp,
@@ -434,12 +435,16 @@ export function Composer({
   disabled,
   isNewConversation,
   welcomeWorkspaceName,
+  welcomeMark,
   inputTestId,
 }: {
   disabled?: boolean;
   /** Welcome-state composer: shows the per-session tool picker. */
   isNewConversation?: boolean;
   welcomeWorkspaceName?: string;
+  /** welcome 块顶部的那个 mark；整节点可替换（自带尺寸与下边距）。
+   *  主题视图用它换掉默认的应用 logo——小精灵页要一眼看出是她的页面。 */
+  welcomeMark?: ReactNode;
   /** 覆盖 textarea 的 data-testid（小精灵页保留既有 "pixie-input"）。 */
   inputTestId?: string;
 }) {
@@ -1801,7 +1806,7 @@ export function Composer({
     >
       {welcomeWorkspaceName && welcomeKey && (
         <div className="conversation-content-width new-conversation-copy mx-auto mb-10 flex flex-col items-center text-center">
-          <PiMark className="mb-4 size-20" />
+          {welcomeMark ?? <PiMark className="mb-4 size-20" />}
           <h2 className="max-w-full truncate text-[clamp(1.25rem,4.5vw,1.875rem)] font-medium text-foreground">
             {t(welcomeKey)}
           </h2>

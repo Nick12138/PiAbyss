@@ -2045,6 +2045,19 @@ textarea:focus-visible {
   -webkit-user-select: none;
 }
 
+/* 小精灵页复用上面这套 welcome 招呼语，但它左边还挂着随行面板：对话列能窄到
+ * 400px（面板展开、或窄容器整页抽屉）。原字号写的是 `clamp(1.25rem,4.5vw,1.875rem)`
+ * ——按**视口**算，加上 `truncate` 强制单行，窄列必然把中文问候语截成省略号。
+ * 这里换成按容器宽度收敛（`@container` 挂在 `[data-pixie-page]`，量的是整页而不是
+ * 对话列，所以真正起作用的是上下限 1rem–1.45rem 把字号压回可读区间）并放开换行；
+ * 普通工作区的 welcome 不受影响。 */
+[data-pixie-page] .new-conversation-copy h2 {
+  font-size: clamp(1rem, 3.2cqi, 1.45rem);
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

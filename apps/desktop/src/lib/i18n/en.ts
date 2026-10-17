@@ -2031,8 +2031,6 @@ export const en = {
 
   // Pixie
   pixieTitle: "Pixie",
-  pixieEmptyTitle: "Hi, I'm Pixie",
-  pixieEmptyHint: "Ask what work is due today, or have me check how a project is doing.",
   pixieThinking: "Pixie is thinking…",
   pixieLoadFailed: "Failed to load Pixie",
   pixieInputPlaceholder: "Say something to Pixie… (Enter to send, Shift+Enter for newline)",
