@@ -614,7 +614,7 @@ export const en = {
   skillsEnable: "Enable skill (applies to new or reloaded sessions)",
   skillsDisable: "Disable skill (applies to new or reloaded sessions)",
   skillsToggleAria: "Toggle skill {name}",
-  skillsBundleReadonly: "Packages & extensions are view-only; manage enable/disable in Packages",
+  skillsBundleReadonly: "Packages & extensions are view-only; manage enable/disable in Extensions",
   skillsBadgeUntrusted: "Not loaded — project not trusted",
   skillsOpen: "Open",
   skillsPreviewToggle: "Preview skill {name}",

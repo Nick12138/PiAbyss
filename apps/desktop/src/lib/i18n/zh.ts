@@ -578,7 +578,7 @@ export const zh: Record<MessageKey, string> = {
   skillsEnable: "启用技能（对新建或重载的会话生效）",
   skillsDisable: "禁用技能（对新建或重载的会话生效）",
   skillsToggleAria: "切换技能 {name}",
-  skillsBundleReadonly: "包与扩展仅查看；启用/禁用请在「包管理」页操作",
+  skillsBundleReadonly: "包与扩展仅查看；启用/禁用请在「扩展」页操作",
   skillsBadgeUntrusted: "未加载：项目未信任",
   skillsOpen: "打开",
   skillsPreviewToggle: "预览技能 {name}",
