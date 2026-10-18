@@ -835,12 +835,19 @@ describe("package mutation busy gating scope", () => {
     const pm = g.packageManager as unknown as { getInstalledPath: ReturnType<typeof vi.fn> };
     pm.getInstalledPath.mockReturnValue(`/agent/git/${REPO_SOURCE.slice("git:".length)}`);
     const sm = g.settingsManager as unknown as {
-      getPackages: ReturnType<typeof vi.fn>;
+      getGlobalSettings: () => { packages: unknown[] };
+      getProjectSettings: () => { packages: unknown[] };
       setPackages: ReturnType<typeof vi.fn>;
     };
-    sm.getPackages.mockReturnValue([
-      { source: REPO_SOURCE, extensions: ["+packages/foo/extensions/**"] },
-    ]);
+    // The apply path reads and writes the USER layer only. Seed a project-scope
+    // source as well: folding the merged `getPackages()` back through
+    // setPackages used to copy it into the user settings, where it shadowed
+    // the very entry this handler was meant to persist.
+    sm.getGlobalSettings().packages.push({
+      source: REPO_SOURCE,
+      extensions: ["packages/foo/extensions/**"],
+    });
+    sm.getProjectSettings().packages.push({ source: "npm:project-only-pkg" });
 
     const out = await createPackageHandlers(factory)["pluginLibrary.apply"]!({
       ...reloadCtx,
@@ -850,6 +857,9 @@ describe("package mutation busy gating scope", () => {
 
     expect("error" in out).toBe(false);
     expect(sm.setPackages).toHaveBeenCalled();
+    const written = sm.setPackages.mock.calls[0]?.[0] as Array<{ source: string }>;
+    expect(written.some((entry) => entry.source === REPO_SOURCE)).toBe(true);
+    expect(written.some((entry) => entry.source === "npm:project-only-pkg")).toBe(false);
     expect(g.agentSession!.reload).toHaveBeenCalledTimes(1);
     expect(factory.refreshRetainedGraphSettings).toHaveBeenCalled();
     expect(factory.getServer()!.getPhase()).toBe("agentBusy");
