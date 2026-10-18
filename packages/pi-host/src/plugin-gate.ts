@@ -4,10 +4,10 @@
  *
  * The plugin library toggles write the user-level `packages[]` entry for the
  * my-pi-plugins repo, in two shapes depending on the code path that ran:
- *  - `pluginLibraryApply` uses the plugin-glob form
- *    (`+packages/<name>/extensions/**`),
+ *  - `pluginLibraryApply` uses a plain directory include
+ *    (`packages/<name>/extensions/**`),
  *  - resource preferences (`setPreferences`) use the concrete entry file
- *    (`-packages/<name>/extensions/<file>.ts`).
+ *    (`+/-packages/<name>/extensions/<file>.ts`).
  * Both must be recognized. The same evaluation as `package-snapshot.ts`'s
  * `resolveResourceState` decides whether the plugin's extension would load in
  * a fresh session; this module mirrors that decision for host-scoped handlers
@@ -39,11 +39,10 @@ function repoExtensionPatterns(packages: PackageSource[] | undefined): string[] 
  * Whether a repo plugin's extension is enabled at the user level. This mirrors
  * `package-snapshot.ts`'s `resolveResourceState` (and therefore the SDK's own
  * load decision): the concrete entry file must be covered by an include glob
- * (or a `+` force-include) and not force-excluded. The plugin-glob
- * `+/-packages/<name>/extensions/**` entries written by `pluginLibraryApply`
- * are exact-matched by the SDK against concrete files and therefore never
- * affect loading; the gate ignores them for the same reason. An absent repo
- * entry (or empty extensions list) means nothing loads.
+ * (or a `+` force-include) and not force-excluded. `+`/`-` entries are
+ * exact-matched by the SDK against concrete files only, so a directory glob
+ * always arrives as a plain include. An absent repo entry (or empty extensions
+ * list) means nothing loads.
  */
 export function isRepoPluginEnabled(agentDir: string, entryFile: string): boolean {
   try {

@@ -56,6 +56,13 @@ export function setPackageResourceFilter(
 
     const next: PackageSourceObject = { ...obj };
     const existing = next[key];
+    // `+`/`-` entries are exact-matched against concrete resource paths by the
+    // SDK; only plain entries are treated as globs. Enabling a directory glob
+    // such as `packages/pi-x/extensions/**` therefore has to be written as a
+    // plain include — a `+` prefix turns it into an exact match that never
+    // equals a real file and silently leaves the extension disabled.
+    const isGlob = rel.includes("*") || rel.includes("?");
+    const globPrefix = isGlob ? rel.slice(0, rel.search(/[*?]/)) : "";
 
     if (enabled) {
       if (existing === undefined) {
@@ -70,12 +77,16 @@ export function setPackageResourceFilter(
       }
       // Force-excludes win over force-includes in the SDK, so remove every
       // exact force-exclude that targets this resource before enabling it.
-      const filters = existing.filter(
-        (filter) =>
-          !filter.startsWith("-") || !matchesResourcePattern(rel, filter.slice(1), true),
-      );
-      if (!isEnabledByPackagePatterns(rel, filters)) {
-        filters.push(`+${rel}`);
+      // For a directory glob that also means dropping the per-file excludes
+      // inside the directory, which a glob include cannot otherwise override.
+      const filters = existing.filter((filter) => {
+        if (!filter.startsWith("-")) return true;
+        const target = filter.slice(1);
+        if (!isGlob) return !matchesResourcePattern(rel, target, true);
+        return !target.startsWith(globPrefix);
+      });
+      if (!isEnabledByPackagePatterns(rel, filters, next.autoload !== false)) {
+        filters.push(isGlob ? rel : `+${rel}`);
       }
       if (filters.length === 0) {
         delete next[key];
@@ -93,8 +104,7 @@ export function setPackageResourceFilter(
       next[key] = [];
     } else {
       const filters = existing.filter(
-        (filter) =>
-          !filter.startsWith("+") || !matchesResourcePattern(rel, filter.slice(1), true),
+        (filter) => !filter.startsWith("+") || !matchesResourcePattern(rel, filter.slice(1), true),
       );
       if (!filters.includes(`-${rel}`)) {
         filters.push(`-${rel}`);
@@ -144,8 +154,7 @@ export function setTopLevelPathEnabled(
 
   if (!enabled) {
     const next = patterns.filter(
-      (pattern) =>
-        !pattern.startsWith("+") || !matchesResourcePattern(rel, pattern.slice(1), true),
+      (pattern) => !pattern.startsWith("+") || !matchesResourcePattern(rel, pattern.slice(1), true),
     );
     if (!next.includes(minus)) next.push(minus);
     return next;
@@ -153,16 +162,13 @@ export function setTopLevelPathEnabled(
 
   // enable
   let next = patterns.filter(
-    (pattern) =>
-      !pattern.startsWith("-") || !matchesResourcePattern(rel, pattern.slice(1), true),
+    (pattern) => !pattern.startsWith("-") || !matchesResourcePattern(rel, pattern.slice(1), true),
   );
   const stillExcluded = next.some(
-    (pattern) =>
-      pattern.startsWith("!") && matchesResourcePattern(rel, pattern.slice(1)),
+    (pattern) => pattern.startsWith("!") && matchesResourcePattern(rel, pattern.slice(1)),
   );
   const forceIncluded = next.some(
-    (pattern) =>
-      pattern.startsWith("+") && matchesResourcePattern(rel, pattern.slice(1), true),
+    (pattern) => pattern.startsWith("+") && matchesResourcePattern(rel, pattern.slice(1), true),
   );
   if (stillExcluded && !forceIncluded) {
     next = [...next, plus];
@@ -170,11 +176,7 @@ export function setTopLevelPathEnabled(
   return next;
 }
 
-export function matchesResourcePattern(
-  path: string,
-  pattern: string,
-  exact = false,
-): boolean {
+export function matchesResourcePattern(path: string, pattern: string, exact = false): boolean {
   const normalizedPath = toPosixPath(path);
   const normalizedPattern = toPosixPath(pattern).replace(/^\.\//, "");
   if (exact) {
@@ -193,7 +195,18 @@ export function matchesResourcePattern(
   return candidates.some((candidate) => minimatch(candidate, normalizedPattern));
 }
 
-export function isEnabledByPackagePatterns(path: string, patterns: string[]): boolean {
+/** Whether a concrete resource path is enabled by a package's filter list.
+ *
+ *  `autoload` mirrors the package entry's own flag: an autoloading entry with
+ *  no plain includes means "everything not excluded", while an `autoload:
+ *  false` entry is a whitelist — nothing is enabled unless a pattern actually
+ *  matches. Treating the whitelist as autoload silently made per-plugin
+ *  installs a no-op (the write path believed the resource was already on). */
+export function isEnabledByPackagePatterns(
+  path: string,
+  patterns: string[],
+  autoload = true,
+): boolean {
   const includes = patterns.filter((pattern) => !/^[!+-]/.test(pattern));
   const excludes = patterns
     .filter((pattern) => pattern.startsWith("!"))
@@ -205,8 +218,8 @@ export function isEnabledByPackagePatterns(path: string, patterns: string[]): bo
     .filter((pattern) => pattern.startsWith("-"))
     .map((pattern) => pattern.slice(1));
 
-  let enabled =
-    includes.length === 0 || includes.some((pattern) => matchesResourcePattern(path, pattern));
+  let enabled = includes.some((pattern) => matchesResourcePattern(path, pattern));
+  if (autoload && includes.length === 0) enabled = true;
   if (excludes.some((pattern) => matchesResourcePattern(path, pattern))) enabled = false;
   if (forceIncludes.some((pattern) => matchesResourcePattern(path, pattern, true))) enabled = true;
   if (forceExcludes.some((pattern) => matchesResourcePattern(path, pattern, true))) enabled = false;

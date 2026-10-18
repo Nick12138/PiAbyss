@@ -1556,7 +1556,13 @@ async function runMutation(
       case "pluginLibraryApply": {
         const p = params as { source: string; pattern: string; enabled: boolean };
         const sm = g.settingsManager!;
-        const current = [...(sm.getPackages() as PackageSource[])];
+        // The library's install/apply action is documented to write the USER
+        // level (`pluginInstallReviewBody`). Read that layer back instead of
+        // the merged list: `getPackages()` folds project deltas in, and writing
+        // the merged result through `setPackages()` copied every project-scope
+        // package source into the user settings, where it shadowed the entry
+        // this handler was supposed to persist.
+        const current = [...((sm.getGlobalSettings().packages ?? []) as PackageSource[])];
         const configuredSource = findConfiguredPackageSource(current, p.source);
         if (!configuredSource) {
           if (!p.enabled) {
