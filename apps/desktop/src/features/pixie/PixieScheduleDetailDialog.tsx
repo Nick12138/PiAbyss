@@ -16,6 +16,7 @@ import { Dialog, secondaryButton } from "../../components/Dialog";
 import { Select } from "../../components/Select";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { useT } from "../../lib/i18n/use-t";
+import type { MessageKey } from "../../lib/i18n";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
@@ -37,6 +38,16 @@ const RUN_NOW_TIMEOUT_MS = 31 * 60 * 1000;
 /** 进行中那一轮的过程轮询：比列表勤，比流式懒——后台任务不值得更激进了。 */
 const PROCESS_POLL_MS = 1_500;
 const RUNS_LIMIT = 50;
+
+/**
+ * 这一轮是怎么被触发的。口径与独立页一致：手动与追问不标——那是用户当下做的事，
+ * 不是计划的来源；只有排期自己触发的那几种才值得写出来。
+ */
+const RUN_TRIGGER_LABEL: Record<string, MessageKey> = {
+  once: "scheduleTriggerOnce",
+  interval: "scheduleTriggerInterval",
+  cron: "scheduleTriggerCron",
+};
 
 export function PixieScheduleDetailDialog({
   job: initialJob,
@@ -314,6 +325,8 @@ export function PixieScheduleDetailDialog({
               runs.map((run) => {
                 const expanded = expandedRunId === run.runId;
                 const noProcess = noProcessRunIds.includes(run.runId);
+                const triggerKey = RUN_TRIGGER_LABEL[run.trigger];
+                const triggerLabel = triggerKey ? t(triggerKey) : null;
                 return (
                   <div key={run.runId} className="rounded-lg border border-border">
                     <button
@@ -380,7 +393,17 @@ export function PixieScheduleDetailDialog({
                         </span>
                       ) : null}
                     </button>
-                    <div className="flex items-center gap-2 px-3 pb-1.5 text-[10px] text-muted">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-3 pb-1.5 text-[10px] text-muted">
+                      {triggerLabel ? <span>{triggerLabel}</span> : null}
+                      {run.usage ? (
+                        <span
+                          className="tabular-nums"
+                          title={`${run.usage.input} in · ${run.usage.output} out`}
+                        >
+                          {run.usage.total.toLocaleString()} tok
+                        </span>
+                      ) : null}
+                      {run.forkOf ? <span>fork</span> : null}
                       <span>
                         {t("pixieScheduleToolsLabel")}: {run.tools.join(" ") || "—"}
                       </span>

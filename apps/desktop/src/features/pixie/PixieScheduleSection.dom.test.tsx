@@ -281,6 +281,54 @@ describe("PixieScheduleSection", () => {
     expect(screen.queryByText(/running/i)).not.toBeInTheDocument();
   });
 
+  it("执行历史标出触发来源与 token 用量", async () => {
+    const user = userEvent.setup();
+    vi.mocked(hostClient.request).mockImplementation(async (method) => {
+      if (method === "schedule.status") return { ok: true, result: { available: true } } as never;
+      if (method === "schedule.listJobs") {
+        return { ok: true, result: { jobs: JOBS, activeJobIds: [] } } as never;
+      }
+      if (method === "schedule.listRuns") {
+        return {
+          ok: true,
+          result: {
+            runs: [
+              {
+                runId: "r1",
+                jobId: "j1",
+                jobName: "每日构建报告",
+                // 排期自己触发的那几种才标来源：manual / reply 是用户当下做的。
+                trigger: "cron",
+                status: "ok",
+                startedAt: new Date().toISOString(),
+                finishedAt: new Date().toISOString(),
+                durationMs: 12_000,
+                model: null,
+                permission: "read_only",
+                tools: ["read"],
+                sessionPath: null,
+                command: null,
+                forkOf: null,
+                summary: "构建成功",
+                error: null,
+                usage: { input: 1200, output: 800, total: 2000, cost: 0 },
+                toolCalls: 1,
+              },
+            ],
+          },
+        } as never;
+      }
+      return { ok: true, result: null } as never;
+    });
+
+    render(<PixieScheduleSection active onCount={onCount} />);
+    await user.click(await screen.findByText("每日构建报告"));
+
+    // 与工具审计同排：一起回答「这一轮怎么跑起来的、给了什么工具、花了多少」。
+    expect(await screen.findByText("Cron")).toBeInTheDocument();
+    expect(await screen.findByText(/tok$/)).toBeInTheDocument();
+  });
+
   it("点行打开详情弹窗，开关那一格不会跟着打开", async () => {
     const user = userEvent.setup();
     render(<PixieScheduleSection active onCount={onCount} />);
