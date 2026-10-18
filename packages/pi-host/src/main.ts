@@ -40,7 +40,6 @@ import { startScheduleNotifyWatcher } from "./schedule-notify-watcher.js";
 import { createMemoHandlers } from "./memo-controller.js";
 import { createShellJobHandlers } from "./shelljob-controller.js";
 import { startShellJobWatcher } from "./shelljob-watcher.js";
-import { configureScheduleAgentRuntime } from "./schedule-agent-runner.js";
 import {
   configurePixieRuntime,
   configurePixieEventEmitter,
@@ -416,9 +415,6 @@ async function main(): Promise<void> {
     graphFactory.getServer(),
   );
 
-  // Schedule "smart create" conversations are user-visible agent sessions:
-  // build them on the Host-owned runtime instead of a private one.
-  configureScheduleAgentRuntime(modelRuntime);
   // The pixie (小精灵) resident session shares the same authoritative runtime.
   configurePixieRuntime(modelRuntime);
 
@@ -457,7 +453,7 @@ async function main(): Promise<void> {
     ...createExtensionUiHandlers(graphFactory),
     ...createTelegramHandlers(agentDir),
     ...createTelegramSessionHandlers(agentDir),
-    ...createScheduleHandlers(agentDir),
+    ...createScheduleHandlers(),
     ...createMemoHandlers(agentDir, modelRuntime, modelRegistry),
     ...createPixieHandlers(graphFactory),
     ...createShellJobHandlers(),

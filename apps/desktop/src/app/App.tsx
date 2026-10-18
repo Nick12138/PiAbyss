@@ -15,8 +15,6 @@ import { fileWorkspaceForRecovery } from "../features/dock/file-session";
 import { resolveWindowControlsPlatform } from "../components/WindowControls";
 import { ChatPage } from "../features/chat/ChatPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
-import { SchedulePage } from "../features/schedule/SchedulePage";
-import { ScheduleAgentPage } from "../features/schedule/ScheduleAgentPage";
 import { openMemoWithAgentById } from "../features/memo/memo-agent";
 import { PixiePage } from "../features/pixie/PixiePage";
 import { startPixieAutostart } from "../features/pixie/pixie-autostart";
@@ -1494,10 +1492,6 @@ export function App() {
                 />
               ) : page === "packages" ? (
                 <SettingsPage initialSection="packages" onClose={() => setPage("chat")} />
-              ) : page === "schedule" ? (
-                <SchedulePage />
-              ) : page === "schedule-agent" ? (
-                <ScheduleAgentPage />
               ) : page === "pixie" ? (
                 <PixiePage />
               ) : (

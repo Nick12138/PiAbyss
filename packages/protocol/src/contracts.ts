@@ -104,11 +104,7 @@ import type {
   ScheduleRunMessages,
   ScheduleRunSummary,
   ScheduleStatus,
-  ScheduleTranscriptEntry,
   ScheduleNotification,
-  ScheduleAgentSessionSummary,
-  ScheduleAgentEditJob,
-  ScheduleAgentState,
   PixieDispatchKind,
   PixieDispatchRecord,
   PixieSessionAlive,
@@ -116,7 +112,6 @@ import type {
   PixieTaskTreeWorkspace,
   PixieUsageStats,
   PixieWorkspaceSessionSummary,
-  ScheduleAgentTranscript,
   MemoNote,
   MemoNoteStatus,
   MemoImageInput,
@@ -272,20 +267,10 @@ export type HostContextMap = {
   "schedule.setJobEnabled": HostContext;
   "schedule.runJobNow": HostContext;
   "schedule.listRuns": HostContext;
-  "schedule.getRunTranscript": HostContext;
   "schedule.runMessages": HostContext;
   "schedule.abortRun": HostContext;
-  "schedule.replyToRun": HostContext;
   "schedule.validateCron": HostContext;
   "schedule.listNotifications": HostContext;
-  "schedule.agentStart": HostContext;
-  "schedule.agentList": HostContext;
-  "schedule.agentSend": HostContext;
-  "schedule.agentContinue": HostContext;
-  "schedule.agentState": HostContext;
-  "schedule.agentTranscript": HostContext;
-  "schedule.agentAbort": HostContext;
-  "schedule.agentDelete": HostContext;
   "memo.list": HostContext;
   "memo.optimize": HostContext;
   "memo.create": HostContext;
@@ -535,29 +520,12 @@ export type HostRequestParams = {
   "schedule.setJobEnabled": { id: string; enabled: boolean };
   "schedule.runJobNow": { id: string; permission?: SchedulePermission; timeoutMs?: number };
   "schedule.listRuns": { jobId?: string | null; limit?: number };
-  "schedule.getRunTranscript": { runId: string };
   /** 一次执行的过程（Host 直读 run 的会话文件，保留思考块与工具调用）。 */
   "schedule.runMessages": { runId: string };
   /** 叫停正在执行的那一轮：只中止这一轮，任务与排期不动。 */
   "schedule.abortRun": { runId: string };
-  "schedule.replyToRun": { runId: string; text: string };
   "schedule.validateCron": { cron: string; timezone?: string };
   "schedule.listNotifications": { limit?: number };
-  "schedule.agentStart": {
-    cwd: string;
-    requirement: string;
-    /** 分析会话使用的模型（含思考深度）；缺省 = 宿主默认模型。 */
-    model?: { provider: string; id: string; thinkingLevel?: string } | null;
-    /** AI 优化现有计划时携带的原计划上下文；缺省 = 普通智能创建。 */
-    job?: ScheduleAgentEditJob | null;
-  };
-  "schedule.agentList": null;
-  "schedule.agentSend": { sessionId: string; text: string };
-  "schedule.agentContinue": { sessionPath: string; cwd: string; text: string };
-  "schedule.agentState": { sessionId: string };
-  "schedule.agentTranscript": { sessionPath: string };
-  "schedule.agentAbort": { sessionId: string };
-  "schedule.agentDelete": { sessionPath: string };
   "memo.list": null;
   "memo.optimize": {
     contentMd: string;
@@ -853,24 +821,10 @@ export type HostResultMap = {
   "schedule.setJobEnabled": { job: ScheduleJob };
   "schedule.runJobNow": { run: ScheduleRunSummary };
   "schedule.listRuns": { runs: ScheduleRunSummary[] };
-  "schedule.getRunTranscript": {
-    runId: string;
-    sessionPath: string | null;
-    entries: ScheduleTranscriptEntry[];
-  };
-  "schedule.replyToRun": { run: ScheduleRunSummary };
   "schedule.runMessages": ScheduleRunMessages;
   "schedule.abortRun": { aborted: boolean; run: ScheduleRunSummary };
   "schedule.validateCron": { valid: boolean; reason: string | null };
   "schedule.listNotifications": { entries: ScheduleNotification[] };
-  "schedule.agentStart": { sessionId: string; sessionPath: string };
-  "schedule.agentList": { sessions: ScheduleAgentSessionSummary[] };
-  "schedule.agentSend": { sessionId: string };
-  "schedule.agentContinue": { sessionId: string; sessionPath: string };
-  "schedule.agentState": ScheduleAgentState;
-  "schedule.agentTranscript": ScheduleAgentTranscript;
-  "schedule.agentAbort": { ok: boolean };
-  "schedule.agentDelete": { ok: boolean };
   "memo.list": { notes: MemoNote[] };
   "memo.optimize": {
     contentMd: string;

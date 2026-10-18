@@ -15,7 +15,7 @@ const mockedApi = vi.mocked(scheduleApi);
 let root = "";
 
 function handler(method: string) {
-  const handlers = createScheduleHandlers(join(root, "agent"));
+  const handlers = createScheduleHandlers();
   const found = handlers[method];
   if (!found) throw new Error(`缺少方法：${method}`);
   return found;

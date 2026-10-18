@@ -57,7 +57,6 @@ export function PixieScheduleSection({
   const t = useT();
   const hostInstanceId = useAppStore((s) => s.host?.hostInstanceId ?? null);
   const revision = useAppStore((s) => s.scheduleRevision);
-  const setScheduleOnline = useAppStore((s) => s.setScheduleOnline);
   const [jobs, setJobs] = useState<ScheduleJob[] | null>(null);
   const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
   const [available, setAvailable] = useState(true);
@@ -74,8 +73,6 @@ export function PixieScheduleSection({
       const status = await hostClient.request("schedule.status", hostContext(host), null, 10_000);
       const ready = status.ok && status.result.available;
       setAvailable(ready);
-      // 顶栏的调度器状态灯：独立页也在喂，两边同值不构成冲突。
-      setScheduleOnline(ready);
       if (!ready) {
         setJobs([]);
         setActiveJobIds([]);
@@ -98,7 +95,7 @@ export function PixieScheduleSection({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
-  }, [setScheduleOnline]);
+  }, []);
 
   useEffect(() => {
     if (!hostInstanceId) return;

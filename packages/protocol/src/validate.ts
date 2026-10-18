@@ -392,21 +392,6 @@ function isScheduleJobFields(params: Record<string, unknown>): boolean {
   );
 }
 
-/** schedule.agentStart 可选的「AI 优化」原计划上下文：必填字段 + 复用
- *  isScheduleJobFields 校验可选字段。刻意不限制额外键 —— 桌面端直接传
- *  完整的 ScheduleJob（含 createdAt/runCount 等运行统计），宿主只取需要
- *  的字段。 */
-function isScheduleAgentEditJob(value: unknown): boolean {
-  if (!isPlainObject(value)) return false;
-  return (
-    isNonEmptyString(value.id) &&
-    value.id.length <= 128 &&
-    typeof value.enabled === "boolean" &&
-    typeof value.loadExtensions === "boolean" &&
-    isScheduleJobFields(value)
-  );
-}
-
 const SCHEDULE_JOB_OPTIONAL_KEYS = [
   "name",
   "prompt",
@@ -1478,12 +1463,6 @@ export function validateRequestParams<M extends HostMethod>(
         (params.limit === undefined || isScheduleLimit(params.limit))
         ? ok(params)
         : fail("invalid schedule.listRuns params", { method });
-    case "schedule.getRunTranscript":
-      return exactObject(params, ["runId"]) &&
-        isNonEmptyString(params.runId) &&
-        params.runId.length <= 64
-        ? ok(params)
-        : fail("invalid schedule.getRunTranscript params", { method });
     case "schedule.runMessages":
       return exactObject(params, ["runId"]) &&
         isNonEmptyString(params.runId) &&
@@ -1496,15 +1475,6 @@ export function validateRequestParams<M extends HostMethod>(
         params.runId.length <= 64
         ? ok(params)
         : fail("invalid schedule.abortRun params", { method });
-    case "schedule.replyToRun":
-      return exactObject(params, ["runId", "text"]) &&
-        isNonEmptyString(params.runId) &&
-        params.runId.length <= 64 &&
-        isNonEmptyString(params.text) &&
-        params.text.trim().length > 0 &&
-        params.text.length <= 20_000
-        ? ok(params)
-        : fail("invalid schedule.replyToRun params", { method });
     case "schedule.validateCron":
       return exactObject(params, ["cron"], ["timezone"]) &&
         isNonEmptyString(params.cron) &&
@@ -1533,63 +1503,6 @@ export function validateRequestParams<M extends HostMethod>(
         params.jobId.length <= 160
         ? ok(params)
         : fail(`invalid ${method} params`, { method });
-    case "schedule.agentStart":
-      return exactObject(params, ["cwd", "requirement"], ["model", "job"]) &&
-        isNonEmptyString(params.cwd) &&
-        params.cwd.length <= 1_024 &&
-        isNonEmptyString(params.requirement) &&
-        params.requirement.trim().length > 0 &&
-        params.requirement.length <= 20_000 &&
-        (params.model === undefined || params.model === null || isScheduleModelRef(params.model)) &&
-        (params.job === undefined || params.job === null || isScheduleAgentEditJob(params.job))
-        ? ok(params)
-        : fail("invalid schedule.agentStart params", { method });
-    case "schedule.agentList":
-      return params === null ? ok(params) : fail("invalid schedule.agentList params", { method });
-    case "schedule.agentSend":
-      return exactObject(params, ["sessionId", "text"]) &&
-        isNonEmptyString(params.sessionId) &&
-        params.sessionId.length <= 128 &&
-        isNonEmptyString(params.text) &&
-        params.text.trim().length > 0 &&
-        params.text.length <= 20_000
-        ? ok(params)
-        : fail("invalid schedule.agentSend params", { method });
-    case "schedule.agentContinue":
-      return exactObject(params, ["sessionPath", "cwd", "text"]) &&
-        isNonEmptyString(params.sessionPath) &&
-        params.sessionPath.length <= 1_024 &&
-        isNonEmptyString(params.cwd) &&
-        params.cwd.length <= 1_024 &&
-        isNonEmptyString(params.text) &&
-        params.text.trim().length > 0 &&
-        params.text.length <= 20_000
-        ? ok(params)
-        : fail("invalid schedule.agentContinue params", { method });
-    case "schedule.agentState":
-      return exactObject(params, ["sessionId"]) &&
-        isNonEmptyString(params.sessionId) &&
-        params.sessionId.length <= 128
-        ? ok(params)
-        : fail("invalid schedule.agentState params", { method });
-    case "schedule.agentTranscript":
-      return exactObject(params, ["sessionPath"]) &&
-        isNonEmptyString(params.sessionPath) &&
-        params.sessionPath.length <= 1_024
-        ? ok(params)
-        : fail("invalid schedule.agentTranscript params", { method });
-    case "schedule.agentAbort":
-      return exactObject(params, ["sessionId"]) &&
-        isNonEmptyString(params.sessionId) &&
-        params.sessionId.length <= 128
-        ? ok(params)
-        : fail("invalid schedule.agentAbort params", { method });
-    case "schedule.agentDelete":
-      return exactObject(params, ["sessionPath"]) &&
-        isNonEmptyString(params.sessionPath) &&
-        params.sessionPath.length <= 1_024
-        ? ok(params)
-        : fail("invalid schedule.agentDelete params", { method });
     case "memo.list":
       return params === null ? ok(null) : fail("params must be null", { method });
     case "memo.optimize":

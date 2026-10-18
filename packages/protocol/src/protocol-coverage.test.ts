@@ -284,50 +284,10 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "schedule.setJobEnabled": { id: "a1b2c3d4", enabled: true },
   "schedule.runJobNow": { id: "a1b2c3d4" },
   "schedule.listRuns": { limit: 50 },
-  "schedule.getRunTranscript": { runId: "2fa6a8c56cc8" },
   "schedule.runMessages": { runId: "2fa6a8c56cc8" },
   "schedule.abortRun": { runId: "2fa6a8c56cc8" },
-  "schedule.replyToRun": { runId: "2fa6a8c56cc8", text: "继续" },
   "schedule.validateCron": { cron: "0 9 * * 1-5" },
   "schedule.listNotifications": { limit: 50 },
-  "schedule.agentStart": {
-    cwd: "C:/tmp",
-    requirement: "每天审查代码",
-    job: {
-      // 桌面端直接传完整 ScheduleJob：额外的运行统计键必须被接受。
-      id: "a1b2c3d4",
-      name: "每日代码审查",
-      prompt: "审查最近提交",
-      command: null,
-      cwd: "C:/tmp",
-      enabled: true,
-      permission: "read_only",
-      model: null,
-      trigger: { type: "cron", cron: "0 9 * * 1-5" },
-      missedWindow: "catch_up_one",
-      timeoutMs: 1800000,
-      maxRuns: null,
-      loadExtensions: false,
-      tags: ["#review"],
-      notify: "system",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-      updatedBy: "piabyss",
-      nextRunAt: null,
-      lastRunAt: null,
-      lastRunId: null,
-      lastStatus: null,
-      runCount: 0,
-      terminated: null,
-    },
-  },
-  "schedule.agentList": null,
-  "schedule.agentSend": { sessionId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150", text: "继续" },
-  "schedule.agentContinue": { sessionPath: "C:/s.jsonl", cwd: "C:/tmp", text: "继续" },
-  "schedule.agentState": { sessionId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150" },
-  "schedule.agentTranscript": { sessionPath: "C:/s.jsonl" },
-  "schedule.agentAbort": { sessionId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150" },
-  "schedule.agentDelete": { sessionPath: "C:/s.jsonl" },
   "memo.list": null,
   "memo.optimize": {
     contentMd: "正文",
@@ -643,7 +603,6 @@ function invalidParams(method: HostMethod): unknown {
     case "schedule.listRuns":
     case "schedule.listNotifications":
       return { limit: 0 };
-    case "schedule.getRunTranscript":
     case "schedule.runMessages":
     case "schedule.abortRun":
       return { runId: "", cron: "" };
@@ -651,21 +610,6 @@ function invalidParams(method: HostMethod): unknown {
       return { cron: "" };
     case "session.appendCustomMessage":
       return { customType: "", text: "" };
-    case "schedule.replyToRun":
-      return { runId: "2fa6a8c56cc8", text: "   " };
-    case "schedule.agentStart":
-      return { cwd: "", requirement: "" };
-    case "schedule.agentList":
-      return {}; // must be null
-    case "schedule.agentSend":
-      return { sessionId: "", text: "  " };
-    case "schedule.agentContinue":
-      return { sessionPath: "", cwd: "", text: "x" };
-    case "schedule.agentState":
-    case "schedule.agentAbort":
-      return { sessionId: "" };
-    case "schedule.agentDelete":
-      return { sessionPath: "" };
     case "memo.list":
       return {}; // must be null
     case "memo.optimize":
@@ -708,8 +652,6 @@ function invalidParams(method: HostMethod): unknown {
       return { dispatchId: "", mode: "nonsense" };
     case "pixie.listSessions":
       return { cwd: "" };
-    case "schedule.agentTranscript":
-      return { sessionPath: "" };
     default:
       return { __invalid: true };
   }

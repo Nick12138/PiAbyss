@@ -1,11 +1,4 @@
-import {
-  MessageCirclePlus,
-  CalendarClock,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Settings,
-  Sparkles,
-} from "lucide-react";
+import { MessageCirclePlus, PanelLeftClose, PanelLeftOpen, Settings, Sparkles } from "lucide-react";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAppStore, type NavPage } from "../lib/stores/app-store";
 import { SessionList } from "../features/sessions/SessionList";
@@ -18,7 +11,7 @@ import { sidebarPref, setSidebarPref } from "../lib/sidebar-prefs";
 import { evaluateSidebarAutoAction, sidebarFloorWindowWidth } from "../lib/sidebar-auto-collapse";
 import { classifyDragResize } from "../lib/layout-motion";
 import { subscribeSessionReveal } from "../lib/session-reveal";
-import { useSchedulePluginEnabled } from "../features/schedule/schedule-plugin-gate";
+
 import { usePluginEnabled } from "../features/plugin-library/plugin-gate";
 
 /** The plugin-library entry backing the Pixie page（方寸间已并入它右侧的随行面板）. */
@@ -150,7 +143,6 @@ export function SidebarLayout({
   setPage: (page: NavPage) => void;
 }) {
   const t = useT();
-  const scheduleEnabled = useSchedulePluginEnabled();
   const pixieEnabled = usePluginEnabled(PIXIE_PLUGIN_ID);
   const hostReady = Boolean(useAppStore((s) => s.host?.hostInstanceId));
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
@@ -517,29 +509,6 @@ export function SidebarLayout({
                 >
                   <Sparkles size={18} className="shrink-0" />
                   <span>{t("pixieTitle")}</span>
-                </button>
-              </div>
-            )}
-
-            {scheduleEnabled && (
-              <div className="px-2 pb-2">
-                <button
-                  type="button"
-                  onClick={() => setPage(page === "schedule" ? "chat" : "schedule")}
-                  data-ui="nav-item"
-                  data-testid="sidebar-schedule-entry"
-                  data-state={page === "schedule" ? "active" : "inactive"}
-                  title={t("scheduleTitle")}
-                  aria-label={t("scheduleTitle")}
-                  aria-pressed={page === "schedule"}
-                  className={`flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] transition-colors ${
-                    page === "schedule"
-                      ? "theme-nav-active bg-nav-active text-nav-active-foreground"
-                      : "text-foreground hover:bg-surface-overlay"
-                  }`}
-                >
-                  <CalendarClock size={18} className="shrink-0" />
-                  <span>{t("scheduleTitle")}</span>
                 </button>
               </div>
             )}

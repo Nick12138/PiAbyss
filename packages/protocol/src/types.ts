@@ -1994,14 +1994,6 @@ export type ScheduleRunMessages = {
   messages: ScheduleAgentMessage[];
 };
 
-/** 会话转录条目（精简）。 */
-export type ScheduleTranscriptEntry = {
-  id: string;
-  role: string;
-  text: string;
-  at?: string;
-};
-
 /** 插件通知队列条目。 */
 export type ScheduleNotification = {
   at: string;
@@ -2041,53 +2033,6 @@ export type ScheduleAgentMessage = {
   toolCallId?: string;
   toolName?: string;
   isError?: boolean;
-};
-
-/** schedule.agentList 结果中的单个智能创建会话摘要。 */
-export type ScheduleAgentSessionSummary = {
-  sessionId: string;
-  sessionPath: string;
-  /** 会话首条用户消息中的需求正文（已剥去注入的 preamble）。 */
-  title: string;
-  /** 会话文件修改时间（ISO）。 */
-  updatedAt: string;
-  /** 是否仍在宿主内存中（可继续 agentSend；否则走 agentContinue）。 */
-  resident: boolean;
-};
-
-/** 智能创建「AI 优化」会话携带的原计划上下文：确认时按 id 覆盖原计划
- *  （保留执行历史），而不是新建计划。id/enabled/loadExtensions 必填，
- *  其余字段与 ScheduleJobInput 对齐、可缺省。 */
-export type ScheduleAgentEditJob = {
-  id: string;
-  enabled: boolean;
-  loadExtensions: boolean;
-  name?: string;
-  prompt?: string;
-  command?: string | null;
-  cwd?: string;
-  trigger?: ScheduleTrigger;
-  permission?: SchedulePermission;
-  model?: ScheduleModelRef | null;
-  missedWindow?: ScheduleMissedWindow;
-  timeoutMs?: number;
-  maxRuns?: number | null;
-  tags?: string[];
-  notify?: ScheduleNotifyMode;
-};
-
-/** schedule.agentState 结果：会话不在宿主内存时 found=false。 */
-export type ScheduleAgentState = {
-  found: boolean;
-  running: boolean;
-  error: string | null;
-  messages: ScheduleAgentMessage[];
-};
-
-/** schedule.agentTranscript 结果：从会话文件读取的历史。 */
-export type ScheduleAgentTranscript = {
-  found: boolean;
-  messages: ScheduleAgentMessage[];
 };
 
 /** schedule.status 结果：插件未启动时 available=false（不作为协议错误）。 */

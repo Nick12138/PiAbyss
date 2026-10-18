@@ -20,7 +20,6 @@ import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog"
 import { Select } from "../../components/Select";
 import { Switch } from "../../components/Switch";
 import { useAppStore } from "../../lib/stores/app-store";
-import type { ScheduleModelChoice } from "./schedule-agent-flow";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import {
@@ -31,6 +30,13 @@ import {
   SCHEDULE_MAX_TIMEOUT_MINUTES,
   type ScheduleFormState,
 } from "./schedule-model";
+
+/** 用户显式选择的执行模型（含思考深度）；null = 宿主默认模型。 */
+type ScheduleModelChoice = {
+  provider: string;
+  id: string;
+  thinkingLevel?: string;
+} | null;
 
 const CREATE_TIMEOUT_MS = 15_000;
 const MODEL_LIST_TIMEOUT_MS = 15_000;

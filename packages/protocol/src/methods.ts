@@ -145,20 +145,10 @@ export const HOST_METHODS = [
   "schedule.setJobEnabled",
   "schedule.runJobNow",
   "schedule.listRuns",
-  "schedule.getRunTranscript",
   "schedule.runMessages",
   "schedule.abortRun",
-  "schedule.replyToRun",
   "schedule.validateCron",
   "schedule.listNotifications",
-  "schedule.agentStart",
-  "schedule.agentList",
-  "schedule.agentSend",
-  "schedule.agentContinue",
-  "schedule.agentState",
-  "schedule.agentTranscript",
-  "schedule.agentAbort",
-  "schedule.agentDelete",
   "memo.list",
   "memo.optimize",
   "memo.create",
@@ -276,20 +266,10 @@ export type HostOnlyMethod =
   | "schedule.setJobEnabled"
   | "schedule.runJobNow"
   | "schedule.listRuns"
-  | "schedule.getRunTranscript"
   | "schedule.runMessages"
   | "schedule.abortRun"
-  | "schedule.replyToRun"
   | "schedule.validateCron"
   | "schedule.listNotifications"
-  | "schedule.agentStart"
-  | "schedule.agentList"
-  | "schedule.agentSend"
-  | "schedule.agentContinue"
-  | "schedule.agentState"
-  | "schedule.agentTranscript"
-  | "schedule.agentAbort"
-  | "schedule.agentDelete"
   | "pixie.dispatches"
   | "pixie.usage"
   | "pixie.ensureCurrent"
@@ -570,20 +550,10 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "schedule.setJobEnabled": "host",
   "schedule.runJobNow": "host",
   "schedule.listRuns": "host",
-  "schedule.getRunTranscript": "host",
   "schedule.runMessages": "host",
   "schedule.abortRun": "host",
-  "schedule.replyToRun": "host",
   "schedule.validateCron": "host",
   "schedule.listNotifications": "host",
-  "schedule.agentStart": "host",
-  "schedule.agentList": "host",
-  "schedule.agentSend": "host",
-  "schedule.agentContinue": "host",
-  "schedule.agentState": "host",
-  "schedule.agentTranscript": "host",
-  "schedule.agentAbort": "host",
-  "schedule.agentDelete": "host",
   "memo.list": "host",
   "memo.optimize": "host",
   "memo.create": "host",

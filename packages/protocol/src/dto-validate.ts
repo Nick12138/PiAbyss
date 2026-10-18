@@ -2574,17 +2574,6 @@ function isScheduleRunSummary(value: unknown): boolean {
   );
 }
 
-function isScheduleTranscriptEntry(value: unknown): boolean {
-  return (
-    isPlainObject(value) &&
-    hasExactKeys(value, ["id", "role", "text"], ["at"]) &&
-    isString(value.id) &&
-    isString(value.role) &&
-    isString(value.text) &&
-    (value.at === undefined || isString(value.at))
-  );
-}
-
 /** 后台 shell 任务（pi shelljob 工具）摘要与定位结果的形状校验。 */
 function isShellJobStatus(value: unknown): boolean {
   return (
@@ -3011,19 +3000,6 @@ function isMemoDraft(value: unknown): boolean {
     (value.workspaceHint === null || isString(value.workspaceHint)) &&
     typeof value.updatedAt === "number" &&
     Number.isSafeInteger(value.updatedAt)
-  );
-}
-
-function isScheduleAgentSessionSummary(value: unknown): boolean {
-  return (
-    isPlainObject(value) &&
-    hasExactKeys(value, ["sessionId", "sessionPath", "title", "updatedAt", "resident"]) &&
-    isString(value.sessionId) &&
-    value.sessionId.length > 0 &&
-    isString(value.sessionPath) &&
-    isString(value.title) &&
-    isString(value.updatedAt) &&
-    typeof value.resident === "boolean"
   );
 }
 
@@ -3710,7 +3686,6 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         ? null
         : "invalid schedule.deleteJob result";
     case "schedule.runJobNow":
-    case "schedule.replyToRun":
       return isPlainObject(result) &&
         hasExactKeys(result, ["run"]) &&
         isScheduleRunSummary(result.run)
@@ -3723,15 +3698,6 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         result.runs.every(isScheduleRunSummary)
         ? null
         : "invalid schedule.listRuns result";
-    case "schedule.getRunTranscript":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["runId", "sessionPath", "entries"]) &&
-        isString(result.runId) &&
-        (result.sessionPath === null || isString(result.sessionPath)) &&
-        Array.isArray(result.entries) &&
-        result.entries.every(isScheduleTranscriptEntry)
-        ? null
-        : "invalid schedule.getRunTranscript result";
     case "schedule.runMessages":
       return isPlainObject(result) &&
         hasExactKeys(result, ["found", "sessionPath", "running", "messages"]) &&
@@ -3771,62 +3737,6 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
       return isPlainObject(result) && hasExactKeys(result, ["stopped"]) && result.stopped === true
         ? null
         : "shelljobs.stop result must be { stopped: true }";
-    case "schedule.agentStart":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["sessionId", "sessionPath"]) &&
-        isString(result.sessionId) &&
-        result.sessionId.length > 0 &&
-        isString(result.sessionPath)
-        ? null
-        : "invalid schedule.agentStart result";
-    case "schedule.agentList":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["sessions"]) &&
-        Array.isArray(result.sessions) &&
-        result.sessions.every(isScheduleAgentSessionSummary)
-        ? null
-        : "invalid schedule.agentList result";
-    case "schedule.agentSend":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["sessionId"]) &&
-        isString(result.sessionId) &&
-        result.sessionId.length > 0
-        ? null
-        : "invalid schedule.agent session result";
-    case "schedule.agentContinue":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["sessionId", "sessionPath"]) &&
-        isString(result.sessionId) &&
-        result.sessionId.length > 0 &&
-        isString(result.sessionPath)
-        ? null
-        : "invalid schedule.agent session result";
-    case "schedule.agentState":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["found", "running", "error", "messages"]) &&
-        isBoolean(result.found) &&
-        isBoolean(result.running) &&
-        (result.error === null || isString(result.error)) &&
-        Array.isArray(result.messages) &&
-        result.messages.every(isScheduleAgentMessage)
-        ? null
-        : "invalid schedule.agentState result";
-    case "schedule.agentTranscript":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["found", "messages"]) &&
-        isBoolean(result.found) &&
-        Array.isArray(result.messages) &&
-        result.messages.every(isScheduleAgentMessage)
-        ? null
-        : "invalid schedule.agentTranscript result";
-    case "schedule.agentAbort":
-      return isPlainObject(result) && hasExactKeys(result, ["ok"]) && isBoolean(result.ok)
-        ? null
-        : "invalid schedule.agentAbort result";
-    case "schedule.agentDelete":
-      return isPlainObject(result) && hasExactKeys(result, ["ok"]) && isBoolean(result.ok)
-        ? null
-        : "invalid schedule.agentDelete result";
     case "memo.list":
       return isPlainObject(result) &&
         hasExactKeys(result, ["notes"]) &&

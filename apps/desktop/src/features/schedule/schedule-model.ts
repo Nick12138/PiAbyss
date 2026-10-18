@@ -290,7 +290,6 @@ export function formatIntervalEvery(every: string): string {
  * 全部再导出会养出第二条引用路径，改起来没人报错。
  */
 export type { SchedulePlanDraft } from "./schedule-plan-fence";
-export { latestPlanFence, stripPlanFences } from "./schedule-plan-fence";
 
 /** Matches the plugin's create path: only an explicit "command" is a command plan. */
 function schedulePlanIsCommand(plan: SchedulePlanDraft): boolean {
@@ -484,33 +483,6 @@ export function planToForm(plan: SchedulePlanDraft, fallbackCwd: string): Schedu
     tags: Array.isArray(plan.tags) ? plan.tags.join(", ") : "",
     enabled: true,
     loadExtensions: plan.loadExtensions === true,
-  };
-}
-
-/** Convert an edited form back into a plan draft, without creating anything.
- *  Returns null when the form fails validation. Used by the smart-creation
- *  preview's manual edit: saving there only rewrites the preview, the plan is
- *  still created exclusively by 确认创建. */
-export function formToPlan(form: ScheduleFormState): SchedulePlanDraft | null {
-  if (Object.keys(scheduleFormErrors(form)).length > 0) return null;
-  const parsed = formToJobInput(form);
-  if (!parsed.ok) return null;
-  const { trigger, ...input } = parsed.input;
-  return {
-    name: input.name,
-    kind: input.command ? "command" : "prompt",
-    prompt: input.prompt,
-    command: input.command,
-    cwd: input.cwd,
-    trigger,
-    permission: input.permission ?? null,
-    model: input.model ? { provider: input.model.provider, id: input.model.id } : null,
-    missedWindow: input.missedWindow ?? null,
-    timeoutMs: input.timeoutMs,
-    maxRuns: input.maxRuns,
-    tags: input.tags,
-    notify: input.notify ?? null,
-    loadExtensions: input.loadExtensions,
   };
 }
 

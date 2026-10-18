@@ -1,4 +1,4 @@
-import { Search, CalendarClock, Sparkles } from "lucide-react";
+import { Search, Sparkles } from "lucide-react";
 import { useAppStore } from "../lib/stores/app-store";
 import { useT } from "../lib/i18n/use-t";
 import { requestGlobalSearchOpen } from "../lib/commands/events";
@@ -40,7 +40,6 @@ export function AppTopBar({
   const session = useAppStore((s) => s.session);
   const sessionTreeNavigated = useAppStore((s) => s.sessionTreeNavigated);
   const host = useAppStore((s) => s.host);
-  const scheduleOnline = useAppStore((s) => s.scheduleOnline);
   const activeSubagentNodeId = useAppStore((s) => s.activeSubagentNodeId);
   const setActiveSubagent = useAppStore((s) => s.setActiveSubagent);
   const platform = resolveWindowControlsPlatform();
@@ -165,29 +164,6 @@ export function AppTopBar({
                   {!subagentActive && <SubagentTitleMenu />}
                 </>
               )}
-            </div>
-          </div>
-        ) : page === "schedule" || page === "schedule-agent" ? (
-          <div
-            className="pointer-events-none flex min-w-0 flex-1 items-center gap-2"
-            data-tauri-drag-region
-          >
-            <CalendarClock
-              size={16}
-              className="pointer-events-none shrink-0 text-muted"
-              aria-hidden="true"
-            />
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              <h1 className="min-w-0 truncate text-base font-semibold leading-5">
-                {page === "schedule" ? t("scheduleTitle") : t("scheduleAgentTitle")}
-              </h1>
-              {/* Scheduler liveness dot: green = online, red = offline, muted = not polled yet. */}
-              <span
-                aria-hidden="true"
-                className={`size-1.5 shrink-0 rounded-full ${
-                  scheduleOnline === null ? "bg-muted" : scheduleOnline ? "bg-success" : "bg-danger"
-                }`}
-              />
             </div>
           </div>
         ) : page === "pixie" ? (

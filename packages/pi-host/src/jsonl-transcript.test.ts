@@ -1,17 +1,15 @@
 /**
- * Schedule smart-creation transcripts must carry the raw content blocks (plus
- * the tool-result linkage) so the page can run them through the same
- * `buildTranscriptRows` projection as a workspace session — reasoning folds
- * into a ThinkingBlock and tool calls fold into an ExecutionTrace, instead of
- * the old `[thinking] …` / `[tool] name` text flattened into the bubble.
+ * 执行过程的转写投影必须带原始 content 块（以及工具结果的关联字段），前端才能用
+ * 同一套 `buildTranscriptRows` 投影跑它——思考折进 ThinkingBlock、工具调用折进
+ * ExecutionTrace，而不是把 `[thinking] …` / `[tool] name` 拍平成一行文字塞进气泡。
  */
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { agentTranscriptFrom } from "./schedule-agent-runner.js";
+import { agentTranscriptFrom } from "./jsonl-transcript.js";
 
-const dir = mkdtempSync(join(tmpdir(), "schedule-agent-runner-"));
+const dir = mkdtempSync(join(tmpdir(), "jsonl-transcript-"));
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 

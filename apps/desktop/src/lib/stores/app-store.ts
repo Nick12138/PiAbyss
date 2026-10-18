@@ -72,7 +72,7 @@ import {
 } from "./extension-ui-state";
 
 /** 方寸间不再是独立一页（`"memo"` 已撤），它只有小精灵页右侧随行面板那一处入口。 */
-export type NavPage = "chat" | "packages" | "schedule" | "schedule-agent" | "pixie" | "settings";
+export type NavPage = "chat" | "packages" | "pixie" | "settings";
 
 /** Frozen empty map shared as the initial `providerNames` value so unrelated
  *  sessions don't reallocate a new Map on every reset. */
@@ -437,8 +437,6 @@ function restoreSettingsNavCache(state: {
 
 export type AppState = EpochState & {
   page: NavPage;
-  /** Scheduler availability from the periodic-tasks page poll (null = not checked yet). */
-  scheduleOnline: boolean | null;
   /**
    * 计划列表被改动过几次（草案卡确认、详情弹窗里立即执行/停用…）。
    * 随行面板那页签按 30s 滴答刷新，用户刚点完「确定」不该再等半分钟——
@@ -577,7 +575,6 @@ export type AppState = EpochState & {
   applyProviderLoginEvent: (payload: HostEventPayloadMap["provider.loginEvent"]) => void;
   clearProviderLogin: () => void;
   setPage: (page: NavPage) => void;
-  setScheduleOnline: (online: boolean | null) => void;
   bumpScheduleRevision: () => void;
   openSettingsSection: (section: SettingsSection) => void;
   setSettingsSection: (section: SettingsSection) => void;
@@ -757,7 +754,6 @@ function epochSlice(s: AppState): EpochState {
 
 export const useAppStore = create<AppState>((set, get) => ({
   page: "chat",
-  scheduleOnline: null,
   scheduleRevision: 0,
   settingsSection: null,
   settingsNavCache: null,
@@ -890,7 +886,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }),
   clearProviderLogin: () => set({ providerLogin: null }),
-  setScheduleOnline: (online) => set({ scheduleOnline: online }),
   bumpScheduleRevision: () => set((state) => ({ scheduleRevision: state.scheduleRevision + 1 })),
   setPage: (page) =>
     set((state) => ({

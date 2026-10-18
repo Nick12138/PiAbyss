@@ -8,19 +8,10 @@
  * instead of failing the whole request.
  */
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { createHostError, type HostError, type ScheduleAgentEditJob } from "@piabyss/protocol";
+import { createHostError, type HostError } from "@piabyss/protocol";
 import type { MethodHandler } from "./server.js";
 import { scheduleApi, scheduleRoot, type ScheduleApiOutcome } from "./schedule-api.js";
-import {
-  abortAgent,
-  agentState,
-  agentTranscriptFrom,
-  continueAgentConversation,
-  deleteAgentSession,
-  listAgentSessions,
-  sendAgentMessage,
-  startAgentConversation,
-} from "./schedule-agent-runner.js";
+import { agentTranscriptFrom } from "./jsonl-transcript.js";
 
 /** Health probe: short timeout, the port is closed when the plugin is off. */
 const HEALTH_TIMEOUT_MS = 2_500; /** run_now / reply wait for the execution to finish — give it headroom. */
@@ -96,7 +87,7 @@ function isInsideScheduleSessions(sessionPath: string): boolean {
   return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
 }
 
-export function createScheduleHandlers(agentDir: string): Partial<Record<string, MethodHandler>> {
+export function createScheduleHandlers(): Partial<Record<string, MethodHandler>> {
   return {
     "schedule.status": async () => {
       const outcome = await scheduleApi<{
@@ -206,16 +197,6 @@ export function createScheduleHandlers(agentDir: string): Partial<Record<string,
       return { result: { runs: mapped.result.runs.map(normalizeRunSummary) } };
     },
 
-    "schedule.getRunTranscript": async (ctx) => {
-      const params = ctx.params as { runId: string };
-      const outcome = await scheduleApi<{
-        runId: string;
-        sessionPath: string | null;
-        entries: unknown[];
-      }>(`/api/runs/${params.runId}/transcript`, "GET");
-      return expectOk(outcome);
-    },
-
     /**
      * 一次执行的**过程**。走读盘而不是插件的 `/runs/:id/transcript`：那个端点把消息
      * 拍平成纯文本、连 `toolResult` 都不返回（源码注释「工具输出噪音大，面板按需另取」），
@@ -267,18 +248,6 @@ export function createScheduleHandlers(agentDir: string): Partial<Record<string,
       };
     },
 
-    "schedule.replyToRun": async (ctx) => {
-      const params = ctx.params as { runId: string; text: string };
-      const outcome = await scheduleApi<{ run: unknown }>(
-        `/api/runs/${params.runId}/reply`,
-        "POST",
-        { body: { text: params.text }, timeoutMs: RUN_NOW_TIMEOUT_MS },
-      );
-      const mapped = expectOk(outcome);
-      if ("error" in mapped) return mapped;
-      return { result: { run: normalizeRunSummary(mapped.result.run) } };
-    },
-
     "schedule.validateCron": async (ctx) => {
       const params = ctx.params as { cron: string; timezone?: string };
       const search = new URLSearchParams({ cron: params.cron });
@@ -298,92 +267,6 @@ export function createScheduleHandlers(agentDir: string): Partial<Record<string,
         "GET",
       );
       return expectOk(outcome);
-    },
-
-    "schedule.agentStart": async (ctx) => {
-      const params = ctx.params as {
-        cwd: string;
-        requirement: string;
-        model?: { provider: string; id: string; thinkingLevel?: string } | null;
-        job?: ScheduleAgentEditJob | null;
-      };
-      try {
-        return {
-          result: await startAgentConversation({
-            cwd: params.cwd,
-            requirement: params.requirement,
-            agentDir,
-            model: params.model ?? null,
-            job: params.job ?? null,
-          }),
-        };
-      } catch (error) {
-        return {
-          error: createHostError(
-            "INTERNAL_ERROR",
-            error instanceof Error ? error.message : String(error),
-          ),
-        };
-      }
-    },
-
-    "schedule.agentList": async () => {
-      try {
-        return { result: { sessions: listAgentSessions() } };
-      } catch (error) {
-        return {
-          error: createHostError(
-            "INTERNAL_ERROR",
-            error instanceof Error ? error.message : String(error),
-          ),
-        };
-      }
-    },
-
-    "schedule.agentSend": async (ctx) => {
-      const params = ctx.params as { sessionId: string; text: string };
-      const result = await sendAgentMessage(params);
-      if (result.ok) return { result: { sessionId: params.sessionId } };
-      return { error: createHostError("INVALID_REQUEST", result.error) };
-    },
-
-    "schedule.agentContinue": async (ctx) => {
-      const params = ctx.params as { sessionPath: string; cwd: string; text: string };
-      try {
-        const result = await continueAgentConversation({ ...params, agentDir });
-        if ("ok" in result) {
-          return { error: createHostError("RESOURCE_NOT_FOUND", result.error) };
-        }
-        return { result: { sessionId: result.sessionId, sessionPath: result.sessionPath } };
-      } catch (error) {
-        return {
-          error: createHostError(
-            "INTERNAL_ERROR",
-            error instanceof Error ? error.message : String(error),
-          ),
-        };
-      }
-    },
-
-    "schedule.agentState": async (ctx) => {
-      const params = ctx.params as { sessionId: string };
-      return { result: agentState(params.sessionId) };
-    },
-
-    "schedule.agentTranscript": async (ctx) => {
-      const params = ctx.params as { sessionPath: string };
-      const messages = agentTranscriptFrom(params.sessionPath);
-      return { result: { found: messages.length > 0, messages } };
-    },
-
-    "schedule.agentAbort": async (ctx) => {
-      const params = ctx.params as { sessionId: string };
-      return { result: { ok: abortAgent(params.sessionId) } };
-    },
-
-    "schedule.agentDelete": async (ctx) => {
-      const params = ctx.params as { sessionPath: string };
-      return { result: { ok: deleteAgentSession(params.sessionPath) } };
     },
   };
 }
