@@ -1,7 +1,7 @@
 name: Extension compatibility latest audit
 
 on:
-  automation:
+  schedule:
     - cron: "17 6 * * 1"
   workflow_dispatch:
 
