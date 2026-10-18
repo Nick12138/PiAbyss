@@ -324,7 +324,7 @@ function buildOcrGuideText(attachments: readonly AttachmentSnapshot[]): string |
     list,
     "",
     "提取文字内容时按以下优先级处理：",
-    "1. 优先使用 wpscli（WPS CLI 的 OCR 转换，如 wps_pdf2word 的 scanned 模式）；",
+    "1. 优先使用 wpscli（WPS CLI 的 OCR 转换，即 wps 工具的 pdf2word action：wps(action:\"pdf2word\", scanned=true, range=...)）；",
     "2. 其次使用 PyMuPDF（fitz）把 PDF 逐页渲染成图片，再用 ocr_image（百度 OCR）逐页识别；",
     "3. 兕底：使用视觉能力一张一张查看渲染出的图片；",
     "4. 若以上全部失败，请明确提示需要用户帮助并说明原因。",

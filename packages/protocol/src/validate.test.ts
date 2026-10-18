@@ -1141,7 +1141,7 @@ describe("deep result/event validation (C3)", () => {
         requestId: EXTENSION_REQUEST_ID,
         kind: "confirm",
         presentation: "inline",
-        command: "subagent_supervisor(...)",
+        command: "subagent(action:\"supervisor_reply\", ...)",
       }).ok,
     ).toBe(false);
     expect(
