@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState, useContext } from "react";
 import { useAppStore, type SettingsSection } from "../../lib/stores/app-store";
 import {
+  Blocks,
   ChartColumn,
   Keyboard,
   KeyRound,
-  Package,
   Palette,
-  Puzzle,
   RefreshCw,
   ServerCog,
   Settings2,
@@ -21,7 +20,11 @@ import { Dialog, secondaryButton } from "../../components/Dialog";
 import { Select } from "../../components/Select";
 import { Switch } from "../../components/Switch";
 import { useT } from "../../lib/i18n/use-t";
-import { classifyDragResize, suppressLayoutMotion, useLayoutMotionSuppressed } from "../../lib/layout-motion";
+import {
+  classifyDragResize,
+  suppressLayoutMotion,
+  useLayoutMotionSuppressed,
+} from "../../lib/layout-motion";
 import type { MessageKey } from "../../lib/i18n";
 import {
   notifyDesktopSettingsSaveFailure,
@@ -31,8 +34,7 @@ import {
 import { HostSettings } from "./HostSettings";
 import { ProvidersSettings } from "./ProvidersSettings";
 import { SkillsSettings } from "../skills/SkillsSettings";
-import { PackagesPage } from "../packages/PackagesPage";
-import { PluginLibraryPage } from "../plugin-library/PluginLibraryPage";
+import { ExtensionsPage } from "../extensions/ExtensionsPage";
 import { UsageSettings } from "./UsageSettings";
 import { ShortcutsSettings } from "./ShortcutsSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
@@ -208,7 +210,10 @@ function GeneralSettings() {
               <div className="flex flex-col items-start gap-2 @min-[40rem]:flex-row @min-[40rem]:items-center @min-[40rem]:justify-between">
                 <label htmlFor="busy-send-behavior" className="min-w-0 text-sm">
                   <span className="block">{t("generalBusySend")}</span>
-                  <span id="busy-send-behavior-help" className="mt-1 block text-xs leading-relaxed text-muted">
+                  <span
+                    id="busy-send-behavior-help"
+                    className="mt-1 block text-xs leading-relaxed text-muted"
+                  >
                     {t("generalBusySendDesc")}
                   </span>
                 </label>
@@ -401,8 +406,7 @@ const SETTINGS_NAV: Array<{
   { id: "appearance", label: "navAppearance", icon: Palette },
   { id: "providers", label: "navProviders", icon: KeyRound },
   { id: "skills", label: "navSkills", icon: Wand2 },
-  { id: "plugins", label: "navPlugins", icon: Puzzle },
-  { id: "packages", label: "navPackages", icon: Package },
+  { id: "extensions", label: "navExtensions", icon: Blocks },
   { id: "usage", label: "navUsage", icon: ChartColumn },
   { id: "host", label: "navHost", icon: ServerCog },
   { id: "shortcuts", label: "navShortcuts", icon: Keyboard },
@@ -618,7 +622,9 @@ export function SettingsPage({
                   <Icon size={16} className="shrink-0" />
                   <span
                     className={`max-w-40 truncate @max-[36rem]:max-w-0 @max-[36rem]:opacity-0 ${
-                      navMotionSuppressed ? "" : "transition-[max-width,opacity] duration-200 ease-out"
+                      navMotionSuppressed
+                        ? ""
+                        : "transition-[max-width,opacity] duration-200 ease-out"
                     }`}
                   >
                     {t(label)}
@@ -648,10 +654,8 @@ export function SettingsPage({
               <ProvidersSettings />
             ) : localSection === "skills" ? (
               <SkillsSettings />
-            ) : localSection === "packages" ? (
-              <PackagesPage />
-            ) : localSection === "plugins" ? (
-              <PluginLibraryPage />
+            ) : localSection === "extensions" ? (
+              <ExtensionsPage />
             ) : localSection === "host" ? (
               <HostSettings />
             ) : (

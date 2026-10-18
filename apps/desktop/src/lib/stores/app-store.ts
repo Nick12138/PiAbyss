@@ -418,15 +418,7 @@ function resetExtensionTerminal(state: {
 }
 
 export type SettingsSection =
-  | "general"
-  | "appearance"
-  | "shortcuts"
-  | "providers"
-  | "skills"
-  | "packages"
-  | "plugins"
-  | "usage"
-  | "host";
+  "general" | "appearance" | "shortcuts" | "providers" | "skills" | "extensions" | "usage" | "host";
 
 /**
  * Workspace-scoped Settings position cache: the last section the user was on

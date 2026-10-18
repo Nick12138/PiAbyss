@@ -70,10 +70,10 @@ export function MemoSyncHeaderActions() {
     }
   }
 
-  /** 跳转到「设置 → 插件 → PiAbyss 待办 · 速记」的配置表单（深链直达配置弹窗）。 */
+  /** 跳转到「设置 → 扩展 → PiAbyss 待办 · 速记」的配置表单（深链直达配置弹窗）。 */
   function openPluginConfig() {
     requestPluginConfigDeepLink(MEMO_PLUGIN_ID);
-    useAppStore.getState().openSettingsSection("plugins");
+    useAppStore.getState().openSettingsSection("extensions");
     setSyncModalOpen(false);
   }
 

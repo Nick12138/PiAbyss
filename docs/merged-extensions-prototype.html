@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PiAbyss · 扩展管理（合并原型）</title>
+<style>
+  :root {
+    font-size: 14px;
+    --control-h: 2rem;
+    --surface: #17171b;
+    --surface-raised: #1e1e23;
+    --surface-overlay: #27272d;
+    --sidebar: #121216;
+    --border: #2a2a2f;
+    --foreground: #e2e3e6;
+    --muted: #9a9ba3;
+    --accent: #df6b35;
+    --accent-hover: #c85b29;
+    --accent-foreground: #ffffff;
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --nav-active: #27272d;
+    --selection: #3a3a42;
+    --font-sans: "HarmonyOS Sans SC", "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  html.light {
+    --surface: #ffffff;
+    --surface-raised: #f3f3f5;
+    --surface-overlay: #ececf0;
+    --sidebar: #f5f6f7;
+    --border: #e0e0e4;
+    --foreground: #1b1c1f;
+    --muted: #6b6c74;
+    --accent: #d45d2d;
+    --accent-hover: #bd4f24;
+    --nav-active: #ececf0;
+    --selection: #dcdce2;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--surface);
+    color: var(--foreground);
+    font-size: 0.9286rem;
+    line-height: 1.5;
+    overflow: hidden;
+  }
+  button { font-family: inherit; font-size: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+  input, select { font-family: inherit; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--muted) 35%, transparent); border-radius: 5px; border: 3px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  /* ===== 顶栏（模拟应用窗口顶栏，动作区即原 Portal 注入位） ===== */
+  .titlebar {
+    height: 44px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 12px 0 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    -webkit-user-select: none; user-select: none;
+  }
+  .titlebar .logo { width: 18px; height: 18px; border-radius: 5px; background: linear-gradient(135deg, var(--accent), #b34a1f); flex: none; }
+  .titlebar .app-name { font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
+  .titlebar .crumb { font-size: 12px; color: var(--muted); }
+  .titlebar .spacer { flex: 1; }
+
+  /* ===== 通用控件 ===== */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: var(--control-h); padding: 0 10px;
+    border-radius: 6px; font-size: 12px; white-space: nowrap;
+    transition: background 120ms, border-color 120ms, color 120ms;
+  }
+  .btn svg { flex: none; }
+  .btn-secondary { border: 1px solid var(--border); background: transparent; color: var(--foreground); }
+  .btn-secondary:hover { background: var(--surface-overlay); }
+  .btn-primary { background: var(--accent); color: var(--accent-foreground); }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-ghost { color: var(--muted); }
+  .btn-ghost:hover { background: var(--surface-overlay); color: var(--foreground); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-danger { border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger); }
+  .btn-danger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+  .icon-btn { width: var(--control-h); padding: 0; }
+
+  .input {
+    height: var(--control-h); min-width: 0;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface); color: var(--foreground);
+    padding: 0 8px; font-size: 12px; outline: none;
+  }
+  .input::placeholder { color: var(--muted); }
+  .input:focus { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); }
+
+  .select {
+    height: var(--control-h);
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface); color: var(--foreground);
+    padding: 0 6px; font-size: 12px; outline: none; cursor: pointer;
+  }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 1px 6px; border-radius: 4px; font-size: 11px; line-height: 16px; white-space: nowrap;
+  }
+  .badge-extension { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+  .badge-skill { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
+  .badge-prompt { background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); }
+  .badge-theme { background: var(--surface-overlay); color: var(--muted); }
+  .badge-plugin { background: color-mix(in srgb, #8b5cf6 15%, transparent); color: #a78bfa; }
+  .badge-warn { background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); }
+  .badge-chip { background: var(--surface-overlay); color: var(--muted); font-size: 11px; padding: 1px 6px; border-radius: 4px; }
+  html.light .badge-plugin { color: #7c3aed; }
+
+  /* 分段控件 */
+  .segmented {
+    display: inline-flex; align-items: center; gap: 2px;
+    height: var(--control-h); padding: 2px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface-raised);
+  }
+  .segmented button {
+    height: 100%; padding: 0 10px; border-radius: 6px;
+    font-size: 12px; color: var(--muted);
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .segmented button:hover { color: var(--foreground); }
+  .segmented button.on { background: var(--selection); color: var(--foreground); font-weight: 500; }
+
+  /* 开关 */
+  .switch { position: relative; width: 32px; height: 18px; border-radius: 9px; background: var(--surface-overlay); border: 1px solid var(--border); transition: background 150ms, border-color 150ms; flex: none; }
+  .switch::after { content: ""; position: absolute; top: 1px; left: 1px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: transform 150ms, background 150ms; }
+  .switch.on { background: var(--accent); border-color: var(--accent); }
+  .switch.on::after { transform: translateX(14px); background: #fff; }
+
+  /* 范围 chip */
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 28px; padding: 0 12px;
+    border: 1px solid var(--border); border-radius: 999px;
+    font-size: 12px; color: var(--muted);
+    transition: all 120ms;
+  }
+  .chip:hover { background: var(--surface-overlay); color: var(--foreground); }
+  .chip.on { border-color: color-mix(in srgb, var(--accent) 60%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--foreground); }
+  .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+
+  /* ===== 布局壳 ===== */
+  .shell { display: grid; grid-template-columns: 150px minmax(0, 1fr); height: calc(100% - 44px); }
+  .sidebar { border-right: 1px solid var(--border); background: var(--sidebar); padding: 8px 12px; overflow-y: auto; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; height: 36px; padding: 0 10px;
+    border-radius: 6px; font-size: 13px; color: var(--muted); margin-bottom: 2px;
+  }
+  .nav-item:hover { background: color-mix(in srgb, var(--surface-overlay) 70%, transparent); color: var(--foreground); }
+  .nav-item.on { background: var(--nav-active); color: var(--foreground); font-weight: 500; }
+  .nav-item.merged-mark { position: relative; }
+  .nav-sep { height: 1px; background: var(--border); margin: 8px 4px; }
+
+  main { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+
+  /* 页头 */
+  .page-head { display: flex; align-items: baseline; gap: 10px; padding: 14px 24px 0; }
+  .page-head h1 { font-size: 16px; font-weight: 600; }
+  .page-head .sub { font-size: 12px; color: var(--muted); }
+
+  /* Tab + 范围行 */
+  .control-row {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 24px;
+  }
+  .scope-label { font-size: 12px; color: var(--muted); flex: none; }
+  .scope-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+  /* 横幅 */
+  .banner {
+    display: flex; align-items: center; gap: 8px;
+    min-height: 36px; margin: 0 24px 4px;
+    padding: 6px 12px; border-radius: 6px;
+    font-size: 12px;
+  }
+  .banner-progress { border: 1px solid var(--border); background: color-mix(in srgb, var(--surface-overlay) 50%, transparent); }
+  .banner .spinner { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .banner .grow { flex: 1; }
+  .banner .state { color: var(--muted); }
+  .banner .x { color: var(--muted); width: 20px; height: 20px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; }
+  .banner .x:hover { background: var(--surface-overlay); color: var(--foreground); }
+
+  /* ===== 视图容器 ===== */
+  .view { display: none; flex: 1; min-height: 0; overflow: hidden; }
+  .view.active { display: flex; }
+
+  /* ---- 已安装：双栏 ---- */
+  .installed-grid { display: grid; grid-template-columns: minmax(280px, 34%) minmax(0, 1fr); width: 100%; min-height: 0; }
+  .installed-aside { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); }
+  .aside-block { padding: 10px 16px; }
+  .aside-block + .aside-block { border-top: 1px solid var(--border); }
+  .install-source-row { display: flex; gap: 6px; }
+  .install-source-row .input { flex: 1; }
+  .pkg-actions-row { display: flex; gap: 6px; }
+  .filter-row { display: flex; gap: 6px; }
+  .filter-row .input-wrap { position: relative; flex: 1; }
+  .filter-row .input-wrap svg { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+  .filter-row .input { width: 100%; padding-left: 26px; }
+
+  .pkg-list { list-style: none; overflow-y: auto; flex: 1; padding: 4px 8px 12px; border-top: 1px solid var(--border); }
+  .pkg-item {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; padding: 7px 8px; border-radius: 6px;
+    text-align: left;
+  }
+  .pkg-item:hover { background: color-mix(in srgb, var(--surface-overlay) 70%, transparent); }
+  .pkg-item.on { background: var(--nav-active); }
+  .pkg-item .p-icon { width: 28px; height: 28px; border-radius: 6px; background: var(--surface-overlay); display: flex; align-items: center; justify-content: center; font-size: 14px; flex: none; }
+  .pkg-item .p-main { flex: 1; min-width: 0; }
+  .pkg-item .p-name { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; }
+  .pkg-item .p-name .chev { color: var(--muted); flex: none; }
+  .pkg-item .p-meta { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pkg-item .p-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: none; }
+
+  .pkg-detail { overflow-y: auto; padding: 16px 24px 32px; }
+  .detail-inner { max-width: 56rem; }
+  .detail-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .detail-head h2 { font-size: 15px; font-weight: 600; }
+  .detail-actions { display: flex; gap: 6px; margin-left: auto; }
+  .detail-section { margin-top: 20px; }
+  .detail-section > h3 { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .dl-grid { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 6px 12px; font-size: 12px; }
+  .dl-grid dt { color: var(--muted); }
+  .dl-grid dd { font-family: var(--font-mono); font-size: 11.5px; word-break: break-all; }
+  .dl-grid dd.plain { font-family: var(--font-sans); }
+
+  .res-summary { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
+  .res-summary .seg-mini { margin-left: auto; }
+  .seg-mini { display: inline-flex; height: 26px; padding: 2px; gap: 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-raised); }
+  .seg-mini button { padding: 0 8px; border-radius: 4px; font-size: 11px; color: var(--muted); }
+  .seg-mini button.on { background: var(--selection); color: var(--foreground); }
+  .res-group-title { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); margin: 14px 0 4px; }
+  .res-list { list-style: none; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .res-list li { display: flex; align-items: center; gap: 10px; padding: 8px 12px; }
+  .res-list li + li { border-top: 1px solid var(--border); }
+  .res-list .r-main { flex: 1; min-width: 0; }
+  .res-list .r-name { font-size: 13px; }
+  .res-list .r-sub { font-size: 11px; color: var(--muted); font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .res-list .state-ok { font-size: 11px; color: var(--success); }
+  .res-list .state-off { font-size: 11px; color: var(--muted); }
+  .res-list .switch { transform: scale(0.9); }
+
+  /* ---- 插件库 / 市场：卡片网格 ---- */
+  .grid-view { flex-direction: column; overflow-y: auto; }
+  .grid-pad { padding: 4px 24px 32px; }
+  .card-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  @media (max-width: 1100px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 760px) { .installed-grid { grid-template-columns: 1fr; } .card-grid { grid-template-columns: 1fr; } }
+
+  .card {
+    display: flex; flex-direction: column; gap: 8px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); padding: 12px;
+  }
+  .card-head { display: flex; align-items: center; gap: 8px; }
+  .card-icon { width: 32px; height: 32px; border-radius: 6px; background: var(--surface-overlay); display: flex; align-items: center; justify-content: center; font-size: 16px; flex: none; }
+  .card-title { flex: 1; min-width: 0; }
+  .card-title .n { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .card-title .a { font-size: 11px; color: var(--muted); }
+  .card-title .v { font-family: var(--font-mono); font-size: 11px; color: var(--muted); font-weight: 400; }
+  .tag-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .tag { background: var(--surface-overlay); color: var(--muted); font-size: 11px; padding: 1px 6px; border-radius: 4px; }
+  .card-desc { font-size: 12px; line-height: 20px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card-foot { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+  .card-foot .meta { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+  .card-foot .grow { flex: 1; }
+  .installed-mark { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--success); }
+
+  /* 市场工具栏 */
+  .market-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 24px 8px; flex-wrap: wrap; }
+  .search-wrap { position: relative; width: 220px; }
+  .search-wrap svg { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+  .search-wrap .input { width: 100%; padding-left: 26px; }
+  .pager { display: flex; align-items: center; gap: 4px; margin-left: auto; font-size: 12px; color: var(--muted); }
+  .pager .pg-btn { width: 26px; height: 26px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
+  .pager .pg-btn:hover:not(:disabled) { background: var(--surface-overlay); color: var(--foreground); }
+  .pager .pg-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* 可更新下拉 */
+  .update-wrap { position: relative; }
+  .update-menu {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 50;
+    width: 288px; padding: 8px;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--surface-raised);
+    box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+    display: none;
+  }
+  .update-menu.open { display: block; }
+  .update-menu .um-head { display: flex; align-items: center; padding: 2px 4px 8px; font-size: 12px; }
+  .update-menu .um-head a { margin-left: auto; color: var(--accent); font-size: 12px; cursor: pointer; }
+  .um-item { display: flex; align-items: center; gap: 8px; padding: 7px 6px; border-radius: 6px; }
+  .um-item:hover { background: var(--surface-overlay); }
+  .um-item .names { flex: 1; min-width: 0; }
+  .um-item .nm { font-size: 12px; font-weight: 500; }
+  .um-item .vv { font-family: var(--font-mono); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .um-item .vv .arr { color: var(--accent); }
+  .um-item .btn { height: 24px; padding: 0 8px; font-size: 11px; }
+  .update-count {
+    min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+    background: var(--warning); color: #1a1a1a;
+    font-size: 10.5px; font-weight: 700; line-height: 16px; text-align: center;
+  }
+  html.light .update-count { color: #fff; }
+
+  /* 详情抽屉 */
+  .drawer-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.4); opacity: 0; pointer-events: none; transition: opacity 200ms; z-index: 70; }
+  .drawer-mask.open { opacity: 1; pointer-events: auto; }
+  .drawer {
+    position: fixed; top: 0; right: 0; height: 100%; width: 430px; max-width: 92vw;
+    background: var(--surface); border-left: 1px solid var(--border);
+    transform: translateX(100%); transition: transform 220ms ease;
+    z-index: 80; display: flex; flex-direction: column;
+    box-shadow: -16px 0 40px rgba(0,0,0,0.25);
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .drawer-head .card-icon { width: 36px; height: 36px; }
+  .drawer-head .dh-main { flex: 1; min-width: 0; }
+  .drawer-head .dh-name { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .drawer-head .dh-sub { font-size: 11px; color: var(--muted); }
+  .drawer-head .x { width: 26px; height: 26px; border-radius: 6px; color: var(--muted); display: flex; align-items: center; justify-content: center; flex: none; }
+  .drawer-head .x:hover { background: var(--surface-overlay); color: var(--foreground); }
+  .drawer-body { flex: 1; overflow-y: auto; padding: 14px 16px 32px; }
+  .drawer .detail-actions { margin: 0 0 4px; }
+  .drawer .detail-section { margin-top: 18px; }
+  .drawer .detail-section > h3 { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .drawer .dl-grid { grid-template-columns: 84px minmax(0, 1fr); }
+
+  /* 卡片可点开抽屉 */
+  .card { cursor: pointer; transition: border-color 120ms; }
+  .card:hover { border-color: color-mix(in srgb, var(--muted) 45%, var(--border)); }
+
+  /* 库视图工具栏 */
+  .lib-toolbar { display: flex; align-items: center; gap: 8px; padding: 12px 24px 0; flex-wrap: wrap; }
+  .lib-toolbar .grow { flex: 1; }
+  .scope-area { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .tag-src { color: var(--accent); }
+
+  /* toast */
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(8px);
+    padding: 8px 14px; border-radius: 8px; font-size: 12px;
+    background: var(--surface-raised); border: 1px solid var(--border);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    opacity: 0; pointer-events: none; transition: all 200ms;
+    z-index: 100;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .section-note { font-size: 12px; color: var(--muted); padding: 8px 24px; }
+  kbd { font-family: var(--font-mono); font-size: 10px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--surface-raised); }
+</style>
+</head>
+<body>
+
+<!-- ======= 应用顶栏（原 Portal 动作注入位） ======= -->
+<div class="titlebar">
+  <div class="logo"></div>
+  <span class="app-name">PiAbyss</span>
+  <span class="crumb">设置 / 扩展</span>
+  <div class="spacer"></div>
+
+  <!-- 可更新下拉（来自插件库页） -->
+  <div class="update-wrap">
+    <button class="btn btn-secondary" id="updateBtn" aria-expanded="false">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12"/><path d="m12 10 4 4 4-4"/></svg>
+      可更新
+      <span class="update-count">3</span>
+    </button>
+    <div class="update-menu" id="updateMenu">
+      <div class="um-head"><strong>3 项可更新</strong><a id="updateAll">全部更新</a></div>
+      <div class="um-item">
+        <div class="names"><div class="nm">Telegram 小精灵</div><div class="vv">v1.4.2 <span class="arr">→</span> v1.5.0</div></div>
+        <button class="btn btn-secondary" onclick="toast('已开始更新 Telegram 小精灵')">更新</button>
+      </div>
+      <div class="um-item">
+        <div class="names"><div class="nm">web-search</div><div class="vv">v0.9.1 <span class="arr">→</span> v0.10.0</div></div>
+        <button class="btn btn-secondary" onclick="toast('已开始更新 web-search')">更新</button>
+      </div>
+      <div class="um-item">
+        <div class="names"><div class="nm">code-review</div><div class="vv">v2.1.0 <span class="arr">→</span> v2.2.1</div></div>
+        <button class="btn btn-secondary" onclick="toast('已开始更新 code-review')">更新</button>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-secondary icon-btn" title="刷新" onclick="toast('已刷新扩展状态')">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+  </button>
+  <button class="btn btn-secondary" onclick="toast('正在打开 pi.dev 目录…')">pi.dev 目录</button>
+  <button class="btn btn-secondary icon-btn" title="切换亮/暗主题预览" id="themeBtn">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+  </button>
+</div>
+
+<!-- ======= 设置壳：左导航 + 内容 ======= -->
+<div class="shell">
+  <aside class="sidebar">
+    <button class="nav-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>通用</button>
+    <button class="nav-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>外观</button>
+    <button class="nav-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 18H2a4 4 0 0 0 4 4h12a4 4 0 0 0 4-4M21 14V10a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v4"/><path d="M17.5 7V4.5a2.5 2.5 0 0 0-5 0V7M9 7V4.5a2.5 2.5 0 0 0-5 0V7"/></svg>模型服务</button>
+    <button class="nav-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3M5 6v4M19 14v4M10 2v2M7 8H3M21 16h-4M11 3H9"/></svg>技能管理</button>
+
+    <!-- ★ 合并后的导航项 -->
+    <button class="nav-item on merged-mark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"/><path d="m7 16.5-4.74-2.85"/><path d="m7 16.5 5-3"/><path d="M7 16.5v5.17"/><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"/><path d="m17 16.5-5-3"/><path d="m17 16.5 4.74-2.85"/><path d="M17 16.5v5.17"/><path d="M7 10.5 12 7.5l5 3"/></svg>扩展</button>
+
+    <div class="nav-sep"></div>
+    <button class="nav-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9M13 17V5M8 17v-3"/></svg>用量</button>
+    <button class="nav-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg>主机</button>
+    <button class="nav-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 10h4M6 14h4M6 6h4M6 18h4"/><rect width="20" height="16" x="2" y="4" rx="2"/></svg>快捷键</button>
+  </aside>
+
+  <main>
+    <!-- 页头 -->
+    <div class="page-head">
+      <h1>扩展</h1>
+      <span class="sub">安装、启用并管理插件与包</span>
+    </div>
+
+    <!-- Tab + 管理范围（合并核心行） -->
+    <div class="control-row">
+      <div class="segmented" role="tablist">
+        <button class="on" data-tab="library" role="tab">插件库</button>
+        <button data-tab="market" role="tab">市场</button>
+      </div>
+      <div id="scopeArea" class="scope-area">
+        <span class="scope-label">管理范围</span>
+        <div class="scope-chips" id="scopeChips">
+        <button class="chip on" data-scope="global"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>全局</button>
+        <button class="chip" data-scope="tg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4Z"/></svg>Telegram 机器人<span class="dot"></span></button>
+        <button class="chip" data-scope="wx"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>微信小精灵</button>
+        <button class="chip" data-scope="ws">D:/我的项目/PiAbyss</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 操作进度横幅（示例常显，可点 X 关闭） -->
+    <div class="banner banner-progress" id="progressBanner">
+      <span class="spinner"></span>
+      <span>正在更新 Telegram 小精灵…</span>
+      <span class="grow"></span>
+      <span class="state">进行中…</span>
+      <button class="x" onclick="document.getElementById('progressBanner').style.display='none'">✕</button>
+    </div>
+
+    <!-- ============ 视图 1：插件库（已安装 + 目录合一，卡片点开详情抽屉） ============ -->
+    <section class="view grid-view active" id="view-library">
+      <div class="lib-toolbar">
+        <div class="search-wrap">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input class="input" placeholder="搜索已安装与目录…" id="libSearch" oninput="filterGrid()">
+        </div>
+        <select class="select" id="libStatus" onchange="filterGrid()">
+          <option value="all">全部状态</option><option value="in">已安装</option><option value="out">未安装</option><option value="upd">可更新</option>
+        </select>
+        <select class="select" id="libType" onchange="filterGrid()">
+          <option value="all">全部类型</option><option value="plugin">插件</option><option value="package">包</option><option value="extension">扩展</option><option value="skill">技能</option><option value="prompt">提示词</option><option value="theme">主题</option>
+        </select>
+        <span class="grow"></span>
+        <input class="input" placeholder="npm:包名、git URL 或本地路径" style="width:230px">
+        <button class="btn btn-primary" onclick="toast('确认安装包：请确认你信任该来源')">安装…</button>
+      </div>
+      <div class="section-note"><span id="scopeNote">管理范围：全局 · 插件写入用户级 pi 设置</span> · 插件来源：<span style="font-family:var(--font-mono)">my-pi-plugins</span>（未安装的默认显示，可点安装）</div>
+      <div class="grid-pad" style="padding-top:0">
+        <div class="card-grid" id="pluginGrid">
+          <!-- 卡片 1 -->
+          <div class="card">
+            <div class="card-head">
+              <div class="card-icon">✈️</div>
+              <div class="card-title">
+                <div class="n">Telegram 小精灵 <span class="v">v1.4.2</span></div>
+                <div class="a">PiAbyss Team</div>
+              </div>
+              <button class="btn btn-ghost icon-btn" title="配置" onclick="toast('打开插件配置对话框')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+              <button class="switch on" onclick="this.classList.toggle('on'); toast(this.classList.contains('on')?'已启用 Telegram 小精灵':'已禁用 Telegram 小精灵')"></button>
+            </div>
+            <div class="tag-row"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5"/></svg><span class="tag">小精灵</span><span class="tag">Telegram</span><span class="tag">消息</span></div>
+            <div class="card-desc">把 Agent 接入 Telegram，支持私聊与群组，可配置模型与回退模型，消息走 Bot API 长轮询。</div>
+          </div>
+
+          <!-- 卡片 2 -->
+          <div class="card">
+            <div class="card-head">
+              <div class="card-icon">💬</div>
+              <div class="card-title">
+                <div class="n">微信小精灵 <span class="v">v0.8.0</span></div>
+                <div class="a">PiAbyss Team</div>
+              </div>
+              <button class="switch on" onclick="this.classList.toggle('on')"></button>
+            </div>
+            <div class="tag-row"><span class="tag">小精灵</span><span class="tag">微信</span></div>
+            <div class="card-desc">微信渠道接入，含媒体上传与引用回复；企业微信通道需单独安装连接器。</div>
+          </div>
+
+          <!-- 卡片 3 -->
+          <div class="card">
+            <div class="card-head">
+              <div class="card-icon">⏰</div>
+              <div class="card-title">
+                <div class="n">定时任务 <span class="v">v1.1.5</span></div>
+                <div class="a">community</div>
+              </div>
+              <button class="switch" onclick="this.classList.toggle('on')"></button>
+            </div>
+            <div class="tag-row"><span class="tag">自动化</span><span class="tag">调度</span></div>
+            <div class="card-desc">基于 RRULE 的周期任务调度器，可把任意提示词固定到每天/每周执行并推送结果。</div>
+          </div>
+
+          <!-- 卡片 4 -->
+          <div class="card">
+            <div class="card-head">
+              <div class="card-icon">📝</div>
+              <div class="card-title">
+                <div class="n">Markdown 导出 <span class="v">v0.4.1</span></div>
+                <div class="a">community</div>
+              </div>
+              <button class="switch on" onclick="this.classList.toggle('on')"></button>
+            </div>
+            <div class="tag-row"><span class="tag">导出</span><span class="tag">文档</span></div>
+            <div class="card-desc">把会话与产物导出为 Markdown / DOCX，支持模板与前置元数据。</div>
+          </div>
+
+          <!-- 卡片 5（未安装） -->
+          <div class="card">
+            <div class="card-head">
+              <div class="card-icon">🖼️</div>
+              <div class="card-title">
+                <div class="n">Image Proxy <span class="v">v2.0.0</span></div>
+                <div class="a">third-party</div>
+              </div>
+            </div>
+            <div class="tag-row"><span class="tag">网络</span><span class="tag">图片</span></div>
+            <div class="card-desc">为多模态请求提供图片代理与缓存，支持内网穿透场景下的私有图床。</div>
+            <div class="card-foot">
+              <span class="grow"></span>
+              <button class="btn btn-primary" onclick="toast('要从插件库安装 Image Proxy 吗？它会写入你的用户级 pi 设置。')">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+                安装…
+              </button>
+            </div>
+          </div>
+
+          <!-- 卡片 6（仅全局） -->
+          <div class="card">
+            <div class="card-head">
+              <div class="card-icon">🔐</div>
+              <div class="card-title">
+                <div class="n">密钥管家 <span class="v">v0.2.3</span></div>
+                <div class="a">PiAbyss Team</div>
+              </div>
+              <span class="badge badge-chip">仅全局</span>
+              <button class="switch on" onclick="toast('仅全局插件请在「全局」范围下启停')"></button>
+            </div>
+            <div class="tag-row"><span class="tag">安全</span><span class="tag">密钥</span></div>
+            <div class="card-desc">集中管理 API Key 与环境变量注入，支持按项目覆盖与脱敏日志。</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 视图 3：市场（目录网格） ============ -->
+    <section class="view grid-view" id="view-market">
+      <div class="market-toolbar">
+        <div class="search-wrap">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input class="input" placeholder="搜索目录…">
+        </div>
+        <select class="select"><option>全部类型</option><option>扩展</option><option>技能</option><option>提示词</option><option>主题</option></select>
+        <select class="select"><option>下载最多</option><option>最近发布</option></select>
+        <button class="btn btn-secondary icon-btn" title="刷新目录" onclick="toast('正在加载 pi.dev 目录…')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        </button>
+        <div class="pager">
+          <span>1–6 / 42</span>
+          <button class="pg-btn" disabled><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+          <button class="pg-btn" onclick="toast('加载下一页…')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+        </div>
+      </div>
+      <div class="grid-pad" style="padding-top:0">
+        <div class="card-grid">
+          <div class="card">
+            <div class="card-head">
+              <div class="card-icon">🌐</div>
+              <div class="card-title">
+                <div class="n">pi-browser-tools</div>
+                <div class="a">pi.dev · 12.4k/月</div>
+              </div>
+            </div>
+            <div class="card-desc">无头浏览器控制扩展：打开页面、截图、抽取正文与表格，支持等待与滚动策略。</div>
+            <div class="card-foot">
+              <span class="meta">扩展 · v3.1.0</span><span class="grow"></span>
+              <span class="installed-mark">✓ 已安装</span>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <div class="card-icon">🗄️</div>
+              <div class="card-title">
+                <div class="n">pi-sql-kit</div>
+                <div class="a">pi.dev · 8.1k/月</div>
+              </div>
+            </div>
+            <div class="card-desc">SQLite / Postgres 只读查询技能集，自动建索引建议与慢查询解读。</div>
+            <div class="card-foot">
+              <span class="meta">技能 · v1.6.2</span><span class="grow"></span>
+              <button class="btn btn-primary" onclick="toast('包可以执行本地代码。确认后将安装到全局（用户级），之后可在插件库按工作区管理。')">安装…</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <div class="card-icon">📓</div>
+              <div class="card-title">
+                <div class="n">pi-notion-sync</div>
+                <div class="a">pi.dev · 6.7k/月</div>
+              </div>
+            </div>
+            <div class="card-desc">把任务与周报同步到 Notion 数据库，支持属性映射与去重策略。</div>
+            <div class="card-foot">
+              <span class="meta">扩展 · v0.9.0</span><span class="grow"></span>
+              <button class="btn btn-primary" onclick="toast('包可以执行本地代码。确认后将安装到全局（用户级），之后可在插件库按工作区管理。')">安装…</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <div class="card-icon">🧪</div>
+              <div class="card-title">
+                <div class="n">pi-test-forge</div>
+                <div class="a">pi.dev · 5.2k/月</div>
+              </div>
+            </div>
+            <div class="card-desc">为指定文件生成单元测试骨架，覆盖 Vitest / Jest / pytest 三种目标。</div>
+            <div class="card-foot">
+              <span class="meta">提示词 · v1.2.0</span><span class="grow"></span>
+              <button class="btn btn-primary" onclick="toast('包可以执行本地代码。确认后将安装到全局（用户级），之后可在插件库按工作区管理。')">安装…</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <div class="card-icon">🌒</div>
+              <div class="card-title">
+                <div class="n">pi-theme-aurora</div>
+                <div class="a">pi.dev · 3.9k/月</div>
+              </div>
+            </div>
+            <div class="card-desc">极光渐变主题包，含亮暗两套配色与配套语法高亮。</div>
+            <div class="card-foot">
+              <span class="meta">主题 · v1.0.4</span><span class="grow"></span>
+              <button class="btn btn-primary" onclick="toast('包可以执行本地代码。确认后将安装到全局（用户级），之后可在插件库按工作区管理。')">安装…</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <div class="card-icon">📮</div>
+              <div class="card-title">
+                <div class="n">pi-mail-bridge</div>
+                <div class="a">pi.dev · 2.8k/月</div>
+              </div>
+            </div>
+            <div class="card-desc">IMAP/SMTP 收发桥接，让 Agent 能读邮件、草拟回复并定时汇总。</div>
+            <div class="card-foot">
+              <span class="meta">扩展 · v0.5.1</span><span class="grow"></span>
+              <button class="btn btn-primary" onclick="toast('包可以执行本地代码。确认后将安装到全局（用户级），之后可在插件库按工作区管理。')">安装…</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- 详情抽屉：替代原「已安装」右栏 -->
+<div class="drawer-mask" id="drawerMask" onclick="closeDrawer()"></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="drawer-head" id="drawerHead"></div>
+  <div class="drawer-body" id="drawerBody"></div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // Tab 切换：市场为纯全局安装入口，隐藏管理范围
+  const tabs = document.querySelectorAll('.segmented [data-tab]');
+  tabs.forEach(btn => btn.addEventListener('click', () => {
+    tabs.forEach(b => b.classList.toggle('on', b === btn));
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById('view-' + btn.dataset.tab).classList.add('active');
+    document.getElementById('scopeArea').style.display = btn.dataset.tab === 'market' ? 'none' : '';
+  }));
+
+  // ===== 扩展数据：插件与包在同一个库里，卡片状态随管理范围渲染 =====
+  const SCOPES = {
+    global: { name: '全局', hint: '插件写入用户级 pi 设置' },
+    tg: { name: 'Telegram 机器人', current: true, hint: '当前工作区 · 插件写入项目级设置' },
+    wx: { name: '微信小精灵', hint: '非当前工作区 · 只读预览，安装需先切换到该工作区' },
+    ws: { name: 'D:/我的项目/PiAbyss', hint: '非当前工作区 · 只读预览，安装需先切换到该工作区' }
+  };
+  const TYPE_LABEL = { plugin: '插件', extension: '扩展', skill: '技能', prompt: '提示词', theme: '主题' };
+
+  const ICON_GEAR = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const ICON_DL = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>';
+  const ICON_TAG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5"/></svg>';
+
+  // kind: plugin=注册清单插件 / package=npm·git 包（包为用户级，各范围可见）
+  // states: on=已启用 / off=已禁用 / none=未安装；包缺省回落到全局状态
+  const ITEMS = [
+    { id: 'tg', kind: 'plugin', emoji: '✈️', name: 'Telegram 小精灵', ver: 'v1.4.2', latest: 'v1.5.0', author: 'PiAbyss Team',
+      type: 'plugin', tags: ['小精灵', 'Telegram', '消息'], config: true,
+      desc: '把 Agent 接入 Telegram，支持私聊与群组，可配置模型与回退模型，消息走 Bot API 长轮询。',
+      source: 'my-pi-plugins', ident: 'pi-abyss/plugin-telegram', path: '~/.pi/agent/plugins/plugin-telegram',
+      states: { global: 'on', tg: 'on', wx: 'none', ws: 'none' },
+      resources: [
+        { type: 'plugin', name: 'Telegram 小精灵', sub: '~/plugins/plugin-telegram/index.js', seg: 1 },
+        { type: 'extension', name: 'tg-bridge', sub: '~/plugins/plugin-telegram/ext/tg-bridge.js', seg: 1, manual: true },
+        { type: 'skill', name: 'tg-send-message', sub: '~/plugins/plugin-telegram/skills/tg-send/SKILL.md', seg: 1 },
+        { type: 'skill', name: 'tg-schedule-digest', sub: '~/plugins/plugin-telegram/skills/digest/SKILL.md', seg: 0 }
+      ] },
+    { id: 'wxp', kind: 'plugin', emoji: '💬', name: '微信小精灵', ver: 'v0.8.0', author: 'PiAbyss Team',
+      type: 'plugin', tags: ['小精灵', '微信'],
+      desc: '微信渠道接入，含媒体上传与引用回复；企业微信通道需单独安装连接器。',
+      source: 'my-pi-plugins', ident: 'pi-abyss/plugin-wecom', path: '~/.pi/agent/plugins/plugin-wecom',
+      states: { global: 'on', tg: 'none', wx: 'on', ws: 'off' },
+      resources: [
+        { type: 'plugin', name: '微信小精灵', sub: '~/plugins/plugin-wecom/index.js', seg: 1 },
+        { type: 'extension', name: 'wecom-bridge', sub: '~/plugins/plugin-wecom/ext/wecom-bridge.js', seg: 1 }
+      ] },
+    { id: 'cron', kind: 'plugin', emoji: '⏰', name: '定时任务', ver: 'v1.1.5', author: 'community',
+      type: 'plugin', tags: ['自动化', '调度'],
+      desc: '基于 RRULE 的周期任务调度器，可把任意提示词固定到每天/每周执行并推送结果。',
+      source: 'my-pi-plugins', ident: 'community/plugin-cron', path: '~/.pi/agent/plugins/plugin-cron',
+      states: { global: 'off', tg: 'off', wx: 'none', ws: 'none' } },
+    { id: 'mdx', kind: 'plugin', emoji: '📝', name: 'Markdown 导出', ver: 'v0.4.1', author: 'community',
+      type: 'plugin', tags: ['导出', '文档'],
+      desc: '把会话与产物导出为 Markdown / DOCX，支持模板与前置元数据。',
+      source: 'my-pi-plugins', ident: 'community/plugin-mdx', path: '~/.pi/agent/plugins/plugin-mdx',
+      states: { global: 'on', tg: 'on', wx: 'none', ws: 'on' },
+      resources: [
+        { type: 'plugin', name: 'Markdown 导出', sub: '~/plugins/plugin-mdx/index.js', seg: 1 }
+      ] },
+    { id: 'imgproxy', kind: 'plugin', emoji: '🖼️', name: 'Image Proxy', ver: 'v2.0.0', author: 'third-party',
+      type: 'plugin', tags: ['网络', '图片'],
+      desc: '为多模态请求提供图片代理与缓存，支持内网穿透场景下的私有图床。',
+      source: 'my-pi-plugins', ident: 'third-party/plugin-image-proxy', path: '~/.pi/agent/plugins/plugin-image-proxy',
+      states: { global: 'none', tg: 'none', wx: 'none', ws: 'none' } },
+    { id: 'keyvault', kind: 'plugin', emoji: '🔐', name: '密钥管家', ver: 'v0.2.3', author: 'PiAbyss Team',
+      type: 'plugin', tags: ['安全', '密钥'], globalOnly: true,
+      desc: '集中管理 API Key 与环境变量注入，支持按项目覆盖与脱敏日志。',
+      source: 'my-pi-plugins', ident: 'pi-abyss/plugin-keyvault', path: '~/.pi/agent/plugins/plugin-keyvault',
+      states: { global: 'on', tg: 'on', wx: 'on', ws: 'on' },
+      resources: [
+        { type: 'plugin', name: '密钥管家', sub: '~/plugins/plugin-keyvault/index.js', seg: 1 }
+      ] },
+    { id: 'websearch', kind: 'package', emoji: '📦', name: 'web-search', ver: 'v0.9.1', latest: 'v0.10.0', author: 'npm',
+      type: 'extension', tags: ['搜索', '网络'],
+      desc: '联网搜索与网页抓取扩展，支持结果摘要、正文抽取与站点白名单。',
+      source: 'npm', ident: 'npm:pi-web-search', path: '~/.pi/agent/packages/web-search',
+      states: { global: 'on' },
+      resources: [
+        { type: 'extension', name: 'web-search', sub: '~/.pi/agent/packages/web-search/ext/web-search.js', seg: 1 },
+        { type: 'skill', name: 'web-fetch', sub: '~/.pi/agent/packages/web-search/skills/web-fetch/SKILL.md', seg: 1 },
+        { type: 'prompt', name: 'search-digest', sub: '~/.pi/agent/packages/web-search/prompts/digest.md', seg: 1 }
+      ] },
+    { id: 'codereview', kind: 'package', emoji: '📦', name: 'code-review', ver: 'v2.1.0', latest: 'v2.2.1', author: 'npm',
+      type: 'skill', tags: ['代码审查'],
+      desc: '按团队规范审查 diff，输出阻塞项与建议清单，支持自定义规则文件。',
+      source: 'npm', ident: 'npm:pi-code-review', path: '~/.pi/agent/packages/code-review',
+      states: { global: 'on' },
+      resources: [
+        { type: 'skill', name: 'code-review', sub: '~/.pi/agent/packages/code-review/skills/review/SKILL.md', seg: 1 }
+      ] },
+    { id: 'deepreading', kind: 'package', emoji: '📦', name: 'deep-reading', ver: 'v1.0.3', author: 'git',
+      type: 'prompt', tags: ['阅读', '提示词'],
+      desc: '长文精读提示词集：结构化拆解、要点回顾与追问链。',
+      source: 'git', ident: 'git+https://…/deep-reading.git', path: '~/.pi/agent/packages/deep-reading',
+      states: { global: 'on' },
+      resources: [
+        { type: 'prompt', name: 'deep-reading', sub: '~/.pi/agent/packages/deep-reading/prompts/deep-reading.md', seg: 1 }
+      ] },
+    { id: 'midnight', kind: 'package', emoji: '📦', name: 'theme-midnight', ver: 'v0.3.0', author: 'npm',
+      type: 'theme', tags: ['主题'],
+      desc: '午夜蓝暗色主题，配套语法高亮与低饱和强调色。',
+      source: 'npm', ident: 'npm:pi-theme-midnight', path: '~/.pi/agent/packages/theme-midnight',
+      states: { global: 'on' },
+      resources: [
+        { type: 'theme', name: 'midnight', sub: '~/.pi/agent/packages/theme-midnight/theme.css', seg: 1 }
+      ] }
+  ];
+
+  let currentScope = 'global';
+
+  function stateOf(p, scope) {
+    return p.kind === 'package' ? (p.states[scope] || p.states.global) : (p.states[scope] || 'none');
+  }
+  function typeBadge(p) {
+    return '<span class="badge badge-' + p.type + '">' + TYPE_LABEL[p.type] + '</span>';
+  }
+  function updatable(p, scope) {
+    return !!(p.latest && p.latest !== p.ver && stateOf(p, scope) !== 'none');
+  }
+
+  function renderCard(p, scope) {
+    const raw = stateOf(p, scope);
+    const installed = raw !== 'none';
+    const tags = (p.tags || []).map(t => '<span class="tag">' + t + '</span>').join('');
+    let headRight = '';
+    if (p.kind === 'plugin' && p.globalOnly && scope !== 'global') {
+      headRight = '<span class="badge badge-chip">仅全局</span>' +
+        '<button class="switch ' + (raw === 'on' ? 'on' : '') + '" onclick="toast(\'仅全局插件请在「全局」范围下启停\'); event.stopPropagation()"></button>';
+    } else if (installed) {
+      headRight =
+        (p.kind === 'package' && scope !== 'global' ? '<span class="badge badge-chip">全局</span>' : '') +
+        (scope === 'global' && p.config ? '<button class="btn btn-ghost icon-btn" title="配置" onclick="toast(\'打开插件配置对话框\'); event.stopPropagation()">' + ICON_GEAR + '</button>' : '') +
+        '<button class="switch ' + (raw === 'on' ? 'on' : '') + '" onclick="toggleItem(\'' + p.id + '\', this); event.stopPropagation()"></button>';
+    }
+    let foot = '';
+    if (!installed) {
+      const canInstall = scope === 'global' || SCOPES[scope].current;
+      foot = '<div class="card-foot"><span class="grow"></span>' +
+        '<button class="btn btn-primary"' + (canInstall ? '' : ' disabled title="请切换到该工作区再安装插件"') +
+        ' onclick="installItem(\'' + p.id + '\', \'' + scope + '\'); event.stopPropagation()">' + ICON_DL + ' 安装…</button></div>';
+    }
+    return '<div class="card" onclick="openDrawer(\'' + p.id + '\')">' +
+      '<div class="card-head">' +
+        '<div class="card-icon">' + p.emoji + '</div>' +
+        '<div class="card-title"><div class="n">' + p.name + ' ' + typeBadge(p) +
+          (updatable(p, scope) ? ' <span class="badge badge-warn">可更新</span>' : '') + '</div>' +
+        '<div class="a">' + p.author + ' · <span class="v">' + p.ver + '</span></div></div>' +
+        headRight +
+      '</div>' +
+      '<div class="tag-row">' + ICON_TAG + tags +
+      (p.kind === 'plugin' ? '<span class="tag tag-src" title="来源注册表">my-pi-plugins</span>' : '') + '</div>' +
+      '<div class="card-desc">' + p.desc + '</div>' +
+      foot +
+    '</div>';
+  }
+
+  function filterGrid() {
+    const q = document.getElementById('libSearch').value.trim().toLowerCase();
+    const st = document.getElementById('libStatus').value;
+    const ty = document.getElementById('libType').value;
+    const list = ITEMS.filter(p => {
+      if (q && (p.name + ' ' + (p.tags || []).join(' ')).toLowerCase().indexOf(q) < 0) return false;
+      if (ty === 'plugin' && p.kind !== 'plugin') return false;
+      if (ty === 'package' && p.kind !== 'package') return false;
+      if (ty !== 'all' && ty !== 'plugin' && ty !== 'package' && p.type !== ty) return false;
+      const raw = stateOf(p, currentScope);
+      if (st === 'in' && raw === 'none') return false;
+      if (st === 'out' && raw !== 'none') return false;
+      if (st === 'upd' && !updatable(p, currentScope)) return false;
+      return true;
+    });
+    document.getElementById('pluginGrid').innerHTML = list.length
+      ? list.map(p => renderCard(p, currentScope)).join('')
+      : '<div class="section-note" style="padding:24px 0">没有匹配的扩展。调整搜索或筛选试试。</div>';
+  }
+
+  function applyScope(key) {
+    currentScope = key;
+    const s = SCOPES[key];
+    document.getElementById('scopeNote').textContent = '管理范围：' + s.name + ' · ' + s.hint;
+    filterGrid();
+  }
+
+  function toggleItem(id, el) {
+    el.classList.toggle('on');
+    const p = ITEMS.find(x => x.id === id);
+    toast((el.classList.contains('on') ? '已启用 ' : '已禁用 ') + p.name + '（' + SCOPES[currentScope].name + '）');
+  }
+
+  function installItem(id, scope) {
+    const p = ITEMS.find(x => x.id === id);
+    toast('要从插件库安装“' + p.name + '”吗？它会写入' + (scope === 'global' ? '你的用户级' : '该项目级') + ' pi 设置。');
+  }
+
+  // ===== 详情抽屉（替代原「已安装」右栏） =====
+  function openDrawer(id) {
+    const p = ITEMS.find(x => x.id === id);
+    if (!p) return;
+    const raw = stateOf(p, currentScope);
+    const installed = raw !== 'none';
+    const upd = updatable(p, currentScope);
+    let actions;
+    if (installed) {
+      actions = '<div class="detail-actions">' +
+        (upd ? '<button class="btn btn-secondary" onclick="toast(\'已开始更新 ' + p.name + '\')">更新</button>' : '') +
+        '<button class="btn btn-secondary" onclick="toast(\'已打开扩展文件夹\')">打开文件夹</button>' +
+        '<button class="btn btn-danger" onclick="toast(\'已请求移除（原型演示）\')">移除</button></div>';
+    } else {
+      actions = '<div class="detail-actions"><button class="btn btn-primary" onclick="installItem(\'' + p.id + '\', \'' + currentScope + '\')">' + ICON_DL + ' 安装…</button></div>';
+    }
+    document.getElementById('drawerHead').innerHTML =
+      '<div class="card-icon">' + p.emoji + '</div>' +
+      '<div class="dh-main"><div class="dh-name">' + p.name + ' ' + typeBadge(p) +
+        (upd ? '<span class="badge badge-warn">可更新</span>' : '') +
+        (p.kind === 'plugin' && p.globalOnly && currentScope !== 'global' ? '<span class="badge badge-chip">仅全局</span>' : '') + '</div>' +
+      '<div class="dh-sub">' + p.author + ' · <span style="font-family:var(--font-mono)">' + p.ver + '</span>' +
+        (p.latest && p.latest !== p.ver ? ' → ' + p.latest : '') + '</div></div>' +
+      '<button class="x" onclick="closeDrawer()">✕</button>';
+
+    const res = p.resources || [];
+    const globalScope = currentScope === 'global';
+    let resHtml = '';
+    if (res.length) {
+      const groups = {};
+      res.forEach(r => { (groups[r.type] = groups[r.type] || []).push(r); });
+      const eff = r => (globalScope && r.seg === 0) ? 1 : r.seg; // 全局范围没有「继承」，继承态按启用呈现
+      const en = res.filter(r => eff(r) !== 2).length;
+      resHtml = '<div class="detail-section"><h3>包内资源</h3>' +
+        '<div class="res-summary"><span>' + en + ' 个启用 / ' + (res.length - en) + ' 个禁用</span>' +
+        '<div class="seg-mini" style="margin-left:auto">' +
+        (globalScope ? '' : '<button onclick="segPick(this)">继承</button>') +
+        '<button class="on" onclick="segPick(this)">启用</button><button onclick="segPick(this)">禁用</button></div></div>';
+      for (const t in groups) {
+        resHtml += '<div class="res-group-title"><span class="badge badge-' + t + '">' + TYPE_LABEL[t] + '</span></div><ul class="res-list">';
+        groups[t].forEach(r => {
+          const s = eff(r);
+          const seg = i => '<button' + (s === i ? ' class="on"' : '') + ' onclick="segPick(this)">' + ['继承', '启用', '禁用'][i] + '</button>';
+          resHtml += '<li><div class="r-main"><div class="r-name">' + r.name +
+            (r.manual ? ' <span style="font-size:11px;color:var(--muted)">仅手动</span>' : '') + '</div>' +
+            '<div class="r-sub">' + r.sub + '</div></div>' +
+            '<span class="' + (s === 2 ? 'state-off' : 'state-ok') + '">' + (s === 2 ? '未生效' : '生效中') + '</span>' +
+            '<div class="seg-mini">' + (globalScope ? '' : seg(0)) + seg(1) + seg(2) + '</div></li>';
+        });
+        resHtml += '</ul>';
+      }
+      resHtml += '</div>';
+    }
+    document.getElementById('drawerBody').innerHTML =
+      actions +
+      '<div class="detail-section"><h3>包详情</h3><dl class="dl-grid">' +
+        '<dt>来源</dt><dd class="plain">' + p.source + '</dd>' +
+        '<dt>标识</dt><dd>' + p.ident + '</dd>' +
+        '<dt>类型与版本</dt><dd class="plain">' + TYPE_LABEL[p.type] + ' · ' + p.ver + (p.latest && p.latest !== p.ver ? ' → ' + p.latest + ' 可用' : '') + '</dd>' +
+        '<dt>安装路径</dt><dd>' + p.path + '</dd>' +
+      '</dl></div>' + resHtml;
+    document.getElementById('drawer').classList.add('open');
+    document.getElementById('drawerMask').classList.add('open');
+  }
+  function closeDrawer() {
+    document.getElementById('drawer').classList.remove('open');
+    document.getElementById('drawerMask').classList.remove('open');
+  }
+  function segPick(btn) {
+    btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+  // 范围 chip 切换
+  const chips = document.querySelectorAll('#scopeChips .chip');
+  chips.forEach(c => c.addEventListener('click', () => {
+    chips.forEach(x => x.classList.remove('on'));
+    c.classList.add('on');
+    applyScope(c.dataset.scope);
+    toast('已切换到「' + SCOPES[c.dataset.scope].name + '」范围');
+  }));
+  applyScope('global');
+
+  // 可更新下拉
+  const ub = document.getElementById('updateBtn'), um = document.getElementById('updateMenu');
+  ub.addEventListener('click', e => {
+    e.stopPropagation();
+    const open = um.classList.toggle('open');
+    ub.setAttribute('aria-expanded', open);
+  });
+  document.addEventListener('click', e => {
+    if (!um.contains(e.target)) { um.classList.remove('open'); ub.setAttribute('aria-expanded', 'false'); }
+  });
+  document.getElementById('updateAll').addEventListener('click', () => {
+    um.classList.remove('open');
+    toast('已开始全部更新（3 项）');
+    const b = document.getElementById('progressBanner');
+    b.style.display = 'flex';
+  });
+
+  // 亮暗主题切换
+  document.getElementById('themeBtn').addEventListener('click', () => {
+    document.documentElement.classList.toggle('light');
+  });
+
+  // Toast
+  let toastTimer;
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+  }
+</script>
+</body>
+</html>

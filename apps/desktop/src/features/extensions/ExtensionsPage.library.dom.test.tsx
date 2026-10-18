@@ -17,8 +17,8 @@ import type {
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
 import { usePixieViewStore } from "../pixie/pixie-store";
-import { PluginLibraryPage } from "./PluginLibraryPage";
-import { resetPluginLibraryUpdatesCache } from "./plugin-updates";
+import { ExtensionsPage } from "./ExtensionsPage";
+import { resetPluginLibraryUpdatesCache } from "../plugin-library/plugin-updates";
 
 const { shellOpen } = vi.hoisted(() => ({ shellOpen: vi.fn() }));
 vi.mock("@tauri-apps/plugin-shell", () => ({ open: shellOpen }));
@@ -428,7 +428,7 @@ function mutationResult(current: PackageSnapshot): PackageMutationResult {
   };
 }
 
-describe("PluginLibraryPage DOM workflows", () => {
+describe("ExtensionsPage library DOM workflows", () => {
   let request: MockInstance<typeof hostClient.request>;
   let currentSnapshot: PackageSnapshot;
   let currentCatalog: PluginLibraryCatalog;
@@ -504,7 +504,7 @@ describe("PluginLibraryPage DOM workflows", () => {
   it("renders registry cards; the switch carries the enabled state", async () => {
     currentSnapshot = snapshotWithRepo(true);
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     // Installed + configurable: gear button plus an ON switch in the header.
     const webCard = (await screen.findByText("联网搜索")).closest("article")!;
@@ -537,7 +537,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot = snapshotWithBrowser(true);
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     const card = (await screen.findByText("浏览器")).closest("article")!;
     const toggle = within(card).getByRole("switch");
@@ -598,7 +598,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot = snapshotWithBrowser(true);
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     const card = (await screen.findByText("浏览器")).closest("article")!;
     const toggle = within(card).getByRole("switch");
@@ -639,7 +639,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot = snapshotWithRepo(true);
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     const webCard = (await screen.findByText("联网搜索")).closest("article")!;
     await user.click(within(webCard).getByRole("button", { name: "Configure" }));
@@ -662,7 +662,7 @@ describe("PluginLibraryPage DOM workflows", () => {
       updates: [{ packageId: "pkg-repo", source: REPO_SOURCE }],
     };
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     await screen.findByText("联网搜索");
     // Check ran against the mock; the update button sits next to refresh.
@@ -704,7 +704,7 @@ describe("PluginLibraryPage DOM workflows", () => {
       ],
     };
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     await screen.findByText("浏览器");
     await user.click(await screen.findByRole("button", { name: "Updates available" }));
@@ -776,7 +776,7 @@ describe("PluginLibraryPage DOM workflows", () => {
       throw new Error(`Unexpected method ${method}`);
     });
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     await screen.findByText("浏览器");
     await user.click(await screen.findByRole("button", { name: "Updates available" }));
@@ -825,7 +825,7 @@ describe("PluginLibraryPage DOM workflows", () => {
       return base(method);
     });
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     await screen.findByText("浏览器");
     await user.click(await screen.findByRole("button", { name: "Updates available" }));
@@ -850,7 +850,7 @@ describe("PluginLibraryPage DOM workflows", () => {
 
   it("installs an npm plugin via package.install after review", async () => {
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     const card = (await screen.findByText("浏览器")).closest("article")!;
     await user.click(within(card).getByRole("button", { name: "Install…" }));
@@ -870,7 +870,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot = snapshotWithBrowser(true);
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     const card = (await screen.findByText("浏览器")).closest("article")!;
     await user.click(within(card).getByRole("switch"));
@@ -889,7 +889,7 @@ describe("PluginLibraryPage DOM workflows", () => {
 
   it("installs repo plugins through pluginLibrary.apply and toggles them via resource preferences", async () => {
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     const card = (await screen.findByText("联网搜索")).closest("article")!;
     // Initially nothing in the repo is installed: the card offers Install only.
@@ -951,7 +951,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot = snapshotWithRepo(true);
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     const card = (await screen.findByText("联网搜索")).closest("article")!;
     await user.click(within(card).getByRole("button", { name: "Configure" }));
@@ -987,7 +987,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot = snapshotWithVision();
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     const card = (await screen.findAllByText("pi-vision"))[0]!.closest("article")!;
     await user.click(within(card).getByRole("button", { name: "Configure" }));
@@ -1035,7 +1035,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot = snapshotWithVision();
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     const card = (await screen.findAllByText("pi-vision"))[0]!.closest("article")!;
     await user.click(within(card).getByRole("button", { name: "Configure" }));
@@ -1069,7 +1069,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     visionModels = [];
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     const card = (await screen.findAllByText("pi-vision"))[0]!.closest("article")!;
     await user.click(within(card).getByRole("button", { name: "Configure" }));
@@ -1099,7 +1099,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot = snapshotWithVision();
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     const card = (await screen.findAllByText("pi-vision"))[0]!.closest("article")!;
     await user.click(within(card).getByRole("button", { name: "Configure" }));
@@ -1153,7 +1153,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot = snapshotWithVision();
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     const card = (await screen.findByText("Unknown options source")).closest("article")!;
     await user.click(within(card).getByRole("button", { name: "Configure" }));
@@ -1167,7 +1167,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot = snapshotWithSubagent();
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     const card = (await screen.findAllByText("pi-subagent"))[0]!.closest("article")!;
     await user.click(within(card).getByRole("button", { name: "Configure" }));
@@ -1224,7 +1224,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot.resources[0]!.preferences.user = "disabled";
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     // The Global chip is the first chip and selected by default.
     const globalChip = await screen.findByRole("button", { name: "Global" });
@@ -1255,7 +1255,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot = snapshotWithBrowser(true);
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     const activeWorkspaceChip = await screen.findByRole("button", {
       name: /workspace.*Current workspace/,
@@ -1272,7 +1272,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot = snapshotWithGlobalOnlyPlugin();
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     // Global scope: the plugin toggles globally like any other card.
     const globalCard = (await screen.findByText("PiAbyss 备忘录")).closest("article")!;
@@ -1291,7 +1291,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot = snapshotWithGlobalOnlyPlugin("disabled");
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     await user.click(await screen.findByRole("button", { name: /workspace.*Current workspace/ }));
     const card = screen.getByText("PiAbyss 备忘录").closest("article")!;
@@ -1305,7 +1305,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot = snapshotWithBrowser(true);
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     const targetChip = await screen.findByRole("button", { name: "other-project" });
     await user.click(targetChip);
@@ -1342,9 +1342,11 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot = snapshotWithRepo(true);
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
-    const pixieChip = await screen.findByRole("button", { name: "pixie" });
+    // The folder is named "pixie"; the chip shows the product name + its icon.
+    const pixieChip = await screen.findByRole("button", { name: "Pixie" });
+    expect(pixieChip.querySelector(".lucide-sparkles")).not.toBeNull();
     await user.click(pixieChip);
     await waitFor(() =>
       expect(request).toHaveBeenCalledWith(
@@ -1369,7 +1371,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     currentSnapshot = snapshotWithRepo(true);
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     // The scope row lists every known workspace by basename; pick the
     // non-active one.
@@ -1449,7 +1451,7 @@ describe("PluginLibraryPage DOM workflows", () => {
       ],
     };
     const user = userEvent.setup();
-    render(<PluginLibraryPage />);
+    render(<ExtensionsPage />);
 
     // The active workspace's scope offers the prompt.
     expect(await screen.findByRole("button", { name: "Updates available" })).toBeInTheDocument();

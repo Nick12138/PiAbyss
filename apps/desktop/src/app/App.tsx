@@ -1499,7 +1499,7 @@ export function App() {
                   onClose={() => setPage(lastPage)}
                 />
               ) : page === "packages" ? (
-                <SettingsPage initialSection="packages" onClose={() => setPage(lastPage)} />
+                <SettingsPage initialSection="extensions" onClose={() => setPage(lastPage)} />
               ) : page === "pixie" ? (
                 <PixiePage />
               ) : (

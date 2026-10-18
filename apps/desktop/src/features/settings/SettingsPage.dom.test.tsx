@@ -111,8 +111,7 @@ describe("SettingsPage navigation guard", () => {
       "Appearance",
       "Providers",
       "Skills",
-      "Plugin Library",
-      "Packages",
+      "Extensions",
       "Usage",
       "Host",
       "Shortcuts",
@@ -405,10 +404,7 @@ describe("SettingsPage navigation guard", () => {
     expect(screen.queryByText("Capabilities")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Host" }));
-    expect(screen.getByRole("button", { name: "Host" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    expect(screen.getByRole("button", { name: "Host" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByText("Auto-restart Pi Host")).toBeInTheDocument();
   });
 

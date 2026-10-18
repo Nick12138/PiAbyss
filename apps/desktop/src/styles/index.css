@@ -69,6 +69,10 @@
   --color-success: #22c55e;
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
+  /* Extension-kind hues: each resource badge gets its own colour so plugin /
+     extension / skill / prompt / theme are distinguishable at a glance. */
+  --color-plugin: #a78bfa;
+  --color-theme: #38bdf8;
   --color-background: var(--color-surface);
   --color-muted-foreground: var(--color-muted);
   --font-sans:
@@ -754,6 +758,8 @@ html.light {
   --color-muted: #6b6c74;
   --color-accent: #d45d2d;
   --color-accent-hover: #bd4f24;
+  --color-plugin: #7c3aed;
+  --color-theme: #0284c7;
 }
 
 html[data-theme-family="apple"] {
