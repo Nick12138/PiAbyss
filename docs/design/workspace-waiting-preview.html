@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PiAbyss · 工作区切换等待态动效预览</title>
+<style>
+  /* 配色取 apps/desktop/src/styles/index.css 的 @theme 与 html.light；
+     π 标记的栅格取自 assets/pi-mark-*.png（4x4 像素块）。
+     等待区**不出现任何文字**：只说「还在动」，不说「在等什么」。
+     所有动效都是纯 CSS，落地不需要 canvas。 */
+  :root{
+    --canvas:#0a0a0d;
+    --surface:#17171b;
+    --sidebar:#121216;
+    --overlay:#27272d;
+    --border:#2a2a2f;
+    --border-subtle:rgb(255 255 255 / 7%);
+    --fg:#e2e3e6;
+    --muted:#9a9ba3;
+    --accent:#df6b35;
+    --warning:#f59e0b;
+    --halo:rgb(223 107 53 / 22%);
+    --wash:rgb(223 107 53 / 9%);
+    --shadow:0 26px 70px rgb(0 0 0 / 55%), 0 2px 10px rgb(0 0 0 / 40%);
+  }
+  html.light{
+    --canvas:#e6e7eb;
+    --surface:#ffffff;
+    --sidebar:#f5f6f7;
+    --overlay:#ececf0;
+    --border:#e0e0e4;
+    --border-subtle:rgb(0 0 0 / 7%);
+    --fg:#1b1c1f;
+    --muted:#6b6c74;
+    --accent:#d45d2d;
+    --warning:#b1740f;
+    --halo:rgb(212 93 45 / 16%);
+    --wash:rgb(212 93 45 / 7%);
+    --shadow:0 26px 60px rgb(20 20 30 / 16%), 0 2px 8px rgb(20 20 30 / 8%);
+  }
+
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--canvas);color:var(--fg);
+    font:13px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing:antialiased;transition:background .3s ease;
+  }
+  button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+  /* ── 页面外壳 ─────────────────────────────────────────── */
+  .page{display:flex;flex-direction:column;gap:16px;height:100%;padding:24px 28px 20px}
+  .head{display:flex;align-items:flex-end;gap:24px;flex-wrap:wrap}
+  .head h1{margin:0;font-size:15px;font-weight:600;letter-spacing:.01em}
+  .head p{margin:5px 0 0;font-size:12px;color:var(--muted)}
+  .controls{display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap}
+
+  .seg{display:flex;gap:2px;padding:3px;border-radius:9px;background:var(--surface);border:1px solid var(--border)}
+  .seg-btn{
+    display:flex;align-items:center;gap:6px;height:26px;padding:0 11px;border-radius:6px;
+    font-size:12px;color:var(--muted);transition:background .16s ease,color .16s ease;
+  }
+  .seg-btn b{font:600 10px/1 ui-monospace, Consolas, monospace;letter-spacing:.04em;opacity:.65}
+  .seg-btn:hover{color:var(--fg)}
+  .seg-btn.is-on{background:var(--overlay);color:var(--fg)}
+  .seg-btn.is-on b{color:var(--accent);opacity:1}
+
+  .chip{
+    height:32px;padding:0 12px;border-radius:9px;font-size:12px;color:var(--muted);
+    background:var(--surface);border:1px solid var(--border);transition:color .16s ease;
+  }
+  .chip:hover{color:var(--fg)}
+
+  /* ── 窗口 ─────────────────────────────────────────────── */
+  .frame{
+    position:relative;display:flex;flex:1;min-height:0;overflow:hidden;
+    border:1px solid var(--border);border-radius:14px;background:var(--surface);
+    box-shadow:var(--shadow);
+  }
+
+  /* 侧栏只为给等待区一个真实比例，本身不动 */
+  .side{
+    display:flex;flex-direction:column;flex:0 0 auto;width:232px;padding:10px 8px;
+    background:var(--sidebar);border-right:1px solid var(--border-subtle);
+  }
+  .side-label{
+    padding:8px 8px 6px;font-size:10.5px;font-weight:600;letter-spacing:.1em;
+    color:var(--muted);text-transform:uppercase;
+  }
+  .ws{display:flex;align-items:center;gap:8px;height:30px;padding:0 8px;border-radius:7px;font-size:12.5px;color:var(--fg)}
+  .ws.on{background:var(--overlay);font-weight:500}
+  .ws .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ws svg{
+    width:14px;height:14px;flex:0 0 auto;color:var(--muted);
+    stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;
+  }
+  .ws.on svg.folder{color:var(--accent)}
+  .dot-warn{
+    width:6px;height:6px;flex:0 0 auto;border-radius:50%;background:var(--warning);
+    animation:dot-pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes dot-pulse{
+    0%,100%{opacity:.3;transform:scale(.85)}
+    50%{opacity:1;transform:scale(1)}
+  }
+  .ghost{height:8px;margin:8px 8px 0;border-radius:5px;background:var(--overlay)}
+
+  .main{display:flex;flex-direction:column;flex:1;min-width:0}
+  .topbar{
+    display:flex;align-items:center;gap:6px;flex:0 0 auto;height:44px;padding:0 16px;
+    border-bottom:1px solid var(--border-subtle);font-size:12px;color:var(--muted);
+  }
+  .topbar .sep{opacity:.45}
+  .topbar .here{color:var(--fg)}
+  .chat{position:relative;flex:1;min-height:0;overflow:hidden}
+
+  /* ── 等待舞台 ─────────────────────────────────────────── */
+  .stage{position:absolute;inset:0;display:grid;place-items:center;overflow:hidden}
+
+  /* 雪花背景：常驻，和方案无关 */
+  .motes{position:absolute;inset:0;pointer-events:none}
+  .mote{
+    position:absolute;left:var(--x,0);top:0;width:var(--s,7px);height:var(--s,7px);
+    border-radius:50%;
+    background:radial-gradient(circle, var(--accent) 0%, transparent 72%);
+    opacity:0;filter:blur(var(--b,.35px));
+    /* 下沉和横向摇摆用不同周期，合起来不会「整排一起晃」 */
+    animation:sink var(--dur,22s) linear infinite,
+              drift var(--drift,9s) ease-in-out infinite alternate;
+    animation-delay:var(--delay,0s), var(--d2,0s);
+  }
+  /* 少数拉成细线的，是沉得快的那几粒，给整片区域一点方向感 */
+  .streak{
+    position:absolute;left:var(--x,0);top:0;width:var(--w,70px);height:2px;border-radius:2px;
+    background:linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity:0;filter:blur(var(--b,1px));
+    animation:sink var(--dur,26s) linear infinite;
+    animation-delay:var(--delay,0s);
+  }
+  @keyframes sink{
+    0%{top:-4%;opacity:0}
+    14%{opacity:var(--o,.4)}
+    84%{opacity:var(--o,.4)}
+    100%{top:102%;opacity:0}
+  }
+  @keyframes drift{
+    from{transform:translateX(-7px)}
+    to{transform:translateX(7px)}
+  }
+  .floor{
+    position:absolute;left:0;right:0;bottom:0;height:30%;
+    background:radial-gradient(ellipse 68% 100% at 50% 100%, var(--wash), transparent 72%);
+    animation:floor-breathe 8s ease-in-out infinite;
+  }
+  @keyframes floor-breathe{0%,100%{opacity:.6}50%{opacity:1}}
+
+  /* 四周收回底色，注意力收到中心 */
+  .veil{
+    position:absolute;inset:0;z-index:2;pointer-events:none;
+    background:radial-gradient(ellipse 58% 52% at 50% 50%, transparent 26%, var(--surface) 88%);
+  }
+
+  /* ── 中心：只有一个 π，没有任何文字 ───────────────────── */
+  .waiting{position:relative;z-index:3;display:grid;place-items:center}
+  .slot{position:relative;display:grid;place-items:center;width:190px;height:190px}
+  .halo{
+    position:absolute;width:114px;height:74px;border-radius:50%;
+    background:radial-gradient(closest-side, var(--halo), transparent 74%);
+    filter:blur(4px);opacity:.8;
+    animation:halo-breathe 4.8s ease-in-out infinite;
+  }
+  /* 尺寸对齐真实组件：真实用的是 56px 的图片框，图里 π 只占 58%，
+     所以肉眼的字形大约是 33px —— 这里按字形尺寸画，看起来才和落地一致。 */
+  .mark-stack{position:relative;width:33px;height:33px}
+  .mark{position:absolute;inset:0;width:33px;height:33px;fill:currentColor}
+  .mark.base{color:var(--fg);opacity:.28}
+  .mark.lit{color:var(--accent);opacity:.95}
+
+  /* 01 呼吸 */
+  .frame[data-variant="a"] .mark.lit{animation:mark-breathe 4.8s ease-in-out infinite}
+  .frame[data-variant="a"] .halo{animation-duration:4.8s}
+  @keyframes mark-breathe{
+    0%,100%{opacity:.55;transform:translateY(2px) scale(.96)}
+    50%{opacity:1;transform:translateY(-1.5px) scale(1)}
+  }
+  @keyframes halo-breathe{
+    0%,100%{opacity:.45;transform:scale(.92)}
+    50%{opacity:.95;transform:scale(1.06)}
+  }
+
+  /* 02 点亮：按行给延迟，光从上往下一行行扫过 */
+  .frame[data-variant="b"] .mark.base{opacity:0}
+  .frame[data-variant="b"] .mark.lit rect{animation:block-chase 3.2s ease-in-out infinite}
+  .frame[data-variant="b"] .mark.lit rect:nth-child(1){animation-delay:0s}
+  .frame[data-variant="b"] .mark.lit rect:nth-child(2){animation-delay:.14s}
+  .frame[data-variant="b"] .mark.lit rect:nth-child(3){animation-delay:.14s}
+  .frame[data-variant="b"] .mark.lit rect:nth-child(4){animation-delay:.28s}
+  .frame[data-variant="b"] .mark.lit rect:nth-child(5){animation-delay:.28s}
+  .frame[data-variant="b"] .mark.lit rect:nth-child(6){animation-delay:.42s}
+  .frame[data-variant="b"] .mark.lit rect:nth-child(7){animation-delay:.42s}
+  /* 整块图形始终是暖橙，亮的那一行只是更亮：不做「亮/灭」，避免脏褐色 */
+  @keyframes block-chase{
+    0%,64%,100%{opacity:.62}
+    18%{opacity:1}
+  }
+  .frame[data-variant="b"] .halo{opacity:.55;animation:none}
+
+  /* 03 环绕：两颗光点绕着 π 各自转，一快一慢、一明一暗 */
+  .orbit{position:absolute;inset:0;display:none;z-index:1}
+  .frame[data-variant="c"] .orbit{display:block}
+  /* 轨道本身几乎不可见，只是让那点光有个去处 */
+  .path{
+    position:absolute;left:50%;top:50%;border-radius:50%;
+    border:1px solid var(--border-subtle);
+  }
+  .path.p1{width:100px;height:100px;margin:-50px 0 0 -50px}
+  .path.p2{width:76px;height:76px;margin:-38px 0 0 -38px}
+  .orb{position:absolute;left:50%;top:50%;width:100px;height:100px;margin:-50px 0 0 -50px;
+    animation:spin 3.4s linear infinite}
+  .orb.o2{width:76px;height:76px;margin:-38px 0 0 -38px;
+    animation-duration:5.8s;animation-direction:reverse}
+  /* 光点挂在轨道的正上方，容器一转它就沿着轨道走 */
+  .orb i{
+    position:absolute;top:-3px;left:50%;width:6px;height:6px;margin-left:-3px;
+    border-radius:50%;background:var(--accent);
+    box-shadow:0 0 12px 2px var(--accent);
+  }
+  .orb.o2 i{top:-2px;width:4px;height:4px;margin-left:-2px;opacity:.65}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .frame[data-variant="c"] .mark.lit{animation:mark-still 7s ease-in-out infinite}
+  .frame[data-variant="c"] .halo{animation-duration:7s}
+  @keyframes mark-still{0%,100%{opacity:.82}50%{opacity:1}}
+
+  .note{margin:0;font-size:12px;color:var(--muted);min-height:18px}
+
+  @media (max-width:900px){
+    .page{padding:16px 16px 14px;gap:12px}
+    .side{width:190px}
+    .head p{display:none}
+  }
+  @media (max-width:640px){
+    .side{display:none}
+  }
+
+  /* 系统要求减少动态效果时：只留静态构图，不推进任何位移 */
+  @media (prefers-reduced-motion: reduce){
+    .mark.lit,.halo,.mote,.streak,.floor,.orb,.dot-warn{animation:none !important}
+    .mark.lit{opacity:1}
+    .mote,.streak{display:none}
+    .orb i{box-shadow:none}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="head">
+    <div>
+      <h1>工作区切换 · 等待态</h1>
+      <p>不写一个字：等待只用一个还在动的界面说完 · 背景沿用下沉光点 · 稿里的 π 用暖橙画，落地用的是白色官方标</p>
+    </div>
+    <div class="controls">
+      <div class="seg" role="tablist" aria-label="动效方案">
+        <button class="seg-btn is-on" data-go="a" role="tab" aria-selected="true"><b>01</b>呼吸</button>
+        <button class="seg-btn" data-go="b" role="tab" aria-selected="false"><b>02</b>点亮</button>
+        <button class="seg-btn" data-go="c" role="tab" aria-selected="false"><b>03</b>环绕</button>
+      </div>
+      <button class="chip" id="themeBtn">浅色</button>
+    </div>
+  </div>
+
+  <div class="frame" data-variant="a">
+    <aside class="side">
+      <div class="side-label">工作区</div>
+      <div class="ws on">
+        <svg class="folder" viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l1.6 2H19.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>
+        <span class="nm">我的项目/PiAbyss</span>
+        <span class="dot-warn" title="已切换，服务尚未就绪"></span>
+      </div>
+      <div class="ws">
+        <svg viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l1.6 2H19.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>
+        <span class="nm">我的项目/notes</span>
+      </div>
+      <div class="ws">
+        <svg viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l1.6 2H19.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>
+        <span class="nm">我的项目/lab</span>
+      </div>
+      <div class="side-label">会话</div>
+      <div class="ghost" style="width:86%"></div>
+      <div class="ghost" style="width:64%"></div>
+      <div class="ghost" style="width:74%"></div>
+      <div class="ghost" style="width:52%"></div>
+    </aside>
+
+    <div class="main">
+      <div class="topbar">
+        <span>PiAbyss</span><span class="sep">/</span>
+        <span>我的项目</span><span class="sep">/</span>
+        <span class="here">PiAbyss</span>
+      </div>
+      <div class="chat">
+        <div class="stage">
+          <!-- 雪花背景：光点一路往下沉（脚本按固定种子生成，见文件末尾） -->
+          <div class="motes" id="motes" aria-hidden="true">
+            <i class="streak" style="--x:31%;--w:132px;--dur:34s;--delay:-19s;--o:.2;--b:2.2px"></i>
+            <i class="streak" style="--x:57%;--w:104px;--dur:29s;--delay:-8s;--o:.22;--b:1.8px"></i>
+            <i class="streak" style="--x:79%;--w:88px;--dur:26s;--delay:-14s;--o:.24;--b:1.6px"></i>
+            <i class="streak" style="--x:12%;--w:96px;--dur:31s;--delay:-24s;--o:.18;--b:2px"></i>
+            <div class="floor"></div>
+          </div>
+
+          <!-- 03 的环绕 -->
+          <div class="orbit" aria-hidden="true">
+            <span class="path p1"></span>
+            <span class="path p2"></span>
+            <span class="orb o1"><i></i></span>
+            <span class="orb o2"><i></i></span>
+          </div>
+
+          <div class="veil" aria-hidden="true"></div>
+
+          <div class="waiting">
+            <!-- 屏幕上没有字，但读屏软件仍然需要知道在等什么 -->
+            <p class="sr" role="status" aria-live="polite">正在准备工作区</p>
+            <div class="slot">
+              <div class="halo" aria-hidden="true"></div>
+              <div class="mark-stack" aria-hidden="true">
+                <svg class="mark base" viewBox="0 0 400 400">
+                  <rect x="0" y="0" width="300" height="100"/>
+                  <rect x="0" y="100" width="100" height="100"/>
+                  <rect x="200" y="100" width="100" height="100"/>
+                  <rect x="0" y="200" width="200" height="100"/>
+                  <rect x="300" y="200" width="100" height="100"/>
+                  <rect x="0" y="300" width="100" height="100"/>
+                  <rect x="300" y="300" width="100" height="100"/>
+                </svg>
+                <svg class="mark lit" viewBox="0 0 400 400">
+                  <rect x="0" y="0" width="300" height="100"/>
+                  <rect x="0" y="100" width="100" height="100"/>
+                  <rect x="200" y="100" width="100" height="100"/>
+                  <rect x="0" y="200" width="200" height="100"/>
+                  <rect x="300" y="200" width="100" height="100"/>
+                  <rect x="0" y="300" width="100" height="100"/>
+                  <rect x="300" y="300" width="100" height="100"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note" id="note"></p>
+</div>
+
+<script>
+  // π 标记：assets/pi-mark-*.png 的 4x4 栅格，按 100 单位还原。
+  // 真接进应用时直接用 <img src={piMarkDark}> 即可，这份 SVG 只为单文件预览。
+
+  // ── 雪花背景：固定种子生成，刷新后位置不变（方便对比评审） ──
+  // 接进应用时可以把生成结果直接写成静态的 <i>，运行时不需要这段脚本。
+  (function buildMotes() {
+    let seed = 0x9e3779b9;
+    const rnd = () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const box = document.getElementById("motes");
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < 46; i += 1) {
+      const mote = document.createElement("i");
+      mote.className = "mote";
+      mote.style.cssText = [
+        `--x:${(2 + rnd() * 94).toFixed(1)}%`,
+        `--s:${4 + Math.round(rnd() * 9)}px`,
+        `--dur:${(17 + rnd() * 24).toFixed(1)}s`,
+        `--delay:-${(rnd() * 40).toFixed(1)}s`,
+        `--drift:${(6 + rnd() * 8).toFixed(1)}s`,
+        `--d2:-${(rnd() * 9).toFixed(1)}s`,
+        `--o:${(0.24 + rnd() * 0.34).toFixed(2)}`,
+        `--b:${(0.15 + rnd() * 0.75).toFixed(2)}px`,
+      ].join(";");
+      frag.appendChild(mote);
+    }
+    box.appendChild(frag);
+  })();
+
+  // ── 方案切换 ───────────────────────────────────────────
+  const NOTES = {
+    a: "01 呼吸 —— 只留一个会呼吸的 π，背景是慢慢下沉的光点。最克制的一版。",
+    b: "02 点亮 —— π 的像素块从上往下一行行亮起，像把工作区一层层装配起来。",
+    c: "03 环绕（已采用）—— 两颗光点绕着 π 转，一快一慢。工作区切换与小精灵页共用同一尺寸：轨道 100 / 76。",
+  };
+  const frame = document.querySelector(".frame");
+  const note = document.getElementById("note");
+
+  function setVariant(v) {
+    frame.dataset.variant = v;
+    document.querySelectorAll(".seg-btn").forEach((btn) => {
+      const on = btn.dataset.go === v;
+      btn.classList.toggle("is-on", on);
+      btn.setAttribute("aria-selected", String(on));
+    });
+    note.textContent = NOTES[v];
+  }
+  document.querySelectorAll(".seg-btn").forEach((btn) => {
+    btn.addEventListener("click", () => setVariant(btn.dataset.go));
+  });
+  setVariant("a");
+
+  // ── 主题 ───────────────────────────────────────────────
+  document.getElementById("themeBtn").addEventListener("click", (event) => {
+    const light = document.documentElement.classList.toggle("light");
+    event.currentTarget.textContent = light ? "深色" : "浅色";
+  });
+
+  // 1 / 2 / 3 直接切方案，方便来回对比
+  window.addEventListener("keydown", (event) => {
+    const map = { 1: "a", 2: "b", 3: "c" };
+    if (map[event.key]) setVariant(map[event.key]);
+  });
+</script>
+</body>
+</html>
