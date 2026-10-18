@@ -18,7 +18,7 @@ import { SettingsPage } from "../features/settings/SettingsPage";
 import { openMemoWithAgentById } from "../features/memo/memo-agent";
 import { PixiePage } from "../features/pixie/PixiePage";
 import { startPixieAutostart } from "../features/pixie/pixie-autostart";
-import { usePluginEnabled } from "../features/plugin-library/plugin-gate";
+import { usePluginStatus } from "../features/plugin-library/plugin-gate";
 
 /** The plugin-library entry backing the Pixie page（方寸间现在只是它右侧面板的一块）。 */
 const PIXIE_PLUGIN_ID = "pi-pixie";
@@ -720,14 +720,20 @@ export function App() {
   const [windowFrameMode, setWindowFrameMode] = useState<WindowFrameMode>("floating");
   const [actionsEl, setActionsEl] = useState<HTMLDivElement | null>(null);
   const page = useAppStore((s) => s.page);
+  const lastPage = useAppStore((s) => s.lastPage);
   const setPage = useAppStore((s) => s.setPage);
   // Plugin-backed pages fall back to chat while their plugin is disabled —
   // the sidebar hides the entries, but a persisted page (or a deep link)
   // could still land on one.
-  const pixieEnabled = usePluginEnabled(PIXIE_PLUGIN_ID);
+  const pixieStatus = usePluginStatus(PIXIE_PLUGIN_ID);
   useEffect(() => {
-    if (page === "pixie" && !pixieEnabled) setPage("chat");
-  }, [page, pixieEnabled, setPage]);
+    // 只在**确定**没启用时才把人踢出小精灵页。刷新（F5）后 page 是从本地恢复的
+    // pixie，而插件目录此刻还没加载完（unknown）——按「!enabled」直接踢，恢复的
+    // 页面活不过一帧，又落回 chat。
+    if (page === "pixie" && pixieStatus !== "unknown" && pixieStatus !== "enabled") {
+      setPage("chat");
+    }
+  }, [page, pixieStatus, setPage]);
 
   // 桌面速记小窗「在 PiAbyss 中打开」→ 显示主窗口。
   // 事件载荷 { noteId, action }：
@@ -1488,10 +1494,12 @@ export function App() {
               ) : page === "settings" ? (
                 <SettingsPage
                   initialSection={settingsSection ?? "general"}
-                  onClose={() => setPage("chat")}
+                  /* 回到进来之前那一页：从小精灵进来的就该回小精灵，别一律回 chat
+                   * （那会让侧栏停在配置页的工作区上，页面却是对话）。 */
+                  onClose={() => setPage(lastPage)}
                 />
               ) : page === "packages" ? (
-                <SettingsPage initialSection="packages" onClose={() => setPage("chat")} />
+                <SettingsPage initialSection="packages" onClose={() => setPage(lastPage)} />
               ) : page === "pixie" ? (
                 <PixiePage />
               ) : (

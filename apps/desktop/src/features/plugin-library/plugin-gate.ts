@@ -8,7 +8,7 @@ import { pluginCardState } from "../plugin-library/plugin-library-model";
 const CATALOG_TIMEOUT_MS = 30_000;
 const PACKAGE_LIST_TIMEOUT_MS = 60_000;
 
-type PluginStatus = "enabled" | "disabled" | "not-installed" | "unknown";
+export type PluginStatus = "enabled" | "disabled" | "not-installed" | "unknown";
 
 /** A status backed by loaded catalog + package data — never a loading gap. */
 type DefinitivePluginStatus = Exclude<PluginStatus, "unknown">;
@@ -127,7 +127,7 @@ export function usePluginCatalogData(): {
  * page guard consuming this) stays stable across the switch instead of
  * flickering off and on.
  */
-export function usePluginEnabled(pluginId: string): boolean {
+export function usePluginStatus(pluginId: string): PluginStatus {
   const { catalog, packages } = usePluginCatalogData();
   const hostId = useAppStore((s) => s.host?.hostInstanceId ?? null);
   const status = pluginStatus(pluginId, catalog, packages);
@@ -143,6 +143,9 @@ export function usePluginEnabled(pluginId: string): boolean {
     hostId !== null && stickyStatuses?.hostId === hostId
       ? stickyStatuses.statuses.get(pluginId)
       : undefined;
-  const resolved = status !== "unknown" ? status : sticky;
-  return resolved === "enabled";
+  return status !== "unknown" ? status : (sticky ?? "unknown");
+}
+
+export function usePluginEnabled(pluginId: string): boolean {
+  return usePluginStatus(pluginId) === "enabled";
 }

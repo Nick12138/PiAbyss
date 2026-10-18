@@ -13,6 +13,8 @@ import { classifyDragResize } from "../lib/layout-motion";
 import { subscribeSessionReveal } from "../lib/session-reveal";
 
 import { usePluginEnabled } from "../features/plugin-library/plugin-gate";
+import { usePixieViewStore } from "../features/pixie/pixie-store";
+import { workspaceActivityFor } from "../lib/workspace-activity";
 
 /** The plugin-library entry backing the Pixie page（方寸间已并入它右侧的随行面板）. */
 const PIXIE_PLUGIN_ID = "pi-pixie";
@@ -143,7 +145,27 @@ export function SidebarLayout({
   setPage: (page: NavPage) => void;
 }) {
   const t = useT();
+  const lastPage = useAppStore((s) => s.lastPage);
   const pixieEnabled = usePluginEnabled(PIXIE_PLUGIN_ID);
+  /**
+   * 小精灵 nav 的状态灯与未读提醒：数据源和工作区列表完全同源（Host 池的
+   * `workspaceActivities`），只是键换成小精灵工作区的 cwd。优先级也照抄那边：
+   * 红（有失败未确认）> 绿（忙碌）> 灰（有结果没看）。
+   * `current` 只在进过一次小精灵页后才有值；没进过就没有灯，与「那个工作区还
+   * 没被打开过」一致。
+   */
+  const pixieCwd = usePixieViewStore((s) => s.current?.cwd ?? null);
+  const workspaceActivities = useAppStore((s) => s.workspaceActivities);
+  const pixieActivity = workspaceActivityFor(workspaceActivities, pixieCwd);
+  const pixieUnread = (pixieActivity?.errorCount ?? 0) + (pixieActivity?.doneCount ?? 0);
+  const pixieStatusDot =
+    pixieActivity && pixieActivity.errorCount > 0
+      ? "bg-danger status-dot-pulse"
+      : pixieActivity?.busy
+        ? "bg-success status-dot-pulse"
+        : pixieUnread > 0
+          ? "bg-muted status-dot-pulse"
+          : null;
   const hostReady = Boolean(useAppStore((s) => s.host?.hostInstanceId));
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const sidebarAutoInstant = useAppStore((s) => s.sidebarAutoInstant);
@@ -508,7 +530,21 @@ export function SidebarLayout({
                   } disabled:cursor-not-allowed disabled:opacity-40`}
                 >
                   <Sparkles size={18} className="shrink-0" />
-                  <span>{t("pixieTitle")}</span>
+                  <span className="min-w-0 flex-1 truncate">{t("pixieTitle")}</span>
+                  {/* 未读提醒：她跑完/跑挂了几条还没看的活。跟状态灯分两格，
+                      灯说的是「现在」，数字说的是「攒了多少」。 */}
+                  {pixieUnread > 0 ? (
+                    <span className="shrink-0 rounded-full bg-accent px-1.5 text-[10px] font-medium tabular-nums text-accent-foreground">
+                      {pixieUnread > 99 ? "99+" : pixieUnread}
+                    </span>
+                  ) : null}
+                  {pixieStatusDot ? (
+                    <span
+                      aria-hidden="true"
+                      data-testid="sidebar-pixie-status-dot"
+                      className={`size-[8.2px] shrink-0 rounded-full ${pixieStatusDot}`}
+                    />
+                  ) : null}
                 </button>
               </div>
             )}
@@ -516,11 +552,13 @@ export function SidebarLayout({
             {/* 方寸间不再单独占一个导航项：它只有小精灵页右侧随行面板那一处入口
               （`PixieTodoSection`），从侧栏进来的那条路随备忘页一起下线。 */}
 
+            {/* 再点一次「设置」就是退出：回到进来之前的长期页（可能是小精灵），
+                不是一律回 chat。 */}
             <div className="px-2 pb-2">
               <button
                 type="button"
                 onClick={() =>
-                  setPage(page === "settings" || page === "packages" ? "chat" : "settings")
+                  setPage(page === "settings" || page === "packages" ? lastPage : "settings")
                 }
                 data-ui="nav-item"
                 data-state={page === "settings" || page === "packages" ? "active" : "inactive"}

@@ -74,6 +74,35 @@ import {
 /** 方寸间不再是独立一页（`"memo"` 已撤），它只有小精灵页右侧随行面板那一处入口。 */
 export type NavPage = "chat" | "packages" | "pixie" | "settings";
 
+/**
+ * 长期页 vs 临时页：`chat` / `pixie` 是用户真正待着的地方，`settings` / `packages`
+ * 只是顺手进去一趟。刷新（F5）或从设置里退出来时都该回到长期页——否则小精灵页
+ * 刷新一次就落成「chat 页 + pixie 工作区 + 普通右栏」的半截状态。
+ */
+const PAGE_STORAGE_KEY = "piabyss.nav.page";
+const LAST_PAGE_STORAGE_KEY = "piabyss.nav.lastPage";
+
+function isDurablePage(value: unknown): value is NavPage {
+  return value === "chat" || value === "pixie";
+}
+
+function readStoredPage(key: string): NavPage | null {
+  try {
+    const raw = globalThis.localStorage?.getItem(key);
+    return isDurablePage(raw) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistPage(key: string, page: NavPage): void {
+  try {
+    globalThis.localStorage?.setItem(key, page);
+  } catch {
+    /* 隐私模式或配额满：退回默认页，不阻断导航 */
+  }
+}
+
 /** Frozen empty map shared as the initial `providerNames` value so unrelated
  *  sessions don't reallocate a new Map on every reset. */
 const EMPTY_PROVIDER_NAMES: ReadonlyMap<string, string> = new Map<string, string>();
@@ -437,6 +466,8 @@ function restoreSettingsNavCache(state: {
 
 export type AppState = EpochState & {
   page: NavPage;
+  /** 最近一个「长期页」（chat / pixie）：设置页关闭、刷新恢复都回到这里。 */
+  lastPage: NavPage;
   /**
    * 计划列表被改动过几次（草案卡确认、详情弹窗里立即执行/停用…）。
    * 随行面板那页签按 30s 滴答刷新，用户刚点完「确定」不该再等半分钟——
@@ -753,7 +784,8 @@ function epochSlice(s: AppState): EpochState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  page: "chat",
+  page: readStoredPage(PAGE_STORAGE_KEY) ?? "chat",
+  lastPage: readStoredPage(LAST_PAGE_STORAGE_KEY) ?? "chat",
   scheduleRevision: 0,
   settingsSection: null,
   settingsNavCache: null,
@@ -888,18 +920,27 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearProviderLogin: () => set({ providerLogin: null }),
   bumpScheduleRevision: () => set((state) => ({ scheduleRevision: state.scheduleRevision + 1 })),
   setPage: (page) =>
-    set((state) => ({
-      page,
-      ...(page !== state.page ? { extensionWidgetsOpen: false } : {}),
-      // Closing Settings (back to chat) drops the section request; the last
-      // position itself lives on in settingsNavCache (written by SettingsPage
-      // on unmount), so the next generic open can restore it while it is fresh.
-      ...(page === "chat"
-        ? { settingsSection: null }
-        : page === "settings"
+    set((state) => {
+      const durable = isDurablePage(page);
+      if (durable) {
+        persistPage(PAGE_STORAGE_KEY, page);
+        persistPage(LAST_PAGE_STORAGE_KEY, page);
+      }
+      return {
+        page,
+        ...(durable ? { lastPage: page } : {}),
+        ...(page !== state.page ? { extensionWidgetsOpen: false } : {}),
+        // Closing Settings drops the section request; the last position itself
+        // lives on in settingsNavCache (written by SettingsPage on unmount), so
+        // the next generic open can restore it while it is fresh. Leaving to a
+        // durable page also drops it — pixie is a page of its own, not settings.
+        ...(page === "settings"
           ? restoreSettingsNavCache(state)
-          : {}),
-    })),
+          : page !== "packages"
+            ? { settingsSection: null }
+            : {}),
+      };
+    }),
   openSettingsSection: (section) =>
     set((state) => {
       // An explicit section (e.g. the auth banner's "providers") always opens

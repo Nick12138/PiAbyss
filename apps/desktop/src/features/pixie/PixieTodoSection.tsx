@@ -50,7 +50,7 @@
  * 插件门在 `PixieSidePanel`：方寸间插件没启用时，这一块连同它的页签一起不渲染。
  * `active` = 这块是不是当前页签；不是的时候只把显示摘掉（数据与展开状态都留着）。
  */
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   Circle,
   CircleCheck,
@@ -122,6 +122,13 @@ const TODO_POLL_IDLE_MS = 60_000;
 /** 一屏先给几条：面板高度有限，剩下的收进「查看更多」（两个页签都截，见下）。 */
 const TODO_PREVIEW = 5;
 
+/**
+ * selector 里不能新建数组：`?? []` 在字段还没加载完时每次都返回新引用，
+ * `useSyncExternalStore` 会判定快照一直在变 → forceStoreRerender 无限循环
+ * （同 `PixiePage` 顶部那条注释）。
+ */
+const EMPTY_WORKSPACES: string[] = [];
+
 export function PixieTodoSection({
   active,
   onCount,
@@ -133,7 +140,9 @@ export function PixieTodoSection({
   const t = useT();
   const hostInstanceId = useAppStore((s) => s.host?.hostInstanceId ?? null);
   const workspace = useAppStore((s) => s.workspace);
-  const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces ?? []);
+  const knownWorkspaces = useAppStore(
+    (s) => s.desktopSettings?.knownWorkspaces ?? EMPTY_WORKSPACES,
+  );
   const pushNotification = useAppStore((s) => s.pushNotification);
 
   const [notes, setNotes] = useState<MemoNote[] | null>(null);
@@ -431,18 +440,35 @@ export function PixieTodoSection({
     [copyNote, runAction, t],
   );
 
-  const switchTab = useCallback((next: "open" | "done") => {
-    setTab(next);
+  /** 进入勾选模式前「查看更多」的展开态：退出时原样还回去，不把这次被迫的摊开留下。 */
+  const expandedBeforeBatch = useRef<"open" | "done" | null>(null);
+
+  const exitBatch = useCallback(() => {
     setBatchMode(false);
     setSelected([]);
+    setExpandedTab(expandedBeforeBatch.current);
   }, []);
 
+  const switchTab = useCallback(
+    (next: "open" | "done") => {
+      setTab(next);
+      // 切页签即退出勾选模式；展开态也还回进入前那份，不跟着页签漂。
+      exitBatch();
+    },
+    [exitBatch],
+  );
+
   const toggleBatch = useCallback(() => {
-    setBatchMode((current) => !current);
-    setSelected([]);
+    if (batchMode) {
+      exitBatch();
+      return;
+    }
     // 进入勾选模式先把整列摊开：「全选」要覆盖这一档全部记录，不能只覆盖屏上先给的 5 条。
+    expandedBeforeBatch.current = expandedTab;
     setExpandedTab("done");
-  }, []);
+    setBatchMode(true);
+    setSelected([]);
+  }, [batchMode, expandedTab, exitBatch]);
 
   const visibleIds = useMemo(() => ordered.map((note) => note.id), [ordered]);
   const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.includes(id));
@@ -454,8 +480,7 @@ export function PixieTodoSection({
   const confirmDelete = useCallback(async () => {
     const ids = pendingDelete ?? [];
     setPendingDelete(null);
-    setBatchMode(false);
-    setSelected([]);
+    exitBatch();
     setExpandedId((current) => (current && ids.includes(current) ? null : current));
     if (ids.length === 0) return;
     let failed = 0;
@@ -474,7 +499,7 @@ export function PixieTodoSection({
         );
       }
     });
-  }, [pendingDelete, pushNotification, runAction, t]);
+  }, [pendingDelete, exitBatch, pushNotification, runAction, t]);
 
   return (
     <PixiePanelBody tab="todo" active={active}>

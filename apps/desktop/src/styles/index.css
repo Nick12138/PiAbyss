@@ -2949,14 +2949,23 @@ svg[data-piabyss-mermaid-theme="neutral"] {
      白位移一次；`margin-right: 0` 由组件的内联样式保证。
    · 尺寸：**整页覆盖**，不是「一栏」——top/right/bottom/left 全 0，把消息界面整个盖住
      （含输入框），因此组件在这一形态下也不写 inline width，460 那套口径只归并排那一栏。
-     containing block 是 `[data-pixie-page]`（页根挂 `@container` ⇒ container-type ⇒
-     layout containment，会给 fixed 后代当包含块），也就是消息界面自己那一块：`left: 0`
-     因此正好落在内容卡片左缘，不会盖到侧栏或顶栏——顶栏那颗开关始终点得到，抽屉退得出来。
+   · 用 absolute 而不是 fixed：包含块必须是 `[data-pixie-page]`（页根，见下面那条
+     `position: relative`），也就是消息界面自己那一块：`left: 0` 正好落在内容卡片左缘，
+     不会盖到侧栏或顶栏——顶栏那颗开关始终点得到，抽屉退得出来。
+     （原先写成 `fixed` 并以为页根的 `@container` 会给它当包含块，这是错的：`container-type:
+     inline-size` 只做 inline-size containment，不产生 layout containment，`fixed` 依旧
+     相对视口——窄窗口下整块面板连顶栏一起盖住，开关就点不到了。）
    · 不再挂 box-shadow：铺满之后没有「边缘」要和对话分开；当初那条 `-12px 0 32px` 的投影
      尾巴在收起态会从边界糊回内容区（10-16 夜那条「渐变阴影」），去掉它这类泄漏结构上
      就不存在了。遮罩由组件渲染，比面板低一格。 */
+
+/* 整页抽屉与遮罩的定位基准：消息界面自己那一块（不含顶栏）。 */
+[data-pixie-page] {
+  position: relative;
+}
+
 [data-pixie-side-panel][data-panel-overlay="true"] {
-  position: fixed;
+  position: absolute;
   top: 0;
   right: 0;
   bottom: 0;

@@ -601,8 +601,10 @@ describe("PixieTodoSection", () => {
     // 进入模式后入口图标自己不收场，退出靠选择条上的 ✕。
     await user.click(screen.getByTestId("pixie-todo-batch-exit"));
     expect(screen.queryByTestId("pixie-todo-batch-bar")).toBeNull();
-    // 行首的复选框换回状态圆圈。
-    expect(screen.getAllByTestId("pixie-todo-complete")).toHaveLength(8);
+    // 退出时要把这次「被迫摊开」还回去：复选框换回状态圆圈，列表收回预览的 5 条。
+    // （进入前本来是收着的，留着 8 条摊在那儿就是「关掉删除后没折叠」。）
+    expect(screen.queryAllByTestId("pixie-todo-select")).toHaveLength(0);
+    expect(screen.getAllByTestId("pixie-todo-complete")).toHaveLength(5);
   });
 
   it("云同步落地（MEMO_SYNCED_EVENT）后重新拉列表，不用等下一次操作", async () => {

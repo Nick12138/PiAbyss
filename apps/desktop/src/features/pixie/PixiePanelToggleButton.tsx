@@ -12,7 +12,7 @@
  * 唯一去处之后，这里必须留着。图标也按形态换：抽屉用 `PanelRight`，与并排的
  * 开合箭头区分开。
  */
-import { PanelRightClose, PanelRightOpen, PanelRight } from "lucide-react";
+import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 
@@ -26,9 +26,10 @@ export function PixiePanelToggleButton() {
 
   const shown = wide ? open : drawerOpen;
   const label = shown ? t("pixiePanelCollapse") : t("pixiePanelExpand");
-  // 并排那一栏用开合箭头（宽度是要回来的），抽屉用一块静态面板（它是盖上来的，
-  // 不是从哪一栏让出来的）。
-  const Icon = !wide ? PanelRight : shown ? PanelRightClose : PanelRightOpen;
+  // 开合一律用同一对箭头，与 chat 页的 `DockToggleButton` 保持同一口径：展开态给
+  // 收起图标、收起态给展开图标。抽屉形态过去用一块静态的 `PanelRight`，两种形态
+  // 方向对不上——用户在同一颗按钮上看到的语义不该随窗口宽度变。
+  const Icon = shown ? PanelRightClose : PanelRightOpen;
 
   return (
     <button

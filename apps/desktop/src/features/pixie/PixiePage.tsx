@@ -43,6 +43,18 @@ import { isSamePixiePath } from "../../lib/pixie-path";
 const DISPATCH_POLL_IDLE_MS = 5_000;
 const DISPATCH_POLL_ACTIVE_MS = 2_000;
 
+/**
+ * store selector 必须返回**稳定引用**，否则 `useSyncExternalStore` 每次提交后
+ * 都判定「快照变了」，接着 forceStoreRerender 再渲染一次——无限循环，最终报
+ * `Maximum update depth exceeded`。
+ *
+ * `s.desktopSettings?.knownWorkspaces ?? []` 正是这种写法：`desktopSettings` 已
+ * 存在但字段还是 undefined 时（启动早期，设置尚未加载完），`?? []` 每次新建一个
+ * 数组。本页过去只在用户点进小精灵后才挂载，那时设置早已就绪，所以没暴露；页面
+ * 状态开始持久化后，冷启动直接落在这里就会踩中。
+ */
+const EMPTY_WORKSPACES: string[] = [];
+
 /** 还没走到终态的记录：轮询频率与 ask 改道都按它判定。 */
 function isLiveDispatch(record: PixieDispatchRecord): boolean {
   return (
@@ -63,7 +75,9 @@ export function PixiePage() {
   const hostInstanceId = useAppStore((s) => s.host?.hostInstanceId ?? null);
   const workspace = useAppStore((s) => s.workspace);
   const session = useAppStore((s) => s.session);
-  const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces ?? []);
+  const knownWorkspaces = useAppStore(
+    (s) => s.desktopSettings?.knownWorkspaces ?? EMPTY_WORKSPACES,
+  );
   const activeSubagentNodeId = useAppStore((s) => s.activeSubagentNodeId);
   /** 有人正在切工作区（选择器 / 会话跳转）：别在这个窗口里再抢一次，否则两边互相作废。 */
   const workspaceSwitchPending = useAppStore((s) => s.workspaceSwitchTarget !== null);
@@ -173,6 +187,11 @@ export function PixiePage() {
       const pixieCwd = usePixieViewStore.getState().current?.cwd;
       const before = prevCwdRef.current;
       if (!before || !pixieCwd) return;
+      // 进设置/包管理只是「暂时离开」：工作区不归还。否则设置页的侧栏会停在
+      // 进小精灵之前那个工作区，关闭设置后还得重新锚定一次——用户看到的就是
+      // 「点一下设置，回来变成 PiAbyss 的工作区和会话」。
+      const nextPage = useAppStore.getState().page;
+      if (nextPage === "settings" || nextPage === "packages") return;
       if (!isSamePixiePath(useAppStore.getState().workspace?.canonicalCwd, pixieCwd)) return;
       // 用户是「点了另一个工作区」离开本页的：WorkspacePicker 先占
       // workspaceSwitchTarget 再 setPage，卸载发生在 workspace.setCurrent 的

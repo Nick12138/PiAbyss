@@ -110,6 +110,24 @@ afterEach(() => {
 });
 
 describe("PixiePage 锚定获取（acquire）", () => {
+  it("设置还没加载完（knownWorkspaces 缺省）时不会自激重渲染", () => {
+    // 冷启动直接落在小精灵页：desktopSettings 已经进了 store，但 knownWorkspaces
+    // 还没写进来。selector 若写成 `?? []`，每次提交都返回一个新数组，
+    // useSyncExternalStore 便判定「快照一直在变」→ forceStoreRerender 无限循环，
+    // 整页崩成 Maximum update depth exceeded。这里守住「缺省字段也不新造引用」。
+    useAppStore.setState({
+      desktopSettings: { theme: "system", language: "zh" } as unknown as DesktopSettings,
+    });
+
+    expect(() =>
+      render(
+        <StrictMode>
+          <PixiePage />
+        </StrictMode>,
+      ),
+    ).not.toThrow();
+  });
+
   it("StrictMode 重放挂载 effect 时只锚定一次，不闪「暂不可用」", async () => {
     render(
       <StrictMode>

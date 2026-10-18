@@ -401,7 +401,7 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
           data-testid="pixie-panel-backdrop"
           aria-hidden="true"
           onClick={() => setPixiePanelDrawerOpen(false)}
-          className="fixed inset-0 z-40 bg-black/30"
+          className="absolute inset-0 z-40 bg-black/30"
         />
       ) : null}
       <aside
