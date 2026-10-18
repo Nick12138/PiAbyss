@@ -1999,7 +1999,7 @@ export const zh: Record<MessageKey, string> = {
   pixieRetryAcquire: "重试",
 
   // 桌面速记小窗（memo-widget）
-  memoWidgetTitle: "方寸之间",
+  memoWidgetTitle: "待办 · 速记",
   memoWidgetCountHint: "{count} 条待处理",
   memoWidgetEmpty: "没有待处理的备忘",
   memoWidgetEmptyHint: "在下方输入框随手记一条，Enter 保存。",
