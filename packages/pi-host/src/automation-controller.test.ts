@@ -2,20 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createScheduleHandlers } from "./schedule-controller.js";
-import { scheduleApi } from "./schedule-api.js";
+import { createAutomationHandlers } from "./automation-controller.js";
+import { automationApi } from "./automation-api.js";
 
-vi.mock("./schedule-api.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./schedule-api.js")>();
-  return { ...actual, scheduleApi: vi.fn() };
+vi.mock("./automation-api.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./automation-api.js")>();
+  return { ...actual, automationApi: vi.fn() };
 });
 
-const mockedApi = vi.mocked(scheduleApi);
+const mockedApi = vi.mocked(automationApi);
 
 let root = "";
 
 function handler(method: string) {
-  const handlers = createScheduleHandlers();
+  const handlers = createAutomationHandlers();
   const found = handlers[method];
   if (!found) throw new Error(`缺少方法：${method}`);
   return found;
@@ -38,24 +38,24 @@ function ok(data: unknown) {
 }
 
 beforeEach(() => {
-  root = join(tmpdir(), `pi-schedule-host-${Math.random().toString(16).slice(2)}`);
-  process.env.PI_SCHEDULE_DIR = root;
+  root = join(tmpdir(), `pi-automation-host-${Math.random().toString(16).slice(2)}`);
+  process.env.PI_AUTOMATION_DIR = root;
   mkdirSync(join(root, "sessions", "job1"), { recursive: true });
   mockedApi.mockReset();
 });
 
 afterEach(() => {
-  delete process.env.PI_SCHEDULE_DIR;
+  delete process.env.PI_AUTOMATION_DIR;
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("schedule.abortRun", () => {
+describe("automation.abortRun", () => {
   it("走 /api/runs/:id/abort 并带回归一化后的 run", async () => {
     mockedApi.mockResolvedValue(
       ok({ aborted: true, run: { runId: "r", jobId: "job1", status: "running" } }) as never,
     );
 
-    const result = await call("schedule.abortRun", { runId: "r" });
+    const result = await call("automation.abortRun", { runId: "r" });
 
     expect(mockedApi).toHaveBeenCalledWith(
       "/api/runs/r/abort",
@@ -75,7 +75,7 @@ describe("schedule.abortRun", () => {
       error: "这一轮已不在执行中：r",
     } as never);
 
-    const result = await call("schedule.abortRun", { runId: "r" });
+    const result = await call("automation.abortRun", { runId: "r" });
 
     if (!("error" in result)) throw new Error("409 必须报错");
     expect(result.error.code).toBe("AGENT_BUSY");
@@ -83,7 +83,7 @@ describe("schedule.abortRun", () => {
   });
 });
 
-describe("schedule.runMessages", () => {
+describe("automation.runMessages", () => {
   /** 一份带思考块与工具调用/结果的真实会话 jsonl（Host 读盘投影，不经插件的拍平端点）。 */
   function writeSession(path: string) {
     const lines = [
@@ -125,7 +125,7 @@ describe("schedule.runMessages", () => {
       ok({ run: { runId: "r", status: "running", sessionPath } }) as never,
     );
 
-    const payload = unwrap(await call("schedule.runMessages", { runId: "r" }));
+    const payload = unwrap(await call("automation.runMessages", { runId: "r" }));
 
     expect(payload.found).toBe(true);
     expect(payload.running).toBe(true);
@@ -152,7 +152,7 @@ describe("schedule.runMessages", () => {
       ok({ run: { runId: "r", status: "ok", sessionPath: secret } }) as never,
     );
 
-    const payload = unwrap(await call("schedule.runMessages", { runId: "r" }));
+    const payload = unwrap(await call("automation.runMessages", { runId: "r" }));
 
     expect(payload.found).toBe(false);
     expect(payload.sessionPath).toBeNull();
@@ -164,11 +164,11 @@ describe("schedule.runMessages", () => {
       ok({ run: { runId: "r", status: "ok", sessionPath: null, command: "dir" } }) as never,
     );
 
-    expect(unwrap(await call("schedule.runMessages", { runId: "r" })).found).toBe(false);
+    expect(unwrap(await call("automation.runMessages", { runId: "r" })).found).toBe(false);
   });
 });
 
-describe("schedule.listRuns 字段兜底", () => {
+describe("automation.listRuns 字段兜底", () => {
   it("插件版本落后时补空值，字段齐全时原样透出", async () => {
     mockedApi.mockResolvedValue(
       ok({
@@ -186,7 +186,7 @@ describe("schedule.listRuns 字段兜底", () => {
       }) as never,
     );
 
-    const [oldRun, newRun] = unwrap(await call("schedule.listRuns", { jobId: "job1" })).runs as [
+    const [oldRun, newRun] = unwrap(await call("automation.listRuns", { jobId: "job1" })).runs as [
       Record<string, unknown>,
       Record<string, unknown>,
     ];

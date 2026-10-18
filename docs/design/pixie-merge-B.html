@@ -563,14 +563,14 @@
 
     </div>
 
-    <!-- 底部折叠：周期计划 / 委派任务 -->
+    <!-- 底部折叠：自动化 / 委派任务 -->
     <div class="folds">
       <section class="fold" data-open="0">
         <div class="fold-head">
           <button class="fold-toggle">
             <svg class="ic chev"><use href="#i-chevron-right"/></svg>
             <svg class="ic lead"><use href="#i-calendar"/></svg>
-            <h4>周期计划</h4><span class="n">2</span>
+            <h4>自动化</h4><span class="n">2</span>
             <span class="anno" data-anno="5">5</span>
             <span class="hint">下次 3h12m 后</span>
           </button>
@@ -758,7 +758,7 @@
     <li><b>今日概览</b>：顶部三格数字（待处理 / 进行中 / 已逾期）+ 一条今日完成度进度条 + 「下次计划 3h12m 后」。一眼回答「今天什么状态」。</li>
     <li><b>新建待办</b>：不是速记行，是一个<b>轻量表单</b>（标题 / 截止 / 标签 / 工作区）——「最好还能直接新建任务」的完整版；标题必填，其余可留空。</li>
     <li><b>详情就地展开</b>：点条目在其下方展开正文、标签、工作区、截止与「交给小精灵 / 编辑 / 删除」。<b>方寸间的列表 + 详情在这一个栏里就合并完了</b>，不需要再加宽或跳页。</li>
-    <li><b>周期计划</b>：沉到左栏底部的折叠块，默认收起只留「2 · 下次 3h12m 后」；展开是已有计划 + 开关，「＋」是把意图塞进对话输入框让精灵新建。</li>
+    <li><b>自动化</b>：沉到左栏底部的折叠块，默认收起只留「2 · 下次 3h12m 后」；展开是已有任务 + 开关，「＋」是把意图塞进对话输入框让精灵新建。</li>
     <li><b>委派任务</b>：同样沉到左栏底部折叠，汇总行写清「1 进行中 · 1 等你回复」；展开才是原来的两层任务树。</li>
     <li><b>任务中心可整栏收起</b>（顶栏左端按钮 / 图标条底部按钮），收起后对话变全宽，兼顾沉浸。</li>
     <li><b>与另两套的区别</b>：A 把三块叠在右栏，待办是右栏顶部的平铺列表 + 速记行；C 把待办做成右栏里的完整待办中心（日期分组 + 就地详情 + 表单新建）；<b>B（本方案）把待办整体挪到左侧，成为与对话并列的独立主栏</b>。三者对「待办放哪一侧、占多大地方」的回答不同。</li>
@@ -898,7 +898,7 @@
     ev.stopPropagation();
     var fold = document.querySelector('.fold');
     fold.dataset.open = '1';
-    convInput.value = '帮我新建一个周期计划：';
+    convInput.value = '帮我新建一个自动化：';
     convInput.focus();
     convInput.setSelectionRange(convInput.value.length, convInput.value.length);
   });

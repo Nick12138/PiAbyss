@@ -1,17 +1,17 @@
-# 周期计划智能创建对话改进
+# 自动化智能创建对话改进
 
 ## 修改内容
 
 ### 1. 修改提示词 - 减少代码块输出 ✅
-**文件**: `apps/desktop/src/features/schedule/schedule-agent-flow.ts`
+**文件**: `apps/desktop/src/features/automation/automation-agent-flow.ts`
 
-- 修改规则 2：只在用户明确要求查看配置或确认最终方案时才输出 `schedule-plan` 代码块
+- 修改规则 2：只在用户明确要求查看配置或确认最终方案时才输出 `automation-plan` 代码块
 - 说明右侧预览面板会实时显示当前配置，平时对话中不需要重复输出
 - 强调 `prompt` 字段的重要性，需要详细描述任务内容、目标和要求
 - 添加 `loadExtensions` 字段说明
 
 ### 2. 完善预览面板 - 显示所有配置 ✅
-**文件**: `apps/desktop/src/features/schedule/ScheduleAgentPage.tsx`
+**文件**: `apps/desktop/src/features/automation/ScheduleAgentPage.tsx`
 
 **新增预览字段**:
 - 计划类型 (kind): 提示词计划 / 命令计划
@@ -33,7 +33,7 @@
   - 保留命令格式
 
 ### 3. 添加跳到最新按钮 ✅
-**文件**: `apps/desktop/src/features/schedule/ScheduleAgentPage.tsx`
+**文件**: `apps/desktop/src/features/automation/ScheduleAgentPage.tsx`
 
 - 当用户滚动离开底部时，显示"跳到最新"按钮
 - 按钮位置：右下角，悬浮在对话区域上方
@@ -45,19 +45,19 @@
 **文件**: `apps/desktop/src/lib/i18n/zh.ts` 和 `en.ts`
 
 中文:
-- `scheduleFormTimeout`: "超时"
-- `scheduleFormLoadExtensions`: "加载扩展"
+- `automationFormTimeout`: "超时"
+- `automationFormLoadExtensions`: "加载扩展"
 - `transcriptScrollToBottom`: "跳到最新"
 
 英文:
-- `scheduleFormTimeout`: "Timeout"
-- `scheduleFormLoadExtensions`: "Load extensions"
+- `automationFormTimeout`: "Timeout"
+- `automationFormLoadExtensions`: "Load extensions"
 - `transcriptScrollToBottom`: "Jump to latest"
 
 ## 关于手动模式模型选择问题
 
 ### 当前状态
-`ScheduleJobDialog.tsx` 中的模型列表获取依赖活动会话：
+`AutomationJobDialog.tsx` 中的模型列表获取依赖活动会话：
 ```typescript
 hostClient.request(
   "model.list",
@@ -75,7 +75,7 @@ hostClient.request(
 ### 为什么会这样
 1. **后端限制**：`model.list` 端点需要 `requireSession: true`
 2. **架构原因**：模型列表从 `modelRegistry.getAvailable()` 获取，理论上不依赖 session，但端点强制要求
-3. **周期计划页面**：可能没有活动的聊天会话
+3. **自动化页面**：可能没有活动的聊天会话
 
 ### 可能的解决方案（未实施）
 1. **创建临时会话**：在打开手动模式时创建一个隐藏的临时会话
@@ -110,7 +110,7 @@ hostClient.request(
 - 测试按钮位置和样式
 
 ### 4. 手动模式测试
-- 打开新建周期计划 → 手动模式
+- 打开新建自动化 → 手动模式
 - 选择"提示词计划"
 - 观察模型下拉框：
   - **有活动会话时**：应该可以选择模型
@@ -118,8 +118,8 @@ hostClient.request(
 
 ## 文件修改清单
 ```
-apps/desktop/src/features/schedule/ScheduleAgentPage.tsx    | 95 ++++++++++++++++++++--
-apps/desktop/src/features/schedule/schedule-agent-flow.ts   | 10 ++-
+apps/desktop/src/features/automation/ScheduleAgentPage.tsx    | 95 ++++++++++++++++++++--
+apps/desktop/src/features/automation/automation-agent-flow.ts   | 10 ++-
 apps/desktop/src/lib/i18n/en.ts                             |  3 +
 apps/desktop/src/lib/i18n/zh.ts                             |  3 +
 ```

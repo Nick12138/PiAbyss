@@ -2026,15 +2026,15 @@ export function Composer({
                       <X size={11} />
                     </button>
                   </div>
-                ) : reference.kind === "schedule" ? (
+                ) : reference.kind === "automation" ? (
                   <div
                     key={reference.id}
                     className="group flex h-7 items-center gap-1.5 rounded-md border border-accent/35 bg-accent/5 px-2 text-xs"
-                    title={`@${t("injectedRefScheduleJob")} · ${reference.label}`}
+                    title={`@${t("injectedRefAutomationJob")} · ${reference.label}`}
                   >
                     <CalendarClock size={12} className="shrink-0 text-accent" />
                     <span className="max-w-40 truncate">
-                      @{t("injectedRefScheduleJob")} · {reference.label}
+                      @{t("injectedRefAutomationJob")} · {reference.label}
                     </span>
                     <button
                       type="button"

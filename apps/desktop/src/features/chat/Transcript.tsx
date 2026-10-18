@@ -1791,7 +1791,7 @@ function AssistantBlock({
     return <ExtensionMessageRow row={block.row} />;
   }
   if (block.kind === "plan") {
-    // 周期计划草案：只有 assistant 的话会被投影成这种块（见 transcript-model）。
+    // 自动化草案：只有 assistant 的话会被投影成这种块（见 transcript-model）。
     return <PixiePlanCard block={block} />;
   }
   return <ToolTraceBlock tool={block.tool} />;
@@ -1862,7 +1862,7 @@ function ContentBlockView({ block }: { block: TranscriptContentBlock }) {
   if (block.kind === "plan") {
     // 工具输出或用户消息里的围栏**不是草案**（只有 assistant 的话才是）：
     // 原样给出来，绝不渲染成能点的确认卡。
-    return <UnknownBlock block={{ kind: "unknown", type: "schedule-plan", value: block.raw }} />;
+    return <UnknownBlock block={{ kind: "unknown", type: "automation-plan", value: block.raw }} />;
   }
   return <UnknownBlock block={block} />;
 }

@@ -1,16 +1,16 @@
 /**
- * Handlers for the pi-schedule plugin control plane (schedule.* methods).
+ * Handlers for the pi-automation plugin control plane (automation.* methods).
  *
  * Thin proxy: protocol params → plugin HTTP endpoints (see the plugin's
  * docs/CONTRACT.md). No local state; the plugin owns jobs.json and the
  * scheduler. Health is a liveness probe — when the plugin isn't loaded the
- * loopback port is closed and schedule.status reports available:false
+ * loopback port is closed and automation.status reports available:false
  * instead of failing the whole request.
  */
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { createHostError, type HostError } from "@piabyss/protocol";
 import type { MethodHandler } from "./server.js";
-import { scheduleApi, scheduleRoot, type ScheduleApiOutcome } from "./schedule-api.js";
+import { automationApi, automationRoot, type AutomationApiOutcome } from "./automation-api.js";
 import { agentTranscriptFrom } from "./jsonl-transcript.js";
 
 /** Health probe: short timeout, the port is closed when the plugin is off. */
@@ -20,7 +20,7 @@ const RUN_NOW_TIMEOUT_MS = 31 * 60 * 1000;
 function mapHttpError(outcome: { status: number | null; error: string }): HostError {
   if (outcome.status === null) {
     // Transport failure: plugin not loaded / port closed.
-    return createHostError("CATALOG_UNAVAILABLE", `定时任务插件不可用：${outcome.error}`, {
+    return createHostError("CATALOG_UNAVAILABLE", `自动化插件不可用：${outcome.error}`, {
       retryable: true,
     });
   }
@@ -28,7 +28,7 @@ function mapHttpError(outcome: { status: number | null; error: string }): HostEr
     case 400:
       return createHostError("INVALID_REQUEST", outcome.error);
     case 401:
-      return createHostError("AUTH_REQUIRED", `定时任务控制面鉴权失败：${outcome.error}`);
+      return createHostError("AUTH_REQUIRED", `自动化控制面鉴权失败：${outcome.error}`);
     case 404:
       return createHostError("RESOURCE_NOT_FOUND", outcome.error);
     case 409:
@@ -37,12 +37,12 @@ function mapHttpError(outcome: { status: number | null; error: string }): HostEr
     default:
       return createHostError(
         "INTERNAL_ERROR",
-        `定时任务控制面错误（HTTP ${outcome.status}）：${outcome.error}`,
+        `自动化控制面错误（HTTP ${outcome.status}）：${outcome.error}`,
       );
   }
 }
 
-function expectOk<T>(outcome: ScheduleApiOutcome<T>): { result: T } | { error: HostError } {
+function expectOk<T>(outcome: AutomationApiOutcome<T>): { result: T } | { error: HostError } {
   if (outcome.ok) return { result: outcome.data };
   return { error: mapHttpError(outcome) };
 }
@@ -80,17 +80,17 @@ function normalizeRunSummary(value: unknown): Record<string, unknown> {
  * run 的会话文件必须落在本插件的数据根内才允许读盘：这个路径来自控制面的 HTTP 响应，
  * 上游一旦被换成别的实现，宿主不该变成任意文件读取器。
  */
-function isInsideScheduleSessions(sessionPath: string): boolean {
-  const root = resolve(join(scheduleRoot(), "sessions"));
+function isInsideAutomationSessions(sessionPath: string): boolean {
+  const root = resolve(join(automationRoot(), "sessions"));
   const target = resolve(sessionPath);
   const rel = relative(root, target);
   return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
 }
 
-export function createScheduleHandlers(): Partial<Record<string, MethodHandler>> {
+export function createAutomationHandlers(): Partial<Record<string, MethodHandler>> {
   return {
-    "schedule.status": async () => {
-      const outcome = await scheduleApi<{
+    "automation.status": async () => {
+      const outcome = await automationApi<{
         ok: boolean;
         root: string;
         port: number | null;
@@ -112,8 +112,8 @@ export function createScheduleHandlers(): Partial<Record<string, MethodHandler>>
       };
     },
 
-    "schedule.listJobs": async () => {
-      const outcome = await scheduleApi<{
+    "automation.listJobs": async () => {
+      const outcome = await automationApi<{
         jobs: unknown[];
         root: string;
         activeJobs: string[];
@@ -129,32 +129,32 @@ export function createScheduleHandlers(): Partial<Record<string, MethodHandler>>
       };
     },
 
-    "schedule.createJob": async (ctx) => {
+    "automation.createJob": async (ctx) => {
       const params = ctx.params as Record<string, unknown>;
-      const outcome = await scheduleApi<{ job: unknown }>("/api/jobs", "POST", {
+      const outcome = await automationApi<{ job: unknown }>("/api/jobs", "POST", {
         body: { ...params, by: "piabyss" },
       });
       return expectOk(outcome);
     },
 
-    "schedule.updateJob": async (ctx) => {
+    "automation.updateJob": async (ctx) => {
       const { id, ...patch } = ctx.params as Record<string, unknown> & { id: string };
-      const outcome = await scheduleApi<{ job: unknown }>(`/api/jobs/${id}`, "PATCH", {
+      const outcome = await automationApi<{ job: unknown }>(`/api/jobs/${id}`, "PATCH", {
         body: { ...patch, by: "piabyss" },
       });
       return expectOk(outcome);
     },
 
-    "schedule.deleteJob": async (ctx) => {
+    "automation.deleteJob": async (ctx) => {
       const params = ctx.params as { id: string; purge?: boolean };
       const path = `/api/jobs/${params.id}${params.purge ? "?purge=1" : ""}`;
-      const outcome = await scheduleApi<{ removed: boolean; purged: boolean }>(path, "DELETE");
+      const outcome = await automationApi<{ removed: boolean; purged: boolean }>(path, "DELETE");
       return expectOk(outcome);
     },
 
-    "schedule.setJobEnabled": async (ctx) => {
+    "automation.setJobEnabled": async (ctx) => {
       const params = ctx.params as { id: string; enabled: boolean };
-      const outcome = await scheduleApi<{ job: unknown }>(
+      const outcome = await automationApi<{ job: unknown }>(
         `/api/jobs/${params.id}/${params.enabled ? "enable" : "disable"}`,
         "POST",
         { body: {} },
@@ -162,7 +162,7 @@ export function createScheduleHandlers(): Partial<Record<string, MethodHandler>>
       return expectOk(outcome);
     },
 
-    "schedule.runJobNow": async (ctx) => {
+    "automation.runJobNow": async (ctx) => {
       const params = ctx.params as {
         id: string;
         permission?: string;
@@ -171,7 +171,7 @@ export function createScheduleHandlers(): Partial<Record<string, MethodHandler>>
       const body: Record<string, unknown> = {};
       if (params.permission !== undefined) body.permission = params.permission;
       if (params.timeoutMs !== undefined) body.timeoutMs = params.timeoutMs;
-      const outcome = await scheduleApi<{ run: unknown }>(
+      const outcome = await automationApi<{ run: unknown }>(
         `/api/jobs/${params.id}/run_now`,
         "POST",
         { body, timeoutMs: runNowTimeout(params.timeoutMs) },
@@ -181,14 +181,14 @@ export function createScheduleHandlers(): Partial<Record<string, MethodHandler>>
       return { result: { run: normalizeRunSummary(mapped.result.run) } };
     },
 
-    "schedule.listRuns": async (ctx) => {
+    "automation.listRuns": async (ctx) => {
       const params = (ctx.params ?? {}) as { jobId?: string | null; limit?: number };
       const search = new URLSearchParams();
       if (params.jobId) search.set("jobId", params.jobId);
       if (params.limit !== undefined) search.set("limit", String(params.limit));
       const query = search.toString();
       const base = params.jobId ? `/api/jobs/${params.jobId}/runs` : "/api/runs";
-      const outcome = await scheduleApi<{ runs: unknown[] }>(
+      const outcome = await automationApi<{ runs: unknown[] }>(
         query ? `${base}?${query}` : base,
         "GET",
       );
@@ -203,9 +203,9 @@ export function createScheduleHandlers(): Partial<Record<string, MethodHandler>>
      * 撑不出「像普通会话那样折叠思考与工具调用」。会话文件本来就在宿主可读的数据根里，
      * 投影直接复用智能创建会话那一套（块结构 + toolCallId/toolName 关联）。
      */
-    "schedule.runMessages": async (ctx) => {
+    "automation.runMessages": async (ctx) => {
       const params = ctx.params as { runId: string };
-      const outcome = await scheduleApi<{ run: Record<string, unknown> }>(
+      const outcome = await automationApi<{ run: Record<string, unknown> }>(
         `/api/runs/${encodeURIComponent(params.runId)}`,
         "GET",
       );
@@ -213,7 +213,7 @@ export function createScheduleHandlers(): Partial<Record<string, MethodHandler>>
       if ("error" in mapped) return mapped;
       const record = (mapped.result.run ?? {}) as Record<string, unknown>;
       const sessionPath = typeof record.sessionPath === "string" ? record.sessionPath : null;
-      const readable = sessionPath !== null && isInsideScheduleSessions(sessionPath);
+      const readable = sessionPath !== null && isInsideAutomationSessions(sessionPath);
       const messages = readable ? agentTranscriptFrom(sessionPath as string) : [];
       return {
         result: {
@@ -231,9 +231,9 @@ export function createScheduleHandlers(): Partial<Record<string, MethodHandler>>
      * 投递计数之外（用户主动中止不消耗 maxRuns 配额）。已终态/宿主重启留下的僵尸 run
      * 由插件返回 409，映射成 AGENT_BUSY，面板据此把「停止」换成「已结束」。
      */
-    "schedule.abortRun": async (ctx) => {
+    "automation.abortRun": async (ctx) => {
       const params = ctx.params as { runId: string };
-      const outcome = await scheduleApi<{ aborted: boolean; run: unknown }>(
+      const outcome = await automationApi<{ aborted: boolean; run: unknown }>(
         `/api/runs/${encodeURIComponent(params.runId)}/abort`,
         "POST",
         { body: {} },
@@ -248,21 +248,21 @@ export function createScheduleHandlers(): Partial<Record<string, MethodHandler>>
       };
     },
 
-    "schedule.validateCron": async (ctx) => {
+    "automation.validateCron": async (ctx) => {
       const params = ctx.params as { cron: string; timezone?: string };
       const search = new URLSearchParams({ cron: params.cron });
       if (params.timezone) search.set("timezone", params.timezone);
-      const outcome = await scheduleApi<{ valid: boolean; reason: string | null }>(
+      const outcome = await automationApi<{ valid: boolean; reason: string | null }>(
         `/api/cron/validate?${search.toString()}`,
         "GET",
       );
       return expectOk(outcome);
     },
 
-    "schedule.listNotifications": async (ctx) => {
+    "automation.listNotifications": async (ctx) => {
       const params = (ctx.params ?? {}) as { limit?: number };
       const query = params.limit !== undefined ? `?limit=${params.limit}` : "";
-      const outcome = await scheduleApi<{ entries: unknown[] }>(
+      const outcome = await automationApi<{ entries: unknown[] }>(
         `/api/notifications${query}`,
         "GET",
       );

@@ -775,8 +775,8 @@ describe("session.appendCustomMessage", () => {
     const result = await handler({
       ...context(),
       params: {
-        customType: "schedule-plan-receipt",
-        text: "已创建周期计划「日报」。",
+        customType: "automation-plan-receipt",
+        text: "已创建自动化任务「日报」。",
         details: { planKey: "7:1", action: "created", jobId: "a1b2c3d4" },
       },
     } as HandlerContext);
@@ -784,8 +784,8 @@ describe("session.appendCustomMessage", () => {
     expect(result).toEqual({ result: { appended: true } });
     expect(sendCustomMessage).toHaveBeenCalledWith(
       {
-        customType: "schedule-plan-receipt",
-        content: "已创建周期计划「日报」。",
+        customType: "automation-plan-receipt",
+        content: "已创建自动化任务「日报」。",
         display: true,
         details: { planKey: "7:1", action: "created", jobId: "a1b2c3d4" },
       },
@@ -799,7 +799,7 @@ describe("session.appendCustomMessage", () => {
 
     const result = await handler({
       ...context(),
-      params: { customType: "schedule-plan-receipt", text: "已取消。" },
+      params: { customType: "automation-plan-receipt", text: "已取消。" },
     } as HandlerContext);
 
     if (!("error" in result)) throw new Error("占用中必须报错");
@@ -812,7 +812,7 @@ describe("session.appendCustomMessage", () => {
 
     const result = await handler({
       ...context(),
-      params: { customType: "schedule-plan-receipt", text: "已创建。" },
+      params: { customType: "automation-plan-receipt", text: "已创建。" },
     } as HandlerContext);
 
     if (!("error" in result)) throw new Error("无会话必须报错");

@@ -14,7 +14,7 @@ import {
   Sparkles,
   Terminal,
 } from "lucide-react";
-import type { ModelSummary, ScheduleJob } from "@piabyss/protocol";
+import type { ModelSummary, AutomationJob } from "@piabyss/protocol";
 import { useT } from "../../lib/i18n/use-t";
 import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
 import { Select } from "../../components/Select";
@@ -23,16 +23,16 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import {
-  defaultScheduleForm,
+  defaultAutomationForm,
   jobToForm,
-  scheduleFormErrors,
+  automationFormErrors,
   formToJobInput,
-  SCHEDULE_MAX_TIMEOUT_MINUTES,
-  type ScheduleFormState,
-} from "./schedule-model";
+  AUTOMATION_MAX_TIMEOUT_MINUTES,
+  type AutomationFormState,
+} from "./automation-model";
 
 /** 用户显式选择的执行模型（含思考深度）；null = 宿主默认模型。 */
-type ScheduleModelChoice = {
+type AutomationModelChoice = {
   provider: string;
   id: string;
   thinkingLevel?: string;
@@ -71,7 +71,7 @@ function FormSection({
   children: ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-3 border-b border-border-subtle px-4 py-4 last:border-b-0 [&:has(+.schedule-form-footer)]:border-b-0">
+    <section className="flex flex-col gap-3 border-b border-border-subtle px-4 py-4 last:border-b-0 [&:has(+.automation-form-footer)]:border-b-0">
       <header className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-0.5">
           <h3 className="text-[13px] font-semibold">{title}</h3>
@@ -139,8 +139,8 @@ function ModelSelectWithThinking({
   /** Show “model name + thinking depth” on the trigger (smart form). */
   depthInTrigger = false,
 }: {
-  value: ScheduleModelChoice;
-  onChange: (next: ScheduleModelChoice) => void;
+  value: AutomationModelChoice;
+  onChange: (next: AutomationModelChoice) => void;
   models: ModelSummary[];
   hostDefault: { provider: string; id: string } | null;
   defaultLabel: string;
@@ -273,15 +273,15 @@ function quoteIfNeeded(path: string): string {
   return /\s/.test(path) ? `"${path}"` : path;
 }
 
-/** Create/edit dialog for a schedule plan. Prompt plans and command plans are
+/** Create/edit dialog for a automation plan. Prompt plans and command plans are
  *  mutually exclusive; command plans skip permission/model (the plugin ignores
  *  them there).
  *
  *  `prefill` (with `job === null`) opens the manual form prefilled. With
  *  `onSaveDraft` the save button only hands the validated form back to the
  *  caller — no job is created (the smart-creation preview's manual edit);
- *  without it the save creates the plan through schedule.createJob. */
-export function ScheduleJobDialog({
+ *  without it the save creates the plan through automation.createJob. */
+export function AutomationJobDialog({
   job,
   prefill,
   onClose,
@@ -290,18 +290,18 @@ export function ScheduleJobDialog({
   onOptimize,
   onStartSmart,
 }: {
-  job: ScheduleJob | null;
+  job: AutomationJob | null;
   /** Manual-form initial values when creating without an existing job. */
-  prefill?: ScheduleFormState;
+  prefill?: AutomationFormState;
   onClose: () => void;
   /** Called after the plan was actually created/updated on the host. */
-  onSaved?: (job: ScheduleJob) => void;
+  onSaved?: (job: AutomationJob) => void;
   /** Draft-only mode: submit returns the validated form instead of creating
    *  a job — the caller decides what "saving" means. */
-  onSaveDraft?: (form: ScheduleFormState) => void;
+  onSaveDraft?: (form: AutomationFormState) => void;
   /** AI-optimize an existing plan: (job) → null on success (the dialog
    *  unmounts as the app navigates to the agent page) or an error message. */
-  onOptimize?: (job: ScheduleJob) => Promise<string | null>;
+  onOptimize?: (job: AutomationJob) => Promise<string | null>;
   /** Smart mode: (cwd, requirement) → null on success (the caller decides what
    *  "handing off" means) or an error message to display. No analysis model
    *  picker: the draft is produced in Pixie's own conversation, on whatever
@@ -313,8 +313,8 @@ export function ScheduleJobDialog({
   const workspace = useAppStore((s) => s.workspace);
   const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces);
   const prefilled = !job && prefill !== undefined;
-  const [form, setForm] = useState<ScheduleFormState>(() =>
-    job ? jobToForm(job) : (prefill ?? defaultScheduleForm(workspace?.cwd ?? "")),
+  const [form, setForm] = useState<AutomationFormState>(() =>
+    job ? jobToForm(job) : (prefill ?? defaultAutomationForm(workspace?.cwd ?? "")),
   );
   const [pending, setPending] = useState(false);
   const [mode, setMode] = useState<"smart" | "manual">(prefilled ? "manual" : "smart");
@@ -336,7 +336,7 @@ export function ScheduleJobDialog({
   // Model list — same source as the settings page's default-model picker:
   // piSettings.get is host-scoped (no active session required) and returns the
   // full ModelRuntime snapshot. The chat model picker's session-scoped
-  // model.list needs a live session, which the schedule page can't guarantee.
+  // model.list needs a live session, which the automation page can't guarantee.
   useEffect(() => {
     if (!host) return;
     let cancelled = false;
@@ -355,12 +355,12 @@ export function ScheduleJobDialog({
     };
   }, [host]);
 
-  function patch(next: Partial<ScheduleFormState>) {
+  function patch(next: Partial<AutomationFormState>) {
     setSaveError(null);
     setForm((current) => ({ ...current, ...next }));
   }
 
-  const errors = scheduleFormErrors(form);
+  const errors = automationFormErrors(form);
 
   async function pickFolderSmart() {
     try {
@@ -402,7 +402,7 @@ export function ScheduleJobDialog({
     setCronChecking(true);
     try {
       const response = await hostClient.request(
-        "schedule.validateCron",
+        "automation.validateCron",
         hostContext(host),
         {
           cron: form.cron.trim(),
@@ -441,13 +441,13 @@ export function ScheduleJobDialog({
     try {
       const response = job
         ? await hostClient.request(
-            "schedule.updateJob",
+            "automation.updateJob",
             hostContext(host),
             { id: job.id, ...parsed.input },
             CREATE_TIMEOUT_MS,
           )
         : await hostClient.request(
-            "schedule.createJob",
+            "automation.createJob",
             hostContext(host),
             parsed.input,
             CREATE_TIMEOUT_MS,
@@ -455,10 +455,10 @@ export function ScheduleJobDialog({
       if (response.ok) {
         onSaved?.(response.result.job);
       } else {
-        setSaveError(response.error?.message ?? t("scheduleLoadFailed"));
+        setSaveError(response.error?.message ?? t("automationLoadFailed"));
       }
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : t("scheduleLoadFailed"));
+      setSaveError(error instanceof Error ? error.message : t("automationLoadFailed"));
     } finally {
       setPending(false);
     }
@@ -473,56 +473,56 @@ export function ScheduleJobDialog({
   const cwdValue = cwdPresets.includes(form.cwd) ? form.cwd : CWD_OPEN_VALUE;
 
   const defaultModelLabel = hostDefaultModel
-    ? t("scheduleModelDefault", {
+    ? t("automationModelDefault", {
         name:
           models.find(
             (model) =>
               model.provider === hostDefaultModel.provider && model.modelId === hostDefaultModel.id,
           )?.name ?? `${hostDefaultModel.provider}/${hostDefaultModel.id}`,
       })
-    : t("scheduleModelDefaultPlain");
+    : t("automationModelDefaultPlain");
   // Human-readable one-line summary of the current trigger, shown at the right
   // edge of the trigger sentence row.
-  const intervalUnitLabels: Record<ScheduleFormState["intervalUnit"], string> = {
-    s: t("scheduleIntervalSeconds"),
-    m: t("scheduleIntervalMinutes"),
-    h: t("scheduleIntervalHours"),
-    d: t("scheduleIntervalDays"),
-    w: t("scheduleIntervalWeeks"),
-    mo: t("scheduleIntervalMonths"),
+  const intervalUnitLabels: Record<AutomationFormState["intervalUnit"], string> = {
+    s: t("automationIntervalSeconds"),
+    m: t("automationIntervalMinutes"),
+    h: t("automationIntervalHours"),
+    d: t("automationIntervalDays"),
+    w: t("automationIntervalWeeks"),
+    mo: t("automationIntervalMonths"),
   };
   const triggerSummary =
     form.triggerType === "manual"
-      ? t("scheduleFormTriggerHintManual")
+      ? t("automationFormTriggerHintManual")
       : form.triggerType === "once"
         ? (() => {
             if (form.onceAt) {
               const date = new Date(form.onceAt);
               if (!Number.isNaN(date.getTime())) return date.toLocaleString();
             }
-            return t("scheduleFormTriggerHintOnce");
+            return t("automationFormTriggerHintOnce");
           })()
         : form.triggerType === "interval"
-          ? t("scheduleFormEverySummary", {
+          ? t("automationFormEverySummary", {
               value: String(form.intervalValue),
               unit: intervalUnitLabels[form.intervalUnit],
             })
           : cronCheck
             ? cronCheck.valid
-              ? t("scheduleFormCronValid")
-              : (cronCheck.reason ?? t("scheduleFormCronInvalid"))
-            : t("scheduleFormTriggerHintCron");
+              ? t("automationFormCronValid")
+              : (cronCheck.reason ?? t("automationFormCronInvalid"))
+            : t("automationFormTriggerHintCron");
 
   return (
     <Dialog
       title={
         job || prefilled
-          ? t("scheduleFormTitleEdit")
+          ? t("automationFormTitleEdit")
           : mode === "smart"
-            ? t("scheduleFormTitleSmart")
-            : t("scheduleFormTitleNew")
+            ? t("automationFormTitleSmart")
+            : t("automationFormTitleNew")
       }
-      confirmLabel={t("scheduleFormSave")}
+      confirmLabel={t("automationFormSave")}
       maxWidthClass="max-w-2xl"
       icon={CalendarClock}
       showCloseIcon
@@ -533,9 +533,9 @@ export function ScheduleJobDialog({
           onOptimize ? (
             <button
               type="button"
-              data-testid="schedule-form-optimize"
+              data-testid="automation-form-optimize"
               className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-              title={t("scheduleAgentOptimizeHint")}
+              title={t("automationAgentOptimizeHint")}
               disabled={optimizePending}
               onClick={() => {
                 if (!onOptimize) return;
@@ -546,7 +546,9 @@ export function ScheduleJobDialog({
                     if (error) setSaveError(error);
                   })
                   .catch((error: unknown) => {
-                    setSaveError(error instanceof Error ? error.message : t("scheduleLoadFailed"));
+                    setSaveError(
+                      error instanceof Error ? error.message : t("automationLoadFailed"),
+                    );
                   })
                   .finally(() => setOptimizePending(false));
               }}
@@ -556,7 +558,7 @@ export function ScheduleJobDialog({
               ) : (
                 <Bot size={12} aria-hidden="true" />
               )}
-              {t("scheduleAgentOptimize")}
+              {t("automationAgentOptimize")}
             </button>
           ) : undefined
         ) : (
@@ -564,7 +566,7 @@ export function ScheduleJobDialog({
             <div
               data-ui="segmented"
               role="group"
-              aria-label={t("scheduleFormModeGroup")}
+              aria-label={t("automationFormModeGroup")}
               className="interface-density-control grid shrink-0 grid-cols-2 overflow-hidden rounded-md border border-border bg-surface"
             >
               {(["smart", "manual"] as const).map((value, index) => (
@@ -577,8 +579,8 @@ export function ScheduleJobDialog({
                   data-state={mode === value ? "active" : "inactive"}
                   title={
                     value === "smart"
-                      ? t("scheduleFormModeSmartHint")
-                      : t("scheduleFormModeManualHint")
+                      ? t("automationFormModeSmartHint")
+                      : t("automationFormModeManualHint")
                   }
                   className={`inline-flex h-full min-w-16 items-center justify-center gap-1.5 px-2.5 text-xs transition-colors ${
                     index > 0 ? "border-l border-border" : ""
@@ -593,7 +595,7 @@ export function ScheduleJobDialog({
                   ) : (
                     <Settings2 size={12} aria-hidden="true" />
                   )}
-                  {value === "smart" ? t("scheduleFormModeSmart") : t("scheduleFormModeManual")}
+                  {value === "smart" ? t("automationFormModeSmart") : t("automationFormModeManual")}
                 </button>
               ))}
             </div>
@@ -604,57 +606,57 @@ export function ScheduleJobDialog({
       onConfirm={submit}
     >
       <div
-        data-testid="schedule-job-form"
+        data-testid="automation-job-form"
         className="flex max-h-[72vh] flex-col overflow-y-auto overscroll-contain"
       >
         {mode === "smart" && !job && (
           <>
             <FormSection
-              title={t("scheduleFormModeSmart")}
-              description={t("scheduleFormModeSmartHint")}
+              title={t("automationFormModeSmart")}
+              description={t("automationFormModeSmartHint")}
             >
               <div className="flex items-start gap-2.5 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5">
                 <Info size={14} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />
-                <p className="text-xs leading-5 text-muted">{t("scheduleFormSmartFlowHint")}</p>
+                <p className="text-xs leading-5 text-muted">{t("automationFormSmartFlowHint")}</p>
               </div>
 
-              <Field label={t("scheduleFormCwd")}>
+              <Field label={t("automationFormCwd")}>
                 <Select
                   value={cwdPresets.includes(smartCwd) ? smartCwd : CWD_OPEN_VALUE}
                   onChange={(value) => {
                     if (value === CWD_OPEN_VALUE) void pickFolderSmart();
                     else setSmartCwd(value);
                   }}
-                  ariaLabel={t("scheduleFormCwd")}
+                  ariaLabel={t("automationFormCwd")}
                   options={[
                     ...cwdPresets.map((path) => ({ value: path, label: path })),
-                    { value: CWD_OPEN_VALUE, label: t("scheduleFormOpenFolder") },
+                    { value: CWD_OPEN_VALUE, label: t("automationFormOpenFolder") },
                   ]}
                 />
               </Field>
 
-              <Field label={t("scheduleFormSmartRequirement")}>
+              <Field label={t("automationFormSmartRequirement")}>
                 <textarea
-                  data-testid="schedule-form-smart-requirement"
+                  data-testid="automation-form-smart-requirement"
                   value={smartRequirement}
                   onChange={(event) => setSmartRequirement(event.target.value)}
                   rows={7}
-                  placeholder={t("scheduleFormSmartRequirementPlaceholder")}
+                  placeholder={t("automationFormSmartRequirementPlaceholder")}
                   className={textareaClass}
                 />
               </Field>
 
               {saveError && (
-                <span className="text-xs text-danger" data-testid="schedule-smart-error">
+                <span className="text-xs text-danger" data-testid="automation-smart-error">
                   {saveError}
                 </span>
               )}
             </FormSection>
 
             {/* Sticky footer: the submit action never scrolls out of reach. */}
-            <div className="schedule-form-footer sticky bottom-0 flex items-center justify-end gap-2 px-4 py-3">
+            <div className="automation-form-footer sticky bottom-0 flex items-center justify-end gap-2 px-4 py-3">
               <button type="button" className={secondaryButton} onClick={onClose}>
-                {t("scheduleFormCancel")}
+                {t("automationFormCancel")}
               </button>
               <button
                 type="button"
@@ -670,7 +672,7 @@ export function ScheduleJobDialog({
                     })
                     .catch((error: unknown) => {
                       setSaveError(
-                        error instanceof Error ? error.message : t("scheduleLoadFailed"),
+                        error instanceof Error ? error.message : t("automationLoadFailed"),
                       );
                     })
                     .finally(() => setSmartPending(false));
@@ -679,12 +681,12 @@ export function ScheduleJobDialog({
                 {smartPending ? (
                   <>
                     <Loader2 size={13} className="animate-spin" />
-                    {t("scheduleAgentAnalyzing")}
+                    {t("automationAgentAnalyzing")}
                   </>
                 ) : (
                   <>
                     <Sparkles size={13} />
-                    {t("scheduleAgentAnalyze")}
+                    {t("automationAgentAnalyze")}
                   </>
                 )}
               </button>
@@ -697,19 +699,19 @@ export function ScheduleJobDialog({
             {/* Flat vertical flow — no section boxes: name → trigger sentence →
                 content editor → more options. */}
             <div className="flex flex-col gap-5 px-5 py-5">
-              <Field label={t("scheduleFormName")} error={errors.name && t(errors.name)}>
+              <Field label={t("automationFormName")} error={errors.name && t(errors.name)}>
                 <input
-                  data-testid="schedule-form-name"
+                  data-testid="automation-form-name"
                   value={form.name}
                   onChange={(event) => patch({ name: event.target.value })}
-                  placeholder={t("scheduleFormNamePlaceholder")}
+                  placeholder={t("automationFormNamePlaceholder")}
                   className={inputClass}
                 />
               </Field>
 
               {/* Trigger as a sentence: [type ▾] …inline parts… —— live summary. */}
               <Field
-                label={t("scheduleFormTrigger")}
+                label={t("automationFormTrigger")}
                 error={
                   form.triggerType === "once"
                     ? errors.onceAt && t(errors.onceAt)
@@ -725,22 +727,22 @@ export function ScheduleJobDialog({
                     <Select
                       value={form.triggerType}
                       onChange={(value) =>
-                        patch({ triggerType: value as ScheduleFormState["triggerType"] })
+                        patch({ triggerType: value as AutomationFormState["triggerType"] })
                       }
-                      ariaLabel={t("scheduleFormTrigger")}
+                      ariaLabel={t("automationFormTrigger")}
                       className="shrink-0"
                       triggerClassName="w-28"
                       options={[
-                        { value: "manual", label: t("scheduleTriggerManual") },
-                        { value: "once", label: t("scheduleTriggerOnce") },
-                        { value: "interval", label: t("scheduleTriggerInterval") },
-                        { value: "cron", label: t("scheduleTriggerCron") },
+                        { value: "manual", label: t("automationTriggerManual") },
+                        { value: "once", label: t("automationTriggerOnce") },
+                        { value: "interval", label: t("automationTriggerInterval") },
+                        { value: "cron", label: t("automationTriggerCron") },
                       ]}
                     />
 
                     {form.triggerType === "once" && (
                       <>
-                        <span className="text-xs text-muted">{t("scheduleFormAt")}</span>
+                        <span className="text-xs text-muted">{t("automationFormAt")}</span>
                         <input
                           type="datetime-local"
                           value={form.onceAt}
@@ -752,7 +754,7 @@ export function ScheduleJobDialog({
 
                     {form.triggerType === "interval" && (
                       <>
-                        <span className="text-xs text-muted">{t("scheduleFormEveryPrefix")}</span>
+                        <span className="text-xs text-muted">{t("automationFormEveryPrefix")}</span>
                         <input
                           type="number"
                           min={1}
@@ -763,18 +765,18 @@ export function ScheduleJobDialog({
                         <Select
                           value={form.intervalUnit}
                           onChange={(value) =>
-                            patch({ intervalUnit: value as ScheduleFormState["intervalUnit"] })
+                            patch({ intervalUnit: value as AutomationFormState["intervalUnit"] })
                           }
-                          ariaLabel={t("scheduleFormIntervalUnit")}
+                          ariaLabel={t("automationFormIntervalUnit")}
                           className="shrink-0"
                           triggerClassName="w-28"
                           options={[
-                            { value: "s", label: t("scheduleIntervalSeconds") },
-                            { value: "m", label: t("scheduleIntervalMinutes") },
-                            { value: "h", label: t("scheduleIntervalHours") },
-                            { value: "d", label: t("scheduleIntervalDays") },
-                            { value: "w", label: t("scheduleIntervalWeeks") },
-                            { value: "mo", label: t("scheduleIntervalMonths") },
+                            { value: "s", label: t("automationIntervalSeconds") },
+                            { value: "m", label: t("automationIntervalMinutes") },
+                            { value: "h", label: t("automationIntervalHours") },
+                            { value: "d", label: t("automationIntervalDays") },
+                            { value: "w", label: t("automationIntervalWeeks") },
+                            { value: "mo", label: t("automationIntervalMonths") },
                           ]}
                         />
                       </>
@@ -783,7 +785,7 @@ export function ScheduleJobDialog({
                     {form.triggerType === "cron" && (
                       <>
                         <input
-                          data-testid="schedule-form-cron"
+                          data-testid="automation-form-cron"
                           value={form.cron}
                           onChange={(event) => patch({ cron: event.target.value })}
                           className={`${fieldClass} interface-density-control w-44 shrink-0 font-mono`}
@@ -799,8 +801,8 @@ export function ScheduleJobDialog({
                           }}
                         >
                           {cronChecking
-                            ? t("scheduleFormValidating")
-                            : t("scheduleFormValidateCron")}
+                            ? t("automationFormValidating")
+                            : t("automationFormValidateCron")}
                         </button>
                       </>
                     )}
@@ -815,8 +817,8 @@ export function ScheduleJobDialog({
                   {form.triggerType === "cron" && cronCheck && (
                     <span className={`text-xs ${cronCheck.valid ? "text-success" : "text-danger"}`}>
                       {cronCheck.valid
-                        ? t("scheduleFormCronValid")
-                        : (cronCheck.reason ?? t("scheduleFormCronInvalid"))}
+                        ? t("automationFormCronValid")
+                        : (cronCheck.reason ?? t("automationFormCronInvalid"))}
                     </span>
                   )}
                 </>
@@ -828,7 +830,7 @@ export function ScheduleJobDialog({
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <span className="flex items-center gap-1 text-xs font-medium text-muted">
-                    {t("scheduleFormContentLabel")}
+                    {t("automationFormContentLabel")}
                     {(form.kind === "prompt" ? errors.prompt : errors.command) && (
                       <span
                         className="text-sm leading-none text-danger"
@@ -844,7 +846,7 @@ export function ScheduleJobDialog({
                   </span>
                   <div
                     role="radiogroup"
-                    aria-label={t("scheduleFormKind")}
+                    aria-label={t("automationFormKind")}
                     className="interface-density-control flex shrink-0 overflow-hidden rounded-md border border-border"
                   >
                     {(
@@ -852,14 +854,14 @@ export function ScheduleJobDialog({
                         [
                           "prompt",
                           Sparkles,
-                          t("scheduleFormKindPrompt"),
-                          t("scheduleFormKindPromptHint"),
+                          t("automationFormKindPrompt"),
+                          t("automationFormKindPromptHint"),
                         ],
                         [
                           "command",
                           Terminal,
-                          t("scheduleFormKindCommand"),
-                          t("scheduleFormKindCommandHint"),
+                          t("automationFormKindCommand"),
+                          t("automationFormKindCommandHint"),
                         ],
                       ] as const
                     ).map(([value, KindIcon, label, hint], index) => {
@@ -870,7 +872,7 @@ export function ScheduleJobDialog({
                           type="button"
                           role="radio"
                           aria-checked={active}
-                          data-testid={`schedule-form-kind-${value}`}
+                          data-testid={`automation-form-kind-${value}`}
                           title={hint}
                           onClick={() => patch({ kind: value })}
                           className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs transition-colors ${
@@ -892,16 +894,16 @@ export function ScheduleJobDialog({
                 <div className="overflow-hidden rounded-lg border border-border bg-surface transition-colors focus-within:border-focus">
                   {form.kind === "prompt" ? (
                     <textarea
-                      data-testid="schedule-form-prompt"
+                      data-testid="automation-form-prompt"
                       value={form.prompt}
                       onChange={(event) => patch({ prompt: event.target.value })}
                       rows={7}
-                      placeholder={t("scheduleFormPromptPlaceholder")}
+                      placeholder={t("automationFormPromptPlaceholder")}
                       className={bareTextareaClass}
                     />
                   ) : (
                     <textarea
-                      data-testid="schedule-form-command"
+                      data-testid="automation-form-command"
                       value={form.command}
                       onChange={(event) => patch({ command: event.target.value })}
                       rows={5}
@@ -918,13 +920,13 @@ export function ScheduleJobDialog({
                           if (value === CWD_OPEN_VALUE) void pickFolder();
                           else patch({ cwd: value });
                         }}
-                        ariaLabel={t("scheduleFormCwd")}
+                        ariaLabel={t("automationFormCwd")}
                         className="min-w-0 flex-1"
                         triggerClassName="w-full"
                         ghost
                         options={[
                           ...cwdPresets.map((path) => ({ value: path, label: path })),
-                          { value: CWD_OPEN_VALUE, label: t("scheduleFormOpenFolder") },
+                          { value: CWD_OPEN_VALUE, label: t("automationFormOpenFolder") },
                         ]}
                       />
                     </div>
@@ -933,30 +935,32 @@ export function ScheduleJobDialog({
                       <Select
                         value={form.permission}
                         onChange={(value) =>
-                          patch({ permission: value as ScheduleFormState["permission"] })
+                          patch({ permission: value as AutomationFormState["permission"] })
                         }
-                        ariaLabel={t("scheduleFormPermission")}
+                        ariaLabel={t("automationFormPermission")}
                         className="shrink-0"
                         triggerClassName="w-24"
                         ghost
                         options={[
-                          { value: "read_only", label: t("schedulePermissionReadOnly") },
-                          { value: "write", label: t("schedulePermissionWrite") },
-                          { value: "full", label: t("schedulePermissionFull") },
+                          { value: "read_only", label: t("automationPermissionReadOnly") },
+                          { value: "write", label: t("automationPermissionWrite") },
+                          { value: "full", label: t("automationPermissionFull") },
                         ]}
                       />
                     )}
 
                     <Select
                       value={form.notify}
-                      onChange={(value) => patch({ notify: value as ScheduleFormState["notify"] })}
-                      ariaLabel={t("scheduleFormNotify")}
+                      onChange={(value) =>
+                        patch({ notify: value as AutomationFormState["notify"] })
+                      }
+                      ariaLabel={t("automationFormNotify")}
                       className="shrink-0"
                       triggerClassName="w-28"
                       ghost
                       options={[
-                        { value: "none", label: t("scheduleNotifyNone") },
-                        { value: "system", label: t("scheduleNotifySystem") },
+                        { value: "none", label: t("automationNotifyNone") },
+                        { value: "system", label: t("automationNotifySystem") },
                       ]}
                     />
 
@@ -968,7 +972,7 @@ export function ScheduleJobDialog({
                           models={models}
                           hostDefault={hostDefaultModel}
                           defaultLabel={defaultModelLabel}
-                          label={t("scheduleFormModel")}
+                          label={t("automationFormModel")}
                           ghost
                           className="ml-auto max-w-56 shrink-0"
                         />
@@ -987,7 +991,7 @@ export function ScheduleJobDialog({
                         onClick={() => void pickScript()}
                       >
                         <FileCode size={12} aria-hidden="true" />
-                        {t("scheduleFormPickScript")}
+                        {t("automationFormPickScript")}
                       </button>
                     )}
                   </div>
@@ -1002,25 +1006,25 @@ export function ScheduleJobDialog({
                   onClick={() => setAdvancedOpen((open) => !open)}
                 >
                   {advancedOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                  {t("scheduleFormMore")}
+                  {t("automationFormMore")}
                 </button>
                 {advancedOpen && (
                   <div className="mt-3 grid grid-cols-2 gap-3">
                     <Field
-                      label={t("scheduleFormTimeoutMinutes")}
+                      label={t("automationFormTimeoutMinutes")}
                       error={errors.timeout && t(errors.timeout)}
                     >
                       <input
                         type="number"
                         min={1}
-                        max={SCHEDULE_MAX_TIMEOUT_MINUTES}
+                        max={AUTOMATION_MAX_TIMEOUT_MINUTES}
                         value={form.timeoutMinutes}
                         onChange={(event) => patch({ timeoutMinutes: Number(event.target.value) })}
                         className={`${inputClass} text-right`}
                       />
                     </Field>
                     <Field
-                      label={t("scheduleFormMaxRuns")}
+                      label={t("automationFormMaxRuns")}
                       error={errors.maxRuns && t(errors.maxRuns)}
                     >
                       <input
@@ -1028,44 +1032,44 @@ export function ScheduleJobDialog({
                         min={1}
                         value={form.maxRuns}
                         onChange={(event) => patch({ maxRuns: event.target.value })}
-                        placeholder={t("scheduleFormMaxRunsPlaceholder")}
+                        placeholder={t("automationFormMaxRunsPlaceholder")}
                         className={`${inputClass} text-right`}
                       />
                     </Field>
-                    <Field label={t("scheduleFormMissedWindow")}>
+                    <Field label={t("automationFormMissedWindow")}>
                       <Select
                         value={form.missedWindow}
                         onChange={(value) =>
-                          patch({ missedWindow: value as ScheduleFormState["missedWindow"] })
+                          patch({ missedWindow: value as AutomationFormState["missedWindow"] })
                         }
-                        ariaLabel={t("scheduleFormMissedWindow")}
+                        ariaLabel={t("automationFormMissedWindow")}
                         triggerClassName="w-full"
                         options={[
-                          { value: "catch_up_one", label: t("scheduleMissedWindowCatchUp") },
-                          { value: "skip", label: t("scheduleMissedWindowSkip") },
+                          { value: "catch_up_one", label: t("automationMissedWindowCatchUp") },
+                          { value: "skip", label: t("automationMissedWindowSkip") },
                         ]}
                       />
                     </Field>
-                    <Field label={t("scheduleFormTags")}>
+                    <Field label={t("automationFormTags")}>
                       <input
                         value={form.tags}
                         onChange={(event) => patch({ tags: event.target.value })}
-                        placeholder={t("scheduleFormTagsPlaceholder")}
+                        placeholder={t("automationFormTagsPlaceholder")}
                         className={inputClass}
                       />
                     </Field>
                     {form.kind === "prompt" && (
-                      <Field label={t("scheduleFormLoadExtensions")}>
+                      <Field label={t("automationFormLoadExtensions")}>
                         <div className="flex items-start gap-2">
                           <Switch
                             checked={form.loadExtensions}
                             onChange={(value) => patch({ loadExtensions: value })}
-                            label={t("scheduleFormLoadExtensions")}
+                            label={t("automationFormLoadExtensions")}
                           />
                           <span className="min-w-0 text-[11px] leading-4 text-muted">
                             {form.loadExtensions
-                              ? t("scheduleFormLoadExtensionsOn")
-                              : t("scheduleFormLoadExtensionsOff")}
+                              ? t("automationFormLoadExtensionsOn")
+                              : t("automationFormLoadExtensionsOff")}
                           </span>
                         </div>
                       </Field>
@@ -1075,27 +1079,27 @@ export function ScheduleJobDialog({
               </div>
 
               {saveError && (
-                <span className="text-xs text-danger" data-testid="schedule-form-error">
+                <span className="text-xs text-danger" data-testid="automation-form-error">
                   {saveError}
                 </span>
               )}
             </div>
 
             {/* Sticky footer: enable toggle on the left, actions on the right. */}
-            <div className="schedule-form-footer sticky bottom-0 flex items-center gap-3 px-5 py-3">
+            <div className="automation-form-footer sticky bottom-0 flex items-center gap-3 px-5 py-3">
               <div className="flex items-center gap-2">
                 <Switch
                   checked={form.enabled}
                   onChange={(enabled) => patch({ enabled })}
-                  label={t("scheduleFormEnabled")}
+                  label={t("automationFormEnabled")}
                 />
                 <span className="text-[13px] font-medium text-foreground">
-                  {t("scheduleFormEnabled")}
+                  {t("automationFormEnabled")}
                 </span>
               </div>
               <div className="ml-auto flex items-center gap-3">
                 <button type="button" className={secondaryButton} onClick={onClose}>
-                  {t("scheduleFormCancel")}
+                  {t("automationFormCancel")}
                 </button>
                 <button
                   type="button"
@@ -1106,10 +1110,10 @@ export function ScheduleJobDialog({
                   {pending ? (
                     <>
                       <Loader2 size={13} className="animate-spin" />
-                      {t("scheduleSaving")}
+                      {t("automationSaving")}
                     </>
                   ) : (
-                    t("scheduleFormSave")
+                    t("automationFormSave")
                   )}
                 </button>
               </div>

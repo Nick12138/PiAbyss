@@ -76,8 +76,8 @@ describe("parseInjectedReferences", () => {
     const raw = [
       memoBlock,
       '<piabyss-memo-result noteId="note-1" sessionId="s-1">\n做完了\n</piabyss-memo-result>',
-      "<schedule-preamble>\n你是助手。\n</schedule-preamble>",
-      '<schedule-job id="job-1">\n{"name":"备份"}\n</schedule-job>',
+      "<automation-preamble>\n你是助手。\n</automation-preamble>",
+      '<automation-job id="job-1">\n{"name":"备份"}\n</automation-job>',
       "用户需求：\n每天备份",
     ].join("\n\n");
 
@@ -85,8 +85,8 @@ describe("parseInjectedReferences", () => {
     expect(parsed.references.map((reference) => reference.kind)).toEqual([
       "memo",
       "memo-result",
-      "schedule-preamble",
-      "schedule-job",
+      "automation-preamble",
+      "automation-job",
     ]);
     expect(parsed.text).toBe("用户需求：\n每天备份");
   });

@@ -120,8 +120,8 @@ describe("PiAbyss-injected reference blocks", () => {
     const memo = '<piabyss-memo id="note-1" type="memo" status="open">\n# t\n</piabyss-memo>';
     const result =
       '<piabyss-memo-result noteId="note-1" sessionId="s-1">\nok\n</piabyss-memo-result>';
-    const preamble = "<schedule-preamble>\n你是助手。\n</schedule-preamble>";
-    const job = '<schedule-job id="job-1">\n{}\n</schedule-job>';
+    const preamble = "<automation-preamble>\n你是助手。\n</automation-preamble>";
+    const job = '<automation-job id="job-1">\n{}\n</automation-job>';
     const text = [memo, result, preamble, job, "用户需求：\n定时备份"].join("\n\n");
 
     expect(stripPiabyssInjectedBlocks(text)).toBe("用户需求：\n定时备份");

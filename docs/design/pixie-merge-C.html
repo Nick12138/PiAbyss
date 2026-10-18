@@ -320,7 +320,7 @@
   .form .fbtn .sp{margin-left:auto}
   .note{padding:4px 6px 2px;font-size:10.5px;line-height:1.55;color:var(--muted-2)}
 
-  /* 折叠：周期计划 / 委派任务 */
+  /* 折叠：自动化 / 委派任务 */
   .job{display:flex;align-items:flex-start;gap:7px;padding:7px;border-radius:var(--r);
     border:1px solid var(--border-subtle);margin-bottom:6px}
   .job:hover{background:var(--overlay)}
@@ -424,7 +424,7 @@
       <svg class="ic"><use href="#i-sparkles"/></svg><span>小精灵</span>
     </button>
     <button class="sb-item merged" tabindex="-1" aria-disabled="true">
-      <svg class="ic"><use href="#i-calendar"/></svg><span>周期计划</span>
+      <svg class="ic"><use href="#i-calendar"/></svg><span>自动化</span>
       <span class="sb-tag">已并入</span>
     </button>
     <button class="sb-item merged" tabindex="-1" aria-disabled="true">
@@ -801,13 +801,13 @@
             </div>
           </section>
 
-          <!-- 周期计划（默认折叠） -->
+          <!-- 自动化（默认折叠） -->
           <section class="section" data-open="0" id="secSchedule">
             <div class="sec-head">
               <button class="sec-toggle">
                 <svg class="ic chev"><use href="#i-chevron-right"/></svg>
                 <svg class="ic lead"><use href="#i-calendar"/></svg>
-                <h3>周期计划</h3>
+                <h3>自动化</h3>
                 <span class="count" id="planCount">2</span>
                 <span class="anno" data-anno="9">9</span>
                 <span class="hint">下次 3h12m 后</span>
@@ -908,11 +908,11 @@
     <li><b>概览数字</b>（来自 B）：待处理 / 进行中 / 已逾期 三格。折叠态由标题上的计数徽章承担，展开态看这三格。</li>
     <li><b>就地展开详情</b>（来自 B）：点条目在其下方展开正文、标签、工作区、截止，以及「交给小精灵 / 编辑 / 删除」。<b>方寸间的「列表 + 详情」在这一栏里就合并完了</b>，不再需要「右栏加宽为完整方寸间」那套模式。需要正文 Markdown、图片、周期设置时点「编辑」打开完整编辑器（沿用今天的 MemoPage 详情表单）。</li>
     <li><b>新建待办 · 两个入口</b>：① <b>速记框</b>（与方案 A 同一套）—— 列表下方虚线输入框，<b>Enter 直接落一条</b>，title = 首行、<code>#标签</code> 自动识别、Shift+Enter 换行，管「先记下来」；② <b>标题行右侧的「＋」</b> —— 展开<b>多功能表单</b>，可一次设好标题 / 截止 / 标签 / 工作区，管「记的时候就分好类」。两个入口都常驻、不分页签；表单展开时速记框收起，避免两块新建 UI 叠在一起。落位：带截止的进对应日期分组（逾期 / 今天 / 明天 / 本周），不定的置顶。</li>
-    <li><b>计划创建在对话里</b>：小精灵产出「计划草稿卡」内联在消息中，确认即 <code>schedule.createJob</code>（编辑则 <code>updateJob</code>）。原来 <code>schedule-agent</code> 整页 + 它自带的独立会话与模型通道整条删除。</li>
-    <li><b>周期计划默认折叠</b>：折叠时只留一行「2 · 下次 3h12m 后」；展开是已有计划的列表与开关，创建入口只有「＋ 让精灵新建」（把引导语塞进对话输入框）。</li>
+    <li><b>计划创建在对话里</b>：小精灵产出「计划草稿卡」内联在消息中，确认即 <code>automation.createJob</code>（编辑则 <code>updateJob</code>）。原来 <code>automation-agent</code> 整页 + 它自带的独立会话与模型通道整条删除。</li>
+    <li><b>自动化默认折叠</b>：折叠时只留一行「2 · 下次 3h12m 后」；展开是已有任务的列表与开关，创建入口只有「＋ 让精灵新建」（把引导语塞进对话输入框）。</li>
     <li><b>委派任务默认折叠</b>：汇总行直接写「1 进行中 · 1 等你回复」，展开才是原来的两层任务树，行尾仍是唯一的定位动作。</li>
     <li><b>会话列表留在左下</b>：侧栏下方仍是与普通工作区<b>同一套</b>的 <code>SessionList</code>（含「最近会话」分组头、行内日期、行尾状态点、右键菜单），只是 <code>keepPage</code> —— 点一行留在小精灵页加载那条历史段，不跳回 chat 页；「回到最新」在顶栏。它上面是 <code>WorkspacePicker</code>：小精灵工作区刻意不进工作区列表（否则会读成「第二个选中的小精灵」），所以那里没有选中态。</li>
-    <li><b>折叠状态持久化</b>：按分组存 <code>sidebarPref</code>，与现有周期计划页的分组折叠同一套（会话列表的折叠也一样）。</li>
+    <li><b>折叠状态持久化</b>：按分组存 <code>sidebarPref</code>，与现有自动化页的分组折叠同一套（会话列表的折叠也一样）。</li>
     <li><b>窄屏（&lt;940px）</b>：侧栏收起，右栏落到对话区下方，三块分组纵向堆叠；输入框始终贴底。</li>
   </ol>
 </div>
@@ -1101,7 +1101,7 @@
   document.getElementById('newPlan').addEventListener('click', function(ev){
     ev.stopPropagation();
     document.getElementById('secSchedule').dataset.open = '1';
-    convInput.value = '帮我新建一个周期计划：';
+    convInput.value = '帮我新建一个自动化：';
     convInput.focus();
     convInput.setSelectionRange(convInput.value.length, convInput.value.length);
   });

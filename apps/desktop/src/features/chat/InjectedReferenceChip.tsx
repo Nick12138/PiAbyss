@@ -1,5 +1,5 @@
 /**
- * `@`-style chip for an injected reference (memo handling, schedule preamble,
+ * `@`-style chip for an injected reference (memo handling, automation preamble,
  * plan context). The raw prompt stays available behind the disclosure, but the
  * transcript never renders it inline — that is the whole point of the chip.
  */
@@ -30,10 +30,10 @@ function referenceLabel(kind: InjectedReferenceKind, t: Translate): string {
       return t("injectedRefMemo");
     case "memo-result":
       return t("injectedRefMemoResult");
-    case "schedule-preamble":
-      return t("injectedRefSchedulePreamble");
-    case "schedule-job":
-      return t("injectedRefScheduleJob");
+    case "automation-preamble":
+      return t("injectedRefAutomationPreamble");
+    case "automation-job":
+      return t("injectedRefAutomationJob");
     case "relay-mapping":
       return t("injectedRefRelayMapping");
     case "pixie-context":

@@ -387,7 +387,7 @@
     </button>
 
     <button class="sb-item merged" tabindex="-1" aria-disabled="true">
-      <svg class="ic"><use href="#i-calendar"/></svg><span>周期计划</span>
+      <svg class="ic"><use href="#i-calendar"/></svg><span>自动化</span>
       <span class="sb-tag">已并入</span>
     </button>
     <button class="sb-item merged" tabindex="-1" aria-disabled="true">
@@ -643,13 +643,13 @@
             </div>
           </section>
 
-          <!-- 周期计划（默认折叠） -->
+          <!-- 自动化（默认折叠） -->
           <section class="section" data-open="0" id="secSchedule">
             <div class="sec-head">
               <button class="sec-toggle">
                 <svg class="ic chev"><use href="#i-chevron-right"/></svg>
                 <svg class="ic lead"><use href="#i-calendar"/></svg>
-                <h3>周期计划</h3>
+                <h3>自动化</h3>
                 <span class="count">2</span>
                 <span class="anno" data-anno="10">10</span>
                 <span class="hint">下次 3h12m 后</span>
@@ -858,18 +858,18 @@
     <button id="legendClose" aria-label="关闭"><svg class="ic" style="font-size:14px"><use href="#i-x"/></svg></button>
   </header>
   <ol>
-    <li><b>侧栏收敛</b>：周期计划、方寸间不再单独占位，只留「小精灵」一个入口。</li>
+    <li><b>侧栏收敛</b>：自动化、方寸间不再单独占位，只留「小精灵」一个入口。</li>
     <li><b>顶栏不变</b>：仍是小精灵原有的「回到最新 / 新会话 / 会话列表」，没有页面级切换。</li>
     <li><b>对话占主位</b>：小精灵的「标准会话」机制原样保留——转写、流式、工具卡、段分隔线、<code>&lt;pixie-context&gt;</code> 前导全部沿用，只多了一块右栏。</li>
-    <li><b>计划创建搬进对话</b>：小精灵产出「计划草稿卡」内联在消息里，确认即 <code>schedule.createJob</code>（编辑则 <code>updateJob</code>）。原来 <code>schedule-agent</code> 整页 + 它自带的独立会话与模型通道整条删除。</li>
+    <li><b>计划创建搬进对话</b>：小精灵产出「计划草稿卡」内联在消息里，确认即 <code>automation.createJob</code>（编辑则 <code>updateJob</code>）。原来 <code>automation-agent</code> 整页 + 它自带的独立会话与模型通道整条删除。</li>
     <li><b>草稿卡沿用原预览规则</b>：AI 明确决定的字段正常色，插件默认值灰显；必填缺失时在卡顶给一条警示，不给每行写「未定」。</li>
     <li><b>待办常驻</b>：右栏第一块固定是「待办 · 方寸间」，进小精灵就能看见待办——这是合并的核心诉求。</li>
     <li><b>内联速记</b>：底部输入框 Enter 直接落一条待办（title = 首行，<code>#标签</code> 自动识别），复用速记小窗的交互与 <code>memo.create</code> 通道。</li>
     <li><b>行内操作</b>：勾选完成 / 交给小精灵 / 展开详情。原来的「用 Agent 处理」改为「交给小精灵」——由她判断轻量自答还是委派，完成后按老路径回填（<code>piabyss_memo complete</code> + <code>pixie_report</code>）。</li>
     <li><b>查看全部 = 右栏加宽</b>：点「→」右栏扩到 46%，内容切成完整方寸间（页签 + 搜索 + 筛选 + 列表 + 详情）；对话区变窄但不断开。不叠覆盖层，符合项目「单界面」约定。</li>
-    <li><b>周期计划默认折叠</b>：折叠时只留一行「2 · 下次 3h12m 后」；展开是已有计划的列表与开关，创建入口只有「＋ 让精灵新建」。</li>
+    <li><b>自动化默认折叠</b>：折叠时只留一行「2 · 下次 3h12m 后」；展开是已有任务的列表与开关，创建入口只有「＋ 让精灵新建」。</li>
     <li><b>委派任务默认折叠</b>：汇总行直接写「1 进行中 · 1 等你回复」，展开才是原来的两层任务树，行尾仍是唯一的定位动作。</li>
-    <li><b>折叠状态持久化</b>：按分组存 <code>sidebarPref</code>，与现有周期计划页的分组折叠同一套。</li>
+    <li><b>折叠状态持久化</b>：按分组存 <code>sidebarPref</code>，与现有自动化页的分组折叠同一套。</li>
     <li><b>窄屏（&lt;900px）</b>：侧栏收起，右栏落到对话区下方纵向堆叠；输入框始终贴底。</li>
     <li><b>语义沿用</b>：待办逾期红色角标、进行中转圈；计划卡的状态点（进行中脉冲 / 生效 / 停用）与色语义与今天一致。</li>
   </ol>
@@ -982,7 +982,7 @@
 
   // 「＋ 让精灵新建」→ 把引导语塞进输入框
   function seedPlanPrompt(){
-    input.value = '帮我新建一个周期计划：';
+    input.value = '帮我新建一个自动化：';
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
     sync();

@@ -109,7 +109,7 @@ const EMPTY_PROVIDER_NAMES: ReadonlyMap<string, string> = new Map<string, string
 
 /**
  * 小精灵「随行面板」的折叠状态（localStorage，未设置 = 展开）。与侧边栏、
- * 周期计划的分组折叠同一套 `sidebarPref` 写法：存「折叠」而不是「展开」，
+ * 自动化的分组折叠同一套 `sidebarPref` 写法：存「折叠」而不是「展开」，
  * 这样「没写过」天然落在默认的展开态上。
  */
 export const PIXIE_PANEL_COLLAPSED_KEY = "piabyss.pixie.panelCollapsed";
@@ -473,7 +473,7 @@ export type AppState = EpochState & {
    * 随行面板那页签按 30s 滴答刷新，用户刚点完「确定」不该再等半分钟——
    * 落库方 bump 一下，页签立刻重拉。
    */
-  scheduleRevision: number;
+  automationRevision: number;
   /** Section the Settings overlay should open on (null = default "general"). */
   settingsSection: SettingsSection | null;
   /** Last visited Settings position for the current workspace (see SettingsNavCache). */
@@ -606,7 +606,7 @@ export type AppState = EpochState & {
   applyProviderLoginEvent: (payload: HostEventPayloadMap["provider.loginEvent"]) => void;
   clearProviderLogin: () => void;
   setPage: (page: NavPage) => void;
-  bumpScheduleRevision: () => void;
+  bumpAutomationRevision: () => void;
   openSettingsSection: (section: SettingsSection) => void;
   setSettingsSection: (section: SettingsSection) => void;
   setSettingsNavCache: (cache: SettingsNavCache) => void;
@@ -786,7 +786,7 @@ function epochSlice(s: AppState): EpochState {
 export const useAppStore = create<AppState>((set, get) => ({
   page: readStoredPage(PAGE_STORAGE_KEY) ?? "chat",
   lastPage: readStoredPage(LAST_PAGE_STORAGE_KEY) ?? "chat",
-  scheduleRevision: 0,
+  automationRevision: 0,
   settingsSection: null,
   settingsNavCache: null,
   authBlocked: null,
@@ -918,7 +918,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }),
   clearProviderLogin: () => set({ providerLogin: null }),
-  bumpScheduleRevision: () => set((state) => ({ scheduleRevision: state.scheduleRevision + 1 })),
+  bumpAutomationRevision: () =>
+    set((state) => ({ automationRevision: state.automationRevision + 1 })),
   setPage: (page) =>
     set((state) => {
       const durable = isDurablePage(page);

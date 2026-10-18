@@ -12,11 +12,11 @@
 1. **不要动左侧消息区域。** `PixiePage.tsx` 里对话区（转写 / `Composer` / `SessionStatsPills` /
    `InlineExtensionUiRequest` / `SubagentConversation` / `awaitingDispatch` 改道 `pixie.reply` 那套）
    一行都不要改。
-2. **不要删除或改动「周期计划」和「方寸间」两个页面。** 本阶段它们**必须原样保留**：
-   - `features/schedule/SchedulePage.tsx`、`features/schedule/ScheduleAgentPage.tsx`
+2. **不要删除或改动「自动化」和「方寸间」两个页面。** 本阶段它们**必须原样保留**：
+   - `features/automation/SchedulePage.tsx`、`features/automation/ScheduleAgentPage.tsx`
    - `features/memo/MemoPage.tsx`
-   - 侧栏入口 `components/Sidebar.tsx:522-567`（schedule / memo 两个 nav-item）
-   - `lib/stores/app-store.ts:75` 的 `NavPage`（`"schedule" | "schedule-agent" | "memo"` 全部保留）
+   - 侧栏入口 `components/Sidebar.tsx:522-567`（automation / memo 两个 nav-item）
+   - `lib/stores/app-store.ts:75` 的 `NavPage`（`"automation" | "automation-agent" | "memo"` 全部保留）
    本次**不做合并、不做删除、不改它们的入口**。它们将来会被并进小精灵，但不是这一步。
 3. **不要动协议层与宿主。** `packages/pi-host/**`、`packages/protocol/**`、`pixie.ensureCurrent` /
    `pixie.dispatch` / `pixie.reply` 等端点契约一律不动。这是纯前端改造。
@@ -124,15 +124,15 @@
 - 右侧汇总 hint：`text-[10.5px] text-muted`，内容形如 **「1 进行中 · 1 等你回复」**
   —— 折叠时这一行就是全部信息，所以要**在折叠态可读**；没有活动委派时显示计数 0 或空态文案
 - **默认折叠**（委派列表不常打开）；折叠状态持久化（`sidebarPref`，与
-  `features/schedule/SchedulePage.tsx:366-377` 的分组折叠同一套写法）
+  `features/automation/SchedulePage.tsx:366-377` 的分组折叠同一套写法）
 - 展开后渲染**现有的 `<PixieTaskTree groups={taskTree} />`**，不要再改它的内部逻辑
 - 分组容器：`border border-border rounded-xl overflow-hidden`（用项目既有 token，不要新造色值）
 
 **面板顶部的小标题**：设计稿里是「随行面板」（`text-[11.5px] text-muted`，左侧一个 panel 图标）。
-可以保留、也可以去掉 —— 保留的好处是将来「待办 · 方寸间」「周期计划」两个分组并进来时有个共同容器。
+可以保留、也可以去掉 —— 保留的好处是将来「待办 · 方寸间」「自动化」两个分组并进来时有个共同容器。
 
-**注意**：本次**只实现「委派任务」这一个分组**。设计稿里的「待办 · 方寸间」「周期计划」两个分组
-**本次不做**（周期计划与方寸间页面要原样保留）。但容器结构请按「能再塞两个分组」来设计。
+**注意**：本次**只实现「委派任务」这一个分组**。设计稿里的「待办 · 方寸间」「自动化」两个分组
+**本次不做**（自动化与方寸间页面要原样保留）。但容器结构请按「能再塞两个分组」来设计。
 
 ## 五、i18n
 
@@ -172,7 +172,7 @@
 ## 七、验收标准
 
 - [ ] 左栏对话区**零改动**（`git diff` 里不应出现转写 / Composer / 轮询相关行）。
-- [ ] `SchedulePage` / `ScheduleAgentPage` / `MemoPage` 与侧栏的 schedule / memo 入口**全部还在**，能正常打开。
+- [ ] `SchedulePage` / `ScheduleAgentPage` / `MemoPage` 与侧栏的 automation / memo 入口**全部还在**，能正常打开。
 - [ ] 小精灵页右栏可以展开 / 折叠，动画与 chat 页的右侧 dock 手感一致（200ms，负 margin 滑出）。
 - [ ] 折叠状态持久化，重进页面保持。
 - [ ] 委派任务分组默认折叠，只占一行，汇总信息（N 进行中 · N 等你回复）在折叠态就能读到。
@@ -192,16 +192,16 @@
 | **开关按钮参考** | `apps/desktop/src/components/DockToggleButton.tsx` |
 | 开关按钮挂载点 | `apps/desktop/src/components/AppTopBar.tsx:277-281` |
 | dock 状态 | `apps/desktop/src/lib/stores/app-store.ts:368,588,742,1332` |
-| 分组折叠持久化写法 | `apps/desktop/src/features/schedule/SchedulePage.tsx:366-377` + `lib/sidebar-prefs.ts` |
+| 分组折叠持久化写法 | `apps/desktop/src/features/automation/SchedulePage.tsx:366-377` + `lib/sidebar-prefs.ts` |
 | **视觉设计稿** | `docs/design/pixie-merge-C.html`（「委派任务」分组） |
 | 设计说明（背景） | `docs/design/pixie-merge-C.html` 右下角「设计标注」 |
 
 ## 九、背景（为什么这么做，供你判断取舍）
 
-小精灵、方寸间、周期计划三个页面最终要合并进小精灵一页：对话在左占主位，右栏是「随行面板」，
-从上到下依次是「待办 · 方寸间」（常驻展开）、「周期计划」（默认折叠）、「委派任务」（默认折叠）。
+小精灵、方寸间、自动化三个页面最终要合并进小精灵一页：对话在左占主位，右栏是「随行面板」，
+从上到下依次是「待办 · 方寸间」（常驻展开）、「自动化」（默认折叠）、「委派任务」（默认折叠）。
 设计稿 `docs/design/pixie-merge-C.html` 是完整形态。
 
 **但本次只做第一步**：把右栏从裸面板升级为可折叠的随行面板，并先把「委派任务」分组按最终视觉做好。
-周期计划与方寸间**这一阶段保持独立页面不动**，等后续步骤再迁。
+自动化与方寸间**这一阶段保持独立页面不动**，等后续步骤再迁。
 所以你在写代码时，请把面板结构设计成「将来能再塞两个分组进来」的样子。

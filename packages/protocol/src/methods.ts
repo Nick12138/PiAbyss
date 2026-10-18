@@ -137,18 +137,18 @@ export const HOST_METHODS = [
   "telegram.updateConfig",
   "telegram.reset",
   "telegram.status",
-  "schedule.status",
-  "schedule.listJobs",
-  "schedule.createJob",
-  "schedule.updateJob",
-  "schedule.deleteJob",
-  "schedule.setJobEnabled",
-  "schedule.runJobNow",
-  "schedule.listRuns",
-  "schedule.runMessages",
-  "schedule.abortRun",
-  "schedule.validateCron",
-  "schedule.listNotifications",
+  "automation.status",
+  "automation.listJobs",
+  "automation.createJob",
+  "automation.updateJob",
+  "automation.deleteJob",
+  "automation.setJobEnabled",
+  "automation.runJobNow",
+  "automation.listRuns",
+  "automation.runMessages",
+  "automation.abortRun",
+  "automation.validateCron",
+  "automation.listNotifications",
   "memo.list",
   "memo.optimize",
   "memo.create",
@@ -258,18 +258,18 @@ export type HostOnlyMethod =
   | "telegram.updateConfig"
   | "telegram.reset"
   | "telegram.status"
-  | "schedule.status"
-  | "schedule.listJobs"
-  | "schedule.createJob"
-  | "schedule.updateJob"
-  | "schedule.deleteJob"
-  | "schedule.setJobEnabled"
-  | "schedule.runJobNow"
-  | "schedule.listRuns"
-  | "schedule.runMessages"
-  | "schedule.abortRun"
-  | "schedule.validateCron"
-  | "schedule.listNotifications"
+  | "automation.status"
+  | "automation.listJobs"
+  | "automation.createJob"
+  | "automation.updateJob"
+  | "automation.deleteJob"
+  | "automation.setJobEnabled"
+  | "automation.runJobNow"
+  | "automation.listRuns"
+  | "automation.runMessages"
+  | "automation.abortRun"
+  | "automation.validateCron"
+  | "automation.listNotifications"
   | "pixie.dispatches"
   | "pixie.usage"
   | "pixie.ensureCurrent"
@@ -542,18 +542,18 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "telegram.updateConfig": "host",
   "telegram.reset": "host",
   "telegram.status": "host",
-  "schedule.status": "host",
-  "schedule.listJobs": "host",
-  "schedule.createJob": "host",
-  "schedule.updateJob": "host",
-  "schedule.deleteJob": "host",
-  "schedule.setJobEnabled": "host",
-  "schedule.runJobNow": "host",
-  "schedule.listRuns": "host",
-  "schedule.runMessages": "host",
-  "schedule.abortRun": "host",
-  "schedule.validateCron": "host",
-  "schedule.listNotifications": "host",
+  "automation.status": "host",
+  "automation.listJobs": "host",
+  "automation.createJob": "host",
+  "automation.updateJob": "host",
+  "automation.deleteJob": "host",
+  "automation.setJobEnabled": "host",
+  "automation.runJobNow": "host",
+  "automation.listRuns": "host",
+  "automation.runMessages": "host",
+  "automation.abortRun": "host",
+  "automation.validateCron": "host",
+  "automation.listNotifications": "host",
   "memo.list": "host",
   "memo.optimize": "host",
   "memo.create": "host",

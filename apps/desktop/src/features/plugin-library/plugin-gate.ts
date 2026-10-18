@@ -119,7 +119,7 @@ export function usePluginCatalogData(): {
  * (workspace-scoped, shared through the app store) on demand.
  *
  * Used to hide sidebar entries whose backing protocol handlers the Host gates
- * on the same plugin state (memo, pixie, schedule).
+ * on the same plugin state (memo, pixie, automation).
  *
  * Transient "unknown" windows (catalog or packages still loading — e.g. the
  * package snapshot drop while switching workspaces) fall back to the last

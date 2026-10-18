@@ -1,17 +1,17 @@
 /**
- * 随行面板 ·「周期计划」页签（三块横排的第二块）。
+ * 随行面板 ·「自动化」页签（三块横排的第二块）。
  *
  * 这一栏的职责是**查看、开关、进详情**；列表按「当前活跃 / 已失效」二级页签分桶
  * （与方寸间同一形态，一次只看一桶），口径与独立页严格一致：停用的、或一次性
  * 已经跑过的都算失效。那一行页签同时是这一块的**工具条**——下次触发与 ＋ 都贴在
  * 它右端，不再单开一行。
  * 创建与修改走两条路，都归人管：
- *   - 点 ＋ 开 `ScheduleJobDialog`（手动模式直接建；智能模式把引导语放进她的输入框，由用户发送）；
+ *   - 点 ＋ 开 `AutomationJobDialog`（手动模式直接建；智能模式把引导语放进她的输入框，由用户发送）；
  *   - 对话里的草案卡由用户点「确认」才落库（`PixiePlanCard`），这一栏不负责写。
  * 点行打开详情弹窗（内容 + 执行历史与过程 + 编辑/立即执行/停止）。
  *
- * 数据与周期计划页同源（`schedule.status` / `schedule.listJobs` / `schedule.setJobEnabled`），
- * 展示辅助复用 `schedule-model` 的纯函数。插件门在 `PixieSidePanel`（连页签一起消失），
+ * 数据与自动化页同源（`automation.status` / `automation.listJobs` / `automation.setJobEnabled`），
+ * 展示辅助复用 `automation-model` 的纯函数。插件门在 `PixieSidePanel`（连页签一起消失），
  * 这里不再自判。
  *
  * 两处容易漏的接线：`activeJobIds` 决定「正在跑」的呼吸点（列表接口一并返回，别只用
@@ -20,33 +20,37 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
-import type { ScheduleJob } from "@piabyss/protocol";
+import type { AutomationJob } from "@piabyss/protocol";
 import { Switch } from "../../components/Switch";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { requestComposerInsert } from "../../lib/composer-insert";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
-import { formatCountdown, formatIntervalEvery, triggerSummary } from "../schedule/schedule-model";
-import { ScheduleJobDialog } from "../schedule/ScheduleJobDialog";
-import { PixieScheduleDetailDialog } from "./PixieScheduleDetailDialog";
+import {
+  formatCountdown,
+  formatIntervalEvery,
+  triggerSummary,
+} from "../automation/automation-model";
+import { AutomationJobDialog } from "../automation/AutomationJobDialog";
+import { PixieAutomationDetailDialog } from "./PixieAutomationDetailDialog";
 import { PixiePanelBody } from "./PixiePanelTabs";
 
 const LIST_TIMEOUT_MS = 15_000;
 const NOW_TICK_MS = 30_000;
 
 /** 活跃 = 还能自己触发（用户没停用、一次性任务也没跑过）。 */
-function isActive(job: ScheduleJob): boolean {
+function isActive(job: AutomationJob): boolean {
   return job.enabled && job.terminated !== "once";
 }
 
-function jobOrder(a: ScheduleJob, b: ScheduleJob): number {
+function jobOrder(a: AutomationJob, b: AutomationJob): number {
   const active = Number(isActive(b)) - Number(isActive(a));
   if (active !== 0) return active;
   return (a.nextRunAt ?? "~").localeCompare(b.nextRunAt ?? "~");
 }
 
-export function PixieScheduleSection({
+export function PixieAutomationSection({
   active,
   onCount,
 }: {
@@ -56,8 +60,8 @@ export function PixieScheduleSection({
 }) {
   const t = useT();
   const hostInstanceId = useAppStore((s) => s.host?.hostInstanceId ?? null);
-  const revision = useAppStore((s) => s.scheduleRevision);
-  const [jobs, setJobs] = useState<ScheduleJob[] | null>(null);
+  const revision = useAppStore((s) => s.automationRevision);
+  const [jobs, setJobs] = useState<AutomationJob[] | null>(null);
   const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
   const [available, setAvailable] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +74,7 @@ export function PixieScheduleSection({
     const host = useAppStore.getState().host;
     if (!host) return;
     try {
-      const status = await hostClient.request("schedule.status", hostContext(host), null, 10_000);
+      const status = await hostClient.request("automation.status", hostContext(host), null, 10_000);
       const ready = status.ok && status.result.available;
       setAvailable(ready);
       if (!ready) {
@@ -80,7 +84,7 @@ export function PixieScheduleSection({
         return;
       }
       const response = await hostClient.request(
-        "schedule.listJobs",
+        "automation.listJobs",
         hostContext(host),
         null,
         LIST_TIMEOUT_MS,
@@ -134,13 +138,13 @@ export function PixieScheduleSection({
   }, [ordered]);
 
   const toggleJob = useCallback(
-    async (job: ScheduleJob, enabled: boolean) => {
+    async (job: AutomationJob, enabled: boolean) => {
       const host = useAppStore.getState().host;
       if (!host || busyId) return;
       setBusyId(job.id);
       try {
         const response = await hostClient.request(
-          "schedule.setJobEnabled",
+          "automation.setJobEnabled",
           hostContext(host),
           { id: job.id, enabled },
           LIST_TIMEOUT_MS,
@@ -170,7 +174,7 @@ export function PixieScheduleSection({
   const startSmart = useCallback(
     async (cwd: string, requirement: string) => {
       requestComposerInsert(
-        t("pixieScheduleGuideNew", {
+        t("pixieAutomationGuideNew", {
           requirement,
           cwd: cwd || useAppStore.getState().workspace?.canonicalCwd || "",
         }),
@@ -187,16 +191,18 @@ export function PixieScheduleSection({
     : countdown === null
       ? ""
       : countdown === "due"
-        ? t("scheduleDueNow")
-        : t("pixieScheduleNextHint", { value: countdown });
+        ? t("automationDueNow")
+        : t("pixieAutomationNextHint", { value: countdown });
   const detailJob = detailId ? ((jobs ?? []).find((job) => job.id === detailId) ?? null) : null;
 
   return (
-    <PixiePanelBody tab="schedule" active={active}>
+    <PixiePanelBody tab="automation" active={active}>
       <div className="flex flex-col gap-1.5">
         {error ? <p className="px-1 text-[11px] text-danger">{error}</p> : null}
         {!available ? (
-          <p className="px-1 py-2 text-[11px] leading-5 text-muted">{t("scheduleOfflineTitle")}</p>
+          <p className="px-1 py-2 text-[11px] leading-5 text-muted">
+            {t("automationOfflineTitle")}
+          </p>
         ) : (
           <>
             {/* 二级页签行同时是这一块的**工具条**（与方寸间同一套）：两桶占满左边，
@@ -207,7 +213,7 @@ export function PixieScheduleSection({
                 <button
                   key={candidate}
                   type="button"
-                  data-testid={`pixie-schedule-tab-${candidate}`}
+                  data-testid={`pixie-automation-tab-${candidate}`}
                   aria-pressed={bucket === candidate}
                   className={`flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border text-[11px] transition-colors focus-visible:outline-none ${
                     bucket === candidate
@@ -217,8 +223,8 @@ export function PixieScheduleSection({
                   onClick={() => setBucket(candidate)}
                 >
                   {candidate === "active"
-                    ? t("scheduleSectionActive")
-                    : t("scheduleSectionExpired")}
+                    ? t("automationSectionActive")
+                    : t("automationSectionExpired")}
                   <span className="text-[10px] tabular-nums opacity-75">
                     {candidate === "active" ? activeJobs.length : expiredJobs.length}
                   </span>
@@ -226,7 +232,7 @@ export function PixieScheduleSection({
               ))}
               {hint ? (
                 <span
-                  data-testid="pixie-schedule-hint"
+                  data-testid="pixie-automation-hint"
                   className="min-w-0 shrink truncate text-right text-[10px] tabular-nums text-muted"
                 >
                   {hint}
@@ -234,9 +240,9 @@ export function PixieScheduleSection({
               ) : null}
               <button
                 type="button"
-                data-testid="pixie-schedule-new"
-                title={t("pixieScheduleNew")}
-                aria-label={t("pixieScheduleNew")}
+                data-testid="pixie-automation-new"
+                title={t("pixieAutomationNew")}
+                aria-label={t("pixieAutomationNew")}
                 className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none"
                 onClick={() => setCreating(true)}
               >
@@ -245,18 +251,18 @@ export function PixieScheduleSection({
             </div>
             {ordered.length === 0 ? (
               <p className="px-1 py-2 text-center text-[11px] text-muted">
-                {t("scheduleEmptyTitle")}
+                {t("automationEmptyTitle")}
               </p>
             ) : bucketJobs.length === 0 ? (
               <p className="px-1 py-2 text-center text-[11px] text-muted">
                 {bucket === "active"
-                  ? t("scheduleSectionActiveEmpty")
-                  : t("scheduleSectionExpiredEmpty")}
+                  ? t("automationSectionActiveEmpty")
+                  : t("automationSectionExpiredEmpty")}
               </p>
             ) : (
               <div className="flex flex-col gap-1.5">
                 {bucketJobs.map((job) => (
-                  <ScheduleRow
+                  <AutomationRow
                     key={job.id}
                     job={job}
                     now={now}
@@ -273,29 +279,29 @@ export function PixieScheduleSection({
       </div>
 
       {creating ? (
-        <ScheduleJobDialog
+        <AutomationJobDialog
           job={null}
           onClose={() => setCreating(false)}
           onSaved={() => {
             setCreating(false);
-            useAppStore.getState().bumpScheduleRevision();
+            useAppStore.getState().bumpAutomationRevision();
           }}
           onStartSmart={async (cwd, requirement) => startSmart(cwd, requirement)}
         />
       ) : null}
 
       {detailJob ? (
-        <PixieScheduleDetailDialog
+        <PixieAutomationDetailDialog
           job={detailJob}
           jobLive={activeJobIds.includes(detailJob.id)}
           onClose={() => setDetailId(null)}
-          onChanged={() => useAppStore.getState().bumpScheduleRevision()}
+          onChanged={() => useAppStore.getState().bumpAutomationRevision()}
         />
       ) : null}
     </PixiePanelBody>
   );
 }
-function ScheduleRow({
+function AutomationRow({
   job,
   now,
   running,
@@ -303,7 +309,7 @@ function ScheduleRow({
   onToggle,
   onOpen,
 }: {
-  job: ScheduleJob;
+  job: AutomationJob;
   now: number;
   /** 这一轮正在执行（`listJobs` 的 activeJobIds），与「启用中」是两回事。 */
   running: boolean;
@@ -318,19 +324,19 @@ function ScheduleRow({
 
   const triggerLabel =
     summary.kind === "manual"
-      ? t("scheduleTriggerManual")
+      ? t("automationTriggerManual")
       : summary.kind === "once"
-        ? t("scheduleTriggerOnce")
+        ? t("automationTriggerOnce")
         : summary.kind === "cron"
-          ? (summary.value ?? t("scheduleTriggerCron"))
-          : t("scheduleEveryValue", { value: formatIntervalEvery(summary.value ?? "") });
+          ? (summary.value ?? t("automationTriggerCron"))
+          : t("automationEveryValue", { value: formatIntervalEvery(summary.value ?? "") });
 
   return (
     <div
       role="button"
       tabIndex={0}
-      data-testid="pixie-schedule-row"
-      aria-label={t("pixieScheduleOpenDetail")}
+      data-testid="pixie-automation-row"
+      aria-label={t("pixieAutomationOpenDetail")}
       className="flex cursor-pointer items-start gap-2 rounded-md border border-border p-2 transition-colors hover:bg-surface-overlay"
       onClick={onOpen}
       onKeyDown={(event) => {
@@ -352,15 +358,15 @@ function ScheduleRow({
           {countdown ? (
             <span className="text-muted">
               {countdown === "due"
-                ? t("scheduleDueNow")
-                : t("pixieScheduleNextHint", { value: countdown })}
+                ? t("automationDueNow")
+                : t("pixieAutomationNextHint", { value: countdown })}
             </span>
           ) : null}
-          {running ? <span className="text-accent">{t("scheduleRunning")}</span> : null}
+          {running ? <span className="text-accent">{t("automationRunning")}</span> : null}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-muted">
           <span className="truncate">{job.cwd.split(/[\\/]/).pop() || job.cwd}</span>
-          {job.terminated ? <span>{t("scheduleTerminated")}</span> : null}
+          {job.terminated ? <span>{t("automationTerminated")}</span> : null}
         </div>
       </div>
       {/* 开关不许带着整行一起打开详情。 */}

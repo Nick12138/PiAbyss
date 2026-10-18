@@ -1,6 +1,6 @@
 /**
  * Injected-reference model: prompts the app composes on the user's behalf
- * (memo handling, schedule smart-creation preamble, plan context, the pixie
+ * (memo handling, automation smart-creation preamble, plan context, the pixie
  * segment preamble) travel in the prompt text so any model sees them verbatim,
  * but the UI must never show the raw prompt. This module folds those blocks
  * into `@`-style reference chips for the transcript and rebuilds the payload
@@ -14,8 +14,8 @@
 export type InjectedReferenceKind =
   | "memo"
   | "memo-result"
-  | "schedule-preamble"
-  | "schedule-job"
+  | "automation-preamble"
+  | "automation-job"
   | "relay-mapping"
   | "pixie-context";
 
@@ -47,13 +47,14 @@ const ENVELOPE_PATTERN =
 const MEMO_PATTERN = /<piabyss-memo\s+([^>]*)>\s*([\s\S]*?)\s*<\/piabyss-memo>/gu;
 const MEMO_RESULT_PATTERN =
   /<piabyss-memo-result\s+([^>]*)>\s*([\s\S]*?)\s*<\/piabyss-memo-result>/gu;
-const SCHEDULE_PREAMBLE_PATTERN = /<schedule-preamble>\s*([\s\S]*?)\s*<\/schedule-preamble>/gu;
-const SCHEDULE_JOB_PATTERN = /<schedule-job\s+([^>]*)>\s*([\s\S]*?)\s*<\/schedule-job>/gu;
+const AUTOMATION_PREAMBLE_PATTERN =
+  /<automation-preamble>\s*([\s\S]*?)\s*<\/automation-preamble>/gu;
+const AUTOMATION_JOB_PATTERN = /<automation-job\s+([^>]*)>\s*([\s\S]*?)\s*<\/automation-job>/gu;
 
 /**
  * 小精灵会话段前导：Host 在段的首条用户消息外面包一层 `<pixie-context>` 契约正文
  * （身份、时间锚点、委派契约、已知工作区列表）。它必须原样送给模型，但用户气泡里
- * 只该看见自己说的话——和 memo / schedule 一样折成一张 chip。
+ * 只该看见自己说的话——和 memo / automation 一样折成一张 chip。
  */
 const PIXIE_CONTEXT_PATTERN = /<pixie-context>\s*([\s\S]*?)\s*<\/pixie-context>/gu;
 /**
@@ -65,8 +66,8 @@ const PIXIE_MARKER_LINE = /^[ \t]*\[pixie\|[^\]\s]*\][ \t]*$/gmu;
 const REFERENCE_KINDS: readonly InjectedReferenceKind[] = [
   "memo",
   "memo-result",
-  "schedule-preamble",
-  "schedule-job",
+  "automation-preamble",
+  "automation-job",
   "relay-mapping",
   "pixie-context",
 ];
@@ -130,12 +131,12 @@ export function parseInjectedReferences(raw: string): ParsedInjectedText {
     references.push({ kind: "memo-result", title: "", body, raw: match });
     return "";
   });
-  text = text.replace(SCHEDULE_PREAMBLE_PATTERN, (match, body: string) => {
-    references.push({ kind: "schedule-preamble", title: "", body, raw: match });
+  text = text.replace(AUTOMATION_PREAMBLE_PATTERN, (match, body: string) => {
+    references.push({ kind: "automation-preamble", title: "", body, raw: match });
     return "";
   });
-  text = text.replace(SCHEDULE_JOB_PATTERN, (match, _attributes: string, body: string) => {
-    references.push({ kind: "schedule-job", title: "", body, raw: match });
+  text = text.replace(AUTOMATION_JOB_PATTERN, (match, _attributes: string, body: string) => {
+    references.push({ kind: "automation-job", title: "", body, raw: match });
     return "";
   });
   text = text.replace(PIXIE_CONTEXT_PATTERN, (match, body: string) => {
@@ -155,7 +156,7 @@ export function stripInjectedReferences(raw: string): string {
 /**
  * Rebuilds the message for a retry: reference payloads first (their original
  * position), then the user's text, then the rebuilt attachment blocks. Retry
- * must keep the injected payload or the memo/schedule turn loses its context.
+ * must keep the injected payload or the memo/automation turn loses its context.
  */
 export function joinOutgoingParts(parts: readonly (string | undefined)[]): string {
   return parts

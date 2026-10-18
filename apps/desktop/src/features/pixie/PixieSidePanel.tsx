@@ -13,14 +13,14 @@
  *
  * 面板内容是**横排的三块页签**（设计稿 `pixie-merge-C.html` 的三块，竖排折叠已改成这个）：
  *   1. 方寸间        —— `PixieTodoSection`
- *   2. 周期计划      —— `PixieScheduleSection`
+ *   2. 自动化      —— `PixieAutomationSection`
  *   3. 委派任务      —— 本文件，数据由 `PixiePage` 轮询后传入
  * 一次只看一块，导航就是顶栏那 `h-10`（35px；面板标题「随行面板」随之删掉，名字留给 `aria-label`）。
  * 三块都留在 DOM 里、未选中的只摘显示，所以每块自己拉的数据一直活着、页签上的计数不会停更。
  * 再加分组只要往 `tabs` 里插一项 + 插一个 section（外壳 `PixiePanelTabs` 已经统一）。
  *
  * 插件门在这里，不在各块里：被禁用的那块**连页签都不该有**，所以 `usePluginEnabled` /
- * `useSchedulePluginEnabled` 由面板判，块本身不再各自 return null。
+ * `useAutomationPluginEnabled` 由面板判，块本身不再各自 return null。
  *
  * 内容区**不留内缩**（面板已有 `border-l`，各块自己 `px-3`）；曾经这里是 `p-3` +
  * 每块一圈圆角边框，左右各白吃 ~10px、上下各多 24px，窄面板里不值。
@@ -56,14 +56,14 @@ import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 import { classifyDragResize } from "../../lib/layout-motion";
 import { usePluginEnabled } from "../plugin-library/plugin-gate";
-import { useSchedulePluginEnabled } from "../schedule/schedule-plugin-gate";
+import { useAutomationPluginEnabled } from "../automation/automation-plugin-gate";
 import {
   PixiePanelBody,
   PixiePanelTabBar,
   type PixiePanelTab,
   type PixiePanelTabId,
 } from "./PixiePanelTabs";
-import { PixieScheduleSection } from "./PixieScheduleSection";
+import { PixieAutomationSection } from "./PixieAutomationSection";
 import { PixieTaskTree } from "./PixieTaskTree";
 import { PixieTodoSection } from "./PixieTodoSection";
 
@@ -173,7 +173,7 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
   const sidebarAutoCollapsed = useAppStore((state) => state.sidebarAutoCollapsed);
   const navSidebarWidth = useAppStore((state) => state.sidebarWidth);
   const memoEnabled = usePluginEnabled(MEMO_PLUGIN_ID);
-  const scheduleEnabled = useSchedulePluginEnabled();
+  const automationEnabled = useAutomationPluginEnabled();
   const asideRef = useRef<HTMLElement>(null);
   const [customWidth, setCustomWidth] = useState<number | null>(readStoredPanelWidth);
   const [rowWidth, setRowWidth] = useState(0);
@@ -187,14 +187,15 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
    */
   const [counts, setCounts] = useState<Record<PixiePanelTabId, number>>({
     todo: 0,
-    schedule: 0,
+    automation: 0,
     dispatch: 0,
   });
   const onCount = useMemo<Record<PixiePanelTabId, (count: number) => void>>(
     () => ({
       // 同值直接返回原对象：否则子组件的 effect 会被父组件的重渲染再喂一轮。
       todo: (count) => setCounts((c) => (c.todo === count ? c : { ...c, todo: count })),
-      schedule: (count) => setCounts((c) => (c.schedule === count ? c : { ...c, schedule: count })),
+      automation: (count) =>
+        setCounts((c) => (c.automation === count ? c : { ...c, automation: count })),
       dispatch: (count) => setCounts((c) => (c.dispatch === count ? c : { ...c, dispatch: count })),
     }),
     [],
@@ -357,12 +358,12 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
         count: counts.todo,
       });
     }
-    if (scheduleEnabled) {
+    if (automationEnabled) {
       list.push({
-        id: "schedule",
+        id: "automation",
         icon: CalendarClock,
-        title: t("scheduleTitle"),
-        count: counts.schedule,
+        title: t("automationTitle"),
+        count: counts.automation,
       });
     }
     list.push({
@@ -372,7 +373,7 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
       count: counts.dispatch,
     });
     return list;
-  }, [memoEnabled, scheduleEnabled, counts, t]);
+  }, [memoEnabled, automationEnabled, counts, t]);
 
   /** 记住用户停在哪个页签；被禁用的那块不许留下一个点不开的空页签，退回第一块。 */
   const activeTab: PixiePanelTabId = tabs.some((item) => item.id === tab)
@@ -469,8 +470,11 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
           className="scrollbar-subtle flex min-h-0 flex-1 flex-col overflow-y-auto pb-2"
         >
           {memoEnabled && <PixieTodoSection active={activeTab === "todo"} onCount={onCount.todo} />}
-          {scheduleEnabled && (
-            <PixieScheduleSection active={activeTab === "schedule"} onCount={onCount.schedule} />
+          {automationEnabled && (
+            <PixieAutomationSection
+              active={activeTab === "automation"}
+              onCount={onCount.automation}
+            />
           )}
           <PixieDispatchSection
             groups={groups}

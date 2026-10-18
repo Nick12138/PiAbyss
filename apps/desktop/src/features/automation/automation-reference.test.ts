@@ -1,11 +1,11 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it } from "vitest";
-import type { ScheduleJob } from "@piabyss/protocol";
+import type { AutomationJob } from "@piabyss/protocol";
 import {
   buildInjectedReferenceEnvelope,
   parseInjectedReferences,
 } from "../chat/injected-references";
-import { composeScheduleJobPayload } from "./schedule-reference";
+import { composeAutomationJobPayload } from "./automation-reference";
 
 const job = {
   id: "j1",
@@ -29,12 +29,12 @@ const job = {
   lastStatus: null,
   runCount: 3,
   terminated: null,
-} as unknown as ScheduleJob;
+} as unknown as AutomationJob;
 
-describe("周期计划引用胶囊", () => {
+describe("自动化引用胶囊", () => {
   it("正文带着现状与 jobId，草案卡才知道是改不是建", () => {
-    const body = composeScheduleJobPayload(job);
-    expect(body).toContain(`<schedule-job id="j1">`);
+    const body = composeAutomationJobPayload(job);
+    expect(body).toContain(`<automation-job id="j1">`);
     expect(body).toContain('"jobId": "j1"');
     expect(body).toContain('"runCount": 3');
     expect(body).toContain("每日构建报告");
@@ -42,15 +42,15 @@ describe("周期计划引用胶囊", () => {
 
   it("展开成消息后只剩一张胶囊：那坨配置 JSON 不许出现在气泡、标题或复制文本里", () => {
     const message = buildInjectedReferenceEnvelope({
-      kind: "schedule-job",
+      kind: "automation-job",
       title: job.name,
-      body: composeScheduleJobPayload(job),
+      body: composeAutomationJobPayload(job),
     });
 
     const parsed = parseInjectedReferences(message);
 
     expect(parsed.references).toHaveLength(1);
-    expect(parsed.references[0]?.kind).toBe("schedule-job");
+    expect(parsed.references[0]?.kind).toBe("automation-job");
     expect(parsed.references[0]?.title).toBe("每日构建报告");
     expect(parsed.text).toBe("");
   });
@@ -58,9 +58,9 @@ describe("周期计划引用胶囊", () => {
   it("用户自己说的话留在可见文本里", () => {
     const message =
       buildInjectedReferenceEnvelope({
-        kind: "schedule-job",
+        kind: "automation-job",
         title: job.name,
-        body: composeScheduleJobPayload(job),
+        body: composeAutomationJobPayload(job),
       }) + "\n改成每周一早上九点，只看主干。";
 
     const parsed = parseInjectedReferences(message);

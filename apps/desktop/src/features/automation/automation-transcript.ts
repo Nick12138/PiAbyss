@@ -1,19 +1,19 @@
 /**
- * 把 Host 投影出来的会话消息（`ScheduleAgentMessage`）换成共享转写投影吃的形状。
+ * 把 Host 投影出来的会话消息（`AutomationAgentMessage`）换成共享转写投影吃的形状。
  *
  * 这份适配存在的意义只有一句话：**执行过程要用和普通会话一模一样的折叠渲染**。
  * `toolResult` 的关联字段必须原样带过去，`buildTranscriptRows` 才能把工具调用
  * 落定成 done/error，而不是留一个永远转圈的卡。
  */
 import type {
-  ScheduleAgentMessage,
+  AutomationAgentMessage,
   SerializableAgentContent,
   SerializableAgentMessage,
 } from "@piabyss/protocol";
 import { buildTranscriptRows, type TranscriptRow } from "../chat/transcript-model";
-import { stripPlanFences } from "./schedule-plan-fence";
+import { stripPlanFences } from "./automation-plan-fence";
 
-function toSerializable(message: ScheduleAgentMessage): SerializableAgentMessage | null {
+function toSerializable(message: AutomationAgentMessage): SerializableAgentMessage | null {
   if (message.role === "toolResult") {
     return {
       role: "toolResult",
@@ -49,7 +49,7 @@ function toSerializable(message: ScheduleAgentMessage): SerializableAgentMessage
 
 /** 一次执行的过程 → 共享转写的行（连续的 assistant 会并成一轮，折叠口径与普通会话同源）。 */
 export function buildRunRows(
-  messages: readonly ScheduleAgentMessage[],
+  messages: readonly AutomationAgentMessage[],
   turnActive: boolean,
 ): TranscriptRow[] {
   const projected: SerializableAgentMessage[] = [];

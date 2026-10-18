@@ -97,14 +97,14 @@ import type {
   SubagentsStatusSnapshot,
   ShellJobsSnapshot,
   ShellJobOutput,
-  ScheduleJob,
-  ScheduleJobInput,
-  ScheduleJobPatch,
-  SchedulePermission,
-  ScheduleRunMessages,
-  ScheduleRunSummary,
-  ScheduleStatus,
-  ScheduleNotification,
+  AutomationJob,
+  AutomationJobInput,
+  AutomationJobPatch,
+  AutomationPermission,
+  AutomationRunMessages,
+  AutomationRunSummary,
+  AutomationStatus,
+  AutomationNotification,
   PixieDispatchKind,
   PixieDispatchRecord,
   PixieSessionAlive,
@@ -259,18 +259,18 @@ export type HostContextMap = {
   "telegram.updateConfig": HostContext;
   "telegram.reset": HostContext;
   "telegram.status": HostContext;
-  "schedule.status": HostContext;
-  "schedule.listJobs": HostContext;
-  "schedule.createJob": HostContext;
-  "schedule.updateJob": HostContext;
-  "schedule.deleteJob": HostContext;
-  "schedule.setJobEnabled": HostContext;
-  "schedule.runJobNow": HostContext;
-  "schedule.listRuns": HostContext;
-  "schedule.runMessages": HostContext;
-  "schedule.abortRun": HostContext;
-  "schedule.validateCron": HostContext;
-  "schedule.listNotifications": HostContext;
+  "automation.status": HostContext;
+  "automation.listJobs": HostContext;
+  "automation.createJob": HostContext;
+  "automation.updateJob": HostContext;
+  "automation.deleteJob": HostContext;
+  "automation.setJobEnabled": HostContext;
+  "automation.runJobNow": HostContext;
+  "automation.listRuns": HostContext;
+  "automation.runMessages": HostContext;
+  "automation.abortRun": HostContext;
+  "automation.validateCron": HostContext;
+  "automation.listNotifications": HostContext;
   "memo.list": HostContext;
   "memo.optimize": HostContext;
   "memo.create": HostContext;
@@ -512,20 +512,20 @@ export type HostRequestParams = {
   };
   "telegram.reset": null;
   "telegram.status": null;
-  "schedule.status": null;
-  "schedule.listJobs": null;
-  "schedule.createJob": ScheduleJobInput;
-  "schedule.updateJob": ScheduleJobPatch;
-  "schedule.deleteJob": { id: string; purge?: boolean };
-  "schedule.setJobEnabled": { id: string; enabled: boolean };
-  "schedule.runJobNow": { id: string; permission?: SchedulePermission; timeoutMs?: number };
-  "schedule.listRuns": { jobId?: string | null; limit?: number };
+  "automation.status": null;
+  "automation.listJobs": null;
+  "automation.createJob": AutomationJobInput;
+  "automation.updateJob": AutomationJobPatch;
+  "automation.deleteJob": { id: string; purge?: boolean };
+  "automation.setJobEnabled": { id: string; enabled: boolean };
+  "automation.runJobNow": { id: string; permission?: AutomationPermission; timeoutMs?: number };
+  "automation.listRuns": { jobId?: string | null; limit?: number };
   /** 一次执行的过程（Host 直读 run 的会话文件，保留思考块与工具调用）。 */
-  "schedule.runMessages": { runId: string };
+  "automation.runMessages": { runId: string };
   /** 叫停正在执行的那一轮：只中止这一轮，任务与排期不动。 */
-  "schedule.abortRun": { runId: string };
-  "schedule.validateCron": { cron: string; timezone?: string };
-  "schedule.listNotifications": { limit?: number };
+  "automation.abortRun": { runId: string };
+  "automation.validateCron": { cron: string; timezone?: string };
+  "automation.listNotifications": { limit?: number };
   "memo.list": null;
   "memo.optimize": {
     contentMd: string;
@@ -813,18 +813,18 @@ export type HostResultMap = {
   "telegram.updateConfig": { saved: true };
   "telegram.reset": { reset: true };
   "telegram.status": TelegramBridgeStatus;
-  "schedule.status": ScheduleStatus;
-  "schedule.listJobs": { jobs: ScheduleJob[]; activeJobIds: string[]; root: string };
-  "schedule.createJob": { job: ScheduleJob };
-  "schedule.updateJob": { job: ScheduleJob };
-  "schedule.deleteJob": { removed: boolean; purged: boolean };
-  "schedule.setJobEnabled": { job: ScheduleJob };
-  "schedule.runJobNow": { run: ScheduleRunSummary };
-  "schedule.listRuns": { runs: ScheduleRunSummary[] };
-  "schedule.runMessages": ScheduleRunMessages;
-  "schedule.abortRun": { aborted: boolean; run: ScheduleRunSummary };
-  "schedule.validateCron": { valid: boolean; reason: string | null };
-  "schedule.listNotifications": { entries: ScheduleNotification[] };
+  "automation.status": AutomationStatus;
+  "automation.listJobs": { jobs: AutomationJob[]; activeJobIds: string[]; root: string };
+  "automation.createJob": { job: AutomationJob };
+  "automation.updateJob": { job: AutomationJob };
+  "automation.deleteJob": { removed: boolean; purged: boolean };
+  "automation.setJobEnabled": { job: AutomationJob };
+  "automation.runJobNow": { run: AutomationRunSummary };
+  "automation.listRuns": { runs: AutomationRunSummary[] };
+  "automation.runMessages": AutomationRunMessages;
+  "automation.abortRun": { aborted: boolean; run: AutomationRunSummary };
+  "automation.validateCron": { valid: boolean; reason: string | null };
+  "automation.listNotifications": { entries: AutomationNotification[] };
   "memo.list": { notes: MemoNote[] };
   "memo.optimize": {
     contentMd: string;
@@ -868,7 +868,7 @@ export type HostEventPayloadMap = {
   "workspace.filesChanged": { directories: string[] };
   "git.changed": { snapshot: GitStatusSnapshot };
   "git.taskFinished": GitTaskFinishedPayload;
-  "schedule.notificationsChanged": { total: number };
+  "automation.notificationsChanged": { total: number };
   "attachment.changed": { attachment: AttachmentSnapshot };
   "session.snapshot": SessionSnapshot | null;
   "session.infoChanged": { sessionId: string; name?: string };

@@ -1,25 +1,25 @@
-import type { ScheduleJob, ScheduleJobInput, ScheduleTrigger } from "@piabyss/protocol";
+import type { AutomationJob, AutomationJobInput, AutomationTrigger } from "@piabyss/protocol";
 import type { MessageKey } from "../../lib/i18n";
 import type { Translate } from "../../lib/i18n/use-t";
-import type { SchedulePlanDraft } from "./schedule-plan-fence";
+import type { AutomationPlanDraft } from "./automation-plan-fence";
 
 /** Matches the plugin's DEFAULTS.timeoutMs (30 minutes). */
-const SCHEDULE_DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
+const AUTOMATION_DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 /** Plugin LIMITS.maxJobs-aware guard rails used by the form. */
-export const SCHEDULE_MAX_TIMEOUT_MINUTES = 6 * 60;
+export const AUTOMATION_MAX_TIMEOUT_MINUTES = 6 * 60;
 
 /** Shared run-status → i18n key map (主界面列表 / 详情 / 执行历史共用). */
-export const SCHEDULE_STATUS_LABEL: Record<string, MessageKey> = {
-  ok: "scheduleStatusOk",
-  error: "scheduleStatusError",
-  timeout: "scheduleStatusTimeout",
-  aborted: "scheduleStatusAborted",
-  running: "scheduleStatusRunning",
+export const AUTOMATION_STATUS_LABEL: Record<string, MessageKey> = {
+  ok: "automationStatusOk",
+  error: "automationStatusError",
+  timeout: "automationStatusTimeout",
+  aborted: "automationStatusAborted",
+  running: "automationStatusRunning",
 };
 
-type SchedulePermissionValue = "read_only" | "write" | "full";
+type AutomationPermissionValue = "read_only" | "write" | "full";
 
-export type ScheduleFormState = {
+export type AutomationFormState = {
   name: string;
   /** prompt 任务（走模型）或 command 任务（直接执行 shell 命令）。 */
   kind: "prompt" | "command";
@@ -32,7 +32,7 @@ export type ScheduleFormState = {
   intervalValue: number;
   intervalUnit: "s" | "m" | "h" | "d" | "w" | "mo";
   cron: string;
-  permission: SchedulePermissionValue;
+  permission: AutomationPermissionValue;
   /** 按计划推送配置。 */
   notify: "none" | "system" | "tg";
   /** null = 宿主默认模型。 */
@@ -46,15 +46,15 @@ export type ScheduleFormState = {
   enabled: boolean;
   /**
    * 执行会话要不要加载扩展与技能。**默认关**：计划是无人值守的重复执行，
-   * 关掉扩展同时是防递归（执行会话拿不到 `schedule` 工具，就不会自己再建计划）。
+   * 关掉扩展同时是防递归（执行会话拿不到 `automation` 工具，就不会自己再建计划）。
    * 这一位过去被表单写死成 false，用户根本不知道有这档；现在如实暴露、如实承担。
    */
   loadExtensions: boolean;
 };
 
-export type ScheduleIntervalUnit = "s" | "m" | "h" | "d" | "w" | "mo";
+export type AutomationIntervalUnit = "s" | "m" | "h" | "d" | "w" | "mo";
 
-export function defaultScheduleForm(cwd: string): ScheduleFormState {
+export function defaultAutomationForm(cwd: string): AutomationFormState {
   return {
     name: "",
     kind: "prompt",
@@ -70,7 +70,7 @@ export function defaultScheduleForm(cwd: string): ScheduleFormState {
     notify: "system",
     model: null,
     missedWindow: "catch_up_one",
-    timeoutMinutes: SCHEDULE_DEFAULT_TIMEOUT_MS / 60_000,
+    timeoutMinutes: AUTOMATION_DEFAULT_TIMEOUT_MS / 60_000,
     maxRuns: "",
     tags: "",
     enabled: true,
@@ -79,16 +79,16 @@ export function defaultScheduleForm(cwd: string): ScheduleFormState {
 }
 
 /** Parse the plugin's interval string ("30m" / "2h" / "1d" / "15s" / "2w" / "1mo"). */
-export function parseIntervalEvery(every: string): { value: number; unit: ScheduleIntervalUnit } {
+export function parseIntervalEvery(every: string): { value: number; unit: AutomationIntervalUnit } {
   const match = every.trim().match(/^(\d+)\s*(mo|m|h|d|w|s)$/i);
   if (!match) return { value: 30, unit: "m" };
   return {
     value: Number(match[1]),
-    unit: match[2].toLowerCase() as ScheduleIntervalUnit,
+    unit: match[2].toLowerCase() as AutomationIntervalUnit,
   };
 }
 
-export function jobToForm(job: ScheduleJob): ScheduleFormState {
+export function jobToForm(job: AutomationJob): AutomationFormState {
   const trigger = job.trigger;
   const interval =
     trigger.type === "interval"
@@ -134,26 +134,26 @@ export function toDatetimeLocalValue(iso: string): string {
   );
 }
 
-function buildTrigger(form: ScheduleFormState): ScheduleTrigger | { error: MessageKey } {
+function buildTrigger(form: AutomationFormState): AutomationTrigger | { error: MessageKey } {
   switch (form.triggerType) {
     case "manual":
       return { type: "manual" };
     case "once": {
-      if (!form.onceAt) return { error: "scheduleFormOnceRequired" };
+      if (!form.onceAt) return { error: "automationFormOnceRequired" };
       const at = new Date(form.onceAt);
-      if (Number.isNaN(at.getTime())) return { error: "scheduleFormOnceInvalid" };
+      if (Number.isNaN(at.getTime())) return { error: "automationFormOnceInvalid" };
       return { type: "once", at: at.toISOString() };
     }
     case "interval": {
       if (!Number.isFinite(form.intervalValue) || form.intervalValue < 1) {
-        return { error: "scheduleFormIntervalInvalid" };
+        return { error: "automationFormIntervalInvalid" };
       }
       return { type: "interval", every: `${form.intervalValue}${form.intervalUnit}` };
     }
     case "cron": {
       const cron = form.cron.trim();
       const fields = cron.split(/\s+/).filter(Boolean);
-      if (fields.length !== 5) return { error: "scheduleFormCronInvalid" };
+      if (fields.length !== 5) return { error: "automationFormCronInvalid" };
       return {
         type: "cron",
         cron,
@@ -163,17 +163,17 @@ function buildTrigger(form: ScheduleFormState): ScheduleTrigger | { error: Messa
 }
 
 export function formToJobInput(
-  form: ScheduleFormState,
-): { ok: true; input: ScheduleJobInput } | { ok: false; errorKey: MessageKey } {
+  form: AutomationFormState,
+): { ok: true; input: AutomationJobInput } | { ok: false; errorKey: MessageKey } {
   const trigger = buildTrigger(form);
   if ("error" in trigger) return { ok: false, errorKey: trigger.error };
   const timeoutMs = Math.round(form.timeoutMinutes * 60_000);
   const maxRuns = form.maxRuns.trim() === "" ? null : Number(form.maxRuns.trim());
   if (maxRuns !== null && (!Number.isSafeInteger(maxRuns) || maxRuns < 1)) {
-    return { ok: false, errorKey: "scheduleFormMaxRunsInvalid" };
+    return { ok: false, errorKey: "automationFormMaxRunsInvalid" };
   }
-  if (form.timeoutMinutes < 1 || form.timeoutMinutes > SCHEDULE_MAX_TIMEOUT_MINUTES) {
-    return { ok: false, errorKey: "scheduleFormTimeoutInvalid" };
+  if (form.timeoutMinutes < 1 || form.timeoutMinutes > AUTOMATION_MAX_TIMEOUT_MINUTES) {
+    return { ok: false, errorKey: "automationFormTimeoutInvalid" };
   }
   return {
     ok: true,
@@ -206,44 +206,46 @@ export function formToJobInput(
 }
 
 /** Field-level validation for live form feedback. Returns i18n error keys. */
-export function scheduleFormErrors(form: ScheduleFormState): Partial<Record<string, MessageKey>> {
+export function automationFormErrors(
+  form: AutomationFormState,
+): Partial<Record<string, MessageKey>> {
   const errors: Partial<Record<string, MessageKey>> = {};
-  if (!form.name.trim()) errors.name = "scheduleFormNameRequired";
-  if (form.kind === "prompt" && !form.prompt.trim()) errors.prompt = "scheduleFormPromptRequired";
+  if (!form.name.trim()) errors.name = "automationFormNameRequired";
+  if (form.kind === "prompt" && !form.prompt.trim()) errors.prompt = "automationFormPromptRequired";
   if (form.kind === "command" && !form.command.trim())
-    errors.command = "scheduleFormCommandRequired";
-  if (!form.cwd.trim()) errors.cwd = "scheduleFormCwdRequired";
+    errors.command = "automationFormCommandRequired";
+  if (!form.cwd.trim()) errors.cwd = "automationFormCwdRequired";
   if (form.triggerType === "once") {
-    if (!form.onceAt) errors.onceAt = "scheduleFormOnceRequired";
+    if (!form.onceAt) errors.onceAt = "automationFormOnceRequired";
     else if (Number.isNaN(new Date(form.onceAt).getTime()))
-      errors.onceAt = "scheduleFormOnceInvalid";
+      errors.onceAt = "automationFormOnceInvalid";
   }
   if (form.triggerType === "interval" && form.intervalValue < 1) {
-    errors.interval = "scheduleFormIntervalInvalid";
+    errors.interval = "automationFormIntervalInvalid";
   }
   if (form.triggerType === "cron" && form.cron.trim().split(/\s+/).filter(Boolean).length !== 5) {
-    errors.cron = "scheduleFormCronInvalid";
+    errors.cron = "automationFormCronInvalid";
   }
-  if (form.timeoutMinutes < 1 || form.timeoutMinutes > SCHEDULE_MAX_TIMEOUT_MINUTES) {
-    errors.timeout = "scheduleFormTimeoutInvalid";
+  if (form.timeoutMinutes < 1 || form.timeoutMinutes > AUTOMATION_MAX_TIMEOUT_MINUTES) {
+    errors.timeout = "automationFormTimeoutInvalid";
   }
   if (form.maxRuns.trim() !== "") {
     const maxRuns = Number(form.maxRuns.trim());
     if (!Number.isSafeInteger(maxRuns) || maxRuns < 1)
-      errors.maxRuns = "scheduleFormMaxRunsInvalid";
+      errors.maxRuns = "automationFormMaxRunsInvalid";
   }
   return errors;
 }
 
 /* ── Display helpers ─────────────────────────────────────────── */
 
-export type ScheduleTriggerSummary = {
+export type AutomationTriggerSummary = {
   kind: "manual" | "once" | "interval" | "cron";
   /** cron 表达式 / interval 字符串 / once 的 ISO。 */
   value: string | null;
 };
 
-export function triggerSummary(trigger: ScheduleTrigger): ScheduleTriggerSummary {
+export function triggerSummary(trigger: AutomationTrigger): AutomationTriggerSummary {
   switch (trigger.type) {
     case "manual":
       return { kind: "manual", value: null };
@@ -285,31 +287,31 @@ export function formatIntervalEvery(every: string): string {
  */
 
 /**
- * 草案的线格式（`schedule-plan` 围栏）住在 `schedule-plan-fence` 里：转写投影也要拆它，
+ * 草案的线格式（`automation-plan` 围栏）住在 `automation-plan-fence` 里：转写投影也要拆它，
  * 那条路径不许依赖 i18n。这里只做「页面确实用到的」再导出，不是把整个模块转出去——
  * 全部再导出会养出第二条引用路径，改起来没人报错。
  */
-export type { SchedulePlanDraft } from "./schedule-plan-fence";
+export type { AutomationPlanDraft } from "./automation-plan-fence";
 
 /** Matches the plugin's create path: only an explicit "command" is a command plan. */
-function schedulePlanIsCommand(plan: SchedulePlanDraft): boolean {
+function automationPlanIsCommand(plan: AutomationPlanDraft): boolean {
   return plan.kind === "command";
 }
 
 /** Required fields still missing. Empty ⇒ the plan is creatable. */
-export function schedulePlanMissingFields(plan: SchedulePlanDraft): MessageKey[] {
+export function automationPlanMissingFields(plan: AutomationPlanDraft): MessageKey[] {
   const missing: MessageKey[] = [];
-  if (!plan.name?.trim()) missing.push("scheduleFormName");
-  if (!plan.cwd?.trim()) missing.push("scheduleFormCwd");
+  if (!plan.name?.trim()) missing.push("automationFormName");
+  if (!plan.cwd?.trim()) missing.push("automationFormCwd");
   if (!(plan.trigger && typeof plan.trigger.type === "string")) {
-    missing.push("scheduleFormTrigger");
+    missing.push("automationFormTrigger");
   }
   // Mirrors the create path: anything that is not explicitly "command" is
   // created as a prompt plan, so a null kind does not block confirmation.
-  if (schedulePlanIsCommand(plan)) {
-    if (!plan.command?.trim()) missing.push("scheduleFormCommand");
+  if (automationPlanIsCommand(plan)) {
+    if (!plan.command?.trim()) missing.push("automationFormCommand");
   } else if (!plan.prompt?.trim()) {
-    missing.push("scheduleFormPrompt");
+    missing.push("automationFormPrompt");
   }
   return missing;
 }
@@ -319,7 +321,7 @@ export function schedulePlanMissingFields(plan: SchedulePlanDraft): MessageKey[]
  * construction that only happens for required fields, because every optional
  * field resolves to the value the plugin would use.
  */
-export type SchedulePreviewRow = {
+export type AutomationPreviewRow = {
   label: MessageKey;
   value: string | null;
   /** The value comes from the plugin/host default, not an explicit decision. */
@@ -327,120 +329,122 @@ export type SchedulePreviewRow = {
 };
 
 /** Human trigger label, e.g. "周期 · 每 1h30m". */
-function scheduleTriggerDisplay(
-  trigger: ScheduleTrigger | null | undefined,
+function automationTriggerDisplay(
+  trigger: AutomationTrigger | null | undefined,
   t: Translate,
 ): string | null {
   if (!trigger || typeof trigger.type !== "string") return null;
   switch (trigger.type) {
     case "manual":
-      return t("scheduleTriggerManual");
+      return t("automationTriggerManual");
     case "once":
       return trigger.at
-        ? `${t("scheduleTriggerOnce")} · ${formatDateTime(trigger.at)}`
-        : t("scheduleTriggerOnce");
+        ? `${t("automationTriggerOnce")} · ${formatDateTime(trigger.at)}`
+        : t("automationTriggerOnce");
     case "interval":
-      return `${t("scheduleTriggerInterval")} · ${t("scheduleEveryValue", {
+      return `${t("automationTriggerInterval")} · ${t("automationEveryValue", {
         value: formatIntervalEvery(trigger.every),
       })}`;
     case "cron":
-      return `${t("scheduleTriggerCron")} · ${trigger.cron}`;
+      return `${t("automationTriggerCron")} · ${trigger.cron}`;
     default:
       return null;
   }
 }
 
 /** Preview rows for the smart-creation panel, in display order. */
-export function schedulePlanPreviewRows(
-  plan: SchedulePlanDraft,
+export function automationPlanPreviewRows(
+  plan: AutomationPlanDraft,
   t: Translate,
   hostDefaultModelLabel: string,
-): SchedulePreviewRow[] {
-  const isCommand = schedulePlanIsCommand(plan);
-  const rows: SchedulePreviewRow[] = [
-    { label: "scheduleFormName", value: plan.name?.trim() || null },
+): AutomationPreviewRow[] {
+  const isCommand = automationPlanIsCommand(plan);
+  const rows: AutomationPreviewRow[] = [
+    { label: "automationFormName", value: plan.name?.trim() || null },
     {
-      label: "scheduleFormKind",
-      value: isCommand ? t("scheduleFormKindCommand") : t("scheduleFormKindPrompt"),
+      label: "automationFormKind",
+      value: isCommand ? t("automationFormKindCommand") : t("automationFormKindPrompt"),
       // A null kind creates a prompt plan, so label it as the default rather
       // than pretending the choice is still open.
       fallback: plan.kind !== "command",
     },
     {
-      label: "scheduleFormTrigger",
-      value: scheduleTriggerDisplay(plan.trigger, t),
+      label: "automationFormTrigger",
+      value: automationTriggerDisplay(plan.trigger, t),
     },
-    { label: "scheduleFormCwd", value: plan.cwd?.trim() || null },
+    { label: "automationFormCwd", value: plan.cwd?.trim() || null },
   ];
   // Permission/model only exist for prompt plans (`handleConfirm` ignores them
   // for command plans), so a command plan drops the rows instead of showing
   // them as undecided.
   if (!isCommand) {
     rows.push({
-      label: "scheduleFormPermission",
+      label: "automationFormPermission",
       value: t(
         plan.permission === "write"
-          ? "schedulePermissionWrite"
+          ? "automationPermissionWrite"
           : plan.permission === "full"
-            ? "schedulePermissionFull"
-            : "schedulePermissionReadOnly",
+            ? "automationPermissionFull"
+            : "automationPermissionReadOnly",
       ),
       fallback: plan.permission !== "write" && plan.permission !== "full",
     });
     rows.push({
-      label: "scheduleFormModel",
+      label: "automationFormModel",
       value: plan.model ? `${plan.model.provider}/${plan.model.id}` : hostDefaultModelLabel,
       fallback: !plan.model,
     });
   }
   rows.push(
     {
-      label: "scheduleFormMissedWindow",
+      label: "automationFormMissedWindow",
       value: t(
-        plan.missedWindow === "skip" ? "scheduleMissedWindowSkip" : "scheduleMissedWindowCatchUp",
+        plan.missedWindow === "skip"
+          ? "automationMissedWindowSkip"
+          : "automationMissedWindowCatchUp",
       ),
       fallback: plan.missedWindow !== "skip",
     },
     {
-      label: "scheduleFormTimeout",
-      value: t("scheduleTimeoutValue", {
+      label: "automationFormTimeout",
+      value: t("automationTimeoutValue", {
         value: Math.round(
           (typeof plan.timeoutMs === "number" && plan.timeoutMs > 0
             ? plan.timeoutMs
-            : SCHEDULE_DEFAULT_TIMEOUT_MS) / 60_000,
+            : AUTOMATION_DEFAULT_TIMEOUT_MS) / 60_000,
         ),
       }),
       fallback: !(typeof plan.timeoutMs === "number" && plan.timeoutMs > 0),
     },
     {
-      label: "scheduleFormMaxRuns",
+      label: "automationFormMaxRuns",
       value:
         typeof plan.maxRuns === "number" && plan.maxRuns > 0
           ? String(plan.maxRuns)
-          : t("scheduleFormMaxRunsPlaceholder"),
+          : t("automationFormMaxRunsPlaceholder"),
       fallback: !(typeof plan.maxRuns === "number" && plan.maxRuns > 0),
     },
     {
-      label: "scheduleFormNotify",
+      label: "automationFormNotify",
       value: t(
         plan.notify === "system"
-          ? "scheduleNotifySystem"
+          ? "automationNotifySystem"
           : plan.notify === "tg"
-            ? "scheduleNotifyTg"
-            : "scheduleNotifyNone",
+            ? "automationNotifyTg"
+            : "automationNotifyNone",
       ),
       fallback: plan.notify !== "system" && plan.notify !== "tg",
     },
     {
-      label: "scheduleFormLoadExtensions",
-      value: t(plan.loadExtensions === true ? "scheduleValueYes" : "scheduleValueNo"),
+      label: "automationFormLoadExtensions",
+      value: t(plan.loadExtensions === true ? "automationValueYes" : "automationValueNo"),
       fallback: plan.loadExtensions !== true,
     },
   );
   // Tags are purely additive: an empty list is not "undetermined", it is
   // "none", and the panel just omits the row.
   if (Array.isArray(plan.tags) && plan.tags.length > 0) {
-    rows.push({ label: "scheduleFormTags", value: plan.tags.join(", ") });
+    rows.push({ label: "automationFormTags", value: plan.tags.join(", ") });
   }
   return rows;
 }
@@ -449,7 +453,7 @@ export function schedulePlanPreviewRows(
  *  editing. Undetermined (null) fields fall back to the same defaults the
  *  manual form uses, so the dialog opens with everything the AI decided
  *  already filled in and the rest at their sane defaults. */
-export function planToForm(plan: SchedulePlanDraft, fallbackCwd: string): ScheduleFormState {
+export function planToForm(plan: AutomationPlanDraft, fallbackCwd: string): AutomationFormState {
   const trigger = plan.trigger && typeof plan.trigger.type === "string" ? plan.trigger : null;
   const interval =
     trigger?.type === "interval"
@@ -476,7 +480,7 @@ export function planToForm(plan: SchedulePlanDraft, fallbackCwd: string): Schedu
       Math.round(
         (typeof plan.timeoutMs === "number" && plan.timeoutMs > 0
           ? plan.timeoutMs
-          : SCHEDULE_DEFAULT_TIMEOUT_MS) / 60_000,
+          : AUTOMATION_DEFAULT_TIMEOUT_MS) / 60_000,
       ),
     ),
     maxRuns: typeof plan.maxRuns === "number" && plan.maxRuns > 0 ? String(plan.maxRuns) : "",

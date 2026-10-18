@@ -1,9 +1,9 @@
 /**
- * Real-time schedule notification signal.
+ * Real-time automation notification signal.
  *
- * The pi-schedule plugin appends every terminal run state to
- * `<scheduleRoot>/notify-queue.jsonl`. This watcher watches that file and
- * emits `schedule.notificationsChanged` so the desktop panel can deliver
+ * The pi-automation plugin appends every terminal run state to
+ * `<automationRoot>/notify-queue.jsonl`. This watcher watches that file and
+ * emits `automation.notificationsChanged` so the desktop panel can deliver
  * system notifications immediately instead of waiting for its 60s polling
  * fallback.
  *
@@ -16,14 +16,14 @@ import { watch, type FSWatcher } from "node:fs";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { HostEventName } from "@piabyss/protocol";
-import { scheduleRoot } from "./schedule-api.js";
+import { automationRoot } from "./automation-api.js";
 
 const DEBOUNCE_MS = 400;
 /** Root may not exist yet at Host start (plugin creates it lazily) — re-arm. */
 const RETRY_MS = 15_000;
 const QUEUE_FILENAME = "notify-queue.jsonl";
 
-export function startScheduleNotifyWatcher(
+export function startAutomationNotifyWatcher(
   emit: (event: HostEventName, payload: unknown) => void,
 ): () => void {
   let watcher: FSWatcher | null = null;
@@ -31,20 +31,22 @@ export function startScheduleNotifyWatcher(
   let retry: ReturnType<typeof setTimeout> | null = null;
   let closed = false;
 
-  const queueFile = () => join(scheduleRoot(), QUEUE_FILENAME);
+  const queueFile = () => join(automationRoot(), QUEUE_FILENAME);
 
   const emitChange = () => {
     if (closed) return;
     let total = 0;
     try {
-      total = readFileSync(queueFile(), "utf8").split("\n").filter((line) => line.trim()).length;
+      total = readFileSync(queueFile(), "utf8")
+        .split("\n")
+        .filter((line) => line.trim()).length;
     } catch {
       /* file missing → total 0 */
     }
-    emit("schedule.notificationsChanged", { total });
+    emit("automation.notificationsChanged", { total });
   };
 
-  const scheduleChange = () => {
+  const automationChange = () => {
     if (debounce) clearTimeout(debounce);
     debounce = setTimeout(() => {
       debounce = null;
@@ -55,9 +57,9 @@ export function startScheduleNotifyWatcher(
   const ensureWatch = () => {
     if (closed || watcher) return;
     try {
-      watcher = watch(scheduleRoot(), { persistent: false }, (_event, filename) => {
+      watcher = watch(automationRoot(), { persistent: false }, (_event, filename) => {
         // filename can be null on some platforms; treat it as a queue hint.
-        if (filename === null || filename === QUEUE_FILENAME) scheduleChange();
+        if (filename === null || filename === QUEUE_FILENAME) automationChange();
       });
       watcher.on("error", () => {
         try {

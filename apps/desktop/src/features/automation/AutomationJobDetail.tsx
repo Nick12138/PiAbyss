@@ -1,20 +1,20 @@
 /**
- * 周期计划的**详情视图**（分组定义列表）：独立页的右栏与小精灵的详情弹窗共用这一份。
+ * 自动化的**详情视图**（分组定义列表）：独立页的右栏与小精灵的详情弹窗共用这一份。
  *
  * 抽出来不是为了少写几行——是为了口径只有一套：权限档位怎么念、`runCount / maxRuns`
  * 怎么显示、错过窗口怎么翻译，两边不能各说一套。
  */
 import type { ReactNode } from "react";
 import { ListChecks, Terminal } from "lucide-react";
-import type { ScheduleJob } from "@piabyss/protocol";
+import type { AutomationJob } from "@piabyss/protocol";
 import { useT } from "../../lib/i18n/use-t";
 import type { MessageKey } from "../../lib/i18n";
-import { SCHEDULE_STATUS_LABEL, formatDateTime, workspaceBaseLabel } from "./schedule-model";
+import { AUTOMATION_STATUS_LABEL, formatDateTime, workspaceBaseLabel } from "./automation-model";
 
 const PERMISSION_LABEL: Record<string, MessageKey> = {
-  read_only: "schedulePermissionReadOnly",
-  write: "schedulePermissionWrite",
-  full: "schedulePermissionFull",
+  read_only: "automationPermissionReadOnly",
+  write: "automationPermissionWrite",
+  full: "automationPermissionFull",
 };
 
 /** One row of the detail definition list. */
@@ -37,18 +37,18 @@ function DetailGroup({ title, children }: { title: string; children: ReactNode }
   );
 }
 
-export function ScheduleJobDetail({ job }: { job: ScheduleJob }) {
+export function AutomationJobDetail({ job }: { job: AutomationJob }) {
   const t = useT();
   const isCommand = Boolean(job.command);
   const triggerText = (() => {
     const trigger = job.trigger;
     switch (trigger.type) {
       case "manual":
-        return t("scheduleTriggerManual");
+        return t("automationTriggerManual");
       case "interval":
-        return `${t("scheduleTriggerInterval")} · ${trigger.every}`;
+        return `${t("automationTriggerInterval")} · ${trigger.every}`;
       case "cron":
-        return `${t("scheduleTriggerCron")} · ${trigger.cron}`;
+        return `${t("automationTriggerCron")} · ${trigger.cron}`;
       case "once":
         return formatDateTime(trigger.at);
       default:
@@ -62,7 +62,7 @@ export function ScheduleJobDetail({ job }: { job: ScheduleJob }) {
       <section className="rounded-lg border border-border bg-surface/60 p-3.5">
         <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
           {isCommand ? <Terminal size={12} /> : <ListChecks size={12} />}
-          {isCommand ? t("scheduleFormCommand") : t("scheduleFormPrompt")}
+          {isCommand ? t("automationFormCommand") : t("automationFormPrompt")}
         </div>
         {isCommand ? (
           <code className="block break-all font-mono text-xs leading-5">{job.command}</code>
@@ -74,25 +74,25 @@ export function ScheduleJobDetail({ job }: { job: ScheduleJob }) {
       </section>
 
       {/* Trigger */}
-      <DetailGroup title={t("scheduleDetailGroupTrigger")}>
-        <DetailRow label={t("scheduleFormTrigger")}>{triggerText}</DetailRow>
-        <DetailRow label={t("scheduleDetailNextRun")}>{formatDateTime(job.nextRunAt)}</DetailRow>
-        <DetailRow label={t("scheduleFormMissedWindow")}>
-          {t(`scheduleMissedWindow${job.missedWindow === "catch_up_one" ? "CatchUp" : "Skip"}`)}
+      <DetailGroup title={t("automationDetailGroupTrigger")}>
+        <DetailRow label={t("automationFormTrigger")}>{triggerText}</DetailRow>
+        <DetailRow label={t("automationDetailNextRun")}>{formatDateTime(job.nextRunAt)}</DetailRow>
+        <DetailRow label={t("automationFormMissedWindow")}>
+          {t(`automationMissedWindow${job.missedWindow === "catch_up_one" ? "CatchUp" : "Skip"}`)}
         </DetailRow>
       </DetailGroup>
 
       {/* Execution */}
-      <DetailGroup title={t("scheduleDetailGroupExecution")}>
+      <DetailGroup title={t("automationDetailGroupExecution")}>
         {!isCommand && (
           <>
-            <DetailRow label={t("scheduleFormPermission")}>
-              {t(PERMISSION_LABEL[job.permission] ?? "schedulePermissionReadOnly")}
+            <DetailRow label={t("automationFormPermission")}>
+              {t(PERMISSION_LABEL[job.permission] ?? "automationPermissionReadOnly")}
             </DetailRow>
-            <DetailRow label={t("scheduleFormModel")}>
+            <DetailRow label={t("automationFormModel")}>
               {job.model
                 ? `${job.model.provider} · ${job.model.id}`
-                : t("scheduleModelDefaultPlain")}
+                : t("automationModelDefaultPlain")}
             </DetailRow>
             <DetailRow label={t("pixieDetailToolsTitle")}>
               {job.loadExtensions
@@ -101,23 +101,23 @@ export function ScheduleJobDetail({ job }: { job: ScheduleJob }) {
             </DetailRow>
           </>
         )}
-        <DetailRow label={t("scheduleDetailLastRun")}>
+        <DetailRow label={t("automationDetailLastRun")}>
           {formatDateTime(job.lastRunAt)}
-          {job.lastStatus ? ` · ${t(SCHEDULE_STATUS_LABEL[job.lastStatus])}` : ""}
+          {job.lastStatus ? ` · ${t(AUTOMATION_STATUS_LABEL[job.lastStatus])}` : ""}
         </DetailRow>
-        <DetailRow label={t("scheduleDetailRunCount")}>
+        <DetailRow label={t("automationDetailRunCount")}>
           {job.runCount}
           {job.maxRuns !== null ? ` / ${job.maxRuns}` : ""}
         </DetailRow>
-        <DetailRow label={t("scheduleFormTimeoutMinutes")}>
+        <DetailRow label={t("automationFormTimeoutMinutes")}>
           {Math.round(job.timeoutMs / 60_000)} min
         </DetailRow>
       </DetailGroup>
 
       {(job.tags.length > 0 || job.terminated) && (
-        <DetailGroup title={t("scheduleDetailGroupMeta")}>
+        <DetailGroup title={t("automationDetailGroupMeta")}>
           {job.tags.length > 0 && (
-            <DetailRow label={t("scheduleFormTags")}>
+            <DetailRow label={t("automationFormTags")}>
               <span className="flex flex-wrap gap-1">
                 {job.tags.map((tag) => (
                   <span
@@ -131,11 +131,13 @@ export function ScheduleJobDetail({ job }: { job: ScheduleJob }) {
             </DetailRow>
           )}
           {job.terminated && (
-            <DetailRow label={t("scheduleTerminated")}>
+            <DetailRow label={t("automationTerminated")}>
               <span className="text-warning">{job.terminated}</span>
             </DetailRow>
           )}
-          <DetailRow label={t("scheduleFilterWorkspace")}>{workspaceBaseLabel(job.cwd)}</DetailRow>
+          <DetailRow label={t("automationFilterWorkspace")}>
+            {workspaceBaseLabel(job.cwd)}
+          </DetailRow>
         </DetailGroup>
       )}
     </div>

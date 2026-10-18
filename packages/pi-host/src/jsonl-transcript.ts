@@ -1,12 +1,12 @@
 /**
  * 读盘上的会话 jsonl，投影成前端共享转写（`buildTranscriptRows`）能直接消费的形状。
  *
- * 目前唯一的调用方是 `schedule.runMessages`：一次计划执行的**过程**。之所以不走
+ * 目前唯一的调用方是 `automation.runMessages`：一次计划执行的**过程**。之所以不走
  * 插件的 `/runs/:id/transcript`，是因为那个端点把消息拍平成纯文本、连 `toolResult`
  * 都不返回，撑不出「像普通会话那样折叠思考与工具调用」。会话文件本来就在宿主可读的
  * 数据根里，直接投影更省事也更完整。
  *
- * 这块逻辑原先长在 `schedule-agent-runner.ts`（智能创建会话）里，随那条路径下线
+ * 这块逻辑原先长在 `automation-agent-runner.ts`（智能创建会话）里，随那条路径下线
  * 一起搬了出来——读盘投影与「谁来创建会话」本来就没有关系。
  */
 import { existsSync, readFileSync } from "node:fs";

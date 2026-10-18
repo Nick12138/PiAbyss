@@ -34,9 +34,9 @@ import { createRelayPricingHandlers } from "./relay-pricing-controller.js";
 import { createExtensionUiHandlers } from "./extension-ui-bridge.js";
 import { createTelegramHandlers } from "./telegram-controller.js";
 import { createTelegramSessionHandlers } from "./telegram-sessions-controller.js";
-import { createScheduleHandlers } from "./schedule-controller.js";
-import { scheduleRoot } from "./schedule-api.js";
-import { startScheduleNotifyWatcher } from "./schedule-notify-watcher.js";
+import { createAutomationHandlers } from "./automation-controller.js";
+import { automationRoot } from "./automation-api.js";
+import { startAutomationNotifyWatcher } from "./automation-notify-watcher.js";
 import { createMemoHandlers } from "./memo-controller.js";
 import { createShellJobHandlers } from "./shelljob-controller.js";
 import { startShellJobWatcher } from "./shelljob-watcher.js";
@@ -126,19 +126,25 @@ function ensurePixieControlToken(agentDir: string): string {
 }
 
 /**
- * pi-schedule control-plane token, pinned before the runtime loads extensions.
+ * pi-automation control-plane token, pinned before the runtime loads extensions.
  *
  * The plugin resolves its token lazily (first authenticated request): env →
- * `<scheduleRoot>/token` → generate and persist, best effort. When that persist
+ * `<automationRoot>/token` → generate and persist, best effort. When that persist
  * does not land the plugin keeps a secret no file-reading caller can obtain,
- * and every schedule.* call 401s for the whole life of the process — all the
+ * and every automation.* call 401s for the whole life of the process — all the
  * panel can show is "鉴权失败". Env wins on both sides, so publishing the
  * resolved value here takes the file out of the handshake; the file is still
  * written for callers outside this process.
  */
-function ensureScheduleControlToken(): void {
-  if (process.env.PI_SCHEDULE_TOKEN?.trim()) return;
-  const root = scheduleRoot();
+function ensureAutomationControlToken(): void {
+  const provided = process.env.PI_AUTOMATION_TOKEN?.trim() || process.env.PI_SCHEDULE_TOKEN?.trim();
+  if (provided) {
+    // Pin under the current name so the plugin (new name first) and Host read
+    // the same value even when the caller still uses the pre-rename variable.
+    process.env.PI_AUTOMATION_TOKEN = provided;
+    return;
+  }
+  const root = automationRoot();
   const tokenPath = join(root, "token");
   let token = "";
   try {
@@ -152,12 +158,12 @@ function ensureScheduleControlToken(): void {
       mkdirSync(root, { recursive: true });
       writeFileSync(tokenPath, token, { encoding: "utf8", mode: 0o600 });
     } catch (err) {
-      logger.warn("Failed to persist the schedule control token", {
+      logger.warn("Failed to persist the automation control token", {
         error: err instanceof Error ? err.message : String(err),
       });
     }
   }
-  process.env.PI_SCHEDULE_TOKEN = token;
+  process.env.PI_AUTOMATION_TOKEN = token;
 }
 
 /**
@@ -278,9 +284,9 @@ async function main(): Promise<void> {
   // PiAbyss 0.1.x used to filter superseded packages here; the built-in tools
   // moved to my-pi-plugins so nothing is superseded anymore.
 
-  // Pin the pi-schedule control-plane token before the runtime loads any
+  // Pin the pi-automation control-plane token before the runtime loads any
   // extension: the plugin resolves it lazily and the Host reads it per call.
-  ensureScheduleControlToken();
+  ensureAutomationControlToken();
 
   // Cwd-independent services (PROJECT_SPEC §8.1)
   const credentialStore = FileCredentialStore.forAgentDir(agentDir);
@@ -453,7 +459,7 @@ async function main(): Promise<void> {
     ...createExtensionUiHandlers(graphFactory),
     ...createTelegramHandlers(agentDir),
     ...createTelegramSessionHandlers(agentDir),
-    ...createScheduleHandlers(),
+    ...createAutomationHandlers(),
     ...createMemoHandlers(agentDir, modelRuntime, modelRegistry),
     ...createPixieHandlers(graphFactory),
     ...createShellJobHandlers(),
@@ -496,7 +502,7 @@ async function main(): Promise<void> {
       }
       await graphFactory.disposeRetainedGraphs();
       await attachmentStore.waitForIdle();
-      stopScheduleNotifyWatcher();
+      stopAutomationNotifyWatcher();
       stopShellJobWatcher();
       // Last milestone: only a clean teardown proves the migrated runtime did
       // not leave the agent directory in a state that needs the backup.
@@ -511,8 +517,8 @@ async function main(): Promise<void> {
   configurePixieEventEmitter((event, payload) => {
     server.emit(event as Parameters<typeof server.emit>[0], payload);
   });
-  // Real-time schedule notification signal → push host event to the desktop.
-  const stopScheduleNotifyWatcher = startScheduleNotifyWatcher((event, payload) =>
+  // Real-time automation notification signal → push host event to the desktop.
+  const stopAutomationNotifyWatcher = startAutomationNotifyWatcher((event, payload) =>
     server.emit(event, payload),
   );
   // Background shell job status bar → periodic snapshot push to the desktop.

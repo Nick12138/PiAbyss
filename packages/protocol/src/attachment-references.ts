@@ -10,7 +10,7 @@ const GUIDE_PATTERN =
 
 /**
  * PiAbyss-injected reference blocks: prompts the app composes on the user's
- * behalf (memo handling, schedule smart-creation preamble, plan context, the
+ * behalf (memo handling, automation smart-creation preamble, plan context, the
  * pixie segment preamble). They must reach the model verbatim but are display
  * noise everywhere else — session titles, search indexing, the queue row, the
  * copy button — so they are stripped alongside the attachment blocks. The
@@ -23,8 +23,8 @@ const INJECTED_BLOCK_PATTERNS: readonly RegExp[] = [
   /<piabyss-ref\s[^>]*>[\s\S]*?<\/piabyss-ref>/gu,
   /<piabyss-memo\s[^>]*>[\s\S]*?<\/piabyss-memo>/gu,
   /<piabyss-memo-result\s[^>]*>[\s\S]*?<\/piabyss-memo-result>/gu,
-  /<schedule-preamble>[\s\S]*?<\/schedule-preamble>/gu,
-  /<schedule-job\s[^>]*>[\s\S]*?<\/schedule-job>/gu,
+  /<automation-preamble>[\s\S]*?<\/automation-preamble>/gu,
+  /<automation-job\s[^>]*>[\s\S]*?<\/automation-job>/gu,
   /<pixie-context>[\s\S]*?<\/pixie-context>/gu,
 ];
 

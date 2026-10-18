@@ -22,7 +22,7 @@ import { usePluginStatus } from "../features/plugin-library/plugin-gate";
 
 /** The plugin-library entry backing the Pixie page（方寸间现在只是它右侧面板的一块）。 */
 const PIXIE_PLUGIN_ID = "pi-pixie";
-import { startSchedulePushPolling } from "../features/schedule/schedule-push";
+import { startAutomationPushPolling } from "../features/automation/automation-push";
 import { SettingsTopBarActionsContext } from "../features/settings/settings-top-bar";
 import { ExtensionUiModal } from "../features/chat/ExtensionUiModal";
 import { GlobalSearchHost } from "../features/sessions/GlobalSearchModal";
@@ -1456,8 +1456,8 @@ export function App() {
   // sidebar.toggle command bus subscription that previously lived in Sidebar.
   useEffect(() => subscribeSidebarToggle(() => useAppStore.getState().toggleSidebar()), []);
 
-  // App-level schedule push: polls the plugin's notify-queue on every page.
-  useEffect(() => startSchedulePushPolling(), []);
+  // App-level automation push: polls the plugin's notify-queue on every page.
+  useEffect(() => startAutomationPushPolling(), []);
 
   // 小精灵自启动：宿主就绪后后台确保 pixie 工作区图与会话段就绪并驻留
   // （插件启用才真正生效，Host 侧门控；宿主重启后自动重新拉起）。

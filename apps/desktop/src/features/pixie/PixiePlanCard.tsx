@@ -1,23 +1,23 @@
 /**
- * 小精灵转写里的**周期计划草案卡**。
+ * 小精灵转写里的**自动化草案卡**。
  *
  * ## 为什么确认在这里，而不是在她手里
  *
- * `pi-schedule` 给 agent 注册了 `schedule` 工具，`create/update/run_now` 全都能直接写。
+ * `pi-automation` 给 agent 注册了 `automation` 工具，`create/update/run_now` 全都能直接写。
  * 计划是**无人值守**的重复执行，所以写这一笔必须由人点头：卡片是唯一落库入口，
  * 提示词那头也已经约束她只能读（见 `pixie-agent-runner` 的 `<pixie-context>`）。
  * 她真调了写工具也只是多一条看得见的工具调用记录，不改这个口径。
  *
  * ## 四态从哪来
  *
- * 状态**不记在 localStorage**，而是从会话里的回执倒推（`schedule-plan-receipt`
+ * 状态**不记在 localStorage**，而是从会话里的回执倒推（`automation-plan-receipt`
  * 自定义消息）：换段、重开会话、重启之后状态照样对，而且小精灵自己在对话里也读得到
  * 「这条草案后来建了哪个计划」。同一份草案只可能有一条回执（按 `planKey` 认）。
  * 「被取代」= 会话里更晚还有一份草案，老的待确认卡片就该失效而不是留着能点。
  */
 import { useCallback, useMemo, useState } from "react";
 import { AlertTriangle, Ban, Check, Pencil } from "lucide-react";
-import type { ScheduleJob } from "@piabyss/protocol";
+import type { AutomationJob } from "@piabyss/protocol";
 import type { TranscriptBlock } from "../chat/transcript-model";
 import { useT } from "../../lib/i18n/use-t";
 import type { Translate } from "../../lib/i18n/use-t";
@@ -29,15 +29,15 @@ import {
   extractPlanFences,
   parsePlanReceipt,
   type PlanReceipt,
-} from "../schedule/schedule-plan-fence";
+} from "../automation/automation-plan-fence";
 import {
   formToJobInput,
   planToForm,
-  schedulePlanMissingFields,
-  schedulePlanPreviewRows,
-  type ScheduleFormState,
-} from "../schedule/schedule-model";
-import { ScheduleJobDialog } from "../schedule/ScheduleJobDialog";
+  automationPlanMissingFields,
+  automationPlanPreviewRows,
+  type AutomationFormState,
+} from "../automation/automation-model";
+import { AutomationJobDialog } from "../automation/AutomationJobDialog";
 
 const WRITE_TIMEOUT_MS = 20_000;
 
@@ -117,22 +117,22 @@ async function appendReceipt(receipt: PlanReceipt, text: string): Promise<void> 
 /** 落库：有 jobId 走 update（保住执行历史），没有才 create。 */
 async function writeJob(
   plan: NonNullable<PlanBlock["plan"]>,
-  form: ScheduleFormState,
+  form: AutomationFormState,
   translate: Translate,
-): Promise<ScheduleJob> {
+): Promise<AutomationJob> {
   const host = useAppStore.getState().host;
   if (!host) throw new Error(translate("pixiePlanNoHost"));
   const built = formToJobInput(form);
   if (!built.ok) throw new Error(translate(built.errorKey));
   const jobId = typeof plan.jobId === "string" && plan.jobId ? plan.jobId : null;
   const response = await hostClient.request(
-    jobId ? "schedule.updateJob" : "schedule.createJob",
+    jobId ? "automation.updateJob" : "automation.createJob",
     hostContext(host),
     jobId ? { id: jobId, ...built.input } : built.input,
     WRITE_TIMEOUT_MS,
   );
   if (!response.ok) throw new Error(response.error?.message ?? "write failed");
-  return response.result.job as ScheduleJob;
+  return response.result.job as AutomationJob;
 }
 
 export function PixiePlanCard({ block }: { block: PlanBlock }) {
@@ -143,15 +143,15 @@ export function PixiePlanCard({ block }: { block: PlanBlock }) {
   const [editing, setEditing] = useState(false);
   const plan = block.plan;
 
-  const missing = useMemo(() => (plan ? schedulePlanMissingFields(plan) : []), [plan]);
+  const missing = useMemo(() => (plan ? automationPlanMissingFields(plan) : []), [plan]);
   const rows = useMemo(
-    () => (plan ? schedulePlanPreviewRows(plan, t, t("scheduleModelDefaultPlain")) : []),
+    () => (plan ? automationPlanPreviewRows(plan, t, t("automationModelDefaultPlain")) : []),
     [plan, t],
   );
 
   const finish = useCallback(async (receipt: PlanReceipt, text: string) => {
     // 先落库再写回执：反过来的话，落库失败会留下一张「已创建」的假回执。
-    useAppStore.getState().bumpScheduleRevision();
+    useAppStore.getState().bumpAutomationRevision();
     await appendReceipt(receipt, text);
   }, []);
 
@@ -160,7 +160,7 @@ export function PixiePlanCard({ block }: { block: PlanBlock }) {
    * 两个入口不该各写一套落库口径（那样一边改了另一边就会悄悄不一致）。
    */
   const commit = useCallback(
-    async (form: ScheduleFormState, updating: boolean) => {
+    async (form: AutomationFormState, updating: boolean) => {
       if (!plan) return;
       setBusy(true);
       setError(null);
@@ -321,7 +321,7 @@ export function PixiePlanCard({ block }: { block: PlanBlock }) {
       ) : null}
 
       {editing && state.kind === "pending" ? (
-        <ScheduleJobDialog
+        <AutomationJobDialog
           job={null}
           prefill={planToForm(plan, useAppStore.getState().workspace?.canonicalCwd ?? "")}
           onClose={() => setEditing(false)}

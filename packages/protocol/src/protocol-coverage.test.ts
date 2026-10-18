@@ -134,7 +134,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "session.cleanupArchived": null,
   "session.getSnapshot": null,
   "session.setName": { name: "n" },
-  "session.appendCustomMessage": { customType: "schedule-plan-receipt", text: "已创建：日报" },
+  "session.appendCustomMessage": { customType: "automation-plan-receipt", text: "已创建：日报" },
   "session.rename": { sessionId: SESSION_ID, sessionPath: "/s.jsonl", name: "n" },
   "session.getEntries": null,
   "session.getTree": null,
@@ -271,23 +271,23 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   },
   "telegram.reset": null,
   "telegram.status": null,
-  "schedule.status": null,
-  "schedule.listJobs": null,
-  "schedule.createJob": {
+  "automation.status": null,
+  "automation.listJobs": null,
+  "automation.createJob": {
     name: "demo",
     prompt: "hello",
     cwd: "C:/tmp",
     trigger: { type: "cron", cron: "0 9 * * 1-5", timezone: "Asia/Shanghai" },
   },
-  "schedule.updateJob": { id: "a1b2c3d4", name: "renamed" },
-  "schedule.deleteJob": { id: "a1b2c3d4" },
-  "schedule.setJobEnabled": { id: "a1b2c3d4", enabled: true },
-  "schedule.runJobNow": { id: "a1b2c3d4" },
-  "schedule.listRuns": { limit: 50 },
-  "schedule.runMessages": { runId: "2fa6a8c56cc8" },
-  "schedule.abortRun": { runId: "2fa6a8c56cc8" },
-  "schedule.validateCron": { cron: "0 9 * * 1-5" },
-  "schedule.listNotifications": { limit: 50 },
+  "automation.updateJob": { id: "a1b2c3d4", name: "renamed" },
+  "automation.deleteJob": { id: "a1b2c3d4" },
+  "automation.setJobEnabled": { id: "a1b2c3d4", enabled: true },
+  "automation.runJobNow": { id: "a1b2c3d4" },
+  "automation.listRuns": { limit: 50 },
+  "automation.runMessages": { runId: "2fa6a8c56cc8" },
+  "automation.abortRun": { runId: "2fa6a8c56cc8" },
+  "automation.validateCron": { cron: "0 9 * * 1-5" },
+  "automation.listNotifications": { limit: 50 },
   "memo.list": null,
   "memo.optimize": {
     contentMd: "正文",
@@ -588,25 +588,25 @@ function invalidParams(method: HostMethod): unknown {
       return { requestId: EXTENSION_REQUEST_ID, cols: 0, rows: 32 };
     case "telegram.validateToken":
       return { token: "" };
-    case "schedule.status":
-    case "schedule.listJobs":
+    case "automation.status":
+    case "automation.listJobs":
       return {}; // must be null
-    case "schedule.createJob":
+    case "automation.createJob":
       return { name: "", prompt: "x", cwd: "C:/tmp", trigger: { type: "bogus" } };
-    case "schedule.updateJob":
-    case "schedule.deleteJob":
+    case "automation.updateJob":
+    case "automation.deleteJob":
       return { id: "" };
-    case "schedule.setJobEnabled":
+    case "automation.setJobEnabled":
       return { id: "a1b2c3d4", enabled: "yes" };
-    case "schedule.runJobNow":
+    case "automation.runJobNow":
       return { id: "a1b2c3d4", permission: "root" };
-    case "schedule.listRuns":
-    case "schedule.listNotifications":
+    case "automation.listRuns":
+    case "automation.listNotifications":
       return { limit: 0 };
-    case "schedule.runMessages":
-    case "schedule.abortRun":
+    case "automation.runMessages":
+    case "automation.abortRun":
       return { runId: "", cron: "" };
-    case "schedule.validateCron":
+    case "automation.validateCron":
       return { cron: "" };
     case "session.appendCustomMessage":
       return { customType: "", text: "" };
@@ -953,7 +953,7 @@ describe("protocol coverage — events", () => {
       workspaceName: "PiAbyss",
       ok: true,
     },
-    "schedule.notificationsChanged": { total: 1 },
+    "automation.notificationsChanged": { total: 1 },
     "attachment.changed": {
       attachment: {
         id: RUN_ID,

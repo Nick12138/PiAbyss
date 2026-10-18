@@ -15,7 +15,10 @@ import {
 import { isAbortedToolResult } from "../../lib/chat/tool-result-status";
 import { withFriendlyErrorHint } from "./error-hints";
 import { parseInjectedReferences, type InjectedReference } from "./injected-references";
-import { splitPlanFenceSegments, type SchedulePlanDraft } from "../schedule/schedule-plan-fence";
+import {
+  splitPlanFenceSegments,
+  type AutomationPlanDraft,
+} from "../automation/automation-plan-fence";
 
 export type ToolTraceStatus = "waiting" | "running" | "done" | "error" | "aborted";
 
@@ -65,10 +68,10 @@ export type TranscriptContentBlock =
   | { kind: "thinking"; text: string; startedAt?: number; endedAt?: number }
   | { kind: "image"; data: string; mimeType: string }
   /**
-   * 一份周期计划草案（` ```schedule-plan ` 围栏）。只由 assistant 文本拆出，
+   * 一份自动化草案（` ```automation-plan ` 围栏）。只由 assistant 文本拆出，
    * 渲染成确认卡片：`plan === null` 表示 JSON 读不动，卡片要如实说出来而不是静默消失。
    */
-  | { kind: "plan"; plan: SchedulePlanDraft | null; raw: string; key: string }
+  | { kind: "plan"; plan: AutomationPlanDraft | null; raw: string; key: string }
   | { kind: "unknown"; type: string; value: unknown };
 
 export type TranscriptBlock =
@@ -476,7 +479,7 @@ function splitLiteralThinkingBlocks(blocks: TranscriptBlock[]): TranscriptBlock[
 }
 
 /**
- * 把含 ` ```schedule-plan ` 围栏的**文本块**拆成「话 / 草案 / 话」，顺序保持。
+ * 把含 ` ```automation-plan ` 围栏的**文本块**拆成「话 / 草案 / 话」，顺序保持。
  * 与 `splitLiteralThinkingBlocks` 同一套路：只对文本动手，其余块原样过去。
  *
  * 只认 assistant 的话：工具输出或用户贴的一段围栏不该变成可点的卡片。
@@ -492,7 +495,7 @@ function splitPlanFenceBlocks(
   const result: TranscriptBlock[] = [];
   let ordinal = 0;
   for (const block of blocks) {
-    if (block.kind !== "text" || !block.text.includes("```schedule-plan")) {
+    if (block.kind !== "text" || !block.text.includes("```automation-plan")) {
       result.push(block);
       continue;
     }

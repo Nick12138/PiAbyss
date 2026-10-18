@@ -1,14 +1,14 @@
 /**
- * Schedule push notifications: incrementally consumes the plugin's
- * notify-queue (schedule.listNotifications) and delivers new entries as
+ * Automation push notifications: incrementally consumes the plugin's
+ * notify-queue (automation.listNotifications) and delivers new entries as
  * system notifications for plans whose per-plan `notify` config is
  * "system". Runs at app level (mounted from App.tsx) so pushes fire while
- * the user is on any page, not just the schedule page. TG delivery will
+ * the user is on any page, not just the automation page. TG delivery will
  * join later as an additional per-plan mode. The plugin queues every
  * terminal state (ok/error/timeout/aborted).
  *
  * Delivery is event-driven: the Host watches the plugin's notify-queue file
- * and emits `schedule.notificationsChanged` on every append; this module
+ * and emits `automation.notificationsChanged` on every append; this module
  * reacts immediately and falls back to a slow interval poll as a safety
  * net (e.g. missed events while the transport reconnects).
  */
@@ -16,13 +16,13 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
-import type { ScheduleNotification } from "@piabyss/protocol";
+import type { AutomationNotification } from "@piabyss/protocol";
 
 const POLL_INTERVAL_MS = 60_000;
 /** Coalesce bursts of file-watch events into one pull. */
 const EVENT_DEBOUNCE_MS = 500;
 const LIST_TIMEOUT_MS = 10_000;
-const CURSOR_KEY = "piabyss.schedule.pushCursor.v1";
+const CURSOR_KEY = "piabyss.automation.pushCursor.v1";
 
 function readCursor(): string | null {
   try {
@@ -43,11 +43,11 @@ function writeCursor(cursor: string): void {
 /** Entries are chronologically ordered by `at`; the cursor is the last
  *  delivered `${at}#${runId}`. Ties on `at` compare by runId — order within
  *  the same tick only affects delivery order, not loss. */
-function entryCursor(entry: ScheduleNotification): string {
+function entryCursor(entry: AutomationNotification): string {
   return `${entry.at}#${entry.runId}`;
 }
 
-async function deliver(entry: ScheduleNotification): Promise<void> {
+async function deliver(entry: AutomationNotification): Promise<void> {
   try {
     // The stock @tauri-apps/plugin-notification JS wrapper is broken on
     // Windows (WebView2 reports permission "denied" unconditionally; see
@@ -73,7 +73,7 @@ async function loadNotifyMap(
   const map = new Map<string, string>();
   try {
     const response = await hostClient.request(
-      "schedule.listJobs",
+      "automation.listJobs",
       hostContext(host),
       null,
       LIST_TIMEOUT_MS,
@@ -93,7 +93,7 @@ async function poll(): Promise<void> {
   if (!host) return;
   try {
     const response = await hostClient.request(
-      "schedule.listNotifications",
+      "automation.listNotifications",
       hostContext(host),
       { limit: 50 },
       LIST_TIMEOUT_MS,
@@ -131,7 +131,7 @@ let eventDebounce: ReturnType<typeof setTimeout> | null = null;
 let unsubscribeEvents: (() => void) | null = null;
 
 /** Immediate pull after a host-side queue change; debounced to coalesce bursts. */
-function scheduleEventPoll(): void {
+function automationEventPoll(): void {
   if (eventDebounce) clearTimeout(eventDebounce);
   eventDebounce = setTimeout(() => {
     eventDebounce = null;
@@ -140,13 +140,13 @@ function scheduleEventPoll(): void {
 }
 
 /** Idempotent: mounts the event subscription + polling interval once per app lifetime. */
-export function startSchedulePushPolling(): () => void {
+export function startAutomationPushPolling(): () => void {
   if (started) return () => undefined;
   started = true;
-  // Real-time path: the Host emits schedule.notificationsChanged whenever the
+  // Real-time path: the Host emits automation.notificationsChanged whenever the
   // plugin's notify-queue grows (file watch on the Host side).
   unsubscribeEvents = hostClient.onEvent((event) => {
-    if (event.event === "schedule.notificationsChanged") scheduleEventPoll();
+    if (event.event === "automation.notificationsChanged") automationEventPoll();
   });
   // Safety net: covers missed events (transport reconnect, watcher restart).
   const interval = setInterval(() => void poll(), POLL_INTERVAL_MS);

@@ -1,12 +1,12 @@
 /**
  * 随行面板的**页签栏**与每块页签下面的内容外壳。
  *
- * 三块（方寸间 / 周期计划 / 委派任务）横着排，一次只看一块——取代原来的竖排「可折叠
+ * 三块（方寸间 / 自动化 / 委派任务）横着排，一次只看一块——取代原来的竖排「可折叠
  * 分组」栈：那三行分组头一共 84px 全是导航，却只有一块能放内容。现在导航只有这一行
  * 一行（`h-10` = 35px），且它上面不再有别的东西（面板标题「随行面板」已删，它的名字留给 `aria-label`）。
  *
  * 未选中的那块**不卸载**，只把显示摘掉（`hidden`）：切回去不用重新拉 `memo.list` /
- * `schedule.listJobs`，也不会丢掉「列表摊开到哪条、勾选了哪几条、当前是哪个二级页签」。
+ * `automation.listJobs`，也不会丢掉「列表摊开到哪条、勾选了哪几条、当前是哪个二级页签」。
  * 计数徽章常驻在页签上、要一直跟着数据走，所以三块的数据都得活着。
  *
  * 尺寸口径：栏高 `h-10`（35px，不是 40px），三格 `flex-1` 等分。面板最窄 350px → 每格 ~113px，
@@ -35,7 +35,7 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 
-export type PixiePanelTabId = "todo" | "schedule" | "dispatch";
+export type PixiePanelTabId = "todo" | "automation" | "dispatch";
 
 export type PixiePanelTab = {
   id: PixiePanelTabId;

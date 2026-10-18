@@ -1,5 +1,5 @@
 /**
- * `schedule-plan` 围栏的拆分测试。
+ * `automation-plan` 围栏的拆分测试。
  *
  * 这是草案进对话的唯一入口：拆错了要么卡片点不出来（用户看不到确认），
  * 要么把模型说的话吞掉一半。所以边界用例（未闭合、坏 JSON、多份、非围栏文本）
@@ -12,9 +12,9 @@ import {
   latestPlanFence,
   splitPlanFenceSegments,
   stripPlanFences,
-} from "./schedule-plan-fence";
+} from "./automation-plan-fence";
 
-const FENCE = (json: string) => "说明在前。\n```schedule-plan\n" + json + "\n```\n说明在后。";
+const FENCE = (json: string) => "说明在前。\n```automation-plan\n" + json + "\n```\n说明在后。";
 const DRAFT = JSON.stringify({ name: "日报", cwd: "D:/p", trigger: { type: "manual" } });
 
 describe("extractPlanFences", () => {
@@ -32,7 +32,7 @@ describe("extractPlanFences", () => {
   });
 
   it("未闭合的围栏不算草案", () => {
-    expect(extractPlanFences('开头```schedule-plan\n{"name":')).toEqual([]);
+    expect(extractPlanFences('开头```automation-plan\n{"name":')).toEqual([]);
   });
 
   it("latestPlanFence 取最后一份能解析的", () => {
@@ -55,11 +55,11 @@ describe("splitPlanFenceSegments / stripPlanFences", () => {
 
   it("剥掉完整围栏并剪掉未闭合的尾巴（两段话之间留一个空行，同旧口径）", () => {
     expect(stripPlanFences(FENCE(DRAFT))).toBe("说明在前。\n\n说明在后。");
-    expect(stripPlanFences('前半句```schedule-plan\n{"na')).toBe("前半句");
+    expect(stripPlanFences('前半句```automation-plan\n{"na')).toBe("前半句");
   });
 
   it("hasPlanFence 认流式中的半截围栏（投影要据此改渲染）", () => {
-    expect(hasPlanFence("x ```schedule-plan\n{")).toBe(true);
+    expect(hasPlanFence("x ```automation-plan\n{")).toBe(true);
     expect(hasPlanFence("x ```json\n{}```")).toBe(false);
   });
 });

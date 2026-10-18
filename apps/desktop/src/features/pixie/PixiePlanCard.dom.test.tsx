@@ -3,8 +3,8 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { HostStatusSnapshot, ScheduleJob, WorkspaceSnapshot } from "@piabyss/protocol";
-import { PLAN_RECEIPT_CUSTOM_TYPE } from "../schedule/schedule-plan-fence";
+import type { HostStatusSnapshot, AutomationJob, WorkspaceSnapshot } from "@piabyss/protocol";
+import { PLAN_RECEIPT_CUSTOM_TYPE } from "../automation/automation-plan-fence";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
 import { PixiePlanCard } from "./PixiePlanCard";
@@ -38,7 +38,7 @@ function block(overrides: Record<string, unknown> = {}, key = "7:1") {
   } as never;
 }
 
-const CREATED_JOB = { id: "j9", name: "每日构建报告" } as ScheduleJob;
+const CREATED_JOB = { id: "j9", name: "每日构建报告" } as AutomationJob;
 
 function seedSession(messages: unknown[] = []) {
   useAppStore.setState({
@@ -61,7 +61,7 @@ describe("PixiePlanCard", () => {
   it("待确认时给出草案行与三个动作，确认走 createJob 再补回执", async () => {
     const user = userEvent.setup();
     vi.mocked(hostClient.request).mockImplementation(async (method) => {
-      if (method === "schedule.createJob")
+      if (method === "automation.createJob")
         return { ok: true, result: { job: CREATED_JOB } } as never;
       if (method === "session.appendCustomMessage")
         return { ok: true, result: { appended: true } } as never;
@@ -75,7 +75,7 @@ describe("PixiePlanCard", () => {
 
     await waitFor(() =>
       expect(hostClient.request).toHaveBeenCalledWith(
-        "schedule.createJob",
+        "automation.createJob",
         expect.anything(),
         expect.objectContaining({ name: "每日构建报告" }),
         expect.anything(),
@@ -96,7 +96,7 @@ describe("PixiePlanCard", () => {
   it("草案带 jobId 就更新原计划，而不是再建一条重复的", async () => {
     const user = userEvent.setup();
     vi.mocked(hostClient.request).mockImplementation(async (method) => {
-      if (method === "schedule.updateJob")
+      if (method === "automation.updateJob")
         return { ok: true, result: { job: CREATED_JOB } } as never;
       if (method === "session.appendCustomMessage")
         return { ok: true, result: { appended: true } } as never;
@@ -108,14 +108,14 @@ describe("PixiePlanCard", () => {
 
     await waitFor(() =>
       expect(hostClient.request).toHaveBeenCalledWith(
-        "schedule.updateJob",
+        "automation.updateJob",
         expect.anything(),
         expect.objectContaining({ id: "j9" }),
         expect.anything(),
       ),
     );
     expect(hostClient.request).not.toHaveBeenCalledWith(
-      "schedule.createJob",
+      "automation.createJob",
       expect.anything(),
       expect.anything(),
       expect.anything(),
@@ -144,11 +144,11 @@ describe("PixiePlanCard", () => {
     seedSession([
       {
         role: "assistant",
-        content: "第一版：\n```schedule-plan\n" + JSON.stringify(DRAFT) + "\n```",
+        content: "第一版：\n```automation-plan\n" + JSON.stringify(DRAFT) + "\n```",
       },
       {
         role: "assistant",
-        content: "第二版：\n```schedule-plan\n" + JSON.stringify(DRAFT) + "\n```",
+        content: "第二版：\n```automation-plan\n" + JSON.stringify(DRAFT) + "\n```",
       },
     ]);
 

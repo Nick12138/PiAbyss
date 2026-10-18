@@ -5,7 +5,7 @@
  * plugin — not the Host. The plugin runs a loopback HTTP server
  * (http://127.0.0.1:<PIABYSS_MEMO_SYNC_PORT|18768>) exposing
  * status/test/sync/auto-sync endpoints; these memo.* protocol handlers proxy
- * to it (same pattern as schedule-api.ts ↔ the pi-schedule plugin).
+ * to it (same pattern as automation-api.ts ↔ the pi-automation plugin).
  *
  * R2 credentials never enter the Host or the protocol layer: they are managed
  * by the plugin's config form in Settings → Plugins (pluginLibrary.setEnv) and

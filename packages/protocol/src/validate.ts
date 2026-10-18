@@ -273,7 +273,7 @@ function exactObject(
   return isPlainObject(value) && hasExactKeys(value, required, optional);
 }
 
-const SCHEDULE_PERMISSIONS = ["read_only", "write", "full"];
+const AUTOMATION_PERMISSIONS = ["read_only", "write", "full"];
 
 /** At most one cross-workspace target field, each a bounded non-empty string. */
 function isOptionalWorkspaceTarget(params: Record<string, unknown>): boolean {
@@ -287,14 +287,14 @@ function isOptionalWorkspaceTarget(params: Record<string, unknown>): boolean {
   }
   return id === undefined || cwd === undefined;
 }
-const SCHEDULE_MISSED_WINDOWS = ["catch_up_one", "skip"];
-const SCHEDULE_NOTIFY_MODES = ["none", "system", "tg"];
+const AUTOMATION_MISSED_WINDOWS = ["catch_up_one", "skip"];
+const AUTOMATION_NOTIFY_MODES = ["none", "system", "tg"];
 
-function isSchedulePermission(value: unknown): boolean {
-  return typeof value === "string" && (SCHEDULE_PERMISSIONS as readonly string[]).includes(value);
+function isAutomationPermission(value: unknown): boolean {
+  return typeof value === "string" && (AUTOMATION_PERMISSIONS as readonly string[]).includes(value);
 }
 
-function isScheduleModelRef(value: unknown): boolean {
+function isAutomationModelRef(value: unknown): boolean {
   return (
     exactObject(value, ["provider", "id"], ["thinkingLevel"]) &&
     isNonEmptyString(value.provider) &&
@@ -306,7 +306,7 @@ function isScheduleModelRef(value: unknown): boolean {
   );
 }
 
-function isScheduleTrigger(value: unknown): boolean {
+function isAutomationTrigger(value: unknown): boolean {
   if (!isPlainObject(value)) return false;
   switch (value.type) {
     case "manual":
@@ -334,7 +334,7 @@ function isScheduleTrigger(value: unknown): boolean {
   }
 }
 
-function isScheduleTagArray(value: unknown): boolean {
+function isAutomationTagArray(value: unknown): boolean {
   return (
     Array.isArray(value) &&
     value.length <= 20 &&
@@ -342,7 +342,7 @@ function isScheduleTagArray(value: unknown): boolean {
   );
 }
 
-function isScheduleTimeoutMs(value: unknown): boolean {
+function isAutomationTimeoutMs(value: unknown): boolean {
   return (
     typeof value === "number" &&
     Number.isSafeInteger(value) &&
@@ -351,7 +351,7 @@ function isScheduleTimeoutMs(value: unknown): boolean {
   );
 }
 
-function isScheduleLimit(value: unknown): boolean {
+function isAutomationLimit(value: unknown): boolean {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= 200;
 }
 
@@ -360,8 +360,8 @@ function isShellOutputLimit(value: unknown): boolean {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= 500;
 }
 
-/** Shared field validators for schedule.createJob / schedule.updateJob. */
-function isScheduleJobFields(params: Record<string, unknown>): boolean {
+/** Shared field validators for automation.createJob / automation.updateJob. */
+function isAutomationJobFields(params: Record<string, unknown>): boolean {
   return (
     (params.name === undefined || (isNonEmptyString(params.name) && params.name.length <= 200)) &&
     (params.prompt === undefined ||
@@ -370,13 +370,13 @@ function isScheduleJobFields(params: Record<string, unknown>): boolean {
       params.command === null ||
       (typeof params.command === "string" && params.command.length <= 2_000)) &&
     (params.cwd === undefined || (isNonEmptyString(params.cwd) && params.cwd.length <= 1_024)) &&
-    (params.trigger === undefined || isScheduleTrigger(params.trigger)) &&
-    (params.permission === undefined || isSchedulePermission(params.permission)) &&
-    (params.model === undefined || params.model === null || isScheduleModelRef(params.model)) &&
+    (params.trigger === undefined || isAutomationTrigger(params.trigger)) &&
+    (params.permission === undefined || isAutomationPermission(params.permission)) &&
+    (params.model === undefined || params.model === null || isAutomationModelRef(params.model)) &&
     (params.missedWindow === undefined ||
       (typeof params.missedWindow === "string" &&
-        (SCHEDULE_MISSED_WINDOWS as readonly string[]).includes(params.missedWindow))) &&
-    (params.timeoutMs === undefined || isScheduleTimeoutMs(params.timeoutMs)) &&
+        (AUTOMATION_MISSED_WINDOWS as readonly string[]).includes(params.missedWindow))) &&
+    (params.timeoutMs === undefined || isAutomationTimeoutMs(params.timeoutMs)) &&
     (params.maxRuns === undefined ||
       params.maxRuns === null ||
       (typeof params.maxRuns === "number" &&
@@ -384,15 +384,15 @@ function isScheduleJobFields(params: Record<string, unknown>): boolean {
         params.maxRuns >= 1 &&
         params.maxRuns <= 10_000)) &&
     (params.loadExtensions === undefined || typeof params.loadExtensions === "boolean") &&
-    (params.tags === undefined || isScheduleTagArray(params.tags)) &&
+    (params.tags === undefined || isAutomationTagArray(params.tags)) &&
     (params.enabled === undefined || typeof params.enabled === "boolean") &&
     (params.notify === undefined ||
       (typeof params.notify === "string" &&
-        (SCHEDULE_NOTIFY_MODES as readonly string[]).includes(params.notify)))
+        (AUTOMATION_NOTIFY_MODES as readonly string[]).includes(params.notify)))
   );
 }
 
-const SCHEDULE_JOB_OPTIONAL_KEYS = [
+const AUTOMATION_JOB_OPTIONAL_KEYS = [
   "name",
   "prompt",
   "command",
@@ -410,7 +410,7 @@ const SCHEDULE_JOB_OPTIONAL_KEYS = [
 ] as const;
 
 /** Optional keys for create (name/prompt/cwd/trigger are required there). */
-const SCHEDULE_JOB_CREATE_OPTIONAL_KEYS = [
+const AUTOMATION_JOB_CREATE_OPTIONAL_KEYS = [
   "command",
   "permission",
   "model",
@@ -1409,14 +1409,14 @@ export function validateRequestParams<M extends HostMethod>(
       return exactObject(params, ["token"]) && isNonEmptyString(params.token)
         ? ok(params)
         : fail("invalid telegram.validateToken params", { method });
-    case "schedule.status":
-    case "schedule.listJobs":
+    case "automation.status":
+    case "automation.listJobs":
       return params === null ? ok(null) : fail("params must be null", { method });
-    case "schedule.createJob":
+    case "automation.createJob":
       return exactObject(
         params,
         ["name", "prompt", "cwd", "trigger"],
-        SCHEDULE_JOB_CREATE_OPTIONAL_KEYS,
+        AUTOMATION_JOB_CREATE_OPTIONAL_KEYS,
       ) &&
         isNonEmptyString(params.name) &&
         params.name.length <= 200 &&
@@ -1424,70 +1424,70 @@ export function validateRequestParams<M extends HostMethod>(
         params.prompt.length <= 20_000 &&
         isNonEmptyString(params.cwd) &&
         params.cwd.length <= 1_024 &&
-        isScheduleTrigger(params.trigger) &&
-        isScheduleJobFields(params)
+        isAutomationTrigger(params.trigger) &&
+        isAutomationJobFields(params)
         ? ok(params)
-        : fail("invalid schedule.createJob params", { method });
-    case "schedule.updateJob":
-      return exactObject(params, ["id"], SCHEDULE_JOB_OPTIONAL_KEYS) &&
+        : fail("invalid automation.createJob params", { method });
+    case "automation.updateJob":
+      return exactObject(params, ["id"], AUTOMATION_JOB_OPTIONAL_KEYS) &&
         isNonEmptyString(params.id) &&
         params.id.length <= 32 &&
-        isScheduleJobFields(params)
+        isAutomationJobFields(params)
         ? ok(params)
-        : fail("invalid schedule.updateJob params", { method });
-    case "schedule.deleteJob":
+        : fail("invalid automation.updateJob params", { method });
+    case "automation.deleteJob":
       return exactObject(params, ["id"], ["purge"]) &&
         isNonEmptyString(params.id) &&
         params.id.length <= 32 &&
         (params.purge === undefined || typeof params.purge === "boolean")
         ? ok(params)
-        : fail("invalid schedule.deleteJob params", { method });
-    case "schedule.setJobEnabled":
+        : fail("invalid automation.deleteJob params", { method });
+    case "automation.setJobEnabled":
       return exactObject(params, ["id", "enabled"]) &&
         isNonEmptyString(params.id) &&
         params.id.length <= 32 &&
         typeof params.enabled === "boolean"
         ? ok(params)
-        : fail("invalid schedule.setJobEnabled params", { method });
-    case "schedule.runJobNow":
+        : fail("invalid automation.setJobEnabled params", { method });
+    case "automation.runJobNow":
       return exactObject(params, ["id"], ["permission", "timeoutMs"]) &&
         isNonEmptyString(params.id) &&
         params.id.length <= 32 &&
-        (params.permission === undefined || isSchedulePermission(params.permission)) &&
-        (params.timeoutMs === undefined || isScheduleTimeoutMs(params.timeoutMs))
+        (params.permission === undefined || isAutomationPermission(params.permission)) &&
+        (params.timeoutMs === undefined || isAutomationTimeoutMs(params.timeoutMs))
         ? ok(params)
-        : fail("invalid schedule.runJobNow params", { method });
-    case "schedule.listRuns":
+        : fail("invalid automation.runJobNow params", { method });
+    case "automation.listRuns":
       return exactObject(params, [], ["jobId", "limit"]) &&
         (params.jobId === undefined || params.jobId === null || isNonEmptyString(params.jobId)) &&
-        (params.limit === undefined || isScheduleLimit(params.limit))
+        (params.limit === undefined || isAutomationLimit(params.limit))
         ? ok(params)
-        : fail("invalid schedule.listRuns params", { method });
-    case "schedule.runMessages":
+        : fail("invalid automation.listRuns params", { method });
+    case "automation.runMessages":
       return exactObject(params, ["runId"]) &&
         isNonEmptyString(params.runId) &&
         params.runId.length <= 64
         ? ok(params)
-        : fail("invalid schedule.runMessages params", { method });
-    case "schedule.abortRun":
+        : fail("invalid automation.runMessages params", { method });
+    case "automation.abortRun":
       return exactObject(params, ["runId"]) &&
         isNonEmptyString(params.runId) &&
         params.runId.length <= 64
         ? ok(params)
-        : fail("invalid schedule.abortRun params", { method });
-    case "schedule.validateCron":
+        : fail("invalid automation.abortRun params", { method });
+    case "automation.validateCron":
       return exactObject(params, ["cron"], ["timezone"]) &&
         isNonEmptyString(params.cron) &&
         params.cron.length <= 100 &&
         (params.timezone === undefined ||
           (typeof params.timezone === "string" && params.timezone.length <= 64))
         ? ok(params)
-        : fail("invalid schedule.validateCron params", { method });
-    case "schedule.listNotifications":
+        : fail("invalid automation.validateCron params", { method });
+    case "automation.listNotifications":
       return exactObject(params, [], ["limit"]) &&
-        (params.limit === undefined || isScheduleLimit(params.limit))
+        (params.limit === undefined || isAutomationLimit(params.limit))
         ? ok(params)
-        : fail("invalid schedule.listNotifications params", { method });
+        : fail("invalid automation.listNotifications params", { method });
     case "shelljobs.list":
       return params === null ? ok(null) : fail("params must be null", { method });
     case "shelljobs.output":

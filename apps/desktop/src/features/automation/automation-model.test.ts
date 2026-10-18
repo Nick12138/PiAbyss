@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
-import type { ScheduleJob } from "@piabyss/protocol";
+import type { AutomationJob } from "@piabyss/protocol";
 import {
-  defaultScheduleForm,
+  defaultAutomationForm,
   formatCountdown,
   formatIntervalEvery,
   jobToForm,
   parseIntervalEvery,
-  scheduleFormErrors,
+  automationFormErrors,
   formToJobInput,
   toDatetimeLocalValue,
   triggerSummary,
-} from "./schedule-model";
+} from "./automation-model";
 
-function jobFixture(overrides: Partial<ScheduleJob> = {}): ScheduleJob {
+function jobFixture(overrides: Partial<AutomationJob> = {}): AutomationJob {
   return {
     id: "a1b2c3d4",
     name: "安全审查",
@@ -92,7 +92,7 @@ describe("triggerSummary", () => {
 describe("formToJobInput", () => {
   it("builds a cron prompt task", () => {
     const form = {
-      ...defaultScheduleForm("C:/proj"),
+      ...defaultAutomationForm("C:/proj"),
       name: "  安全审查  ",
       prompt: "审查 src/",
       triggerType: "cron" as const,
@@ -114,7 +114,7 @@ describe("formToJobInput", () => {
 
   it("builds a command task with null prompt", () => {
     const form = {
-      ...defaultScheduleForm("C:/proj"),
+      ...defaultAutomationForm("C:/proj"),
       kind: "command" as const,
       command: "git status",
       triggerType: "interval" as const,
@@ -130,7 +130,7 @@ describe("formToJobInput", () => {
   });
 
   it("rejects malformed cron / maxRuns / once", () => {
-    const base = defaultScheduleForm("C:/proj");
+    const base = defaultAutomationForm("C:/proj");
     expect(
       formToJobInput({ ...base, name: "x", prompt: "y", triggerType: "cron", cron: "0 9" }).ok,
     ).toBe(false);
@@ -176,17 +176,17 @@ describe("jobToForm roundtrip", () => {
   });
 });
 
-describe("scheduleFormErrors", () => {
+describe("automationFormErrors", () => {
   it("flags missing required fields", () => {
-    const errors = scheduleFormErrors(defaultScheduleForm(""));
-    expect(errors.name).toBe("scheduleFormNameRequired");
-    expect(errors.prompt).toBe("scheduleFormPromptRequired");
-    expect(errors.cwd).toBe("scheduleFormCwdRequired");
+    const errors = automationFormErrors(defaultAutomationForm(""));
+    expect(errors.name).toBe("automationFormNameRequired");
+    expect(errors.prompt).toBe("automationFormPromptRequired");
+    expect(errors.cwd).toBe("automationFormCwdRequired");
   });
 
   it("passes for a complete form", () => {
-    const errors = scheduleFormErrors({
-      ...defaultScheduleForm("C:/proj"),
+    const errors = automationFormErrors({
+      ...defaultAutomationForm("C:/proj"),
       name: "x",
       prompt: "y",
     });
@@ -223,8 +223,8 @@ describe("smart-creation preview", () => {
     params ? `${key}(${Object.values(params).join(",")})` : key) as never;
 
   it("resolves plugin defaults instead of reporting them undetermined", async () => {
-    const { schedulePlanPreviewRows } = await import("./schedule-model");
-    const rows = schedulePlanPreviewRows(
+    const { automationPlanPreviewRows } = await import("./automation-model");
+    const rows = automationPlanPreviewRows(
       { name: "内存监控", cwd: "D:/proj", trigger: { type: "manual" } },
       t,
       "hostDefaultModelLabel",
@@ -232,24 +232,24 @@ describe("smart-creation preview", () => {
     const byLabel = new Map(rows.map((row) => [row.label, row]));
 
     // The model has a real fallback: the host default.
-    expect(byLabel.get("scheduleFormModel")).toMatchObject({
+    expect(byLabel.get("automationFormModel")).toMatchObject({
       value: "hostDefaultModelLabel",
       fallback: true,
     });
     // maxRuns null means "no cap", not "unknown".
-    expect(byLabel.get("scheduleFormMaxRuns")).toMatchObject({
-      value: "scheduleFormMaxRunsPlaceholder",
+    expect(byLabel.get("automationFormMaxRuns")).toMatchObject({
+      value: "automationFormMaxRunsPlaceholder",
       fallback: true,
     });
     // timeoutMs null falls back to the plugin's 30-minute default.
-    expect(byLabel.get("scheduleFormTimeout")?.value).toBe("scheduleTimeoutValue(30)");
+    expect(byLabel.get("automationFormTimeout")?.value).toBe("automationTimeoutValue(30)");
     // No row may be left open when every required field is present.
     expect(rows.every((row) => row.value !== null)).toBe(true);
   });
 
   it("drops rows that do not apply to a command plan", async () => {
-    const { schedulePlanPreviewRows } = await import("./schedule-model");
-    const rows = schedulePlanPreviewRows(
+    const { automationPlanPreviewRows } = await import("./automation-model");
+    const rows = automationPlanPreviewRows(
       {
         kind: "command",
         name: "内存",
@@ -262,40 +262,45 @@ describe("smart-creation preview", () => {
     );
     const labels = rows.map((row) => row.label);
     // permission/model are prompt-only in the create path.
-    expect(labels).not.toContain("scheduleFormPermission");
-    expect(labels).not.toContain("scheduleFormModel");
+    expect(labels).not.toContain("automationFormPermission");
+    expect(labels).not.toContain("automationFormModel");
     expect(rows.map((row) => row.value)).not.toContain(null);
   });
 
   it("reports only genuinely open required fields", async () => {
-    const { schedulePlanMissingFields } = await import("./schedule-model");
+    const { automationPlanMissingFields } = await import("./automation-model");
     expect(
-      schedulePlanMissingFields({ name: "n", cwd: "/p", trigger: { type: "manual" }, prompt: "x" }),
+      automationPlanMissingFields({
+        name: "n",
+        cwd: "/p",
+        trigger: { type: "manual" },
+        prompt: "x",
+      }),
     ).toEqual([]);
-    expect(schedulePlanMissingFields({})).toEqual([
-      "scheduleFormName",
-      "scheduleFormCwd",
-      "scheduleFormTrigger",
-      "scheduleFormPrompt",
+    expect(automationPlanMissingFields({})).toEqual([
+      "automationFormName",
+      "automationFormCwd",
+      "automationFormTrigger",
+      "automationFormPrompt",
     ]);
     // A command plan needs a command, not a prompt.
     expect(
-      schedulePlanMissingFields({
+      automationPlanMissingFields({
         kind: "command",
         name: "n",
         cwd: "/p",
         trigger: { type: "manual" },
       }),
-    ).toEqual(["scheduleFormCommand"]);
+    ).toEqual(["automationFormCommand"]);
   });
 
   it("omits tags when the AI settled none", async () => {
-    const { schedulePlanPreviewRows } = await import("./schedule-model");
-    const rows = schedulePlanPreviewRows(
+    const { automationPlanPreviewRows } = await import("./automation-model");
+    const rows = automationPlanPreviewRows(
       { tags: [], name: "n", cwd: "/p", trigger: { type: "manual" }, prompt: "x" },
       t,
       "m",
     );
-    expect(rows.map((row) => row.label)).not.toContain("scheduleFormTags");
+    expect(rows.map((row) => row.label)).not.toContain("automationFormTags");
   });
 });

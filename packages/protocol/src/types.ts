@@ -1864,32 +1864,32 @@ export type DesktopSettings = {
 
 export type DesktopSettingsPatch = Partial<DesktopSettings>;
 
-/* ── Schedule（pi-schedule 插件控制面）────────────────────────── */
+/* ── Automation（pi-automation 插件控制面）────────────────────────── */
 
-export type SchedulePermission = "read_only" | "write" | "full";
-export type ScheduleMissedWindow = "catch_up_one" | "skip";
-export type ScheduleRunStatus = "running" | "ok" | "error" | "timeout" | "aborted";
-export type ScheduleRunTrigger = "manual" | "once" | "interval" | "cron" | "reply";
-export type ScheduleTermination = "once" | "maxRuns" | "missed";
+export type AutomationPermission = "read_only" | "write" | "full";
+export type AutomationMissedWindow = "catch_up_one" | "skip";
+export type AutomationRunStatus = "running" | "ok" | "error" | "timeout" | "aborted";
+export type AutomationRunTrigger = "manual" | "once" | "interval" | "cron" | "reply";
+export type AutomationTermination = "once" | "maxRuns" | "missed";
 /** 按计划推送配置：none 关闭；system 系统通知；tg 为 Telegram 通道预留。 */
-export type ScheduleNotifyMode = "none" | "system" | "tg";
+export type AutomationNotifyMode = "none" | "system" | "tg";
 
 /** 触发方式：manual = 仅手动，不进自动计划。 */
-export type ScheduleTrigger =
+export type AutomationTrigger =
   | { type: "manual" }
   | { type: "once"; at: string }
   | { type: "interval"; every: string }
   | { type: "cron"; cron: string; timezone?: string };
 
 /** 模型引用；null = 用宿主默认模型。 */
-export type ScheduleModelRef = {
+export type AutomationModelRef = {
   provider: string;
   id: string;
   thinkingLevel?: string;
 };
 
 /** 任务定义（对应插件 jobs.json 里的一条记录）。 */
-export type ScheduleJob = {
+export type AutomationJob = {
   id: string;
   name: string;
   /** 任务内容（执行会话的任务书）；命令型任务为 ""。 */
@@ -1899,10 +1899,10 @@ export type ScheduleJob = {
   /** 工作区绝对路径（执行会话的 cwd）。 */
   cwd: string;
   enabled: boolean;
-  permission: SchedulePermission;
-  model: ScheduleModelRef | null;
-  trigger: ScheduleTrigger;
-  missedWindow: ScheduleMissedWindow;
+  permission: AutomationPermission;
+  model: AutomationModelRef | null;
+  trigger: AutomationTrigger;
+  missedWindow: AutomationMissedWindow;
   timeoutMs: number;
   maxRuns: number | null;
   loadExtensions: boolean;
@@ -1913,35 +1913,35 @@ export type ScheduleJob = {
   nextRunAt: string | null;
   lastRunAt: string | null;
   lastRunId: string | null;
-  lastStatus: ScheduleRunStatus | null;
+  lastStatus: AutomationRunStatus | null;
   runCount: number;
-  terminated: ScheduleTermination | null;
+  terminated: AutomationTermination | null;
   /** Older plugin versions don't persist this field — treat as "none". */
-  notify?: ScheduleNotifyMode;
+  notify?: AutomationNotifyMode;
 };
 
 /** 创建任务的请求体。 */
-export type ScheduleJobInput = {
+export type AutomationJobInput = {
   name: string;
   prompt: string;
   command?: string | null;
   cwd: string;
-  trigger: ScheduleTrigger;
-  permission?: SchedulePermission;
-  model?: ScheduleModelRef | null;
-  missedWindow?: ScheduleMissedWindow;
+  trigger: AutomationTrigger;
+  permission?: AutomationPermission;
+  model?: AutomationModelRef | null;
+  missedWindow?: AutomationMissedWindow;
   timeoutMs?: number;
   maxRuns?: number | null;
   loadExtensions?: boolean;
   tags?: string[];
   enabled?: boolean;
-  notify?: ScheduleNotifyMode;
+  notify?: AutomationNotifyMode;
 };
 
 /** 修改任务：id 必带，其余字段可选（部分更新）。 */
-export type ScheduleJobPatch = Partial<ScheduleJobInput> & { id: string };
+export type AutomationJobPatch = Partial<AutomationJobInput> & { id: string };
 
-export type ScheduleUsageSummary = {
+export type AutomationUsageSummary = {
   input: number;
   output: number;
   total: number;
@@ -1949,17 +1949,17 @@ export type ScheduleUsageSummary = {
 };
 
 /** 执行记录的精简视图（对应插件 RunSummary）。 */
-export type ScheduleRunSummary = {
+export type AutomationRunSummary = {
   runId: string;
   jobId: string;
   jobName: string;
-  trigger: ScheduleRunTrigger;
-  status: ScheduleRunStatus;
+  trigger: AutomationRunTrigger;
+  status: AutomationRunStatus;
   startedAt: string;
   finishedAt: string | null;
   durationMs: number | null;
-  model: ScheduleModelRef | null;
-  permission: SchedulePermission;
+  model: AutomationModelRef | null;
+  permission: AutomationPermission;
   /**
    * 本次实际生效的工具白名单（full 档为 `["*"]`，命令型任务为 `[]`）。
    * 无人值守执行的底牌：面板要能回答「这一轮到底给了哪些工具」，用户才看得出
@@ -1973,12 +1973,12 @@ export type ScheduleRunSummary = {
   forkOf: string | null;
   summary: string;
   error: string | null;
-  usage: ScheduleUsageSummary | null;
+  usage: AutomationUsageSummary | null;
   toolCalls: number;
 };
 
 /**
- * schedule.runMessages 结果：一次执行的过程。
+ * automation.runMessages 结果：一次执行的过程。
  *
  * 读法是 Host 直接读 run 的会话 jsonl（`sessionPath`），而不是插件那个拍平的
  * `/runs/:id/transcript`——后者丢掉 thinking、连 `toolResult` 都不返回，撑不出
@@ -1986,28 +1986,28 @@ export type ScheduleRunSummary = {
  * `buildTranscriptRows` 投影。命令型任务没有会话：`messages` 为空，输出看 run 的
  * `summary`/`outputText`。
  */
-export type ScheduleRunMessages = {
+export type AutomationRunMessages = {
   found: boolean;
   sessionPath: string | null;
   /** 这一轮是否还在执行中（决定面板显示「停止」还是「已结束」）。 */
   running: boolean;
-  messages: ScheduleAgentMessage[];
+  messages: AutomationAgentMessage[];
 };
 
 /** 插件通知队列条目。 */
-export type ScheduleNotification = {
+export type AutomationNotification = {
   at: string;
   jobId: string;
   jobName: string;
   runId: string;
-  status: ScheduleRunStatus;
+  status: AutomationRunStatus;
   level: "info" | "error";
   title: string;
   message: string;
 };
 
 /** `GET /api/health` 的响应。 */
-export type ScheduleHealth = {
+export type AutomationHealth = {
   ok: boolean;
   root: string;
   port: number | null;
@@ -2023,7 +2023,7 @@ export type ScheduleHealth = {
  * workspace session (`buildTranscriptRows`), so reasoning and tool calls fold
  * exactly like the conversation area instead of being flattened to plain text.
  * `text`/`reasoning` stay for the plan-block extraction and the backlog title. */
-export type ScheduleAgentMessage = {
+export type AutomationAgentMessage = {
   role: string;
   text: string;
   reasoning?: string;
@@ -2035,10 +2035,10 @@ export type ScheduleAgentMessage = {
   isError?: boolean;
 };
 
-/** schedule.status 结果：插件未启动时 available=false（不作为协议错误）。 */
-export type ScheduleStatus = {
+/** automation.status 结果：插件未启动时 available=false（不作为协议错误）。 */
+export type AutomationStatus = {
   available: boolean;
-  health: ScheduleHealth | null;
+  health: AutomationHealth | null;
   error: string | null;
 };
 
@@ -2094,7 +2094,7 @@ export type PixieWorkspaceSessionSummary = {
   summary: string;
 };
 
-/** 小精灵会话的流式消息，形状与 schedule agent 的投影一致。 */
+/** 小精灵会话的流式消息，形状与 automation agent 的投影一致。 */
 export type PixieAgentMessage = {
   role: string;
   text: string;

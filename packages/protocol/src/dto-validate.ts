@@ -2403,9 +2403,9 @@ function isGitTaskFinishedPayload(value: unknown): boolean {
   );
 }
 
-/* ── Schedule（pi-schedule）result helpers ─────────────── */
+/* ── Automation（pi-automation）result helpers ─────────────── */
 
-function isScheduleModelRef(value: unknown): boolean {
+function isAutomationModelRef(value: unknown): boolean {
   return (
     isPlainObject(value) &&
     hasExactKeys(value, ["provider", "id"], ["thinkingLevel"]) &&
@@ -2415,7 +2415,7 @@ function isScheduleModelRef(value: unknown): boolean {
   );
 }
 
-function isScheduleTrigger(value: unknown): boolean {
+function isAutomationTrigger(value: unknown): boolean {
   if (!isPlainObject(value)) return false;
   switch (value.type) {
     case "manual":
@@ -2435,11 +2435,11 @@ function isScheduleTrigger(value: unknown): boolean {
   }
 }
 
-function isSchedulePermission(value: unknown): boolean {
+function isAutomationPermission(value: unknown): boolean {
   return value === "read_only" || value === "write" || value === "full";
 }
 
-function isScheduleUsage(value: unknown): boolean {
+function isAutomationUsage(value: unknown): boolean {
   return (
     isPlainObject(value) &&
     hasExactKeys(value, ["input", "output", "total", "cost"]) &&
@@ -2454,11 +2454,11 @@ function isScheduleUsage(value: unknown): boolean {
   );
 }
 
-function isScheduleIsoOrNull(value: unknown): boolean {
+function isAutomationIsoOrNull(value: unknown): boolean {
   return value === null || (isString(value) && value.length > 0);
 }
 
-function isScheduleJob(value: unknown): boolean {
+function isAutomationJob(value: unknown): boolean {
   if (!isPlainObject(value)) return false;
   return (
     hasExactKeys(
@@ -2496,9 +2496,9 @@ function isScheduleJob(value: unknown): boolean {
     (value.command === null || isString(value.command)) &&
     isString(value.cwd) &&
     isBoolean(value.enabled) &&
-    isSchedulePermission(value.permission) &&
-    (value.model === null || isScheduleModelRef(value.model)) &&
-    isScheduleTrigger(value.trigger) &&
+    isAutomationPermission(value.permission) &&
+    (value.model === null || isAutomationModelRef(value.model)) &&
+    isAutomationTrigger(value.trigger) &&
     (value.missedWindow === "catch_up_one" || value.missedWindow === "skip") &&
     typeof value.timeoutMs === "number" &&
     Number.isSafeInteger(value.timeoutMs) &&
@@ -2510,8 +2510,8 @@ function isScheduleJob(value: unknown): boolean {
     isString(value.createdAt) &&
     isString(value.updatedAt) &&
     isString(value.updatedBy) &&
-    isScheduleIsoOrNull(value.nextRunAt) &&
-    isScheduleIsoOrNull(value.lastRunAt) &&
+    isAutomationIsoOrNull(value.nextRunAt) &&
+    isAutomationIsoOrNull(value.lastRunAt) &&
     (value.lastRunId === null || isString(value.lastRunId)) &&
     (value.lastStatus === null ||
       (isString(value.lastStatus) &&
@@ -2528,7 +2528,7 @@ function isScheduleJob(value: unknown): boolean {
   );
 }
 
-function isScheduleRunSummary(value: unknown): boolean {
+function isAutomationRunSummary(value: unknown): boolean {
   if (!isPlainObject(value)) return false;
   return (
     hasExactKeys(value, [
@@ -2557,11 +2557,11 @@ function isScheduleRunSummary(value: unknown): boolean {
     isString(value.trigger) &&
     isString(value.status) &&
     isString(value.startedAt) &&
-    isScheduleIsoOrNull(value.finishedAt) &&
+    isAutomationIsoOrNull(value.finishedAt) &&
     (value.durationMs === null ||
       (typeof value.durationMs === "number" && Number.isSafeInteger(value.durationMs))) &&
-    (value.model === null || isScheduleModelRef(value.model)) &&
-    isSchedulePermission(value.permission) &&
+    (value.model === null || isAutomationModelRef(value.model)) &&
+    isAutomationPermission(value.permission) &&
     Array.isArray(value.tools) &&
     value.tools.every(isString) &&
     (value.sessionPath === null || isString(value.sessionPath)) &&
@@ -2569,7 +2569,7 @@ function isScheduleRunSummary(value: unknown): boolean {
     (value.forkOf === null || isString(value.forkOf)) &&
     isString(value.summary) &&
     (value.error === null || isString(value.error)) &&
-    (value.usage === null || isScheduleUsage(value.usage)) &&
+    (value.usage === null || isAutomationUsage(value.usage)) &&
     isSafeRevision(value.toolCalls)
   );
 }
@@ -2627,7 +2627,7 @@ function isShellJobOutput(value: unknown): boolean {
   );
 }
 
-function isScheduleNotification(value: unknown): boolean {
+function isAutomationNotification(value: unknown): boolean {
   return (
     isPlainObject(value) &&
     hasExactKeys(value, [
@@ -2651,7 +2651,7 @@ function isScheduleNotification(value: unknown): boolean {
   );
 }
 
-function isScheduleAgentMessage(value: unknown): boolean {
+function isAutomationAgentMessage(value: unknown): boolean {
   return (
     isPlainObject(value) &&
     hasExactKeys(
@@ -3003,7 +3003,7 @@ function isMemoDraft(value: unknown): boolean {
   );
 }
 
-function isScheduleHealth(value: unknown): boolean {
+function isAutomationHealth(value: unknown): boolean {
   return (
     isPlainObject(value) &&
     hasExactKeys(value, ["ok", "root", "port", "activeJobs", "tickMs", "maxConcurrent"]) &&
@@ -3654,81 +3654,81 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         (result.ownerPid === undefined || isSafeRevision(result.ownerPid))
         ? null
         : "invalid telegram.status result";
-    case "schedule.status":
+    case "automation.status":
       return isPlainObject(result) &&
         hasExactKeys(result, ["available", "health", "error"]) &&
         isBoolean(result.available) &&
-        (result.health === null || isScheduleHealth(result.health)) &&
+        (result.health === null || isAutomationHealth(result.health)) &&
         (result.error === null || isString(result.error))
         ? null
-        : "invalid schedule.status result";
-    case "schedule.listJobs":
+        : "invalid automation.status result";
+    case "automation.listJobs":
       return isPlainObject(result) &&
         hasExactKeys(result, ["jobs", "activeJobIds", "root"]) &&
         Array.isArray(result.jobs) &&
-        result.jobs.every(isScheduleJob) &&
+        result.jobs.every(isAutomationJob) &&
         Array.isArray(result.activeJobIds) &&
         result.activeJobIds.every((id) => isString(id) && id.length > 0) &&
         isString(result.root)
         ? null
-        : "invalid schedule.listJobs result";
-    case "schedule.createJob":
-    case "schedule.updateJob":
-    case "schedule.setJobEnabled":
-      return isPlainObject(result) && hasExactKeys(result, ["job"]) && isScheduleJob(result.job)
+        : "invalid automation.listJobs result";
+    case "automation.createJob":
+    case "automation.updateJob":
+    case "automation.setJobEnabled":
+      return isPlainObject(result) && hasExactKeys(result, ["job"]) && isAutomationJob(result.job)
         ? null
-        : "invalid schedule job result";
-    case "schedule.deleteJob":
+        : "invalid automation job result";
+    case "automation.deleteJob":
       return isPlainObject(result) &&
         hasExactKeys(result, ["removed", "purged"]) &&
         result.removed === true &&
         isBoolean(result.purged)
         ? null
-        : "invalid schedule.deleteJob result";
-    case "schedule.runJobNow":
+        : "invalid automation.deleteJob result";
+    case "automation.runJobNow":
       return isPlainObject(result) &&
         hasExactKeys(result, ["run"]) &&
-        isScheduleRunSummary(result.run)
+        isAutomationRunSummary(result.run)
         ? null
-        : "invalid schedule run result";
-    case "schedule.listRuns":
+        : "invalid automation run result";
+    case "automation.listRuns":
       return isPlainObject(result) &&
         hasExactKeys(result, ["runs"]) &&
         Array.isArray(result.runs) &&
-        result.runs.every(isScheduleRunSummary)
+        result.runs.every(isAutomationRunSummary)
         ? null
-        : "invalid schedule.listRuns result";
-    case "schedule.runMessages":
+        : "invalid automation.listRuns result";
+    case "automation.runMessages":
       return isPlainObject(result) &&
         hasExactKeys(result, ["found", "sessionPath", "running", "messages"]) &&
         isBoolean(result.found) &&
         (result.sessionPath === null || isString(result.sessionPath)) &&
         isBoolean(result.running) &&
         Array.isArray(result.messages) &&
-        result.messages.every(isScheduleAgentMessage)
+        result.messages.every(isAutomationAgentMessage)
         ? null
-        : "invalid schedule.runMessages result";
-    case "schedule.abortRun":
+        : "invalid automation.runMessages result";
+    case "automation.abortRun":
       return isPlainObject(result) &&
         hasExactKeys(result, ["aborted", "run"]) &&
         isBoolean(result.aborted) &&
-        isScheduleRunSummary(result.run)
+        isAutomationRunSummary(result.run)
         ? null
-        : "invalid schedule.abortRun result";
-    case "schedule.validateCron":
+        : "invalid automation.abortRun result";
+    case "automation.validateCron":
       return isPlainObject(result) &&
         hasExactKeys(result, ["valid"], ["reason"]) &&
         isBoolean(result.valid) &&
         (result.reason === undefined || result.reason === null || isString(result.reason))
         ? null
-        : "invalid schedule.validateCron result";
-    case "schedule.listNotifications":
+        : "invalid automation.validateCron result";
+    case "automation.listNotifications":
       return isPlainObject(result) &&
         hasExactKeys(result, ["entries"]) &&
         Array.isArray(result.entries) &&
-        result.entries.every(isScheduleNotification)
+        result.entries.every(isAutomationNotification)
         ? null
-        : "invalid schedule.listNotifications result";
+        : "invalid automation.listNotifications result";
     case "shelljobs.list":
       return isShellJobsSnapshot(result) ? null : "invalid ShellJobsSnapshot";
     case "shelljobs.output":
@@ -4058,12 +4058,12 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
         : "invalid git.changed payload";
     case "git.taskFinished":
       return isGitTaskFinishedPayload(payload) ? null : "invalid git.taskFinished payload";
-    case "schedule.notificationsChanged":
+    case "automation.notificationsChanged":
       return isPlainObject(payload) &&
         hasExactKeys(payload, ["total"]) &&
         isSafeRevision(payload.total)
         ? null
-        : "invalid schedule.notificationsChanged payload";
+        : "invalid automation.notificationsChanged payload";
     case "shelljobs.changed":
       return isShellJobsSnapshot(payload) ? null : "invalid ShellJobsSnapshot payload";
     case "attachment.changed":

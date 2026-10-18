@@ -45,7 +45,7 @@ function modelSummaries(runtime: ModelRuntime): ModelSummary[] {
     providerName: runtime.getProvider(model.provider)?.name,
     modelId: model.id,
     name: model.name ?? model.id,
-    // Same source as model.list's summarizeModel — clients (e.g. the schedule
+    // Same source as model.list's summarizeModel — clients (e.g. the automation
     // form's thinking-depth picker) rely on per-model levels being present.
     thinkingLevels: getSupportedThinkingLevels(model).map(String),
     input: model.input ?? [],

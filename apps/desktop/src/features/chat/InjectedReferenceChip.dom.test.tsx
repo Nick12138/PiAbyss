@@ -38,10 +38,10 @@ describe("InjectedReferenceChip", () => {
   it("labels each injected kind", () => {
     const { unmount } = render(
       <InjectedReferenceChip
-        reference={reference({ kind: "schedule-preamble", title: "", body: "你是助手。" })}
+        reference={reference({ kind: "automation-preamble", title: "", body: "你是助手。" })}
       />,
     );
-    expect(screen.getByRole("button", { name: /@Schedule prompt/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /@Automation prompt/ })).toBeVisible();
     unmount();
 
     render(

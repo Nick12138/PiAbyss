@@ -28,7 +28,7 @@ import {
  * 小精灵页「随行面板」：
  *   - 面板本身可展开 / 折叠（负 margin 滑出，状态持久化）；
  *   - 宽度可拖拽 / 键盘调整，有下限与「给对话区留位」的上限，并持久化；
- *   - 面板内是**横排的三块页签**：方寸间 / 周期计划 / 委派任务，一次只看一块；
+ *   - 面板内是**横排的三块页签**：方寸间 / 自动化 / 委派任务，一次只看一块；
  *     未选中的那块仍挂着（计数不停更），只是不显示；
  *   - 行宽不足 672 时面板自动收起，并换成盖在对话上的浮层抽屉（顶栏开关不消失，
  *     它改开抽屉）；跨断点一律从关着开始。
@@ -254,14 +254,14 @@ describe("clampPixiePanelWidth", () => {
 });
 
 describe("PixieSidePanel 页签", () => {
-  it("顶栏直接是「方寸间 → 周期计划 → 委派任务」三个页签，不再有面板标题", () => {
+  it("顶栏直接是「方寸间 → 自动化 → 委派任务」三个页签，不再有面板标题", () => {
     render(<PixieSidePanel groups={[]} />);
 
     const ids = screen
       .getAllByRole("tab")
       .map((tab) => tab.getAttribute("aria-controls"))
       .filter((id): id is string => id !== null);
-    expect(ids).toEqual(["pixie-panel-todo", "pixie-panel-schedule", "pixie-panel-dispatch"]);
+    expect(ids).toEqual(["pixie-panel-todo", "pixie-panel-automation", "pixie-panel-dispatch"]);
 
     // 「随行面板」那 40px 的标题条删了：名字只留给 aria-label。
     expect(screen.queryByText("Side panel")).toBeNull();
@@ -274,12 +274,12 @@ describe("PixieSidePanel 页签", () => {
 
     expect(screen.getByTestId("pixie-panel-tab-todo")).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("pixie-panel-body-todo")).toBeVisible();
-    expect(screen.getByTestId("pixie-panel-body-schedule")).not.toBeVisible();
+    expect(screen.getByTestId("pixie-panel-body-automation")).not.toBeVisible();
     expect(screen.getByTestId("pixie-panel-body-dispatch")).not.toBeVisible();
 
     // 切过去只是把显示换一下：原来那块没被卸载，切回来还在。
-    await user.click(screen.getByTestId("pixie-panel-tab-schedule"));
-    expect(screen.getByTestId("pixie-panel-body-schedule")).toBeVisible();
+    await user.click(screen.getByTestId("pixie-panel-tab-automation"));
+    expect(screen.getByTestId("pixie-panel-body-automation")).toBeVisible();
     expect(screen.getByTestId("pixie-panel-body-todo")).not.toBeVisible();
     await user.click(screen.getByTestId("pixie-panel-tab-todo"));
     expect(screen.getByTestId("pixie-panel-body-todo")).toBeVisible();
@@ -304,11 +304,14 @@ describe("PixieSidePanel 页签", () => {
     expect(screen.getByTestId("pixie-panel-tab-todo")).toHaveAttribute("aria-selected", "true");
 
     // 插件在别处被关掉：面板重新判门控，方寸间那块连同页签一起没了，
-    // 停在它上面的选中态得跟着退到第一块（周期计划）。
+    // 停在它上面的选中态得跟着退到第一块（自动化）。
     gateState.memo = false;
     rerender(<PixieSidePanel groups={[]} />);
     expect(screen.queryByTestId("pixie-panel-tab-todo")).toBeNull();
-    expect(screen.getByTestId("pixie-panel-tab-schedule")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("pixie-panel-tab-automation")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     gateState.memo = true;
   });
 });

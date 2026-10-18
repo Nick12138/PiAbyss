@@ -1,17 +1,17 @@
 /**
- * 随行面板「周期计划」的**详情弹窗**：计划全貌 + 执行历史 + 过程 + 动作。
+ * 随行面板「自动化」的**详情弹窗**：任务全貌 + 执行历史 + 过程 + 动作。
  *
  * 独立页的右栏换成弹窗是给小精灵页让路的形态（面板只有 350–720px，详情必须有自己的
  * 宽度，所以弹窗居中偏大、内部滚动）。动作里唯一新长出来的是**停止**：
  * 中止的是这一轮，任务与排期都不动（`aborted` 在插件侧不消耗投递配额）。
  *
- * 执行过程走 `schedule.runMessages`——Host 直接读 run 的会话文件，保留思考块与工具
+ * 执行过程走 `automation.runMessages`——Host 直接读 run 的会话文件，保留思考块与工具
  * 调用，渲染复用共享转写（`TranscriptRowView`）。命令型任务没有过程会话，
  * `found=false` 是如实结果，不是加载失败。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Loader2, Pencil, Play, Square, Trash2 } from "lucide-react";
-import type { ScheduleJob, ScheduleRunSummary } from "@piabyss/protocol";
+import type { AutomationJob, AutomationRunSummary } from "@piabyss/protocol";
 import { Dialog, secondaryButton } from "../../components/Dialog";
 import { Select } from "../../components/Select";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
@@ -22,15 +22,15 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { draftTargetFor } from "../../lib/draft-target";
 import { TranscriptRowView } from "../chat/Transcript";
-import { buildRunRows } from "../schedule/schedule-transcript";
-import { ScheduleJobDetail } from "../schedule/ScheduleJobDetail";
-import { injectScheduleJobReference } from "../schedule/schedule-reference";
-import { ScheduleJobDialog } from "../schedule/ScheduleJobDialog";
+import { buildRunRows } from "../automation/automation-transcript";
+import { AutomationJobDetail } from "../automation/AutomationJobDetail";
+import { injectAutomationJobReference } from "../automation/automation-reference";
+import { AutomationJobDialog } from "../automation/AutomationJobDialog";
 import {
-  SCHEDULE_STATUS_LABEL,
+  AUTOMATION_STATUS_LABEL,
   formatDateTime,
   formatDurationMs,
-} from "../schedule/schedule-model";
+} from "../automation/automation-model";
 
 const LIST_TIMEOUT_MS = 15_000;
 /** 立即执行等的是整轮跑完，给足余量（同独立页口径）。 */
@@ -44,20 +44,20 @@ const RUNS_LIMIT = 50;
  * 不是计划的来源；只有排期自己触发的那几种才值得写出来。
  */
 const RUN_TRIGGER_LABEL: Record<string, MessageKey> = {
-  once: "scheduleTriggerOnce",
-  interval: "scheduleTriggerInterval",
-  cron: "scheduleTriggerCron",
+  once: "automationTriggerOnce",
+  interval: "automationTriggerInterval",
+  cron: "automationTriggerCron",
 };
 
-export function PixieScheduleDetailDialog({
+export function PixieAutomationDetailDialog({
   job: initialJob,
   jobLive,
   onClose,
   onChanged,
 }: {
-  job: ScheduleJob;
+  job: AutomationJob;
   /**
-   * 这条计划**此刻**是否在调度器里真跑着（来自 `listJobs.activeJobIds`）。
+   * 这条自动化任务**此刻**是否在调度器里真跑着（来自 `listJobs.activeJobIds`）。
    * run 记录自己的 `status:"running"` 不能单独信：宿主重启或被强杀时来不及回写终态，
    * 文件会永远停在 `running`，那是一条僵尸记录，不是一轮正在执行的活。
    */
@@ -68,7 +68,7 @@ export function PixieScheduleDetailDialog({
 }) {
   const t = useT();
   const [job, setJob] = useState(initialJob);
-  const [runs, setRuns] = useState<ScheduleRunSummary[]>([]);
+  const [runs, setRuns] = useState<AutomationRunSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
@@ -92,7 +92,7 @@ export function PixieScheduleDetailDialog({
     if (!host) return;
     try {
       const response = await hostClient.request(
-        "schedule.listRuns",
+        "automation.listRuns",
         hostContext(host),
         { jobId: job.id, limit: RUNS_LIMIT },
         LIST_TIMEOUT_MS,
@@ -127,7 +127,7 @@ export function PixieScheduleDetailDialog({
    * 终态后进程中的 `running` 会把定时器停掉，避免留下永远转的尾巴。
    */
   const loadProcess = useCallback(
-    async (run: ScheduleRunSummary) => {
+    async (run: AutomationRunSummary) => {
       if (!host) return;
       let alive = true;
       // 这一轮在插件侧是否还在跑（越出 try 作用域也要知道，僵尸记录不必无限轮询）。
@@ -135,7 +135,7 @@ export function PixieScheduleDetailDialog({
       const tick = async () => {
         try {
           const response = await hostClient.request(
-            "schedule.runMessages",
+            "automation.runMessages",
             hostContext(host),
             { runId: run.runId },
             LIST_TIMEOUT_MS,
@@ -188,7 +188,7 @@ export function PixieScheduleDetailDialog({
   }, [expandedRunId, loadProcess, runs]);
 
   const applyJob = useCallback(
-    (updated: ScheduleJob) => {
+    (updated: AutomationJob) => {
       setJob(updated);
       onChanged();
     },
@@ -201,19 +201,19 @@ export function PixieScheduleDetailDialog({
     setError(null);
     try {
       const response = await hostClient.request(
-        "schedule.runJobNow",
+        "automation.runJobNow",
         hostContext(host),
         { id: job.id, permission: runPermission },
         RUN_NOW_TIMEOUT_MS,
       );
       if (!response.ok) {
-        setError(response.error?.message ?? t("pixieScheduleRunFailed"));
+        setError(response.error?.message ?? t("pixieAutomationRunFailed"));
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(false);
-      useAppStore.getState().bumpScheduleRevision();
+      useAppStore.getState().bumpAutomationRevision();
       void refreshRuns();
       onChanged();
     }
@@ -224,7 +224,7 @@ export function PixieScheduleDetailDialog({
       if (!host) return;
       try {
         const response = await hostClient.request(
-          "schedule.abortRun",
+          "automation.abortRun",
           hostContext(host),
           { runId },
           LIST_TIMEOUT_MS,
@@ -250,10 +250,10 @@ export function PixieScheduleDetailDialog({
       // 逐字段照抄再改名停用（同独立页口径）：`jobToForm` 会把超时换算成分钟，
       // 复制出来的任务会在取整上与原任务差几秒，不该让「副本」不是副本。
       const response = await hostClient.request(
-        "schedule.createJob",
+        "automation.createJob",
         hostContext(host),
         {
-          name: t("scheduleCopyName", { name: job.name }),
+          name: t("automationCopyName", { name: job.name }),
           prompt: job.prompt,
           command: job.command,
           cwd: job.cwd,
@@ -281,7 +281,7 @@ export function PixieScheduleDetailDialog({
     if (!host) return;
     setConfirmDelete(false);
     const response = await hostClient.request(
-      "schedule.deleteJob",
+      "automation.deleteJob",
       hostContext(host),
       { id: job.id },
       LIST_TIMEOUT_MS,
@@ -295,7 +295,7 @@ export function PixieScheduleDetailDialog({
 
   return (
     <Dialog
-      title={job.name || t("scheduleUntitledJob")}
+      title={job.name || t("automationUntitledJob")}
       confirmLabel={t("commonClose")}
       showCloseIcon
       hideActions
@@ -315,12 +315,12 @@ export function PixieScheduleDetailDialog({
             <p className="rounded-md bg-danger/10 px-2.5 py-2 text-xs text-danger">{error}</p>
           ) : null}
 
-          <ScheduleJobDetail job={job} />
+          <AutomationJobDetail job={job} />
 
           <div className="flex flex-col gap-2">
-            <h3 className="text-[13px] font-medium">{t("scheduleRunsTitle")}</h3>
+            <h3 className="text-[13px] font-medium">{t("automationRunsTitle")}</h3>
             {runs.length === 0 ? (
-              <p className="py-2 text-xs text-muted">{t("pixieScheduleRunsEmpty")}</p>
+              <p className="py-2 text-xs text-muted">{t("pixieAutomationRunsEmpty")}</p>
             ) : (
               runs.map((run) => {
                 const expanded = expandedRunId === run.runId;
@@ -356,13 +356,13 @@ export function PixieScheduleDetailDialog({
                         }`}
                         title={
                           run.status === "running" && !jobLive
-                            ? t("pixieScheduleStaleRunHint")
+                            ? t("pixieAutomationStaleRunHint")
                             : undefined
                         }
                       >
                         {run.status === "running" && !jobLive
-                          ? t("pixieScheduleStaleRun")
-                          : t(SCHEDULE_STATUS_LABEL[run.status])}
+                          ? t("pixieAutomationStaleRun")
+                          : t(AUTOMATION_STATUS_LABEL[run.status])}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-muted">
                         {run.summary || run.error || "—"}
@@ -375,8 +375,8 @@ export function PixieScheduleDetailDialog({
                           role="button"
                           tabIndex={0}
                           data-testid="pixie-detail-stop"
-                          aria-label={t("pixieScheduleStop")}
-                          title={t("pixieScheduleStopHint")}
+                          aria-label={t("pixieAutomationStop")}
+                          title={t("pixieAutomationStopHint")}
                           className="flex size-6 items-center justify-center rounded-md border border-border text-danger"
                           onClick={(event) => {
                             event.stopPropagation();
@@ -405,17 +405,17 @@ export function PixieScheduleDetailDialog({
                       ) : null}
                       {run.forkOf ? <span>fork</span> : null}
                       <span>
-                        {t("pixieScheduleToolsLabel")}: {run.tools.join(" ") || "—"}
+                        {t("pixieAutomationToolsLabel")}: {run.tools.join(" ") || "—"}
                       </span>
-                      {run.command ? <span>· {t("pixieScheduleCommandRun")}</span> : null}
+                      {run.command ? <span>· {t("pixieAutomationCommandRun")}</span> : null}
                       {run.toolCalls > 0 ? (
-                        <span>· {t("pixieScheduleToolCalls", { count: run.toolCalls })}</span>
+                        <span>· {t("pixieAutomationToolCalls", { count: run.toolCalls })}</span>
                       ) : null}
                     </div>
                     <CollapsibleRegion open={expanded}>
                       <div data-testid="pixie-detail-run-process" className="px-3 pb-3">
                         {noProcess ? (
-                          <p className="text-xs text-muted">{t("pixieScheduleNoProcess")}</p>
+                          <p className="text-xs text-muted">{t("pixieAutomationNoProcess")}</p>
                         ) : rowsByRun[run.runId]?.length ? (
                           <div className="flex flex-col gap-2">
                             {rowsByRun[run.runId].map((row, index, all) => (
@@ -442,7 +442,7 @@ export function PixieScheduleDetailDialog({
                         ) : (
                           <p className="flex items-center gap-1.5 text-xs text-muted">
                             <Loader2 size={12} className="animate-spin" />
-                            {t("pixieScheduleProcessLoading")}
+                            {t("pixieAutomationProcessLoading")}
                           </p>
                         )}
                       </div>
@@ -462,16 +462,16 @@ export function PixieScheduleDetailDialog({
             onClick={() => void runNow()}
           >
             {busy ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-            {t("scheduleRunNow")}
+            {t("automationRunNow")}
           </button>
           <Select
             value={runPermission}
-            onChange={(value) => setRunPermission(value as ScheduleJob["permission"])}
-            ariaLabel={t("pixieScheduleRunPermission")}
+            onChange={(value) => setRunPermission(value as AutomationJob["permission"])}
+            ariaLabel={t("pixieAutomationRunPermission")}
             options={[
-              { value: "read_only", label: t("schedulePermissionReadOnly") },
-              { value: "write", label: t("schedulePermissionWrite") },
-              { value: "full", label: t("schedulePermissionFull") },
+              { value: "read_only", label: t("automationPermissionReadOnly") },
+              { value: "write", label: t("automationPermissionWrite") },
+              { value: "full", label: t("automationPermissionFull") },
             ]}
           />
           <button
@@ -481,7 +481,7 @@ export function PixieScheduleDetailDialog({
             onClick={() => setEditing(true)}
           >
             <Pencil size={13} />
-            {t("scheduleEdit")}
+            {t("automationEdit")}
           </button>
           <button
             type="button"
@@ -490,7 +490,7 @@ export function PixieScheduleDetailDialog({
             onClick={() => void duplicate()}
           >
             <Copy size={13} />
-            {t("scheduleCopy")}
+            {t("automationCopy")}
           </button>
           <button
             type="button"
@@ -499,33 +499,33 @@ export function PixieScheduleDetailDialog({
             onClick={() => setConfirmDelete(true)}
           >
             <Trash2 size={13} />
-            {t("scheduleDelete")}
+            {t("automationDelete")}
           </button>
         </div>
       </div>
 
       {confirmDelete ? (
         <Dialog
-          title={t("scheduleDeleteTitle")}
-          confirmLabel={t("scheduleDelete")}
+          title={t("automationDeleteTitle")}
+          confirmLabel={t("automationDelete")}
           tone="danger"
           icon={Trash2}
           onCancel={() => setConfirmDelete(false)}
           onConfirm={() => void remove()}
         >
-          <p className="text-sm">{t("scheduleDeleteBody", { name: job.name })}</p>
+          <p className="text-sm">{t("automationDeleteBody", { name: job.name })}</p>
         </Dialog>
       ) : null}
 
       {editing ? (
-        <ScheduleJobDialog
+        <AutomationJobDialog
           job={job}
           onClose={() => setEditing(false)}
           onSaved={(updated) => {
             setEditing(false);
             applyJob(updated);
           }}
-          /* 「让精灵改」照备忘录那条路：注入 `@周期计划` 引用胶囊，配置正文折在
+          /* 「让精灵改」照备忘录那条路：注入 `@自动化` 引用胶囊，配置正文折在
            * payload 里发送时才展开——输入框保持干净，标题/搜索/复制也不会看见那坨 JSON。 */
           onOptimize={async (target) => {
             const state = useAppStore.getState();
@@ -535,7 +535,7 @@ export function PixieScheduleDetailDialog({
               pushNotification(t("memoAgentNoWorkspace"), "warning");
               return null;
             }
-            injectScheduleJobReference(draftTarget, target);
+            injectAutomationJobReference(draftTarget, target);
             setEditing(false);
             onClose();
             return null;
