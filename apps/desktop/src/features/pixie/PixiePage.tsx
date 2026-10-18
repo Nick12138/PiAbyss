@@ -346,14 +346,19 @@ export function PixiePage() {
                * welcome 态这层必须换成 flex 列并交出剩余高度——Composer 靠
                * `flex-1 justify-center` 把招呼语垂直居中，父层给 `shrink-0`
                * 它就只剩输入框那么高。
-               * 不传 Composer 的 `isNewConversation`：那个 prop 带出的是新会话的
-               * 工具勾选器，而小精灵的工具面（委派/回调）是与 Host 行为绑定的
-               * 契约，不该在这一页被用户手动关掉。 */}
+               * 新段与普通会话的新建会话同款：空会话时把 `isNewConversation`
+               * 传给 Composer，带出「本次会话使用的工具」勾选器（工具面允许按段
+               * 勾选，与 ChatPage 一条路径）。她自己那组工具（pixie_*：委派 /
+               * 回调 / 追问 / 回忆）是 Host 与插件两侧的契约、不是用户偏好，
+               * ComposerToolsPicker 里按前缀永久隐藏并保留在 active 列表里，
+               * 所以这一页能选的是 memo / shelljob / 浏览器这类插件工具，
+               * 不会把她的委派能力关掉。 */}
               <div className={isNewConversation ? "flex min-h-0 flex-1 flex-col" : "shrink-0"}>
                 {error && <p className="mb-2 px-5 text-xs text-danger">{error}</p>}
                 <ComposerRuntimeProvider runtime={runtime}>
                   <Composer
                     inputTestId="pixie-input"
+                    isNewConversation={isNewConversation}
                     welcomeWorkspaceName={isNewConversation ? t("pixieTitle") : undefined}
                     /* 招呼语上面那颗 mark 换成小精灵自己的 Sparkles（侧栏入口、顶栏
                      * 都是这一颗），不复用默认的应用 logo——否则这一页和普通工作区

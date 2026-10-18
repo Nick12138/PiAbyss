@@ -20,6 +20,17 @@ import { BUILTIN_TOOL_NAMES } from "../../lib/builtin-tools";
  *  hide it so the checkbox states match what the Host actually saves. */
 const READ_ATTACHMENT_TOOL_NAME = "read_attachment";
 
+/** 小精灵（pi-pixie）自己的工具面：委派 / 回调 / 追问 / 回忆 / 命名。这些不是
+ *  用户偏好，而是她那一页成立的前提（落点、回执回流、段名归属都由 Host 与插件
+ *  两侧契约决定），所以在任何会话里都不该被关掉。
+ *
+ *  注册表里 pi-pixie 本来就是 `toggleScopes: ["user"]`，正常情况下
+ *  isGlobalOnlyPluginTool 已经把这组工具挡在菜单外了；但目录还没拉到
+ *  （pluginIndex 为 null）时那层过滤不生效，菜单会退化成「每条工具一行」，
+ *  这些工具就会露出来。按名字前缀再兜一层：永不列出，且永远保留在提交给
+ *  agent.setActiveTools 的 active 列表里（走 hiddenActiveNames）。 */
+const PIXIE_CONTRACT_TOOL_PREFIX = "pixie_";
+
 /** Tool selection for a brand-new conversation's composer toolbar.
  *
  * Visual twin of SubagentModelPicker (same trigger chrome, same
@@ -28,17 +39,19 @@ const READ_ATTACHMENT_TOOL_NAME = "read_attachment";
  * welcome-state session is idle, so the mutation is always legal; the
  * next prompt then runs with exactly the checked tools.
  *
- * Only rendered while the conversation is still empty (isNewConversation
- * in ChatPage); once a conversation has started the tool set is fixed.
+ * Only rendered while the conversation is still empty (`isNewConversation`
+ * on the composer, set by ChatPage and the pixie page's new segment); once a
+ * conversation has started the tool set is fixed.
  *
  * Menu contents: plugin tools only, grouped one row per plugin — a plugin's
  * switch toggles all of its tools together (mirrors the plugin-library card
- * switch). Every tool in BUILTIN_TOOLS and tools from global-only plugins
- * (`toggleScopes: ["user"]` in the plugin registry) are hidden — but their
- * active state is preserved on every mutation, so toggling a visible group
- * never silently disables a hidden tool. The trigger is icon-only until the
- * user changes the selection; afterwards it shows the enabled/total plugin
- * group ratio. The dropdown sizes to its content up to a max width. */
+ * switch). Every tool in BUILTIN_TOOLS, tools from global-only plugins
+ * (`toggleScopes: ["user"]` in the plugin registry) and the pixie contract
+ * tools (see PIXIE_CONTRACT_TOOL_PREFIX) are hidden — but their active state
+ * is preserved on every mutation, so toggling a visible group never silently
+ * disables a hidden tool. The trigger is icon-only until the user changes the
+ * selection; afterwards it shows the enabled/total plugin group ratio. The
+ * dropdown sizes to its content up to a max width. */
 export function ComposerToolsPicker() {
   const t = useT();
   const host = useAppStore((s) => s.host);
@@ -65,6 +78,7 @@ export function ComposerToolsPicker() {
     const all = tools?.tools ?? [];
     return all.filter((tool) => {
       if (tool.name === READ_ATTACHMENT_TOOL_NAME) return false;
+      if (tool.name.startsWith(PIXIE_CONTRACT_TOOL_PREFIX)) return false;
       if (BUILTIN_TOOL_NAMES.has(tool.name)) return false;
       if (isGlobalOnlyPluginTool(pluginIndex, tool)) return false;
       return true;

@@ -291,7 +291,7 @@ describe("PixiePage 复用共享 Composer（v5 标准通道）", () => {
     );
   });
 
-  it("空会话复用 Composer 的 welcome 招呼语，不再自画空状态、也不带会话工具勾选器", async () => {
+  it("空会话复用 Composer 的 welcome 招呼语，不再自画空状态，并带出工具勾选器", async () => {
     mockPixieHost();
     const { container } = render(<PixiePage />);
 
@@ -303,9 +303,53 @@ describe("PixiePage 复用共享 Composer（v5 标准通道）", () => {
     // welcome 块顶部的 mark 换成小精灵自己的 Sparkles，不用默认的应用 logo。
     expect(container.querySelector(".new-conversation-copy svg")).toBeInTheDocument();
     expect(container.querySelector(".pi-mark-light")).not.toBeInTheDocument();
-    // welcome 态给 Composer 传 isNewConversation 会带出「本次会话使用的工具」勾选器，
-    // 小精灵的委派/回调工具面不该在这页被手动关掉。
-    expect(screen.queryByLabelText("Tools for this conversation")).not.toBeInTheDocument();
+    // 与普通工作区的新建会话同款：空会话里就有「本次会话使用的工具」勾选器。
+    expect(screen.getByLabelText("Tools for this conversation")).toBeInTheDocument();
+  });
+
+  it("新会话工具勾选器只列可切换的插件工具，pixie_* 契约工具既不出现也不会被关掉", async () => {
+    const request = mockPixieHost();
+    const user = userEvent.setup();
+    render(<PixiePage />);
+    await screen.findByTestId("pixie-input");
+
+    // 打开会话时 Host 推来的工具快照（session.snapshot.tools / agent.toolsChanged）。
+    // 这里同时放一条她的契约工具和一条普通插件工具；目录未加载时菜单退化成
+    // 「每条工具一行」，正是要靠名字前缀兜住的那条路。
+    act(() => {
+      useAppStore.getState().setTools({
+        revision: 1,
+        workspaceId: WORKSPACE_ID,
+        sessionId: SESSION_ID,
+        sessionRevision: 3,
+        tools: [
+          {
+            name: "pixie_dispatch",
+            sourcePath: "/agent/packages/pi-pixie/extensions/pi-pixie.ts",
+          },
+          {
+            name: "shelljob_run",
+            label: "后台任务",
+            sourcePath: "/agent/packages/pi-shelljob/extensions/pi-shelljob.ts",
+          },
+        ],
+        active: ["pixie_dispatch", "shelljob_run"],
+      });
+    });
+
+    await user.click(screen.getByLabelText("Tools for this conversation"));
+
+    // 她的委派工具不出现在菜单里。
+    expect(screen.queryByText(/pixie_dispatch/)).not.toBeInTheDocument();
+    const row = screen.getByRole("menuitemcheckbox", { name: /后台任务/ });
+    expect(row).toHaveAttribute("aria-checked", "true");
+
+    // 关掉可见组：提交的允许列表里仍带着 pixie_dispatch（隐藏但保留）。
+    await user.click(row);
+    await waitFor(() => {
+      const call = request.mock.calls.find(([method]) => method === "agent.setActiveTools");
+      expect(call?.[2]).toEqual({ names: ["pixie_dispatch"] });
+    });
   });
 
   it("有 ask 待回复时，发送改道 pixie.reply", async () => {
