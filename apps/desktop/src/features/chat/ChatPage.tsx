@@ -12,6 +12,7 @@ import { TelegramHistoryView } from "../telegram/TelegramHistoryView";
 import { useTelegramWorkspaceActive } from "../telegram/telegram-view-store";
 import { useSessionTreeSync } from "../tree/tree-data";
 import { SubagentConversation } from "../subagents/SubagentConversation";
+import { WorkspaceLoading } from "./WorkspaceLoading";
 
 export function ChatPage() {
   const t = useT();
@@ -61,14 +62,9 @@ export function ChatPage() {
   }
 
   if (!workspace.servicesReady) {
-    return (
-      <div className="flex flex-1 items-center justify-center p-8 text-muted">
-        {t("chatWorkspaceServicesNotReady")}
-        {host?.lastError?.message ? (
-          <span className="ml-2 text-danger">{host.lastError.message}</span>
-        ) : null}
-      </div>
-    );
+    // 等待态不写文案：整块区域交给动效（背景下沉的光点 + 绕着 π 转的两颗）。
+    // 状态文字只留给读屏软件，切换失败时的 host 报错仍然会落到底部一行。
+    return <WorkspaceLoading error={host?.lastError?.message} />;
   }
 
   return (

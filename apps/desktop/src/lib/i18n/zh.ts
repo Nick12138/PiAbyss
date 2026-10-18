@@ -1894,6 +1894,7 @@ export const zh: Record<MessageKey, string> = {
   // 小精灵（pixie）
   pixieTitle: "小精灵",
   pixieThinking: "小精灵思考中…",
+  pixiePreparing: "小精灵准备中…",
   pixieLoadFailed: "小精灵加载失败",
   pixieInputPlaceholder: "跟小精灵说点什么…（Enter 发送，Shift+Enter 换行）",
   pixieDispatchPanelTitle: "委派任务",

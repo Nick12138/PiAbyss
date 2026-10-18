@@ -1978,6 +1978,7 @@ export const en = {
   // Pixie
   pixieTitle: "Pixie",
   pixieThinking: "Pixie is thinking…",
+  pixiePreparing: "Pixie is getting ready…",
   pixieLoadFailed: "Failed to load Pixie",
   pixieInputPlaceholder: "Say something to Pixie… (Enter to send, Shift+Enter for newline)",
   pixieDispatchPanelTitle: "Delegated tasks",

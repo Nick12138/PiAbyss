@@ -17,8 +17,9 @@
  * 卸载时恢复进入前的工作区（除非用户已手动跳走），并丢弃子代理视图状态。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import type { PixieDispatchRecord } from "@piabyss/protocol";
+import { PiOrbit } from "../../components/PiOrbit";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
@@ -298,9 +299,14 @@ export function PixiePage() {
   }
 
   if (acquiring || !ready) {
+    // 与工作区切换共用同一个「环绕」标记、同一个尺寸：从切工作区到小精灵落位
+    // 是连续的，中间不换锚点也不换大小。屏幕上仍然不写字，状态只给读屏软件。
     return (
-      <div className="flex flex-1 items-center justify-center text-muted">
-        <Loader2 size={18} className="animate-spin" />
+      <div className="flex flex-1 items-center justify-center">
+        <PiOrbit />
+        <span className="sr-only" role="status" aria-live="polite">
+          {t("pixiePreparing")}
+        </span>
       </div>
     );
   }

@@ -1,0 +1,133 @@
+/* 工作区切换时的等待态（ChatPage 在 servicesReady=false 时整块顶上来）。
+   屏幕上不写一个字：背景是慢慢下沉的光点（工作区还在往下长，和开屏那句
+   「上下文一层层沉下去」同一套意象），圆心是共用的「环绕」标记 PiOrbit。
+   只动 transform / opacity / top，切换工作区这种路径上不应该掉帧。
+   （形状对照见 docs/design/workspace-waiting-preview.html） */
+
+.ws-loading {
+  position: relative;
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  place-items: center;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+/* ── 背景：一路往下沉的光点 ───────────────────────────────── */
+.ws-loading-motes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ws-loading-mote {
+  position: absolute;
+  top: 0;
+  left: var(--ws-x);
+  width: var(--ws-s);
+  height: var(--ws-s);
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--color-accent) 0%, transparent 72%);
+  opacity: 0;
+  filter: blur(var(--ws-b));
+  /* 下沉和横向摇摆用不同周期：合起来不会「整排一起晃」。 */
+  animation:
+    ws-loading-sink var(--ws-dur) linear infinite,
+    ws-loading-drift var(--ws-drift) ease-in-out infinite alternate;
+  animation-delay: var(--ws-delay), var(--ws-d2);
+}
+
+@keyframes ws-loading-sink {
+  0% {
+    top: -4%;
+    opacity: 0;
+  }
+  14% {
+    opacity: var(--ws-o);
+  }
+  84% {
+    opacity: var(--ws-o);
+  }
+  100% {
+    top: 102%;
+    opacity: 0;
+  }
+}
+
+@keyframes ws-loading-drift {
+  from {
+    transform: translateX(-7px);
+  }
+  to {
+    transform: translateX(7px);
+  }
+}
+
+/* 落到底部化开的那点暖光 */
+.ws-loading-floor {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 30%;
+  background: radial-gradient(
+    ellipse 68% 100% at 50% 100%,
+    color-mix(in srgb, var(--color-accent) 9%, transparent),
+    transparent 72%
+  );
+  animation: ws-loading-floor 8s ease-in-out infinite;
+}
+
+@keyframes ws-loading-floor {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* 四周收回底色，注意力收到圆心 */
+.ws-loading-veil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 58% 52% at 50% 50%,
+    transparent 26%,
+    var(--color-surface) 88%
+  );
+}
+
+/* 切换真失败时才出现：这是唯一的线索，平时不占位 */
+.ws-loading-error {
+  position: absolute;
+  right: 0;
+  bottom: 24px;
+  left: 0;
+  padding: 0 24px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-danger);
+  text-align: center;
+}
+
+/* 浅色底上暖色光点会像纸上的污点：整体压到几乎只剩一层浮尘。
+   深色底才是这套动效的主场。 */
+html.light .ws-loading-motes {
+  opacity: 0.38;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-loading-mote,
+  .ws-loading-floor {
+    animation: none !important;
+  }
+
+  /* 不给系统减动画的人看满天飘的光点：只留静态的圆心 */
+  .ws-loading-motes {
+    display: none;
+  }
+}
