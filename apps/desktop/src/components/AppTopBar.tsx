@@ -43,10 +43,6 @@ export function AppTopBar({
   const activeSubagentNodeId = useAppStore((s) => s.activeSubagentNodeId);
   const setActiveSubagent = useAppStore((s) => s.setActiveSubagent);
   const platform = resolveWindowControlsPlatform();
-  // Pixie header state: liveness comes from the standard session channel.
-  const pixieRunning = useAppStore((s) =>
-    s.page === "pixie" && s.session ? !s.session.isIdle : false,
-  );
 
   const isNewConversation = Boolean(
     session && session.messages.length === 0 && session.isIdle && !sessionTreeNavigated,
@@ -197,14 +193,6 @@ export function AppTopBar({
                   {t("pixieTitle")}
                 </h1>
               )}
-              {/* Pixie liveness dot: green = thinking, muted = idle. */}
-              <span
-                data-testid="pixie-running-dot"
-                aria-hidden="true"
-                className={`size-1.5 shrink-0 rounded-full ${
-                  pixieRunning ? "bg-success animate-pulse" : "bg-muted/40"
-                }`}
-              />
               <SubagentTitleMenu />
             </div>
           </div>
