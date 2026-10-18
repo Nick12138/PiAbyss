@@ -1112,9 +1112,9 @@ export const zh: Record<MessageKey, string> = {
   transcriptThinkingJumpLatest: "⬇️ 跳到最新顿悟",
   transcriptAttachmentAlt: "附件",
   transcriptToolResultAlt: "工具结果",
-  injectedRefMemo: "方寸间",
+  injectedRefMemo: "待办 · 速记",
   injectedRefQuote: "引用",
-  injectedRefMemoResult: "方寸间总结",
+  injectedRefMemoResult: "记录总结",
   injectedRefAutomationPreamble: "自动化提示词",
   injectedRefAutomationJob: "自动化",
   injectedRefRelayMapping: "字段映射",
@@ -1906,8 +1906,8 @@ export const zh: Record<MessageKey, string> = {
   pixiePanelResize: "拖拽调整面板宽度",
   pixieDispatchSummaryRunning: "{running} 进行中",
   pixieDispatchSummaryAwaiting: "{awaiting} 等你回复",
-  // 随行面板 ·「方寸间」分组（待办中心：页签 / 三层行 / 新建）
-  pixieTodoSectionTitle: "方寸间",
+  // 随行面板 ·「待办 · 速记」分组（待办中心：页签 / 三层行 / 新建）
+  pixieTodoSectionTitle: "待办 · 速记",
   pixieTodoDoneEmpty: "还没有已完成的记录",
   pixieTodoShowMore: "查看更多（{count}）",
   pixieTodoShowLess: "收起",
@@ -1927,8 +1927,8 @@ export const zh: Record<MessageKey, string> = {
   pixieTodoBatchDeleteSelected: "删除所选",
   pixieTodoBatchNothingSelected: "先勾选要删除的记录",
   pixieTodoBatchPartFail: "已删除 {done} 条，{failed} 条失败",
-  pixieTodoDeleteConfirmTitle: "删除备忘录",
-  pixieTodoDeleteConfirmHint: "将删除 {count} 条备忘录，删除后无法恢复。",
+  pixieTodoDeleteConfirmTitle: "删除记录",
+  pixieTodoDeleteConfirmHint: "将删除 {count} 条记录，删除后无法恢复。",
   // 随行面板 ·「自动化」页签（两桶 + 开关 + 详情；新建走弹窗或草案卡）
   pixieAutomationNew: "让精灵新建",
   pixieAutomationNextHint: "下次 {value} 后",
@@ -1947,10 +1947,10 @@ export const zh: Record<MessageKey, string> = {
   pixieAutomationProcessLoading: "正在读取过程…",
   pixieAutomationRunFailed: "立即执行失败",
   pixieAutomationRunPermission: "这次以哪个权限档跑",
-  // 交给小精灵时的引导语（照备忘录那条路：放进输入框由用户发送，不是程序代发一条消息）
+  // 交给小精灵时的引导语（照「待办 · 速记」那条路：放进输入框由用户发送，不是程序代发一条消息）
   pixieAutomationGuideNew:
     "帮我建一个自动化。\n要做什么：{requirement}\n多久跑一次：\n在哪个工作区跑：{cwd}\n（先跟我把配置谈清楚，最后出一份草案，我在卡片上点确认。）",
-  // 引用胶囊展开后的指令（给模型看，与备忘录那同一类：本地化，但不进气泡显示）
+  // 引用胶囊展开后的指令（给模型看，与「待办 · 速记」那同一类：本地化，但不进气泡显示）
   automationJobReferencePrompt:
     "上面引用的是一条**已有**的自动化任务（id：{id}，名称「{name}」）。请在这份配置的基础上跟我谈改动：每次都在回复里给出一份完整配置的 ```automation-plan 草案，并把 jobId 原样写成 {id}；用户没提到的字段保持原值。确认更新由我在卡片上点，你不要调用 automation 的写动作，也不要新建一条重复的自动化任务。",
   pixieDetailToolsTitle: "扩展",
@@ -2016,7 +2016,7 @@ export const zh: Record<MessageKey, string> = {
   memoWidgetSwitchToFloat: "切换为悬浮置顶",
   memoWidgetHide: "隐藏小窗",
 
-  // 方寸间（原「备忘录」）：待办 · 速记 · 备忘 · 收集
+  // 待办 · 速记（原名「方寸间」「备忘录」）：待办 · 速记 · 备忘 · 收集
   memoFilterTodo: "待处理",
   memoFilterInProgress: "进行中",
   memoFilterDone: "已完成",
@@ -2032,13 +2032,13 @@ export const zh: Record<MessageKey, string> = {
   memoActionDelete: "删除",
   memoActionDeleteConfirm: "再点一次确认",
   memoDialogCreateTitle: "新建记录",
-  memoDialogTitle: "编辑备忘录",
+  memoDialogTitle: "编辑记录",
   memoDialogModeEdit: "编写",
   memoDialogModePreview: "预览",
   memoActionDone: "标记完成",
   memoActionReopen: "重新打开",
   memoAgentPrompt:
-    "请处理上面引用的方寸间记录。规则：\n" +
+    "请处理上面引用的待办 · 速记记录。规则：\n" +
     "1. 用户在会话中手动发送的指令优先级最高；若与本提示词冲突（例如要求先不要标记完成），以用户指令为准。\n" +
     "2. 只有在任务已产出最终结果、不再等待用户任何输入时，才调用 piabyss_memo 的 complete 动作，并在 result 参数中提交结果总结（做了什么、结论或产出、遗留事项）。\n" +
     "3. 若需要用户决策（如让用户在多个方案中选择）或任务尚未完成，不要标记完成；先回复等待用户输入，待有结论后再 complete。",
@@ -2051,14 +2051,14 @@ export const zh: Record<MessageKey, string> = {
   memoResultClearHint: "删除这条记录的 Agent 完成总结",
   memoResultClearFail: "清空总结失败",
   memoFollowupPrompt:
-    "上面引用的是一条方寸间记录及其最近一次 Agent 处理的结果总结。请在此基础上继续讨论或继续处理。规则：\n" +
+    "上面引用的是一条待办 · 速记记录及其最近一次 Agent 处理的结果总结。请在此基础上继续讨论或继续处理。规则：\n" +
     "1. 用户在会话中手动发送的指令优先级最高；若与本提示词冲突（例如要求先不要标记完成），以用户指令为准。\n" +
     "2. 只有在得出最终结论且不再等待用户输入时，才调用 piabyss_memo 的 complete 动作，并在 result 中提交更新后的总结（会覆盖旧总结）。\n" +
     "3. 若需要用户决策或讨论尚未收敛，不要标记完成，先回复等待用户输入。",
-  memoAgentCreateFailed: "打开新会话失败，未能注入方寸间提示词",
+  memoAgentCreateFailed: "打开新会话失败，未能注入待办速记提示词",
   memoSyncTitle: "云同步（Cloudflare R2）",
   memoSyncDesc:
-    "通过 Cloudflare R2（S3 兼容）在多台设备间同步方寸间记录：每次同步 = 拉取云端 → 逐条合并（较新者胜）→ 推送合并结果；删除也会通过墓碑同步。同步由 piabyss-memo 插件处理，密钥仅保存在本机。",
+    "通过 Cloudflare R2（S3 兼容）在多台设备间同步待办 · 速记记录：每次同步 = 拉取云端 → 逐条合并（较新者胜）→ 推送合并结果；删除也会通过墓碑同步。同步由 piabyss-memo 插件处理，密钥仅保存在本机。",
   memoSyncNotConfigured:
     "尚未配置 R2 连接信息：点击「插件配置」填写 Account ID / Access Key ID / Secret Access Key / 桶名，也可在那里开启自动同步。",
   memoSyncOpenConfig: "插件配置",

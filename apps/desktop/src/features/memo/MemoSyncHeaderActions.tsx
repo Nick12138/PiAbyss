@@ -1,18 +1,18 @@
 /**
  * 顶栏云同步入口（仅小精灵页显示，渲染在 AppTopBar 的
  * data-settings-header-actions 槽位）：一个图标，点开就是同步弹窗。
- * 方寸间只剩随行面板那一处入口，同步入口因此跟着搬到小精灵页。
+ * 待办 · 速记只剩随行面板那一处入口，同步入口因此跟着搬到小精灵页。
  *
  * 状态写在图标上：最近同步失败 → 变红（可访问名补「同步失败」）；未配置 → 常态但可访问名
  * 补「未配置」；成功就是普通图标——「没有坏」不需要提示，「坏了」要一眼看得见。原来旁边
  * 还有「立即同步」按钮与一颗绿色状态点，两个入口加两颗点读起来分不清，都撤了；立即同步
  * 只在弹窗里做。
- * 同步成功后广播 MEMO_SYNCED_EVENT，随行面板「方寸间」据此刷新列表；本组件同时是
+ * 同步成功后广播 MEMO_SYNCED_EVENT，随行面板「待办 · 速记」据此刷新列表；本组件同时是
  * `useMemoSyncStatus` 30s 轮询的挂载方——顶栏不渲染它，后台 autoSync 落地就没人播报。
  *
  * v2：同步引擎与 R2 密钥配置都由 piabyss-memo 插件自持——本弹窗只保留
  * 状态展示、测试连接与立即同步；密钥/自动同步改到「设置 → 插件 →
- * PiAbyss 方寸间」的配置表单里，弹窗内提供跳转按钮（深链直达配置弹窗）。
+ * PiAbyss 待办 · 速记」的配置表单里，弹窗内提供跳转按钮（深链直达配置弹窗）。
  */
 import { CheckCircle2, CircleAlert, CloudUpload, ExternalLink, Loader2 } from "lucide-react";
 import { useState } from "react";
@@ -70,7 +70,7 @@ export function MemoSyncHeaderActions() {
     }
   }
 
-  /** 跳转到「设置 → 插件 → PiAbyss 方寸间」的配置表单（深链直达配置弹窗）。 */
+  /** 跳转到「设置 → 插件 → PiAbyss 待办 · 速记」的配置表单（深链直达配置弹窗）。 */
   function openPluginConfig() {
     requestPluginConfigDeepLink(MEMO_PLUGIN_ID);
     useAppStore.getState().openSettingsSection("plugins");

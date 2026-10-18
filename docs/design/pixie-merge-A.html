@@ -276,7 +276,7 @@
   .task .s.ok{color:var(--success)}
   .task .s.bad{color:var(--danger)}
 
-  /* full 方寸间 mode inside the rail */
+  /* full 待办 · 速记 mode inside the rail */
   .rail.wide{width:min(620px, 46%)}
   .memo-full{display:none;flex-direction:column;min-height:0;flex:1}
   .rail.wide .memo-full{display:flex}
@@ -391,7 +391,7 @@
       <span class="sb-tag">已并入</span>
     </button>
     <button class="sb-item merged" tabindex="-1" aria-disabled="true">
-      <svg class="ic"><use href="#i-list-todo"/></svg><span>方寸间</span>
+      <svg class="ic"><use href="#i-list-todo"/></svg><span>待办 · 速记</span>
       <span class="sb-tag">已并入</span>
     </button>
 
@@ -531,24 +531,24 @@
           <span class="anno" data-anno="6">6</span>
           <button class="mini" id="wideToggle" style="margin-left:auto;width:22px;height:22px;
             border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--muted)"
-            title="展开为完整的方寸间">
+            title="展开为完整的待办 · 速记">
             <svg class="ic"><use href="#i-arrow-right"/></svg>
           </button>
         </div>
 
         <div class="rail-body scroll">
 
-          <!-- 待办 · 方寸间 -->
+          <!-- 待办 · 速记 -->
           <section class="section" data-open="1" id="secTodo">
             <div class="sec-head">
               <button class="sec-toggle">
                 <svg class="ic chev"><use href="#i-chevron-right"/></svg>
                 <svg class="ic lead"><use href="#i-list-todo"/></svg>
-                <h3>待办 · 方寸间</h3>
+                <h3>待办 · 速记</h3>
                 <span class="count" id="todoCount">4</span>
                 <span class="anno" data-anno="6">6</span>
               </button>
-              <button class="mini" id="openFull" title="展开为完整的方寸间">
+              <button class="mini" id="openFull" title="展开为完整的待办 · 速记">
                 <svg class="ic"><use href="#i-arrow-right"/></svg>
               </button>
             </div>
@@ -758,14 +758,14 @@
 
         </div>
 
-        <!-- full 方寸间（右栏加宽模式） -->
+        <!-- full 待办 · 速记（右栏加宽模式） -->
         <div class="memo-full">
           <div class="mf-head">
             <button class="iconbtn" id="wideBack" title="回到随行面板">
               <svg class="ic"><use href="#i-arrow-left"/></svg>
             </button>
             <svg class="ic"><use href="#i-list-todo"/></svg>
-            <h3>方寸间</h3>
+            <h3>待办 · 速记</h3>
             <span class="count" style="font-size:10.5px;font-weight:600;color:var(--muted);
               background:var(--overlay);border-radius:99px;padding:1px 6px">16</span>
             <span class="anno" data-anno="9">9</span>
@@ -858,15 +858,15 @@
     <button id="legendClose" aria-label="关闭"><svg class="ic" style="font-size:14px"><use href="#i-x"/></svg></button>
   </header>
   <ol>
-    <li><b>侧栏收敛</b>：自动化、方寸间不再单独占位，只留「小精灵」一个入口。</li>
+    <li><b>侧栏收敛</b>：自动化、待办 · 速记不再单独占位，只留「小精灵」一个入口。</li>
     <li><b>顶栏不变</b>：仍是小精灵原有的「回到最新 / 新会话 / 会话列表」，没有页面级切换。</li>
     <li><b>对话占主位</b>：小精灵的「标准会话」机制原样保留——转写、流式、工具卡、段分隔线、<code>&lt;pixie-context&gt;</code> 前导全部沿用，只多了一块右栏。</li>
     <li><b>计划创建搬进对话</b>：小精灵产出「计划草稿卡」内联在消息里，确认即 <code>automation.createJob</code>（编辑则 <code>updateJob</code>）。原来 <code>automation-agent</code> 整页 + 它自带的独立会话与模型通道整条删除。</li>
     <li><b>草稿卡沿用原预览规则</b>：AI 明确决定的字段正常色，插件默认值灰显；必填缺失时在卡顶给一条警示，不给每行写「未定」。</li>
-    <li><b>待办常驻</b>：右栏第一块固定是「待办 · 方寸间」，进小精灵就能看见待办——这是合并的核心诉求。</li>
+    <li><b>待办常驻</b>：右栏第一块固定是「待办 · 速记」，进小精灵就能看见待办——这是合并的核心诉求。</li>
     <li><b>内联速记</b>：底部输入框 Enter 直接落一条待办（title = 首行，<code>#标签</code> 自动识别），复用速记小窗的交互与 <code>memo.create</code> 通道。</li>
     <li><b>行内操作</b>：勾选完成 / 交给小精灵 / 展开详情。原来的「用 Agent 处理」改为「交给小精灵」——由她判断轻量自答还是委派，完成后按老路径回填（<code>piabyss_memo complete</code> + <code>pixie_report</code>）。</li>
-    <li><b>查看全部 = 右栏加宽</b>：点「→」右栏扩到 46%，内容切成完整方寸间（页签 + 搜索 + 筛选 + 列表 + 详情）；对话区变窄但不断开。不叠覆盖层，符合项目「单界面」约定。</li>
+    <li><b>查看全部 = 右栏加宽</b>：点「→」右栏扩到 46%，内容切成完整待办 · 速记（页签 + 搜索 + 筛选 + 列表 + 详情）；对话区变窄但不断开。不叠覆盖层，符合项目「单界面」约定。</li>
     <li><b>自动化默认折叠</b>：折叠时只留一行「2 · 下次 3h12m 后」；展开是已有任务的列表与开关，创建入口只有「＋ 让精灵新建」。</li>
     <li><b>委派任务默认折叠</b>：汇总行直接写「1 进行中 · 1 等你回复」，展开才是原来的两层任务树，行尾仍是唯一的定位动作。</li>
     <li><b>折叠状态持久化</b>：按分组存 <code>sidebarPref</code>，与现有自动化页的分组折叠同一套。</li>
@@ -1018,7 +1018,7 @@
     cnt.textContent = Number(cnt.textContent) + 1;
   });
 
-  // ── rail wide mode (完整方寸间) ─────────────────────────────
+  // ── rail wide mode (完整待办 · 速记) ─────────────────────────────
   var rail = document.getElementById('rail');
   function openWide(){ rail.classList.add('wide'); }
   function closeWide(){ rail.classList.remove('wide'); }

@@ -428,7 +428,7 @@
       <span class="sb-tag">已并入</span>
     </button>
     <button class="sb-item merged" tabindex="-1" aria-disabled="true">
-      <svg class="ic"><use href="#i-list-todo"/></svg><span>方寸间</span>
+      <svg class="ic"><use href="#i-list-todo"/></svg><span>待办 · 速记</span>
       <span class="sb-tag">已并入</span>
     </button>
     <button class="sb-item"><svg class="ic"><use href="#i-settings"/></svg><span>设置</span></button>
@@ -597,13 +597,13 @@
 
         <div class="rail-body scroll">
 
-          <!-- 待办 · 方寸间 -->
+          <!-- 待办 · 速记 -->
           <section class="section" data-open="1" id="secTodo">
             <div class="sec-head">
               <button class="sec-toggle">
                 <svg class="ic chev"><use href="#i-chevron-right"/></svg>
                 <svg class="ic lead"><use href="#i-list-todo"/></svg>
-                <h3>待办 · 方寸间</h3>
+                <h3>待办 · 速记</h3>
                 <span class="count" id="todoCount">5</span>
                 <span class="anno" data-anno="4">4</span>
               </button>
@@ -759,7 +759,7 @@
                   <div class="item-title">归档 9 月会议纪要</div>
                   <span class="at">10 月 14 日</span>
                 </div>
-                <div class="note">已完成的记录在这里保留 30 天；搜索、标签/工作区筛选在「编辑」打开的完整方寸间里。</div>
+                <div class="note">已完成的记录在这里保留 30 天；搜索、标签/工作区筛选在「编辑」打开的完整待办 · 速记里。</div>
               </div>
 
               <!-- 新建待办 · 两个入口常驻（不分页签）：
@@ -906,7 +906,7 @@
     <li><b>对话占主位</b>：小精灵的「标准会话」机制原样保留 —— 转写、流式、工具卡、段分隔线、<code>&lt;pixie-context&gt;</code> 前导全部沿用，只多了一块右栏。</li>
     <li><b>右栏第一块固定是待办</b>：进小精灵就能看见待办，这是合并的核心诉求。它不只是列表，而是一个完整的待办中心：按日期分组（逾期 / 今天 / 明天 / 本周），<b>只有「待处理 / 已完成」两个页签</b> —— <b>「进行中」不再单独分区</b>，进行中的条目就直接排在待处理列表里，用转圈 + 强调色文字标识状态；状态靠图标表达，不靠分区。概览里的「进行中 / 已逾期」两格是「待处理」的子集，只做计数提示，不改变列表结构。</li>
     <li><b>概览数字</b>（来自 B）：待处理 / 进行中 / 已逾期 三格。折叠态由标题上的计数徽章承担，展开态看这三格。</li>
-    <li><b>就地展开详情</b>（来自 B）：点条目在其下方展开正文、标签、工作区、截止，以及「交给小精灵 / 编辑 / 删除」。<b>方寸间的「列表 + 详情」在这一栏里就合并完了</b>，不再需要「右栏加宽为完整方寸间」那套模式。需要正文 Markdown、图片、周期设置时点「编辑」打开完整编辑器（沿用今天的 MemoPage 详情表单）。</li>
+    <li><b>就地展开详情</b>（来自 B）：点条目在其下方展开正文、标签、工作区、截止，以及「交给小精灵 / 编辑 / 删除」。<b>待办 · 速记的「列表 + 详情」在这一栏里就合并完了</b>，不再需要「右栏加宽为完整待办 · 速记」那套模式。需要正文 Markdown、图片、周期设置时点「编辑」打开完整编辑器（沿用今天的 MemoPage 详情表单）。</li>
     <li><b>新建待办 · 两个入口</b>：① <b>速记框</b>（与方案 A 同一套）—— 列表下方虚线输入框，<b>Enter 直接落一条</b>，title = 首行、<code>#标签</code> 自动识别、Shift+Enter 换行，管「先记下来」；② <b>标题行右侧的「＋」</b> —— 展开<b>多功能表单</b>，可一次设好标题 / 截止 / 标签 / 工作区，管「记的时候就分好类」。两个入口都常驻、不分页签；表单展开时速记框收起，避免两块新建 UI 叠在一起。落位：带截止的进对应日期分组（逾期 / 今天 / 明天 / 本周），不定的置顶。</li>
     <li><b>计划创建在对话里</b>：小精灵产出「计划草稿卡」内联在消息中，确认即 <code>automation.createJob</code>（编辑则 <code>updateJob</code>）。原来 <code>automation-agent</code> 整页 + 它自带的独立会话与模型通道整条删除。</li>
     <li><b>自动化默认折叠</b>：折叠时只留一行「2 · 下次 3h12m 后」；展开是已有任务的列表与开关，创建入口只有「＋ 让精灵新建」（把引导语塞进对话输入框）。</li>

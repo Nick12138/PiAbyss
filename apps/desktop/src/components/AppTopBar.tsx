@@ -24,7 +24,7 @@ import { clampSessionTitleForDisplay } from "../lib/session-title-display";
  *  Height follows --theme-toolbar-height so each theme gets the same bar height
  *  it used per-strip; the whole row is a Tauri drag region. All children sit on
  *  the vertical center via items-center on each flex container. */
-/** 顶栏右侧动作与标题状态点都跟着这个插件走（方寸间已并入小精灵随行面板）。 */
+/** 顶栏右侧动作与标题状态点都跟着这个插件走（待办 · 速记已并入小精灵随行面板）。 */
 const MEMO_PLUGIN_ID = "piabyss-memo";
 
 export function AppTopBar({
@@ -214,7 +214,7 @@ export function AppTopBar({
       >
         {page === "pixie" && (
           <>
-            {/* 方寸间的数据入口现在只有随行面板这一处，云同步入口跟着搬进小精灵页：
+            {/* 待办 · 速记的数据入口现在只有随行面板这一处，云同步入口跟着搬进小精灵页：
               一个图标，最近同步失败时它自己变红。原先顶栏那颗绿色状态点与「立即同步」
               按钮都撤了——两颗点并排读不出谁是谁，而同步动作在弹窗里做。它内部挂着
               30s 共享轮询，所以「同步落地 → 面板刷新」这条广播还在（没人挂轮询就停了）。

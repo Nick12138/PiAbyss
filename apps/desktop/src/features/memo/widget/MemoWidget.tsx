@@ -4,7 +4,7 @@
  * 独立于主窗口的轻量待办面板：
  *   - 顶部：拖拽区 + 标题 + 置顶开关 + 隐藏按钮；
  *   - 中部：未完成备忘（open / in_progress）列表，可标记完成、点击跳回主
- *     窗口并预览该记录（主窗口切到小精灵页，方寸间就在那里）；悬停出现行内操作：
+ *     窗口并预览该记录（主窗口切到小精灵页，待办 · 速记就在那里）；悬停出现行内操作：
  *     复制正文、交给 Agent 处理（跳到会话页）；
  *   - 底部：一行速记输入框（Enter 保存，Esc 隐藏窗口）。
  *
@@ -39,7 +39,7 @@ import { createMemoNote, listMemoNotes, updateMemoNote } from "../memo-client";
 const BOUNDS_STORAGE_KEY = "piabyss.memo-widget.bounds";
 /** 存在模式（悬浮置顶 / 钉桌面）的持久化键。 */
 const MODE_STORAGE_KEY = "piabyss.memo-widget.mode";
-/** 小窗改动备忘后广播的事件名；主界面的随行面板「方寸间」监听后刷新列表。 */
+/** 小窗改动备忘后广播的事件名；主界面的随行面板「待办 · 速记」监听后刷新列表。 */
 const MEMO_NOTES_CHANGED_EVENT = "memo-notes-changed";
 /** hello 重试间隔与上限（Host 冷启动时小窗可能先于 Host 就绪）。 */
 const HELLO_RETRY_INTERVAL_MS = 2_000;
@@ -105,7 +105,7 @@ function isOpenStatus(note: MemoNote): boolean {
   return note.status === "open" || note.status === "in_progress";
 }
 
-/** 广播备忘变更，让主界面的随行面板「方寸间」保持最新。 */
+/** 广播备忘变更，让主界面的随行面板「待办 · 速记」保持最新。 */
 async function emitNotesChanged(): Promise<void> {
   try {
     const { isTauri } = await import("@tauri-apps/api/core");
@@ -358,7 +358,7 @@ export function MemoWidget(): JSX.Element {
   /**
    * 点击待办跳回主窗口并预览该记录：memo_widget_show_main 显示主窗口，
    * Rust 把 { noteId, action } 随 memo-widget-open-memo 事件广播给主窗口——
-   * App.tsx 切到小精灵页——方寸间现在只有随行面板那一处，不再定位到具体某条记录。
+   * App.tsx 切到小精灵页——待办 · 速记现在只有随行面板那一处，不再定位到具体某条记录。
    * action="agent"（机器人按钮）：走「交给 Agent」流程——切工作区、新建会话、注入引用。
    */
   const openMainMemo = useCallback(async (noteId: string, action?: "agent"): Promise<void> => {

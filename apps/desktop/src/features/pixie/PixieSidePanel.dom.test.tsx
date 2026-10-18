@@ -28,7 +28,7 @@ import {
  * 小精灵页「随行面板」：
  *   - 面板本身可展开 / 折叠（负 margin 滑出，状态持久化）；
  *   - 宽度可拖拽 / 键盘调整，有下限与「给对话区留位」的上限，并持久化；
- *   - 面板内是**横排的三块页签**：方寸间 / 自动化 / 委派任务，一次只看一块；
+ *   - 面板内是**横排的三块页签**：待办 · 速记 / 自动化 / 委派任务，一次只看一块；
  *     未选中的那块仍挂着（计数不停更），只是不显示；
  *   - 行宽不足 672 时面板自动收起，并换成盖在对话上的浮层抽屉（顶栏开关不消失，
  *     它改开抽屉）；跨断点一律从关着开始。
@@ -254,7 +254,7 @@ describe("clampPixiePanelWidth", () => {
 });
 
 describe("PixieSidePanel 页签", () => {
-  it("顶栏直接是「方寸间 → 自动化 → 委派任务」三个页签，不再有面板标题", () => {
+  it("顶栏直接是「待办 · 速记 → 自动化 → 委派任务」三个页签，不再有面板标题", () => {
     render(<PixieSidePanel groups={[]} />);
 
     const ids = screen
@@ -268,7 +268,7 @@ describe("PixieSidePanel 页签", () => {
     expect(panelEl()).toHaveAccessibleName("Side panel");
   });
 
-  it("默认停在方寸间：另两块仍挂在 DOM 里，只是不显示", async () => {
+  it("默认停在待办 · 速记：另两块仍挂在 DOM 里，只是不显示", async () => {
     const user = userEvent.setup();
     render(<PixieSidePanel groups={[]} />);
 
@@ -303,7 +303,7 @@ describe("PixieSidePanel 页签", () => {
     const { rerender } = render(<PixieSidePanel groups={[]} />);
     expect(screen.getByTestId("pixie-panel-tab-todo")).toHaveAttribute("aria-selected", "true");
 
-    // 插件在别处被关掉：面板重新判门控，方寸间那块连同页签一起没了，
+    // 插件在别处被关掉：面板重新判门控，待办 · 速记那块连同页签一起没了，
     // 停在它上面的选中态得跟着退到第一块（自动化）。
     gateState.memo = false;
     rerender(<PixieSidePanel groups={[]} />);
@@ -381,7 +381,7 @@ describe("PixieSidePanel 展开 / 折叠", () => {
     );
 
     expect(useAppStore.getState().pixiePanelWide).toBe(false);
-    // 开关不能消失：方寸间只有面板这一处入口，窄窗口把它整个关掉就等于没有。
+    // 开关不能消失：待办 · 速记只有面板这一处入口，窄窗口把它整个关掉就等于没有。
     expect(screen.getByTestId("pixie-panel-toggle")).toHaveAttribute("data-panel-drawer", "true");
     // 窄容器 = 覆盖式浮层（样式在 index.css 的 `[data-panel-overlay]` 一组），
     // 开合归 pixiePanelDrawerOpen，跨越断点一律从关着开始。
@@ -559,7 +559,7 @@ describe("委派任务页签", () => {
     expect(screen.getByTestId("pixie-panel-body-dispatch")).toHaveAttribute("data-active", "true");
     expect(screen.getByTestId("pixie-task-tree")).toBeVisible();
     expect(screen.getByText("okxbot · 修复登录态串号")).toBeVisible();
-    // 只活在本次挂载里：下次进小精灵仍停在方寸间，不会被他某一次顺手点开的页签永久顶掉。
+    // 只活在本次挂载里：下次进小精灵仍停在待办 · 速记，不会被他某一次顺手点开的页签永久顶掉。
     expect(globalThis.localStorage?.getItem(DISPATCH_EXPANDED_PREF)).toBeNull();
   });
 

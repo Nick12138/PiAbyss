@@ -2943,7 +2943,7 @@ svg[data-piabyss-mermaid-theme="neutral"] {
 /* ── 窄容器下的整页覆盖抽屉 ──────────────────────────────────────────────
    行宽不足阈值时面板不再是并排的一栏，而是**把整个消息界面盖住的一页**
    （`PixieSidePanel` 挂 `data-panel-overlay`，开合归 `pixiePanelDrawerOpen`）。
-   方寸间只有这一处入口之后，窄窗口不能把它整个关掉。
+   待办 · 速记只有这一处入口之后，窄窗口不能把它整个关掉。
    · 布局改 fixed 是为了让位给对话：in-flow 的面板即便收成 0 宽也要占一格。
    · 滑出方向换成 translateX——fixed 元素吃 margin 但不影响兄弟，用 margin 动画会
      白位移一次；`margin-right: 0` 由组件的内联样式保证。

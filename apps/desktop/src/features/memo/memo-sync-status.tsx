@@ -2,14 +2,14 @@
  * 云同步状态的共享订阅层：
  * - 小精灵页顶栏那一个云同步图标是唯一挂载方，30s 轮询由它维持；
  * - 轮询发现 lastSyncAt 变化（后台 autoSync/启动同步刚发生）时广播
- *   MEMO_SYNCED_EVENT，随行面板「方寸间」据此刷新列表。轮询只在有挂载者时活着
+ *   MEMO_SYNCED_EVENT，随行面板「待办 · 速记」据此刷新列表。轮询只在有挂载者时活着
  *   （`stopPollingIfIdle`），所以顶栏这一处也是「同步落地有人播报」的前提。
  */
 import { useEffect, useState } from "react";
 import type { MemoSyncSettings } from "@piabyss/protocol";
 import { getMemoSyncSettings } from "./memo-client";
 
-/** 同步完成后广播的事件名（随行面板「方寸间」监听后刷新列表）。 */
+/** 同步完成后广播的事件名（随行面板「待办 · 速记」监听后刷新列表）。 */
 export const MEMO_SYNCED_EVENT = "piabyss:memo-synced";
 
 type Listener = (settings: MemoSyncSettings | null) => void;

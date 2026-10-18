@@ -2,7 +2,7 @@
  * 随行面板 ·「自动化」页签（三块横排的第二块）。
  *
  * 这一栏的职责是**查看、开关、进详情**；列表按「当前活跃 / 已失效」二级页签分桶
- * （与方寸间同一形态，一次只看一桶），口径与独立页严格一致：停用的、或一次性
+ * （与待办 · 速记同一形态，一次只看一桶），口径与独立页严格一致：停用的、或一次性
  * 已经跑过的都算失效。那一行页签同时是这一块的**工具条**——下次触发与 ＋ 都贴在
  * 它右端，不再单开一行。
  * 创建与修改走两条路，都归人管：
@@ -126,7 +126,7 @@ export function PixieAutomationSection({
   useEffect(() => {
     onCount(activeCount);
   }, [activeCount, onCount]);
-  /** 二级页签：与方寸间同一形态（一次只看一桶），不是可折叠分组。 */
+  /** 二级页签：与待办 · 速记同一形态（一次只看一桶），不是可折叠分组。 */
   const [bucket, setBucket] = useState<"active" | "expired">("active");
   const bucketJobs = bucket === "active" ? activeJobs : expiredJobs;
   const nextRunAt = useMemo(() => {
@@ -167,7 +167,7 @@ export function PixieAutomationSection({
   );
 
   /**
-   * 智能模式：**照备忘录那条路走**——把引导语连同需求放进小精灵的输入框，
+   * 智能模式：**照「待办 · 速记」那条路走**——把引导语连同需求放进小精灵的输入框，
    * 由用户补完、自己按发送。不让程序替用户发一条机器味的长消息进对话：
    * 那既改不了也撤回不了，而计划契约本来就写在 `<pixie-context>` 里，不需要每条消息再念一遍。
    */
@@ -205,7 +205,7 @@ export function PixieAutomationSection({
           </p>
         ) : (
           <>
-            {/* 二级页签行同时是这一块的**工具条**（与方寸间同一套）：两桶占满左边，
+            {/* 二级页签行同时是这一块的**工具条**（与待办 · 速记同一套）：两桶占满左边，
              * 下次触发贴右，再后面是 ＋。原来那条单独的 hint 行就此省掉——
              * 面板窄，能省一行就多出一行的列表。 */}
             <div className="flex items-center gap-1">

@@ -26,7 +26,7 @@ import { MEMO_SYNCED_EVENT } from "../memo/memo-sync-status";
 import { PixieTodoSection } from "./PixieTodoSection";
 
 /**
- * 随行面板「方寸间」页签：二级页签 / 三层行（标题 · 摘要 · 标签·工作区·截止）/ 就地 Markdown 正文 / 新建。
+ * 随行面板「待办 · 速记」页签：二级页签 / 三层行（标题 · 摘要 · 标签·工作区·截止）/ 就地 Markdown 正文 / 新建。
  * 数据走 memo-client，这里只验面板自己的组织方式与动作路由：
  * 行首状态、行尾 ✨、右键编辑 / 删除、已完成页签的勾选式批量删除。
  * 面板的插件门与页签栏归 `PixieSidePanel`（见它的用例），这里直接以「可见的那块」渲染。

@@ -71,7 +71,7 @@ import {
   type ExtensionUiRequestState,
 } from "./extension-ui-state";
 
-/** 方寸间不再是独立一页（`"memo"` 已撤），它只有小精灵页右侧随行面板那一处入口。 */
+/** 待办 · 速记不再是独立一页（`"memo"` 已撤），它只有小精灵页右侧随行面板那一处入口。 */
 export type NavPage = "chat" | "packages" | "pixie" | "settings";
 
 /**

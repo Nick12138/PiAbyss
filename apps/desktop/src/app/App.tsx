@@ -20,7 +20,7 @@ import { PixiePage } from "../features/pixie/PixiePage";
 import { startPixieAutostart } from "../features/pixie/pixie-autostart";
 import { usePluginStatus } from "../features/plugin-library/plugin-gate";
 
-/** The plugin-library entry backing the Pixie page（方寸间现在只是它右侧面板的一块）。 */
+/** The plugin-library entry backing the Pixie page（待办 · 速记现在只是它右侧面板的一块）。 */
 const PIXIE_PLUGIN_ID = "pi-pixie";
 import { startAutomationPushPolling } from "../features/automation/automation-push";
 import { SettingsTopBarActionsContext } from "../features/settings/settings-top-bar";
@@ -737,7 +737,7 @@ export function App() {
 
   // 桌面速记小窗「在 PiAbyss 中打开」→ 显示主窗口。
   // 事件载荷 { noteId, action }：
-  //   - 预览（点击待办）：切到小精灵页。方寸间现在只有随行面板那一处，noteId 不再单独
+  //   - 预览（点击待办）：切到小精灵页。待办 · 速记现在只有随行面板那一处，noteId 不再单独
   //     定位到某条记录——原先那条 reveal 通道属于已经下线的备忘页；
   //   - agent（机器人按钮）：不经任何备忘界面，直接走「交给 Agent」流程——
   //     解析工作区 → 新建会话 → 注入引用 → 切到会话页（见 memo-agent.ts）。

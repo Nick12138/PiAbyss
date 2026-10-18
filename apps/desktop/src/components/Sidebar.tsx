@@ -16,7 +16,7 @@ import { usePluginEnabled } from "../features/plugin-library/plugin-gate";
 import { usePixieViewStore } from "../features/pixie/pixie-store";
 import { workspaceActivityFor } from "../lib/workspace-activity";
 
-/** The plugin-library entry backing the Pixie page（方寸间已并入它右侧的随行面板）. */
+/** The plugin-library entry backing the Pixie page（待办 · 速记已并入它右侧的随行面板）. */
 const PIXIE_PLUGIN_ID = "pi-pixie";
 import { resolveConversationMinWidth } from "../features/chat/conversation-layout";
 import {
@@ -549,7 +549,7 @@ export function SidebarLayout({
               </div>
             )}
 
-            {/* 方寸间不再单独占一个导航项：它只有小精灵页右侧随行面板那一处入口
+            {/* 待办 · 速记不再单独占一个导航项：它只有小精灵页右侧随行面板那一处入口
               （`PixieTodoSection`），从侧栏进来的那条路随备忘页一起下线。 */}
 
             {/* 再点一次「设置」就是退出：回到进来之前的长期页（可能是小精灵），

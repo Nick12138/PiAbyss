@@ -1973,7 +1973,7 @@ export const en = {
   automationFormTimeoutInvalid: "Timeout must be 1–360 minutes",
   automationFormMaxRunsInvalid: "Max runs must be a positive integer",
 
-  // Nook (方寸间， formerly Memo)
+  // Nook (待办 · 速记， formerly Memo)
 
   // Pixie
   pixieTitle: "Pixie",

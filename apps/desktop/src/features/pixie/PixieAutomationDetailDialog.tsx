@@ -525,7 +525,7 @@ export function PixieAutomationDetailDialog({
             setEditing(false);
             applyJob(updated);
           }}
-          /* 「让精灵改」照备忘录那条路：注入 `@自动化` 引用胶囊，配置正文折在
+          /* 「让精灵改」照「待办 · 速记」那条路：注入 `@自动化` 引用胶囊，配置正文折在
            * payload 里发送时才展开——输入框保持干净，标题/搜索/复制也不会看见那坨 JSON。 */
           onOptimize={async (target) => {
             const state = useAppStore.getState();
