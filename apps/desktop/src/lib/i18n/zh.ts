@@ -293,7 +293,7 @@ export const zh: Record<MessageKey, string> = {
   hostFailureFailed: "Pi Host 启动失败",
   hostUnavailableTitle: "主机不可用",
   hostUnavailableBody:
-    "修复问题后，请前往 设置 → 主机 重启 Host。主机恢复后，包管理与设置仍可正常使用。",
+    "修复问题后，请前往 设置 → 主机 重启 Host。主机恢复后，「扩展」与设置仍可正常使用。",
 
   // Host error localizations (host returns English messages; map by error code)
   hostErrAgentBusy: "Agent 正忙，请等待当前运行结束后再试。",
@@ -555,9 +555,6 @@ export const zh: Record<MessageKey, string> = {
   relayPricingStationsStartMapping: "发起映射",
   notifRelayBalanceFailed: "查询中转站余额失败",
   notifRelayTestFromPricing: "测试需要该模型属于已配置的模型服务",
-
-  // Packages
-  packagesViewGroup: "包管理视图",
 
   // Skills
   skillsRefresh: "刷新",
@@ -1120,8 +1117,8 @@ export const zh: Record<MessageKey, string> = {
   chatAuthRequiredProvider: "“{provider}” 未配置凭据。登录后即可发送消息。",
   chatAuthOpenProviders: "打开提供商设置",
   chatAuthDismiss: "关闭",
-  chatPackageReconcileRequired: "继续对话前，请先在包管理页面协调包状态。",
-  chatPackageReloadRequired: "继续对话前，请先在包管理页面重新加载包资源。",
+  chatPackageReconcileRequired: "继续对话前，请先在「扩展」页重载状态以协调包状态。",
+  chatPackageReloadRequired: "继续对话前，请先在「扩展」页重载资源。",
   chatNoSession: "请从侧边栏创建或打开一个会话。",
   chatNewConversation: "新对话",
   chatStatusStreaming: "✍️ 在编了",

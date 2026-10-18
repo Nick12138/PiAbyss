@@ -311,7 +311,7 @@ export const en = {
   hostFailureFailed: "Pi Host failed",
   hostUnavailableTitle: "Host unavailable",
   hostUnavailableBody:
-    "Use Settings → Restart Host after fixing the problem. Packages and Settings remain available when the host recovers.",
+    "Use Settings → Restart Host after fixing the problem. Extensions and Settings remain available when the host recovers.",
 
   // Host error localizations (host returns English messages; map by error code)
   hostErrAgentBusy: "Agent is busy. Wait for the current run to finish, then try again.",
@@ -589,9 +589,6 @@ export const en = {
   relayPricingStationsStartMapping: "Start mapping",
   notifRelayBalanceFailed: "Could not query station balance",
   notifRelayTestFromPricing: "Test requires the model to belong to a configured Provider",
-
-  // Packages
-  packagesViewGroup: "Packages view",
 
   // Skills
   skillsRefresh: "Refresh",
@@ -1190,9 +1187,9 @@ export const en = {
   chatAuthOpenProviders: "Open Providers settings",
   chatAuthDismiss: "Dismiss",
   chatPackageReconcileRequired:
-    "Package state must be reconciled from the Packages page before chat can continue.",
+    "Package state must be reconciled from the Extensions page (Reload state) before chat can continue.",
   chatPackageReloadRequired:
-    "Package resources must be reloaded from the Packages page before chat can continue.",
+    "Package resources must be reloaded from the Extensions page (Reload resources) before chat can continue.",
   chatNoSession: "Create or open a session from the sidebar.",
   chatNewConversation: "New conversation",
   chatStatusStreaming: "Streaming",
