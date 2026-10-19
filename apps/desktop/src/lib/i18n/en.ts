@@ -1475,7 +1475,6 @@ export const en = {
     "Background job stopped. It belongs to another session — its Agent was not notified.",
   shellJobsTitle: "Background jobs ({count})",
   shellJobsFailedSuffix: "· {count} failed",
-  shellJobsOtherSessions: "Other sessions",
   shellJobOutput: "Output",
   shellJobOutputEmpty: "No output yet",
   shellJobOutputTruncated: "showing the last {count} lines",

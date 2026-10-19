@@ -162,11 +162,43 @@ describe("ShellJobsBar", () => {
     cleanup();
   });
 
-  it("renders nothing without running or recently finished jobs", () => {
+  it("renders nothing when this session has no jobs", () => {
     mockShellJobRequests([]);
-    useAppStore.getState().setShellJobs([STALE_JOB] as never);
+    useAppStore.getState().setShellJobs([]);
     const { container } = render(<ShellJobsBar />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("keeps finished jobs resident instead of expiring them", async () => {
+    const user = userEvent.setup();
+    mockShellJobRequests([STALE_JOB]);
+    useAppStore.getState().setShellJobs([STALE_JOB] as never);
+    render(<ShellJobsBar />);
+
+    // A long-finished job still counts and is listed.
+    expect(screen.getByTestId("shell-jobs-toggle")).toHaveAttribute(
+      "aria-label",
+      "Background jobs (1)",
+    );
+    await expand(user);
+    expect(screen.getByTestId("shell-jobs-panel")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
+  });
+
+  it("never shows jobs that belong to another session", () => {
+    const otherJob = {
+      ...RUNNING_JOB,
+      id: "job_other",
+      cwd: "/other/workspace",
+      sessionId: "s-other",
+    };
+    mockShellJobRequests([otherJob]);
+    useAppStore.getState().setShellJobs([otherJob] as never);
+    const { container } = render(<ShellJobsBar />);
+
+    // Other sessions keep their jobs in their own conversation.
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByText("Other sessions")).not.toBeInTheDocument();
   });
 
   it("collapses into a summary row and hydrates via shelljobs.list", async () => {
@@ -179,11 +211,11 @@ describe("ShellJobsBar", () => {
         "job_done1",
       ]),
     );
-    // Collapsed: a compact pill (not the full-width bar) with the running
-    // count in its accessible name and the first command as a preview.
+    // Collapsed: a compact pill (not the full-width bar) with the resident
+    // job count in its accessible name and the first command as a preview.
     const pill = screen.getByTestId("shell-jobs-toggle");
     expect(pill).toHaveAttribute("aria-expanded", "false");
-    expect(pill).toHaveAttribute("aria-label", "Background jobs (1)");
+    expect(pill).toHaveAttribute("aria-label", "Background jobs (2)");
     expect(pill).toHaveClass("rounded-full");
     expect(screen.getByText("npm run dev")).toBeInTheDocument();
     // No per-job rows (or the finished job) before expanding.
@@ -196,7 +228,7 @@ describe("ShellJobsBar", () => {
     );
   });
 
-  it("opens a floating popover with job rows and recently finished jobs", async () => {
+  it("opens a floating popover with resident job rows", async () => {
     const user = userEvent.setup();
     mockShellJobRequests([RUNNING_JOB, FINISHED_JOB]);
     useAppStore.getState().setShellJobs([RUNNING_JOB, FINISHED_JOB] as never);
@@ -210,6 +242,7 @@ describe("ShellJobsBar", () => {
     // Running job gets a stop control; the finished one stays visible without it.
     expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
     expect(screen.getByText("30s")).toBeInTheDocument();
+    expect(screen.getAllByText("npm run dev")).toHaveLength(3);
   });
 
   it("closes the popover on outside click, Escape, and pill toggle", async () => {
@@ -233,23 +266,6 @@ describe("ShellJobsBar", () => {
     await expand(user);
     await user.click(screen.getByTestId("shell-jobs-toggle"));
     expect(screen.queryByTestId("shell-jobs-panel")).not.toBeInTheDocument();
-  });
-
-  it("groups other sessions under a separate section with a cwd badge", async () => {
-    const user = userEvent.setup();
-    const otherJob = {
-      ...RUNNING_JOB,
-      id: "job_other",
-      cwd: "/other/workspace",
-      sessionId: "s-other",
-    };
-    mockShellJobRequests([RUNNING_JOB, otherJob]);
-    useAppStore.getState().setShellJobs([RUNNING_JOB, otherJob] as never);
-    render(<ShellJobsBar />);
-
-    await expand(user);
-    expect(screen.getByText("Other sessions")).toBeInTheDocument();
-    expect(screen.getByText("workspace")).toBeInTheDocument();
   });
 
   it("clicking a job opens the session that submitted it", async () => {

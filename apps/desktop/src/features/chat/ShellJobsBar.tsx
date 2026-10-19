@@ -11,16 +11,15 @@ import { useT } from "../../lib/i18n/use-t";
 /**
  * Background shell job status above the composer.
  *
- * A compact pill (running count + first command) is the only persistent UI.
+ * A compact pill (job count + first command) is the only persistent UI.
  * Clicking it opens a floating popover (portal, viewport-clamped) listing
- * every visible job grouped current-session-first. Jobs that finish stay
- * for a short grace window with their final status so the outcome is not
- * missed, and a running→failed transition raises an error notification.
- * Each row can open a live tail of the job's output.log.
+ * the current session's jobs only — another session's jobs belong to that
+ * conversation and never leak in here. Finished jobs stay resident with
+ * their final status instead of expiring after a grace window, and a
+ * running→failed transition raises an error notification. Each row can
+ * open a live tail of the job's output.log.
  */
 
-/** Finished jobs stay visible this long so their outcome is not missed. */
-const RETAIN_FINISHED_MS = 10_000;
 /** Poll cadence for the output panel of a running job. */
 const OUTPUT_POLL_MS = 3_000;
 const OUTPUT_LINE_LIMIT = 200;
@@ -73,13 +72,6 @@ function statusLabel(t: ReturnType<typeof useT>, status: ShellJobStatus): string
     default:
       return t("shellJobStatusUnknown");
   }
-}
-
-/** Short workspace badge for jobs owned by another session. */
-function cwdBadge(cwd: string): string {
-  const segments = cwd.split(/[\\/]/).filter(Boolean);
-  const name = segments[segments.length - 1] ?? cwd;
-  return name.length > 16 ? `${name.slice(0, 15)}…` : name;
 }
 
 /** Live tail of one job's output.log; polls while the job is still running. */
@@ -164,7 +156,6 @@ function JobOutput({ job }: { job: ShellJobSummary }) {
 function JobRow({
   job,
   now,
-  ownSession,
   stopping,
   confirmStop,
   outputOpen,
@@ -175,7 +166,6 @@ function JobRow({
 }: {
   job: ShellJobSummary;
   now: number;
-  ownSession: boolean;
   stopping: boolean;
   confirmStop: boolean;
   outputOpen: boolean;
@@ -205,14 +195,6 @@ function JobRow({
           onClick={() => onOpenSession(job)}
         >
           <span className="min-w-0 flex-1 truncate">{label}</span>
-          {!ownSession && (
-            <span
-              className="shrink-0 rounded bg-surface-overlay px-1 text-[10px] leading-4 text-muted"
-              title={job.cwd}
-            >
-              {cwdBadge(job.cwd)}
-            </span>
-          )}
           {duration && <span className="shrink-0 tabular-nums text-muted">{duration}</span>}
         </button>
         <button
@@ -282,9 +264,11 @@ export function ShellJobsBar() {
   }, [host]);
 
   // A job we saw running that has now failed deserves an error notification.
+  // Only this session's jobs can notify: another conversation owns its own.
   useEffect(() => {
     const prev = prevStatusRef.current;
     for (const job of jobs) {
+      if (job.sessionId !== currentSessionId) continue;
       if (prev.get(job.id) === "running" && job.status === "failed") {
         pushNotification(
           t("shellJobFailedNotification", { title: job.title ?? job.command }),
@@ -294,7 +278,7 @@ export function ShellJobsBar() {
     }
     prev.clear();
     for (const job of jobs) prev.set(job.id, job.status);
-  }, [jobs, pushNotification, t]);
+  }, [currentSessionId, jobs, pushNotification, t]);
 
   useEffect(
     () => () => {
@@ -354,22 +338,14 @@ export function ShellJobsBar() {
     };
   }, [open]);
 
-  const running = jobs.filter((job) => job.status === "running");
-  const wallNow = Date.now();
-  // Grace window: finished jobs stay visible briefly with their final status.
-  const recentByWall = jobs.filter(
-    (job) =>
-      job.status !== "running" &&
-      job.finishedAt !== undefined &&
-      job.finishedAt > 0 &&
-      job.finishedAt <= wallNow &&
-      wallNow - job.finishedAt < RETAIN_FINISHED_MS,
-  );
-  const now = useNowTicker(running.length > 0 || recentByWall.length > 0);
-  const recent = recentByWall.filter(
-    (job) => job.finishedAt !== undefined && now - job.finishedAt < RETAIN_FINISHED_MS,
-  );
-  const visible = [...running, ...recent];
+  // Strictly this session: jobs are resident, never grouped by other owners.
+  const sessionJobs = currentSessionId
+    ? jobs.filter((job) => job.sessionId === currentSessionId)
+    : [];
+  const running = sessionJobs.filter((job) => job.status === "running");
+  const finished = sessionJobs.filter((job) => job.status !== "running");
+  const visible = [...running, ...finished];
+  const now = useNowTicker(running.length > 0);
   // Close the popover once nothing is left to show, so a future job starts
   // from the compact pill again.
   useEffect(() => {
@@ -429,54 +405,26 @@ export function ShellJobsBar() {
     setOutputJobId((current) => (current === job.id ? null : job.id));
   };
 
-  const bySession = (a: ShellJobSummary, b: ShellJobSummary) =>
-    (a.sessionId === currentSessionId ? 0 : 1) - (b.sessionId === currentSessionId ? 0 : 1) ||
-    b.createdAt - a.createdAt;
-  const own = visible.filter((job) => job.sessionId === currentSessionId).sort(bySession);
-  const others = visible.filter((job) => job.sessionId !== currentSessionId).sort(bySession);
-  const failedRecent = recent.filter((job) => job.status === "failed");
-  const headline = running[0]?.title ?? running[0]?.command;
-  const title = t("shellJobsTitle", { count: running.length });
+  const failedCount = finished.filter((job) => job.status === "failed").length;
+  const first = running[0] ?? finished[0];
+  const headline = first?.title ?? first?.command;
+  // Resident: the pill counts every job this session owns, not only running ones.
+  const title = t("shellJobsTitle", { count: visible.length });
 
-  const jobRows = (
-    <>
-      {own.map((job) => (
-        <JobRow
-          key={job.id}
-          job={job}
-          now={now}
-          ownSession
-          stopping={stoppingId === job.id}
-          confirmStop={confirmStopId === job.id}
-          outputOpen={outputJobId === job.id}
-          onOpenSession={(target) => void openSession(target)}
-          onRequestStop={requestStop}
-          onConfirmStop={(target) => void confirmStop(target)}
-          onToggleOutput={toggleOutput}
-        />
-      ))}
-      {others.length > 0 && (
-        <div className="px-1.5 pb-0.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted">
-          {t("shellJobsOtherSessions")}
-        </div>
-      )}
-      {others.map((job) => (
-        <JobRow
-          key={job.id}
-          job={job}
-          now={now}
-          ownSession={false}
-          stopping={stoppingId === job.id}
-          confirmStop={confirmStopId === job.id}
-          outputOpen={outputJobId === job.id}
-          onOpenSession={(target) => void openSession(target)}
-          onRequestStop={requestStop}
-          onConfirmStop={(target) => void confirmStop(target)}
-          onToggleOutput={toggleOutput}
-        />
-      ))}
-    </>
-  );
+  const jobRows = visible.map((job) => (
+    <JobRow
+      key={job.id}
+      job={job}
+      now={now}
+      stopping={stoppingId === job.id}
+      confirmStop={confirmStopId === job.id}
+      outputOpen={outputJobId === job.id}
+      onOpenSession={(target) => void openSession(target)}
+      onRequestStop={requestStop}
+      onConfirmStop={(target) => void confirmStop(target)}
+      onToggleOutput={toggleOutput}
+    />
+  ));
 
   const panel = open ? (
     <section
@@ -492,14 +440,14 @@ export function ShellJobsBar() {
           <Loader2 size={15} className="shrink-0 animate-spin text-accent" aria-hidden="true" />
         ) : (
           <span
-            className={`size-2 shrink-0 rounded-full ${STATUS_CLASS[recent[0]?.status ?? "unknown"]}`}
-            title={statusLabel(t, recent[0]?.status ?? "unknown")}
+            className={`size-2 shrink-0 rounded-full ${STATUS_CLASS[first?.status ?? "unknown"]}`}
+            title={statusLabel(t, first?.status ?? "unknown")}
           />
         )}
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{title}</span>
-        {failedRecent.length > 0 && (
+        {failedCount > 0 && (
           <span className="shrink-0 text-danger">
-            {t("shellJobsFailedSuffix", { count: failedRecent.length })}
+            {t("shellJobsFailedSuffix", { count: failedCount })}
           </span>
         )}
       </div>
@@ -528,16 +476,16 @@ export function ShellJobsBar() {
           <Loader2 size={12} className="shrink-0 animate-spin text-accent" />
         ) : (
           <span
-            className={`size-2 shrink-0 rounded-full ${STATUS_CLASS[recent[0]?.status ?? "unknown"]}`}
-            title={statusLabel(t, recent[0]?.status ?? "unknown")}
+            className={`size-2 shrink-0 rounded-full ${STATUS_CLASS[first?.status ?? "unknown"]}`}
+            title={statusLabel(t, first?.status ?? "unknown")}
           />
         )}
         <span className="shrink-0 rounded-full bg-accent/15 px-1.5 font-medium text-accent">
-          {running.length}
+          {visible.length}
         </span>
-        {failedRecent.length > 0 && (
+        {failedCount > 0 && (
           <span className="shrink-0 text-danger">
-            {t("shellJobsFailedSuffix", { count: failedRecent.length })}
+            {t("shellJobsFailedSuffix", { count: failedCount })}
           </span>
         )}
         {headline && <span className="min-w-0 max-w-56 truncate">{headline}</span>}

@@ -1397,7 +1397,6 @@ export const zh: Record<MessageKey, string> = {
   shellJobStoppedOtherSession: "后台任务已停止。它属于其他会话，未通知对应的 Agent。",
   shellJobsTitle: "后台任务（{count}）",
   shellJobsFailedSuffix: "· {count} 个失败",
-  shellJobsOtherSessions: "其他会话",
   shellJobOutput: "输出",
   shellJobOutputEmpty: "暂无输出",
   shellJobOutputTruncated: "仅显示最近 {count} 行",
