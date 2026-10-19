@@ -1571,7 +1571,7 @@ export function ExtensionsPage() {
             <p className="p-6 text-center text-sm text-muted">{t("extensionsEmpty")}</p>
           ) : (
             <div
-              className="scrollbar-subtle grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-2 overflow-y-auto px-6 pb-6 @min-[30rem]:grid-cols-2 @min-[48rem]:grid-cols-3 @min-[70rem]:grid-cols-4 @min-[92rem]:grid-cols-5"
+              className="scrollbar-subtle grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-2 overflow-y-auto px-6 pb-6 @min-[30rem]:grid-cols-2 @min-[70rem]:grid-cols-3 @min-[92rem]:grid-cols-4"
               data-settings-scroll
             >
               {visibleItems.map((item) => (

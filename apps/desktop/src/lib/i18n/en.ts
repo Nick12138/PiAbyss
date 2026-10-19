@@ -687,7 +687,6 @@ export const en = {
   extensionsTypePackage: "Package",
   extensionsLoading: "Loading extensions…",
   extensionsEmpty: "No extensions match. Adjust the search or filters.",
-  extensionsUpdateBadge: "Update available",
   extensionsPackageGlobalBadge: "Global",
   extensionsPackageGlobalHint:
     "Packages install at the user level; the switch writes this workspace's preference.",
@@ -788,7 +787,7 @@ export const en = {
   packagesUpdateAll: "Update all",
   packagesUpdateAllCount: "Update all ({count})",
   packagesUpdateAllTitle: "Update all packages",
-  packagesInstallAction: "Install…",
+  packagesInstallAction: "Install",
   packagesSourcePlaceholder: "npm:package, git URL, or local path",
   packagesSourceLabel: "Package source",
   packagesInstallScope: "Install scope",

@@ -337,13 +337,8 @@ export function ExtensionsDrawer({
         <div className="flex items-center gap-2.5 border-b border-border px-4 py-3.5">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5">
-              <h2 className="truncate text-sm font-semibold">{item.name}</h2>
+              <h2 className="min-w-0 max-w-full truncate text-sm font-semibold">{item.name}</h2>
               <TypeBadge type={itemBadgeType(item)} />
-              {item.updatable && (
-                <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[11px] text-warning">
-                  {t("extensionsUpdateBadge")}
-                </span>
-              )}
               {scope.kind === "workspace" && item.kind === "plugin" && item.globalOnly && (
                 <span className="rounded bg-surface-overlay px-1.5 py-0.5 text-[11px] text-muted">
                   {t("pluginsScopeGlobalOnly")}

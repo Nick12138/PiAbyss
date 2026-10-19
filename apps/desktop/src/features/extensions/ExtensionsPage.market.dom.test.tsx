@@ -281,7 +281,7 @@ describe("ExtensionsPage package workflows", () => {
     expect(screen.getByText("Browser")).toBeInTheDocument();
     // The registry plugin is not installed, so it offers the install action.
     const browserCard = screen.getByText("Browser").closest("article")!;
-    expect(within(browserCard).getByRole("button", { name: "Install…" })).toBeInTheDocument();
+    expect(within(browserCard).getByRole("button", { name: "Install" })).toBeInTheDocument();
   });
 
   it("opens the detail drawer and controls a package's resources at the user layer", async () => {
@@ -425,7 +425,7 @@ describe("ExtensionsPage package workflows", () => {
     expect(screen.getByRole("button", { name: "pi.dev catalog" })).toBeInTheDocument();
 
     const card = (await screen.findByText("pi-sql-kit")).closest("article")!;
-    const install = within(card).getByRole("button", { name: "Install…" });
+    const install = within(card).getByRole("button", { name: "Install" });
     expect(install).toHaveAttribute("title", expect.stringContaining("run local code"));
     await user.click(install);
 
@@ -449,7 +449,7 @@ describe("ExtensionsPage package workflows", () => {
     render(<ExtensionsPage />);
 
     await user.type(await screen.findByLabelText("Package source"), "npm:local-tools");
-    await user.click(screen.getByRole("button", { name: "Install…" }));
+    await user.click(screen.getByRole("button", { name: "Install" }));
     const dialog = await screen.findByRole("dialog", { name: "Review package install" });
     await user.click(within(dialog).getByRole("button", { name: "Install package" }));
 

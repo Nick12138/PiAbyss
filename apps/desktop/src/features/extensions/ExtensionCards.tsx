@@ -36,21 +36,21 @@ export function TypeBadge({ type }: { type: string }) {
   const t = useT();
   if (type === "plugin") {
     return (
-      <span className="shrink-0 whitespace-nowrap rounded bg-plugin/15 px-1.5 py-0.5 text-[11px] font-medium text-plugin">
+      <span className="shrink-0 whitespace-nowrap rounded bg-plugin/15 px-1 py-px text-[11px] font-medium text-plugin">
         {t("extensionsTypePlugin")}
       </span>
     );
   }
   if (!isResourceType(type)) {
     return (
-      <span className="shrink-0 whitespace-nowrap rounded bg-surface-overlay px-1.5 py-0.5 text-[11px] font-medium text-muted">
+      <span className="shrink-0 whitespace-nowrap rounded bg-surface-overlay px-1 py-px text-[11px] font-medium text-muted">
         {type}
       </span>
     );
   }
   return (
     <span
-      className={`shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium ${TYPE_BADGE_CLASS[type]}`}
+      className={`shrink-0 whitespace-nowrap rounded px-1 py-px text-[11px] font-medium ${TYPE_BADGE_CLASS[type]}`}
     >
       {singularType(t, type)}
     </span>
@@ -150,7 +150,12 @@ export function ExtensionCard({
       <div className="flex items-start gap-2">
         <ItemIcon item={item} />
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-baseline gap-2">
+          {/* Title row: name + kind badge. The row is content-sized (`w-fit`)
+           ** and capped at the card width, so the badge always sits flush against
+           ** the name: short names are not padded out by a min-width floor (that
+           ** used to leave a gap that varied with name length) and long names
+           ** truncate instead of pushing the badge away or collapsing to zero. */}
+          <div className="flex w-fit max-w-full min-w-0 items-baseline gap-1.5">
             <button
               type="button"
               title={item.name}
@@ -163,22 +168,25 @@ export function ExtensionCard({
               {item.name}
             </button>
             <TypeBadge type={itemBadgeType(item)} />
-            {item.updatable && (
-              <span className="shrink-0 whitespace-nowrap rounded bg-warning/15 px-1.5 py-0.5 text-[11px] text-warning">
-                {t("extensionsUpdateBadge")}
-              </span>
-            )}
-            {item.version && (
-              <span className="shrink-0 whitespace-nowrap text-[11px] tabular-nums text-muted">
-                {item.kind === "plugin" ? `v${item.version}` : item.version}
-              </span>
-            )}
           </div>
-          <p className="truncate text-[11px] text-muted">
-            {item.author ?? item.record?.source ?? item.id}
+          {/* Compact, left-aligned meta run: author · version. No flex-1 on the
+           ** author — stretching it pushed the version to the far edge and left
+           ** a hole in the middle of the line. */}
+          <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-muted">
+            <span className="min-w-0 truncate">
+              {item.author ?? item.record?.source ?? item.id}
+            </span>
+            {item.version && (
+              <span
+                title={item.kind === "plugin" ? `v${item.version}` : item.version}
+                className="max-w-[55%] shrink-0 truncate tabular-nums"
+              >
+                · {item.kind === "plugin" ? `v${item.version}` : item.version}
+              </span>
+            )}
           </p>
         </div>
-        {installed && (
+        {installed ? (
           <div className="flex shrink-0 items-center gap-3">
             {workspaceScope && item.kind === "package" && (
               <span
@@ -240,6 +248,24 @@ export function ExtensionCard({
               </span>
             )}
           </div>
+        ) : (
+          /* Not installed: the install action sits where the switch lives on an
+           ** installed card, instead of taking a whole row of its own at the
+           ** bottom (which left uninstalled cards taller than installed ones). */
+          <button
+            type="button"
+            data-extension-install-button
+            className={`${primaryButton} shrink-0`}
+            disabled={pending || installBlockedTitle !== undefined}
+            title={installBlockedTitle}
+            onClick={(event) => {
+              event.stopPropagation();
+              onInstall(item);
+            }}
+          >
+            <Download size={13} />
+            {t("packagesInstallAction")}
+          </button>
         )}
       </div>
 
@@ -257,24 +283,6 @@ export function ExtensionCard({
       <p className="line-clamp-2 text-xs leading-5 text-muted" title={item.description}>
         {item.description}
       </p>
-
-      {!installed && (
-        <div className="mt-auto flex items-center gap-2 pt-1">
-          <button
-            type="button"
-            className={primaryButton}
-            disabled={pending || installBlockedTitle !== undefined}
-            title={installBlockedTitle}
-            onClick={(event) => {
-              event.stopPropagation();
-              onInstall(item);
-            }}
-          >
-            <Download size={13} />
-            {t("packagesInstallAction")}
-          </button>
-        </div>
-      )}
     </article>
   );
 }

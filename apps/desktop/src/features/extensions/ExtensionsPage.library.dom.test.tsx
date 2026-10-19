@@ -519,7 +519,7 @@ describe("ExtensionsPage library DOM workflows", () => {
     const browserCard = screen.getByText("浏览器").closest("article")!;
     expect(within(browserCard).queryByRole("switch")).toBeNull();
     expect(within(browserCard).queryByRole("button", { name: "Configure" })).toBeNull();
-    expect(within(browserCard).getByRole("button", { name: "Install…" })).toBeInTheDocument();
+    expect(within(browserCard).getByRole("button", { name: "Install" })).toBeInTheDocument();
 
     // Flipping the snapshot: the browser plugin appears with a switch, the web
     // plugin drops back to Install-only.
@@ -530,7 +530,7 @@ describe("ExtensionsPage library DOM workflows", () => {
     );
     expect(within(webCard).queryByRole("button", { name: "Configure" })).not.toBeInTheDocument();
     expect(within(webCard).queryByRole("switch")).toBeNull();
-    expect(within(webCard).getByRole("button", { name: "Install…" })).toBeInTheDocument();
+    expect(within(webCard).getByRole("button", { name: "Install" })).toBeInTheDocument();
   });
 
   it("flips the switch immediately, applies in the background, and reverts on failure", async () => {
@@ -853,7 +853,7 @@ describe("ExtensionsPage library DOM workflows", () => {
     render(<ExtensionsPage />);
 
     const card = (await screen.findByText("浏览器")).closest("article")!;
-    await user.click(within(card).getByRole("button", { name: "Install…" }));
+    await user.click(within(card).getByRole("button", { name: "Install" }));
     await user.click(await screen.findByRole("button", { name: "Install plugin" }));
 
     await waitFor(() =>
@@ -893,9 +893,9 @@ describe("ExtensionsPage library DOM workflows", () => {
 
     const card = (await screen.findByText("联网搜索")).closest("article")!;
     // Initially nothing in the repo is installed: the card offers Install only.
-    expect(within(card).getByRole("button", { name: "Install…" })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Install" })).toBeInTheDocument();
     expect(within(card).queryByRole("switch")).toBeNull();
-    await user.click(within(card).getByRole("button", { name: "Install…" }));
+    await user.click(within(card).getByRole("button", { name: "Install" }));
     await user.click(screen.getByRole("button", { name: "Install plugin" }));
 
     await waitFor(() =>
@@ -1264,7 +1264,7 @@ describe("ExtensionsPage library DOM workflows", () => {
 
     const card = screen.getByText("浏览器").closest("article")!;
     expect(within(card).getByRole("switch")).toHaveAttribute("aria-checked", "true");
-    expect(within(card).queryByRole("button", { name: "Install…" })).not.toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Install" })).not.toBeInTheDocument();
   });
 
   it("replaces the workspace switch with a global-only readout for restricted plugins", async () => {
@@ -1326,7 +1326,7 @@ describe("ExtensionsPage library DOM workflows", () => {
     await waitFor(() => expect(within(browserCard).getByRole("switch")).toBeChecked());
     // A cached snapshot renders immediately on return; this switch is already
     // present before a new target fetch is needed to complete.
-    expect(within(browserCard).queryByRole("button", { name: "Install…" })).toBeNull();
+    expect(within(browserCard).queryByRole("button", { name: "Install" })).toBeNull();
   });
 
   it("exposes the pixie workspace as its own chip and targets it without persisting it", async () => {
