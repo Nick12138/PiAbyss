@@ -159,7 +159,7 @@ export function ExtensionCard({
             <button
               type="button"
               title={item.name}
-              className="min-w-0 truncate text-left text-[13px] font-semibold hover:underline"
+              className="min-w-0 truncate text-left text-[13px] font-semibold"
               onClick={(event) => {
                 event.stopPropagation();
                 onOpen(item, event.currentTarget);
