@@ -100,13 +100,19 @@ export function clampModelMenuWidth(
 /** Backwards-compatible alias; the shared helper lives in lib/bridge. */
 export { requestWithRetry as requestModelListWithRetry } from "../../lib/bridge/request-retry";
 
+/**
+ * 把会话当前模型并进菜单列表。
+ *
+ * 无论该模型所属 Provider 是否处于「已启用」名单里都要保留：会话可能仍绑在
+ * 一个随后被停用的 Provider 上（小精灵会话长期存活，最容易踩到），此时若按
+ * 启用名单把它剔掉，菜单里就一条都打不上勾，用户会以为「没有选中任何模型」。
+ * 分组标题会用「已停用」标出这类 Provider 的来源。
+ */
 export function includeCurrentModel(
   models: ModelSummary[],
   current: ModelSummary | undefined,
-  enabledProviders?: string[],
 ): ModelSummary[] {
   if (!current) return models;
-  if (enabledProviders && !enabledProviders.includes(current.provider)) return models;
   const currentKey = `${current.provider}/${current.modelId}`;
   return models.some((model) => `${model.provider}/${model.modelId}` === currentKey)
     ? models
@@ -549,7 +555,7 @@ function SessionModelControls() {
     setProviderNames,
   ]);
 
-  const modelOptions = includeCurrentModel(models, session?.model, enabledProviders);
+  const modelOptions = includeCurrentModel(models, session?.model);
   const modelGroups = modelOptions.reduce<
     { provider: string; label: string; models: ModelSummary[] }[]
   >((groups, model) => {
@@ -829,8 +835,16 @@ function SessionModelControls() {
                 ) : (
                   modelGroups.map((group) => (
                     <div key={group.provider}>
-                      <div className="flex h-7 items-center px-2.5 pt-1 text-xs font-medium text-foreground">
-                        {group.label}
+                      <div className="flex h-7 items-center gap-1 px-2.5 pt-1 text-xs font-medium text-foreground">
+                        <span className="min-w-0 truncate">{group.label}</span>
+                        {/* 会话当前模型所在的 Provider 被停用后仍会留在菜单里
+                            （否则打不了勾），这里把它标出来，别让用户以为它
+                            还能被新会话选中。 */}
+                        {enabledProviders && !enabledProviders.includes(group.provider) && (
+                          <span className="shrink-0 text-[10px] font-normal text-muted">
+                            · {t("modelProviderDisabled")}
+                          </span>
+                        )}
                       </div>
                       {group.models.map((model) => {
                         const key = `${model.provider}/${model.modelId}`;

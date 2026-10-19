@@ -550,6 +550,69 @@ describe("ModelControls model menu width", () => {
   });
 });
 
+describe("ModelControls current model left outside the enabled Providers", () => {
+  beforeEach(() => {
+    setupModelMenuStore();
+    useAppStore.getState().setConnecting(false);
+  });
+
+  afterEach(() => {
+    teardownModelMenuStore();
+  });
+
+  it("keeps the bound model checked and marks its Provider as disabled", async () => {
+    // 小精灵会话长期存活，可能仍绑在一个随后被停用的 Provider 上；同一模型名
+    // 又出现在其他已启用的 Provider 里。菜单必须把当前模型留在列表里并打勾，
+    // 否则整张菜单没有一条选中项。
+    const current: ModelSummary = {
+      provider: "retired",
+      providerName: "天机阁",
+      modelId: "glm-5.3-flash",
+      name: "glm-5.3-flash",
+      thinkingLevels: ["off", "high"],
+    };
+    const sameNameElsewhere: ModelSummary[] = [
+      {
+        provider: "workbuddy",
+        providerName: "Workbuddy",
+        modelId: "glm-5.3-flash",
+        name: "glm-5.3-flash",
+        thinkingLevels: ["off", "high"],
+      },
+      {
+        provider: "free-relay",
+        providerName: "天机阁 Free",
+        modelId: "glm-5.3-flash",
+        name: "glm-5.3-flash",
+        thinkingLevels: ["off", "high"],
+      },
+    ];
+    vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+      if (method !== "model.list") throw new Error(`Unexpected method ${method}`);
+      return envelope(method, {
+        models: sameNameElsewhere,
+        current,
+        thinkingLevels: ["off", "high"],
+        enabledProviders: ["workbuddy", "free-relay"],
+      }) as never;
+    });
+    useAppStore.getState().applySessionSnapshot({ ...session(current), thinkingLevel: "high" });
+
+    const user = userEvent.setup();
+    render(<ModelControls />);
+
+    await user.click(await screen.findByRole("button", { name: /^glm-5\.3-flash( |$)/ }));
+    await screen.findByRole("menu", { name: "Models" });
+
+    const rows = await screen.findAllByRole("menuitemradio");
+    const checked = rows.filter((row) => row.getAttribute("aria-checked") === "true");
+    expect(checked).toHaveLength(1);
+    expect(checked[0]).toHaveTextContent("glm-5.3-flash");
+    // 停用的 Provider 在分组标题上挂牌，用户才知道它为什么不在正常清单里。
+    expect(screen.getByText(/Disabled/)).toBeInTheDocument();
+  });
+});
+
 describe("ModelControls selected-model centering", () => {
   beforeEach(() => {
     setupModelMenuStore();

@@ -1415,6 +1415,7 @@ export const en = {
   modelSelect: "Select model",
   modelNone: "No model",
   modelMenuLabel: "Models",
+  modelProviderDisabled: "Disabled",
   modelListLoading: "Loading models...",
   subagentsModelPicker: "Subagent model",
   subagentsThinkingDefault: "Default",

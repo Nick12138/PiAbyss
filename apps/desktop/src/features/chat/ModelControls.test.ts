@@ -29,12 +29,11 @@ describe("includeCurrentModel", () => {
     expect(includeCurrentModel([current], current)).toEqual([current]);
   });
 
-  it("does not reinsert a model from a disabled Provider", () => {
-    expect(includeCurrentModel([], current, ["other-provider"])).toEqual([]);
-  });
-
-  it("keeps the current model when its Provider is one of several enabled", () => {
-    expect(includeCurrentModel([], current, ["other-provider", "muapi"])).toEqual([current]);
+  it("keeps the current model even when the catalog omits it", () => {
+    // 目录里没有当前模型（例如它所属 Provider 已被停用）时也要把它加进来，
+    // 否则菜单里一条都打不上勾。
+    expect(includeCurrentModel([], current)).toEqual([current]);
+    expect(includeCurrentModel([], undefined)).toEqual([]);
   });
 
   it("uses the selected model's own thinking levels", () => {

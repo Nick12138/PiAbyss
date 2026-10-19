@@ -1339,6 +1339,7 @@ export const zh: Record<MessageKey, string> = {
   modelSelect: "选择模型",
   modelNone: "未选择模型",
   modelMenuLabel: "模型",
+  modelProviderDisabled: "已停用",
   modelListLoading: "正在加载模型…",
   subagentsModelPicker: "子代理模型",
   subagentsThinkingDefault: "默认",
