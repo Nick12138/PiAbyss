@@ -1,4 +1,4 @@
-/* 「环绕」等待标记：白色 π + 两圈极淡的轨道 + 两颗反向绕行的光点。
+/* 「环绕」等待标记：白色 π + 两颗反向绕行的光点（不画显式轨道线）。
    工作区切换（WorkspaceLoading）和小精灵页的取用等待共用同一个尺寸——
    从切工作区到小精灵落位是连续动作，中间不该「换个大小」。
    只动 transform / opacity，纯 CSS，没有 canvas。 */
@@ -49,29 +49,7 @@ html.light .pi-orbit-halo {
   }
 }
 
-/* 轨道本身几乎不可见，只是让那两颗光有个去处；用暖色而不是灰边，
-   免得在深色底上完全糊掉。 */
-.pi-orbit-path {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 14%, transparent);
-  border-radius: 50%;
-}
-
-.pi-orbit-path.p1 {
-  width: 100px;
-  height: 100px;
-  margin: -50px 0 0 -50px;
-}
-
-.pi-orbit-path.p2 {
-  width: 76px;
-  height: 76px;
-  margin: -38px 0 0 -38px;
-}
-
-/* 光点挂在轨道正上方：容器一转，它就沿着轨道走 */
+/* 光点挂在圆周正上方：容器一转，它就沿着看不见的圆周走 */
 .pi-orbit-orb {
   position: absolute;
   top: 50%;
@@ -116,7 +94,7 @@ html.light .pi-orbit-halo {
   }
 }
 
-/* 标本身只做极慢的呼吸，别和轨道抢戏 */
+/* 标本身只做极慢的呼吸，别和光点抢戏 */
 .pi-orbit-mark {
   position: relative;
   z-index: 1;
