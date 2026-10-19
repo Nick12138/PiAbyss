@@ -169,7 +169,7 @@ export function AppTopBar({
           >
             <Sparkles
               size={16}
-              className="pointer-events-none shrink-0 text-primary"
+              className="pointer-events-none shrink-0 text-accent"
               aria-hidden="true"
             />
             <div className="flex min-w-0 flex-1 items-center gap-1.5">

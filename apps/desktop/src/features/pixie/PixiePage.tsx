@@ -288,7 +288,7 @@ export function PixiePage() {
   if (acquireFailed) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-        <Sparkles size={20} className="text-primary" />
+        <Sparkles size={20} className="text-accent" />
         <p className="text-sm text-danger">{error ?? t("pixieUnavailable")}</p>
         <button
           type="button"
@@ -371,7 +371,7 @@ export function PixiePage() {
                      * 都是这一颗），不复用默认的应用 logo——否则这一页和普通工作区
                      * 的新建会话看起来一模一样，认不出是谁的页面。节点整体替换，
                      * 尺寸与下边距由这里定。 */
-                    welcomeMark={<Sparkles size={34} className="mb-4 text-primary" aria-hidden />}
+                    welcomeMark={<Sparkles size={34} className="mb-4 text-accent" aria-hidden />}
                   />
                   <SessionStatsPills />
                 </ComposerRuntimeProvider>

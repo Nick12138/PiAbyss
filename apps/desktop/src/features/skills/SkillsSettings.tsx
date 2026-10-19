@@ -39,7 +39,7 @@ import {
 } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
 import { isSameTelegramPath } from "../../lib/telegram-path";
-import { isSamePixiePath } from "../../lib/pixie-path";
+import { defaultPixieWorkspacePath, isSamePixiePath } from "../../lib/pixie-path";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 import { useTelegramViewStore } from "../telegram/telegram-view-store";
 import { usePixieViewStore } from "../pixie/pixie-store";
@@ -262,6 +262,10 @@ export function SkillsSettings() {
   function workspaceChips() {
     const activeCwd = workspace?.cwd ?? "";
     const telegramWorkspacePath = useTelegramViewStore.getState().workspacePath;
+    // Same识别策略 as the extensions page: the pixie workspace is a real folder
+    // workspace, and the store only knows its cwd after the pixie page mounts,
+    // so fall back to the host's default location to recognise & label it.
+    const pixiePath = pixieWorkspacePath ?? defaultPixieWorkspacePath(host?.agentDir);
     const paths =
       activeCwd && !knownWorkspaces.some((path) => path === activeCwd)
         ? [activeCwd, ...knownWorkspaces]
@@ -275,15 +279,19 @@ export function SkillsSettings() {
     if (activeCwd) {
       paths.sort((left, right) => (left === activeCwd ? -1 : right === activeCwd ? 1 : 0));
     }
-    return paths.map((path) => ({
-      path,
-      /** "" = active workspace (see targetParams). */
-      value: path === activeCwd ? "" : path,
-      basename: workspaceBasename(path),
-      isActive: path === activeCwd,
-      isTelegram: isSameTelegramPath(path, telegramWorkspacePath),
-      isPixie: isSamePixiePath(path, pixieWorkspacePath),
-    }));
+    return paths.map((path) => {
+      const isPixie = isSamePixiePath(path, pixiePath);
+      return {
+        path,
+        /** "" = active workspace (see targetParams). */
+        value: path === activeCwd ? "" : path,
+        // The folder is literally named "pixie"; show the product name instead.
+        basename: isPixie ? t("pixieTitle") : workspaceBasename(path),
+        isActive: path === activeCwd,
+        isTelegram: isSameTelegramPath(path, telegramWorkspacePath),
+        isPixie,
+      };
+    });
   }
 
   async function applyResponse<T extends { hostInstanceId?: string }>(response: T) {
@@ -564,7 +572,9 @@ export function SkillsSettings() {
       {/* 管理范围行固定在滚动区外（与插件库一致）：内容滚动时保持可见，
           内层 max-w-5xl 与下方滚动内容对齐。活动工作区总是被注入 chips，
           因此即使没有已记录的工作区该行也可用（默认全局，可切回工作区）。 */}
-      <div className="px-6 pt-6 pb-6">
+      {/* 上留白与「扩展」页的管理范围行一致（pt-3）；下方 16px（pb-4）与
+          徽标行、分组卡片、提示文字之间统一为同一档间隔。 */}
+      <div className="px-6 pt-3 pb-4">
         <div className="mx-auto flex max-w-5xl flex-col gap-1.5">
           <div
             className="flex flex-wrap items-center gap-1.5"
@@ -612,7 +622,9 @@ export function SkillsSettings() {
                     <Send size={12} className="shrink-0 text-muted" aria-hidden />
                   )}
                   {chip.isPixie && (
-                    <Sparkles size={12} className="shrink-0 text-muted" aria-hidden />
+                    // 小精灵 chip 与「扩展」页同款：Sparkles 徽标 + 产品名（而不是
+                    // 目录名 pixie），徽标用主题 accent 色，与普通工作区区分开。
+                    <Sparkles size={12} className="shrink-0 text-accent" aria-hidden />
                   )}
                   <span className="max-w-48 truncate">{chip.basename}</span>
                   {chip.isActive && (
@@ -670,7 +682,7 @@ export function SkillsSettings() {
           )}
 
           <section>
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="rounded-full bg-surface-overlay px-2.5 py-1 text-[11px] text-muted">
                   {t("skillsLoadedSkillsBadge", {

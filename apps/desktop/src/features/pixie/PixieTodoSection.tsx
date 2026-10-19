@@ -862,7 +862,7 @@ function TodoRow({
           data-testid="pixie-todo-handoff"
           title={t("pixieTodoHandOff")}
           aria-label={t("pixieTodoHandOff")}
-          className={`${cornerClass} hover:bg-surface-overlay hover:text-primary focus-visible:outline-none`}
+          className={`${cornerClass} hover:bg-surface-overlay hover:text-accent focus-visible:outline-none`}
           onClick={onHandOff}
         >
           <Sparkles size={12} aria-hidden="true" />

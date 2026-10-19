@@ -644,7 +644,8 @@ describe("SkillsSettings", () => {
 
     it("exposes the pixie workspace as its own chip without persisting it into knownWorkspaces", async () => {
       // 小精灵工作区永不进 knownWorkspaces，但路径自启动后即可知：
-      // 管理范围行应出现专属 chip，选中后请求带 target 指向它。
+      // 管理范围行应出现专属 chip（Sparkles 徽标 + 产品名而非目录名 pixie），
+      // 选中后请求带 target 指向它。
       usePixieViewStore.setState({
         current: {
           cwd: "C:/agent/workspace/pixie",
@@ -656,7 +657,10 @@ describe("SkillsSettings", () => {
       render(<SkillsSettings />);
       await screen.findByText("Global (user)");
       request.mockClear();
-      await selectWorkspace(user, "pixie");
+      // 标签用产品名，与「扩展」页的小精灵 chip 一致。
+      const pixieChip = await screen.findByRole("button", { name: "Pixie" });
+      expect(pixieChip.querySelector(".lucide-sparkles")).not.toBeNull();
+      await user.click(pixieChip);
       await waitFor(() => {
         expect(request.mock.calls.find(([method]) => method === "skill.list")?.[2]).toEqual({
           targetWorkspaceCwd: "C:/agent/workspace/pixie",

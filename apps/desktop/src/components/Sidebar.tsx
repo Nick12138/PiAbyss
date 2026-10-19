@@ -529,7 +529,7 @@ export function SidebarLayout({
                       : "text-foreground hover:bg-surface-overlay"
                   } disabled:cursor-not-allowed disabled:opacity-40`}
                 >
-                  <Sparkles size={18} className="shrink-0" />
+                  <Sparkles size={18} className="shrink-0 text-accent" />
                   <span className="min-w-0 flex-1 truncate">{t("pixieTitle")}</span>
                   {/* 未读提醒：她跑完/跑挂了几条还没看的活。跟状态灯分两格，
                       灯说的是「现在」，数字说的是「攒了多少」。 */}

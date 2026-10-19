@@ -1318,7 +1318,7 @@ export function ExtensionsPage() {
                 ) : chip.isTelegram ? (
                   <Send size={12} className="shrink-0 text-muted" aria-hidden />
                 ) : chip.isPixie ? (
-                  <Sparkles size={12} className="shrink-0 text-muted" aria-hidden />
+                  <Sparkles size={12} className="shrink-0 text-accent" aria-hidden />
                 ) : null}
                 <span className="max-w-48 truncate">{chip.basename}</span>
                 {chip.isActive && !chip.isGlobal && (
