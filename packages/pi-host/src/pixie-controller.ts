@@ -321,6 +321,18 @@ async function createTargetSession(
 const dispatchedSessions = new Map<string, AgentSession>();
 
 /**
+ * @internal test seam: seed/clear the live-session map so the Map-hit resume
+ * path can be exercised without driving a full dispatch through a real graph.
+ */
+export function setDispatchSessionForTests(
+  dispatchId: string,
+  session: AgentSession | null,
+): void {
+  if (session) dispatchedSessions.set(dispatchId, session);
+  else dispatchedSessions.delete(dispatchId);
+}
+
+/**
  * Model/thinking-level override for delegated sessions (v4.2). Mirrors the
  * manual `model.setCurrent` semantics: a switch is safe while a run is in
  * flight — the SDK re-reads the session model at every turn boundary, so the
@@ -421,8 +433,22 @@ function lastAssistantSummary(messages: unknown): string {
 }
 
 /**
- * Watch delegated turns: attribute them by the `<pixie-dispatch>` envelope in
- * the first user message, then settle the record automatically when the turn
+ * 回合归属标记：打开一次委派交互的那条用户消息。
+ *
+ * 除了最初的 `<pixie-dispatch>` 任务信封，引擎续跑时注入的 `<pixie-resume>`
+ * 信封同样属于这次委派——重新挂上的 watcher 从零开始数 envelopeSeen，若只认
+ * dispatch 信封，续跑回合结束时永远落到「不是本委派的回合」分支，记录会一直
+ * 停在 dispatched（委派方忘了 pixie_report 时就没有兜底回调了）。
+ */
+const DISPATCH_ENVELOPE_MARKS = ["<pixie-dispatch", "<pixie-resume"] as const;
+
+function isDispatchEnvelope(text: string): boolean {
+  return DISPATCH_ENVELOPE_MARKS.some((mark) => text.includes(mark));
+}
+
+/**
+ * Watch delegated turns: attribute them by the delegation envelope in the
+ * first user message, then settle the record automatically when the turn
  * ends — done (last assistant message, truncated) unless the agent already
  * reported/asked, error on runtime error or user abort. A paused record
  * (checkpoint wait) keeps the watcher alive across the pause; the record is
@@ -440,10 +466,7 @@ function watchDispatchTurn(
   const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
     if (finished) return;
     if (event.type === "message_end") {
-      if (
-        event.message.role === "user" &&
-        messageTextOf(event.message).includes("<pixie-dispatch")
-      ) {
+      if (event.message.role === "user" && isDispatchEnvelope(messageTextOf(event.message))) {
         envelopeSeen = true;
         return;
       }
@@ -563,6 +586,55 @@ function findSessionByIdInGraph(graph: WorkspaceGraph, sessionId: string): Agent
 }
 
 /**
+ * 按记录里的 sessionId 在图里找回委派会话，并重新登记进 `dispatchedSessions`
+ * （排队转正与 retry resume 共用）。
+ *
+ * 内存 Map 只是「这次委派当前挂在哪个会话对象上」的快表：回合结束（含 abort /
+ * error 这类会话本身还活着的结束）会把它删掉，Host 还会随工作区开关改挂。图才是
+ * 会话存活的事实来源，所以 Map 未命中时必须先回图里找，别急着判死。
+ */
+function adoptDispatchSession(
+  dispatchId: string,
+  graph: WorkspaceGraph | null,
+  sessionId: string | null | undefined,
+): AgentSession | null {
+  const id = sessionId?.trim();
+  if (!id) return null;
+  const session = graph ? findSessionByIdInGraph(graph, id) : null;
+  if (!session) return null;
+  dispatchedSessions.set(dispatchId, session);
+  return session;
+}
+
+/**
+ * 解析委派记录对应的活会话：先查内存 Map（快路径），未命中再按 record.cwd 找
+ * 已绑定图（active → backgroundSessions → idleSessionCache）兜底。真的找不到
+ * （Host 重启 / 工作区已关闭 / 会话段已结束）才返回 null。
+ */
+function resolveDispatchSession(
+  factory: WorkspaceGraphFactory,
+  dispatchId: string,
+  record: PixieDispatchRecord,
+): AgentSession | null {
+  const live = dispatchedSessions.get(dispatchId);
+  if (live) return live;
+  let graph: WorkspaceGraph | null = null;
+  try {
+    graph = factory.findBoundGraph(factory.canonicalizeCwd(record.cwd));
+  } catch {
+    graph = null;
+  }
+  const recovered = adoptDispatchSession(dispatchId, graph, record.sessionId);
+  if (recovered) {
+    logger.info("pixie dispatch session recovered from graph", {
+      dispatchId,
+      sessionId: record.sessionId,
+    });
+  }
+  return recovered;
+}
+
+/**
  * Dequeue the head queued dispatch for a session and inject it (A 到终态后
  * 自动出队)。The queue is engine-held: a queued record never touched the
  * session, so activation re-resolves the session from its graph (rebuilding
@@ -581,8 +653,8 @@ async function activateQueuedDispatch(
     const built = await factory.ensureBackgroundGraph(canonical);
     if (!("error" in built)) graph = built.graph;
   }
-  const session = graph ? findSessionByIdInGraph(graph, record.sessionId ?? "") : null;
-  if (!session || !record.sessionId) {
+  const session = adoptDispatchSession(dispatchId, graph, record.sessionId);
+  if (!session) {
     const settled = failDispatch(
       dispatchId,
       "排队等待期间目标会话已不可达（工作区被关闭或会话已结束）",
@@ -1276,9 +1348,11 @@ async function stopDispatchById(
 
 /**
  * Retry a failed/stopped delegation (标准决策流的执行入口):
- * - resume: the delegated session is still in memory → reactivate the SAME
- *   record (context intact) and followUp a continue envelope;
- * - redispatch: session gone → a fresh record chained via retryOf;
+ * - resume: the delegated session is still reachable — in the live-session map
+ *   OR recoverable from the bound workspace graph by record.sessionId — so
+ *   reactivate the SAME record (context intact) and followUp a continue
+ *   envelope (the turn watcher is re-armed for the continuation turn);
+ * - redispatch: session really gone → a fresh record chained via retryOf;
  * - mode omitted → auto: resume when the session is reachable.
  */
 async function retryDispatchById(
@@ -1291,7 +1365,9 @@ async function retryDispatchById(
   if (record.status !== "failed" && record.status !== "stopped") {
     return { ok: false, error: `该任务当前状态为 ${record.status}，只有失败/被叫停的任务可以重试` };
   }
-  const session = dispatchedSessions.get(args.dispatchId) ?? null;
+  // Map 未命中不等于会话死了（回合 abort/error 会把条目删掉但会话还活着）：
+  // 回绑定的工作区图里按 record.sessionId 兜底找回，找回即视为可 resume。
+  const session = resolveDispatchSession(factory, args.dispatchId, record);
   const mode = args.mode ?? (session ? "resume" : "redispatch");
   if (mode === "resume") {
     if (!session)
