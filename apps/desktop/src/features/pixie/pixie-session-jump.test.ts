@@ -19,6 +19,11 @@ import { jumpToPixieSession, type PixieSessionTarget } from "./pixie-session-jum
 
 vi.mock("../../lib/bridge/session-navigation", () => ({
   openSessionAcrossWorkspaces: vi.fn(async () => ({ status: "opened" }) as const),
+  releaseWorkspaceSwitchSlot: vi.fn((cwd: string) => {
+    if (useAppStore.getState().workspaceSwitchTarget === cwd) {
+      useAppStore.getState().setWorkspaceSwitchTarget(null);
+    }
+  }),
 }));
 
 vi.mock("../../lib/bridge/host-context", () => ({
@@ -68,6 +73,8 @@ beforeEach(() => {
     session: { sessionId: "other-session" } as unknown as SessionSnapshot | null,
     workspace: null,
     notifications: [],
+    workspaceSwitchTarget: null,
+    pixieJumpNavigation: false,
   });
 });
 
@@ -77,10 +84,34 @@ describe("jumpToPixieSession", () => {
       jumpToPixieSession(target({ liveness: "active", sessionPath: SESSION_PATH })),
     ).resolves.toBe(true);
     expect(openSessionAcrossWorkspaces).toHaveBeenCalledWith(
-      { cwd: CWD, sessionId: "s-1", sessionPath: SESSION_PATH, quiet: true },
+      { cwd: CWD, sessionId: "s-1", sessionPath: SESSION_PATH, quiet: true, holdSlot: true },
       expect.objectContaining({ resolveSessionPath: expect.any(Function) }),
     );
     expect(useAppStore.getState().page).toBe("chat");
+    // 成功跳转置一次性锁存，PixiePage 卸载时据此不归还工作区。
+    expect(useAppStore.getState().pixieJumpNavigation).toBe(true);
+  });
+
+  it("跳转期间一直占着切换槽位，结束后释放——中间不能给 workspaceStrayed 防卫开窗", async () => {
+    const slotDuringNavigation: (string | null)[] = [];
+    vi.mocked(openSessionAcrossWorkspaces).mockImplementationOnce(async () => {
+      slotDuringNavigation.push(useAppStore.getState().workspaceSwitchTarget);
+      return { status: "opened" };
+    });
+
+    await expect(jumpToPixieSession(target({ liveness: "active" }))).resolves.toBe(true);
+
+    // 导航进行中槽位被预占（PixiePage 的防卫因此沉默），导航结束才释放。
+    expect(slotDuringNavigation).toEqual([CWD]);
+    expect(useAppStore.getState().workspaceSwitchTarget).toBeNull();
+  });
+
+  it("跳转失败也释放槽位，不残留目标 cwd", async () => {
+    vi.mocked(openSessionAcrossWorkspaces).mockResolvedValueOnce({ status: "failed" });
+
+    await expect(jumpToPixieSession(target({ liveness: "active" }))).resolves.toBe(false);
+
+    expect(useAppStore.getState().workspaceSwitchTarget).toBeNull();
   });
 
   it("会话已删除：就地判掉——不切工作区、不试打开、不跳页、不问 Host", async () => {
@@ -137,13 +168,14 @@ describe("jumpToPixieSession", () => {
     });
   });
 
-  it("目标就是眼前这条会话时不跳页", async () => {
+  it("目标就是眼前这条会话时不跳页、不置锁存", async () => {
     useAppStore.setState({ session: { sessionId: "s-1" } as unknown as SessionSnapshot | null });
     vi.mocked(openSessionAcrossWorkspaces).mockResolvedValueOnce({ status: "already-active" });
 
     await expect(jumpToPixieSession(target({ liveness: "active" }))).resolves.toBe(true);
 
     expect(useAppStore.getState().page).toBe("pixie");
+    expect(useAppStore.getState().pixieJumpNavigation).toBe(false);
   });
 
   it("打开失败（Host 报错 / 忙面）时不切页，并自己补一条失败提示", async () => {

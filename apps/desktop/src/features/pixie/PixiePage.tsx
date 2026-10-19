@@ -185,6 +185,13 @@ export function PixiePage() {
       if (useAppStore.getState().activeSubagentNodeId) {
         useAppStore.getState().setActiveSubagent(null);
       }
+      // 委派面板跳转成功后的换页也算「用户自己导航离开」：跳转的全部意义就是
+      // 把活动工作区留在目标会话上，归还工作区会把跳转成果当场作废（跳过去
+      // 又被拉回 pixie）。锁存是一次性的：这里消费掉，下次进入照常记录 prevCwd。
+      if (useAppStore.getState().pixieJumpNavigation) {
+        useAppStore.getState().setPixieJumpNavigation(false);
+        return;
+      }
       const pixieCwd = usePixieViewStore.getState().current?.cwd;
       const before = prevCwdRef.current;
       if (!before || !pixieCwd) return;

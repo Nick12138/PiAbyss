@@ -218,4 +218,41 @@ describe("PixiePage 锚定获取（acquire）", () => {
 
     expect(activateSpy).toHaveBeenCalledWith(OTHER_CWD, { quiet: true });
   });
+
+  it("委派面板跳转成功后的换页（pixieJumpNavigation）不归还工作区，锁存一次性消费", async () => {
+    // 跳转的全部意义就是把活动工作区留在目标会话上：卸载清理若照旧把工作区
+    // 归还给进入前的 cwd，跳过去又会被拉回 pixie。锁存消费掉之后，下次正常
+    // 进入仍要照常归还（后半段断言）。
+    const { unmount } = render(
+      <StrictMode>
+        <PixiePage />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(openSpy).toHaveBeenCalled());
+
+    useAppStore.getState().setWorkspace(pixieWorkspace);
+    useAppStore.getState().setPixieJumpNavigation(true);
+    unmount();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(activateSpy).not.toHaveBeenCalled();
+    expect(useAppStore.getState().pixieJumpNavigation).toBe(false);
+
+    // 再进一次（新组件实例、无锁存）：归还逻辑恢复。
+    useAppStore.setState({
+      workspace: otherWorkspace,
+      workspaceSwitchTarget: null,
+      pixieJumpNavigation: false,
+    });
+    render(
+      <StrictMode>
+        <PixiePage />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(2));
+    useAppStore.getState().setWorkspace(pixieWorkspace);
+    cleanup();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(activateSpy).toHaveBeenCalledWith(OTHER_CWD, { quiet: true });
+  });
 });

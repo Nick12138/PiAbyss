@@ -26,6 +26,12 @@ export type SessionNavigationTarget = {
    * report the final error themselves.
    */
   quiet?: boolean;
+  /**
+   * Hold the workspaceSwitchTarget slot across the whole navigation and leave
+   * releasing it to the caller (via releaseWorkspaceSwitchSlot). See
+   * activateWorkspaceAcrossWorkspaces' holdSlot.
+   */
+  holdSlot?: boolean;
 };
 
 export type SessionNavigationOptions = {
@@ -113,7 +119,18 @@ export async function requestWorkspaceSwitch(
  */
 export async function activateWorkspaceAcrossWorkspaces(
   cwd: string,
-  options: { optimistic?: boolean; quiet?: boolean } = {},
+  options: {
+    optimistic?: boolean;
+    quiet?: boolean;
+    /**
+     * 整个调用期间（含返回后直到调用方显式释放）占用 workspaceSwitchTarget
+     * 槽位，默认 false（返回前在 finally 里释放）。请求方后续还有第二拍
+     * 动作（如 session.open）时必须传 true：槽位一空，PixiePage 的
+     * workspaceStrayed 防卫就会把工作区抢回 pixie，第二拍对着的已经是被
+     * 换走的图（历史 bug：委派面板跳转切完工作区就被抢回，留在小精灵页）。
+     */
+    holdSlot?: boolean;
+  } = {},
 ): Promise<WorkspaceActivationOutcome> {
   const state = useAppStore.getState();
   const host = state.host;
@@ -155,8 +172,11 @@ export async function activateWorkspaceAcrossWorkspaces(
     switched = attempted;
   } finally {
     // Release the slot only while it is still ours: a newer activation for a
-    // different cwd may have claimed it during the retry window.
-    if (useAppStore.getState().workspaceSwitchTarget === cwd) {
+    // different cwd may have claimed it during the retry window. With
+    // holdSlot the caller owns the release (it still has a second move to
+    // make — e.g. session.open — and an empty slot lets PixiePage's
+    // workspaceStrayed guard yank the workspace back mid-jump).
+    if (!options.holdSlot && useAppStore.getState().workspaceSwitchTarget === cwd) {
       useAppStore.getState().setWorkspaceSwitchTarget(null);
     }
   }
@@ -212,6 +232,17 @@ export async function activateWorkspaceAcrossWorkspaces(
   return { status: "opened" };
 }
 
+/**
+ * Release the workspaceSwitchTarget slot when it still holds `cwd` (a no-op if
+ * a newer activation claimed it). Pair with `holdSlot: true` navigation
+ * targets: acquire before the jump, release in a finally.
+ */
+export function releaseWorkspaceSwitchSlot(cwd: string): void {
+  if (useAppStore.getState().workspaceSwitchTarget === cwd) {
+    useAppStore.getState().setWorkspaceSwitchTarget(null);
+  }
+}
+
 export async function openSessionAcrossWorkspaces(
   target: SessionNavigationTarget,
   options: SessionNavigationOptions = {},
@@ -240,6 +271,10 @@ export async function openSessionAcrossWorkspaces(
   const activation = await activateWorkspaceAcrossWorkspaces(target.cwd, {
     optimistic: false,
     quiet: target.quiet,
+    // Keep PixiePage's workspaceStrayed guard quiet across the whole jump:
+    // the slot must stay held until every step below has settled (the caller
+    // releases it; see releaseWorkspaceSwitchSlot in pixie-session-jump).
+    holdSlot: target.holdSlot,
   });
   if (activation.status === "already-active") {
     // Fall through: the caller may still want session.open below (an active

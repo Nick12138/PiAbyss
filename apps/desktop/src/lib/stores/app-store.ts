@@ -748,6 +748,13 @@ export type AppState = EpochState & {
   /** Requested cwd while a workspace switch is in flight; drives switch feedback UI. */
   workspaceSwitchTarget: string | null;
   setWorkspaceSwitchTarget: (target: string | null) => void;
+  /**
+   * One-shot latch: a pixie panel jump succeeded and is navigating to the chat
+   * page. PixiePage's unmount cleanup consumes it to skip handing the
+   * workspace back — the jump's whole point was to leave that workspace open.
+   */
+  pixieJumpNavigation: boolean;
+  setPixieJumpNavigation: (v: boolean) => void;
   markDesynchronized: (reason: string) => void;
   noteSequence: (sequence: number) => "apply" | "drop" | "gap";
   completeRehydrate: (snap: {
@@ -1844,6 +1851,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setRehydrating: (rehydrating) => set({ rehydrating }),
   workspaceSwitchTarget: null,
   setWorkspaceSwitchTarget: (workspaceSwitchTarget) => set({ workspaceSwitchTarget }),
+  pixieJumpNavigation: false,
+  setPixieJumpNavigation: (pixieJumpNavigation) => set({ pixieJumpNavigation }),
 
   markDesynchronized: (reason) => {
     const next = epochMarkDesync(epochSlice(get()), reason);

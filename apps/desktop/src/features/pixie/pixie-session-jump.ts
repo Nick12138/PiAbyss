@@ -18,7 +18,10 @@
  */
 import { hostClient } from "../../lib/bridge/host-client";
 import { workspaceContext } from "../../lib/bridge/host-context";
-import { openSessionAcrossWorkspaces } from "../../lib/bridge/session-navigation";
+import {
+  openSessionAcrossWorkspaces,
+  releaseWorkspaceSwitchSlot,
+} from "../../lib/bridge/session-navigation";
 import type { PixieSessionLiveness } from "@piabyss/protocol";
 import { tCurrent } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -79,6 +82,17 @@ function reportSessionArchived(): void {
  * 「会话已删除」与「会话已归档」在这里给明确提示（且**发生在任何工作区切换之前**），
  * 其余失败沿用会话导航自己的上报口径，只有查不到（resolver 失败、session.open 报错）
  * 时才补一条通用的失败提示。
+ *
+ * 工作区切换槽位（workspaceSwitchTarget）在进入导航前预占、finally 里释放：
+ * activateWorkspaceAcrossWorkspaces 默认在切换成功后就放槽，而 session.open
+ * 是第二拍——槽一空，PixiePage 的 workspaceStrayed 防卫就会把工作区抢回 pixie
+ * （日志见过的「激活目标工作区 190ms 后又被 pixie 工作区重新锚定」），第二拍
+ * session.open 对着的已经是被换走的图，跳转静默失败、用户留在小精灵页。
+ *
+ * 成功且真的要离开小精灵页时置 pixieJumpNavigation 一次性锁存：PixiePage
+ * 的卸载清理认它，不再把工作区归还给进入前的 cwd（跳转的全部意义就是把
+ * 活动工作区留在目标会话上；pixie 工作区内部跳转时这个锁存同样防止卸载
+ * 逻辑把 pixie 工作区交出去）。
  */
 export async function jumpToPixieSession(target: PixieSessionTarget): Promise<boolean> {
   if (!useAppStore.getState().host) return false;
@@ -96,44 +110,52 @@ export async function jumpToPixieSession(target: PixieSessionTarget): Promise<bo
 
   // ② 有落点路径就直接开（Host 侧会话导航会处理跨工作区的激活）；没有才退回解析。
   //    quiet 是为了不让会话导航再补一条泛泛的「打开会话失败」，文案按下面分清后自己给。
-  let sessionMissing = false;
-  const outcome = await openSessionAcrossWorkspaces(
-    {
-      cwd: target.cwd,
-      sessionId: target.sessionId,
-      ...(target.sessionPath ? { sessionPath: target.sessionPath } : {}),
-      quiet: true,
-    },
-    {
-      resolveSessionPath: async (sessionId) => {
-        const lookup = await lookupSessionInActiveWorkspace(sessionId);
-        if (lookup.status === "missing") {
-          sessionMissing = true;
-          return null;
-        }
-        return lookup.status === "found" ? lookup.session : null;
+  //    holdSlot 让切换槽位从进入导航一直占到下面的 finally，与第一段说明对应。
+  useAppStore.getState().setWorkspaceSwitchTarget(target.cwd);
+  try {
+    let sessionMissing = false;
+    const outcome = await openSessionAcrossWorkspaces(
+      {
+        cwd: target.cwd,
+        sessionId: target.sessionId,
+        ...(target.sessionPath ? { sessionPath: target.sessionPath } : {}),
+        quiet: true,
+        holdSlot: true,
       },
-    },
-  );
-  if (sessionMissing) {
-    reportSessionGone();
-    return false;
-  }
-  if (outcome.status === "archived") {
-    reportSessionArchived();
-    return false;
-  }
-  if (outcome.status !== "opened" && outcome.status !== "already-active") {
-    // 会话导航被 quiet 了，剩下的真失败（Host 报错 / 忙面）在这里补上。
-    if (outcome.status === "failed") {
-      useAppStore.getState().pushNotification(tCurrent("notifOpenSessionFailed"), "error");
+      {
+        resolveSessionPath: async (sessionId) => {
+          const lookup = await lookupSessionInActiveWorkspace(sessionId);
+          if (lookup.status === "missing") {
+            sessionMissing = true;
+            return null;
+          }
+          return lookup.status === "found" ? lookup.session : null;
+        },
+      },
+    );
+    if (sessionMissing) {
+      reportSessionGone();
+      return false;
     }
-    return false;
+    if (outcome.status === "archived") {
+      reportSessionArchived();
+      return false;
+    }
+    if (outcome.status !== "opened" && outcome.status !== "already-active") {
+      // 会话导航被 quiet 了，剩下的真失败（Host 报错 / 忙面）在这里补上。
+      if (outcome.status === "failed") {
+        useAppStore.getState().pushNotification(tCurrent("notifOpenSessionFailed"), "error");
+      }
+      return false;
+    }
+    // 目标就是眼前这条会话时别把用户从当前页赶走（小精灵页里点自己那一段）。
+    const active = useAppStore.getState().session;
+    if (outcome.status !== "already-active" || active?.sessionId !== target.sessionId) {
+      useAppStore.getState().setPixieJumpNavigation(true);
+      useAppStore.getState().setPage("chat");
+    }
+    return true;
+  } finally {
+    releaseWorkspaceSwitchSlot(target.cwd);
   }
-  // 目标就是眼前这条会话时别把用户从当前页赶走（小精灵页里点自己那一段）。
-  const active = useAppStore.getState().session;
-  if (outcome.status !== "already-active" || active?.sessionId !== target.sessionId) {
-    useAppStore.getState().setPage("chat");
-  }
-  return true;
 }
