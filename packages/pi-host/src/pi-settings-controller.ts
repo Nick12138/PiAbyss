@@ -17,6 +17,7 @@ import { createHostError } from "@piabyss/protocol";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import type { MethodHandler } from "./server.js";
 import { logger } from "./logger.js";
+import { getEnabledProviderIds, getProviderModelAllowLists } from "./provider-models-config.js";
 
 function settingsPath(agentDir: string): string {
   return join(agentDir, "settings.json");
@@ -39,8 +40,10 @@ function writeGlobalSettings(agentDir: string, patch: Record<string, unknown>): 
   writeFileSync(path, JSON.stringify(next, null, 2) + "\n", "utf8");
 }
 
-function modelSummaries(runtime: ModelRuntime): ModelSummary[] {
-  return runtime.getAvailableSnapshot().map((model) => ({
+type ModelSummaryInput = ReturnType<ModelRuntime["getAvailableSnapshot"]>[number];
+
+function modelSummaries(runtime: ModelRuntime, models: ModelSummaryInput[]): ModelSummary[] {
+  return models.map((model) => ({
     provider: model.provider,
     providerName: runtime.getProvider(model.provider)?.name,
     modelId: model.id,
@@ -52,7 +55,45 @@ function modelSummaries(runtime: ModelRuntime): ModelSummary[] {
   }));
 }
 
-function snapshot(settingsManager: SettingsManager, runtime: ModelRuntime): PiSettingsSnapshot {
+/**
+ * Apply the same Provider/model policy as `model.list`, so the settings page
+ * (and every other `piSettings.get` consumer) only offers activated models:
+ * the Provider has to be enabled in models.json and the model has to be
+ * checked in its Provider's allow-list. The configured default model stays in
+ * the list even when it is unchecked, mirroring how `model.list` keeps the
+ * session's current model visible.
+ */
+async function activeModelSummaries(
+  runtime: ModelRuntime,
+  agentDir: string,
+  defaultRef: { provider?: string; modelId?: string },
+): Promise<ModelSummary[]> {
+  const all = runtime.getAvailableSnapshot();
+  const [enabledProviderIds, allowLists] = await Promise.all([
+    getEnabledProviderIds(
+      agentDir,
+      defaultRef.provider,
+      runtime.getProviders().map((provider) => provider.id),
+    ),
+    getProviderModelAllowLists(agentDir),
+  ]);
+  const enabledProviders = enabledProviderIds ? new Set(enabledProviderIds) : undefined;
+  const isDefault = (model: ModelSummaryInput) =>
+    model.provider === defaultRef.provider && model.id === defaultRef.modelId;
+  const active = all.filter((model) => {
+    if (enabledProviders && !enabledProviders.has(model.provider)) return false;
+    if (isDefault(model)) return true;
+    const allow = allowLists?.[model.provider];
+    return !allow || allow.includes(model.id);
+  });
+  return modelSummaries(runtime, active);
+}
+
+async function snapshot(
+  settingsManager: SettingsManager,
+  runtime: ModelRuntime,
+  agentDir: string,
+): Promise<PiSettingsSnapshot> {
   const settings = settingsManager.getGlobalSettings();
   return {
     ...(settings.defaultProvider ? { defaultProvider: settings.defaultProvider } : {}),
@@ -64,7 +105,10 @@ function snapshot(settingsManager: SettingsManager, runtime: ModelRuntime): PiSe
     followUpMode: settingsManager.getFollowUpMode(),
     ...(settings.defaultTools ? { defaultTools: [...settings.defaultTools] } : {}),
     ...(settings.httpProxy ? { httpProxy: settings.httpProxy } : {}),
-    models: modelSummaries(runtime),
+    models: await activeModelSummaries(runtime, agentDir, {
+      provider: settings.defaultProvider,
+      modelId: settings.defaultModel,
+    }),
   };
 }
 
@@ -112,7 +156,7 @@ export function createPiSettingsHandlers(
       if (!settingsManager) {
         return { error: createHostError("HOST_NOT_READY", "Settings manager is not ready") };
       }
-      return { result: snapshot(settingsManager, getRuntime()) };
+      return { result: await snapshot(settingsManager, getRuntime(), factory.deps.agentDir) };
     },
     "piSettings.patch": async (ctx) => {
       const settingsManager = getSettingsManager();
@@ -189,7 +233,7 @@ export function createPiSettingsHandlers(
         }
         await graphSettings?.reload();
         applyCurrentSessionSettings(factory.getGraph()?.agentSession ?? null, patch);
-        return { result: snapshot(settingsManager, getRuntime()) };
+        return { result: await snapshot(settingsManager, getRuntime(), factory.deps.agentDir) };
       } catch (error) {
         logger.warn("Failed to patch Pi settings", {
           error: error instanceof Error ? error.message : String(error),

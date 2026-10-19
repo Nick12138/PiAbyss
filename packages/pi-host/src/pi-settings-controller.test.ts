@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -7,7 +7,7 @@ import type { PiSettingsSnapshot } from "@piabyss/protocol";
 import { createPiSettingsHandlers } from "./pi-settings-controller.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 
-/** Minimal ModelRuntime stand-in: modelSummaries only touches these two. */
+/** Minimal ModelRuntime stand-in: modelSummaries only touches these three. */
 function fakeRuntime(
   models: Array<{ provider: string; id: string; name?: string; input?: string[] }>,
   providers: Record<string, string> = {},
@@ -16,6 +16,7 @@ function fakeRuntime(
     getAvailableSnapshot: () => models,
     getProvider: (id: string) =>
       providers[id] !== undefined ? { name: providers[id] } : undefined,
+    getProviders: () => Object.keys(providers).map((id) => ({ id, name: providers[id] })),
   } as unknown as ModelRuntime;
 }
 
@@ -83,6 +84,75 @@ describe("piSettings.get model summaries", () => {
   it("falls back to an empty input array for models without modality metadata", async () => {
     const snapshot = await getSettings(fakeRuntime([{ provider: "x", id: "legacy" }]));
     expect(snapshot.models[0]).toMatchObject({ modelId: "legacy", input: [] });
+  });
+
+  it("lists only models of enabled Providers and their activated allow-list", async () => {
+    agentDir = mkdtempSync(join(tmpdir(), "piabyss-pi-settings-active-"));
+    writeFileSync(
+      join(agentDir, "models.json"),
+      JSON.stringify({
+        providers: { custom: { models: [{ id: "custom-a" }] } },
+        piabyssEnabledProviders: ["openai", "custom"],
+        piabyssProviderModels: { openai: ["checked"], custom: [] },
+      }),
+      "utf8",
+    );
+    const handlers = createPiSettingsHandlers(
+      fakeFactory(
+        fakeRuntime(
+          [
+            { provider: "openai", id: "checked" },
+            { provider: "openai", id: "unchecked" },
+            { provider: "disabled", id: "hidden" },
+            { provider: "custom", id: "custom-a" },
+          ],
+          { openai: "OpenAI", custom: "Custom", disabled: "Disabled" },
+        ),
+        agentDir,
+      ),
+      agentDir,
+    );
+    const response = (await handlers["piSettings.get"]!({} as never)) as {
+      result?: PiSettingsSnapshot;
+    };
+    expect(response.result?.models.map((model) => `${model.provider}/${model.modelId}`)).toEqual([
+      "openai/checked",
+    ]);
+  });
+
+  it("keeps the configured default model listed even when it is unchecked", async () => {
+    agentDir = mkdtempSync(join(tmpdir(), "piabyss-pi-settings-default-"));
+    writeFileSync(
+      join(agentDir, "models.json"),
+      JSON.stringify({
+        providers: { openai: { models: [] } },
+        piabyssEnabledProviders: ["openai"],
+        piabyssProviderModels: { openai: [] },
+      }),
+      "utf8",
+    );
+    writeFileSync(
+      join(agentDir, "settings.json"),
+      JSON.stringify({ defaultProvider: "openai", defaultModel: "unchecked" }),
+      "utf8",
+    );
+    const handlers = createPiSettingsHandlers(
+      fakeFactory(
+        fakeRuntime(
+          [
+            { provider: "openai", id: "unchecked" },
+            { provider: "openai", id: "other" },
+          ],
+          { openai: "OpenAI" },
+        ),
+        agentDir,
+      ),
+      agentDir,
+    );
+    const response = (await handlers["piSettings.get"]!({} as never)) as {
+      result?: PiSettingsSnapshot;
+    };
+    expect(response.result?.models.map((model) => model.modelId)).toEqual(["unchecked"]);
   });
 });
 
@@ -218,4 +288,3 @@ describe("piSettings httpProxy", () => {
     expect("httpProxy" in written).toBe(false);
   });
 });
-

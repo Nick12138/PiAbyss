@@ -334,9 +334,10 @@ export function AutomationJobDialog({
   );
 
   // Model list — same source as the settings page's default-model picker:
-  // piSettings.get is host-scoped (no active session required) and returns the
-  // full ModelRuntime snapshot. The chat model picker's session-scoped
-  // model.list needs a live session, which the automation page can't guarantee.
+  // piSettings.get is host-scoped (no active session required) and already
+  // narrowed to the activated Providers/models (the same policy model.list
+  // applies). The chat model picker's session-scoped model.list needs a live
+  // session, which the automation page can't guarantee.
   useEffect(() => {
     if (!host) return;
     let cancelled = false;
@@ -472,10 +473,30 @@ export function AutomationJobDialog({
   );
   const cwdValue = cwdPresets.includes(form.cwd) ? form.cwd : CWD_OPEN_VALUE;
 
+  const pinnedModel = form.model;
+  // The picker offers activated models only. A job still pinned to a model
+  // that has since been deactivated keeps that single row, so editing never
+  // shows a blank trigger (mirrors how model.list keeps the session's current
+  // model visible).
+  const pickerModels: ModelSummary[] = pinnedModel
+    ? models.some(
+        (model) => model.provider === pinnedModel.provider && model.modelId === pinnedModel.id,
+      )
+      ? models
+      : [
+          ...models,
+          {
+            provider: pinnedModel.provider,
+            modelId: pinnedModel.id,
+            name: `${pinnedModel.provider}/${pinnedModel.id}`,
+          },
+        ]
+    : models;
+
   const defaultModelLabel = hostDefaultModel
     ? t("automationModelDefault", {
         name:
-          models.find(
+          pickerModels.find(
             (model) =>
               model.provider === hostDefaultModel.provider && model.modelId === hostDefaultModel.id,
           )?.name ?? `${hostDefaultModel.provider}/${hostDefaultModel.id}`,
@@ -965,11 +986,11 @@ export function AutomationJobDialog({
                     />
 
                     {form.kind === "prompt" ? (
-                      models.length > 0 ? (
+                      pickerModels.length > 0 ? (
                         <ModelSelectWithThinking
                           value={form.model}
                           onChange={(model) => patch({ model })}
-                          models={models}
+                          models={pickerModels}
                           hostDefault={hostDefaultModel}
                           defaultLabel={defaultModelLabel}
                           label={t("automationFormModel")}

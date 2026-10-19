@@ -26,10 +26,11 @@ import {
 const inputClass =
   "box-border interface-density-control h-8 min-w-0 rounded-md border border-border bg-surface px-2 text-xs text-foreground placeholder:text-muted focus:border-focus";
 
-/** Hook fetching the runtime's available models for dynamic select config
- *  items (`optionsSource: "pi:vision-models" | "pi:models"`). Returns the
- *  full list; the caller filters by `modelOptionsKind` when it needs the
- *  vision-only subset. */
+/** Hook fetching the Host's activated models for dynamic select config
+ *  items (`optionsSource: "pi:vision-models" | "pi:models"`). `piSettings.get`
+ *  already narrows the catalog to the Providers/models enabled in Provider
+ *  settings, so disabled models never show up here. The caller filters by
+ *  `modelOptionsKind` when it needs the vision-only subset. */
 function useRuntimeModels(enabled: boolean): readonly ModelSummary[] | null {
   const host = useAppStore((s) => s.host);
   const hostId = host?.hostInstanceId;
