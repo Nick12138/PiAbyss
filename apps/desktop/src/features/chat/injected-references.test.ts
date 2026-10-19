@@ -130,6 +130,31 @@ describe("parseInjectedReferences", () => {
     expect(stripInjectedReferences("[pixie|tg]\n看看这个")).toBe("看看这个");
   });
 
+  it("folds delegation envelopes into callback references instead of user text", () => {
+    const errorEnvelope = [
+      '<pixie-error dispatchId="pix_1">',
+      "委派任务执行失败（目标 cwd：/w，第 2 次失败）：",
+      "原始错误：Request was aborted",
+      "</pixie-error>",
+    ].join("\n");
+    const parsed = parseInjectedReferences(`[pixie|system]\n${errorEnvelope}`);
+    expect(parsed.text).toBe("");
+    expect(parsed.references).toHaveLength(1);
+    expect(parsed.references[0]).toMatchObject({
+      kind: "pixie-callback",
+      variant: "error",
+      title: "pix_1",
+    });
+    expect(parsed.references[0]?.body).toContain("Request was aborted");
+    expect(parsed.references[0]?.raw).toBe(errorEnvelope);
+  });
+
+  it("keeps unknown pixie tags out of the callback fold", () => {
+    const parsed = parseInjectedReferences("<pixie-note>hi</pixie-note>\nhello");
+    expect(parsed.references).toHaveLength(0);
+    expect(parsed.text).toBe("<pixie-note>hi</pixie-note>\nhello");
+  });
+
   it("keeps the folded preamble re-sendable so a retry does not lose it", () => {
     const parsed = parseInjectedReferences(`${pixiePreamble}\n晚上好`);
     expect(

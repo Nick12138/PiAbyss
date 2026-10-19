@@ -59,6 +59,25 @@ function useNowTicker(active: boolean): number {
   return now;
 }
 
+/**
+ * Circular job-count badge: 1–2 digits stay a true circle, 3+ grows into a pill
+ * (`min-w` + `px-1`) instead of clipping. The panel heading used to write the
+ * count as「后台任务（4）」— full-width parentheses at title size read as part
+ * of the name rather than a number, so the count is a badge everywhere now.
+ */
+function JobCountBadge({ count, active = false }: { count: number; active?: boolean }) {
+  return (
+    <span
+      className={`inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-medium leading-none tabular-nums ${
+        active ? "bg-accent/15 text-accent" : "bg-surface-overlay text-muted"
+      }`}
+      data-testid="shell-jobs-count"
+    >
+      {count}
+    </span>
+  );
+}
+
 function statusLabel(t: ReturnType<typeof useT>, status: ShellJobStatus): string {
   switch (status) {
     case "running":
@@ -195,7 +214,9 @@ function JobRow({
           onClick={() => onOpenSession(job)}
         >
           <span className="min-w-0 flex-1 truncate">{label}</span>
-          {duration && <span className="shrink-0 tabular-nums text-muted">{duration}</span>}
+          {duration && (
+            <span className="shrink-0 text-[11px] tabular-nums text-muted">{duration}</span>
+          )}
         </button>
         <button
           type="button"
@@ -212,7 +233,7 @@ function JobRow({
         {running && (
           <button
             type="button"
-            className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-muted hover:bg-surface-overlay hover:text-danger disabled:opacity-40"
+            className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted hover:bg-surface-overlay hover:text-danger disabled:opacity-40"
             disabled={stopping}
             onClick={() => (confirmStop ? onConfirmStop(job) : onRequestStop(job))}
           >
@@ -405,9 +426,11 @@ export function ShellJobsBar() {
     setOutputJobId((current) => (current === job.id ? null : job.id));
   };
 
-  const failedCount = finished.filter((job) => job.status === "failed").length;
-  const first = running[0] ?? finished[0];
-  const headline = first?.title ?? first?.command;
+  // 收起态只两种面貌：有活在跑 → 报“在跑哪个”；都跑完了 → 图标 + 数量。
+  // 失败不另占文字，红点（图标变色）就够了；也不报总状态——一成一败时
+  // “总状态”本来就不成立，每行的点才是权威。
+  const runningHeadline = running[0]?.title ?? running[0]?.command;
+  const hasFailure = finished.some((job) => job.status === "failed");
   // Resident: the pill counts every job this session owns, not only running ones.
   const title = t("shellJobsTitle", { count: visible.length });
 
@@ -436,20 +459,10 @@ export function ShellJobsBar() {
       data-testid="shell-jobs-panel"
     >
       <div className="flex min-h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-        {running.length > 0 ? (
-          <Loader2 size={15} className="shrink-0 animate-spin text-accent" aria-hidden="true" />
-        ) : (
-          <span
-            className={`size-2 shrink-0 rounded-full ${STATUS_CLASS[first?.status ?? "unknown"]}`}
-            title={statusLabel(t, first?.status ?? "unknown")}
-          />
-        )}
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{title}</span>
-        {failedCount > 0 && (
-          <span className="shrink-0 text-danger">
-            {t("shellJobsFailedSuffix", { count: failedCount })}
-          </span>
-        )}
+        <span className="shrink-0 text-xs font-medium text-foreground">
+          {t("shellJobsHeading")}
+        </span>
+        <JobCountBadge count={visible.length} active={running.length > 0} />
       </div>
       <div className="scrollbar-subtle min-h-0 overflow-y-auto p-1.5">{jobRows}</div>
     </section>
@@ -473,23 +486,25 @@ export function ShellJobsBar() {
         data-testid="shell-jobs-toggle"
       >
         {running.length > 0 ? (
-          <Loader2 size={12} className="shrink-0 animate-spin text-accent" />
+          <>
+            <Loader2 size={12} className="shrink-0 animate-spin text-accent" aria-hidden="true" />
+            {runningHeadline && (
+              <span className="min-w-0 max-w-56 truncate text-foreground">{runningHeadline}</span>
+            )}
+            {running.length > 1 && (
+              <span className="shrink-0 text-[11px] text-muted">+{running.length - 1}</span>
+            )}
+          </>
         ) : (
-          <span
-            className={`size-2 shrink-0 rounded-full ${STATUS_CLASS[first?.status ?? "unknown"]}`}
-            title={statusLabel(t, first?.status ?? "unknown")}
-          />
+          <>
+            <Terminal
+              size={12}
+              className={`shrink-0 ${hasFailure ? "text-danger" : "text-muted"}`}
+              aria-hidden="true"
+            />
+            <JobCountBadge count={visible.length} />
+          </>
         )}
-        <span className="shrink-0 rounded-full bg-accent/15 px-1.5 font-medium text-accent">
-          {visible.length}
-        </span>
-        {failedCount > 0 && (
-          <span className="shrink-0 text-danger">
-            {t("shellJobsFailedSuffix", { count: failedCount })}
-          </span>
-        )}
-        {headline && <span className="min-w-0 max-w-56 truncate">{headline}</span>}
-        {running.length > 1 && <span className="shrink-0 text-muted">+{running.length - 1}</span>}
         <ChevronDown
           size={12}
           className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}

@@ -17,7 +17,8 @@ export type InjectedReferenceKind =
   | "automation-preamble"
   | "automation-job"
   | "relay-mapping"
-  | "pixie-context";
+  | "pixie-context"
+  | "pixie-callback";
 
 export type InjectedReference = {
   kind: InjectedReferenceKind;
@@ -27,6 +28,8 @@ export type InjectedReference = {
   body: string;
   /** Full block including its tags, re-sent verbatim on retry. */
   raw: string;
+  /** `pixie-callback` only: envelope kind (error / stopped / report / …). */
+  variant?: string;
 };
 
 export type ParsedInjectedText = {
@@ -58,6 +61,18 @@ const AUTOMATION_JOB_PATTERN = /<automation-job\s+([^>]*)>\s*([\s\S]*?)\s*<\/aut
  */
 const PIXIE_CONTEXT_PATTERN = /<pixie-context>\s*([\s\S]*?)\s*<\/pixie-context>/gu;
 /**
+ * 委派信封：Host 把派单（`<pixie-dispatch>` / `<pixie-resume>`）、回执
+ * （`<pixie-report>` / `<pixie-error>` / `<pixie-progress>` / `<pixie-stopped>` /
+ * `<pixie-ask>`）和用户答复（`<pixie-reply>` / `<pixie-interject>`）当作一条用户
+ * 消息投给会话。正文必须原样送给模型，但里面全是写给模型看的指令——显示在用户
+ * 气泡里既长又莫名其妙，一律折成工具式的回执卡。
+ *
+ * `<pixie-context>` / `<pixie-segments>` 各有自己的解析，不进这张白名单。
+ */
+const PIXIE_CALLBACK_PATTERN =
+  /<pixie-(ask|error|stopped|progress|report|reply|interject|dispatch|resume)\b([^>]*)>\s*([\s\S]*?)\s*<\/pixie-\1>/gu;
+const DISPATCH_ID_ATTRIBUTE = /\bdispatchId="([^"]*)"/u;
+/**
  * 通道标记行：`[pixie|ui]` / `[pixie|tg]` / `[pixie|system]`，Host 用来标注这条
  * 用户消息来自哪个入口，单独占一行。它是投递元数据，不该出现在气泡里。
  */
@@ -70,6 +85,7 @@ const REFERENCE_KINDS: readonly InjectedReferenceKind[] = [
   "automation-job",
   "relay-mapping",
   "pixie-context",
+  "pixie-callback",
 ];
 
 function isReferenceKind(value: string): value is InjectedReferenceKind {
@@ -143,6 +159,19 @@ export function parseInjectedReferences(raw: string): ParsedInjectedText {
     references.push({ kind: "pixie-context", title: "", body, raw: match });
     return "";
   });
+  text = text.replace(
+    PIXIE_CALLBACK_PATTERN,
+    (match, variant: string, attributes: string, body: string) => {
+      references.push({
+        kind: "pixie-callback",
+        title: DISPATCH_ID_ATTRIBUTE.exec(attributes)?.[1] ?? "",
+        body,
+        raw: match,
+        variant,
+      });
+      return "";
+    },
+  );
   // 标记行最后剥：它可能紧贴在块前面，块先被摘掉才好按整行匹配。
   text = text.replace(PIXIE_MARKER_LINE, "");
   return { text: text.replace(/^[ \t]*\n+/, "").trimEnd(), references };

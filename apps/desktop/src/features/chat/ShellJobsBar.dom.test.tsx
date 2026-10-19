@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -167,6 +167,47 @@ describe("ShellJobsBar", () => {
     useAppStore.getState().setShellJobs([]);
     const { container } = render(<ShellJobsBar />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders the job count as a round badge instead of a parenthesized heading", async () => {
+    const user = userEvent.setup();
+    mockShellJobRequests([STALE_JOB]);
+    useAppStore.getState().setShellJobs([STALE_JOB] as never);
+    render(<ShellJobsBar />);
+
+    // 没有活在跑：图标 + 圆形数量徽标，不写任务名、不写失败数。
+    const pill = screen.getByTestId("shell-jobs-toggle");
+    const pillBadge = within(pill).getByTestId("shell-jobs-count");
+    expect(pillBadge).toHaveTextContent("1");
+    expect(pillBadge).toHaveClass("rounded-full", "h-4", "tabular-nums");
+    expect(pill).not.toHaveTextContent(/failed/i);
+
+    await expand(user);
+    const panel = screen.getByTestId("shell-jobs-panel");
+    expect(within(panel).getByText("Background jobs")).toBeInTheDocument();
+    expect(within(panel).getByTestId("shell-jobs-count")).toHaveTextContent("1");
+    expect(within(panel).queryByText(/Background jobs \(/)).not.toBeInTheDocument();
+  });
+
+  it("shows the running job's title instead of the count while one is live", () => {
+    mockShellJobRequests([RUNNING_JOB, FINISHED_JOB]);
+    useAppStore.getState().setShellJobs([RUNNING_JOB, FINISHED_JOB] as never);
+    render(<ShellJobsBar />);
+
+    const pill = screen.getByTestId("shell-jobs-toggle");
+    expect(pill).toHaveTextContent("npm run dev");
+    expect(within(pill).queryByTestId("shell-jobs-count")).not.toBeInTheDocument();
+    expect(pill).not.toHaveTextContent(/failed/i);
+  });
+
+  it("marks failures with the icon colour only, without a failure count", () => {
+    mockShellJobRequests([STALE_JOB, FAILED_JOB]);
+    useAppStore.getState().setShellJobs([STALE_JOB, FAILED_JOB] as never);
+    render(<ShellJobsBar />);
+
+    const pill = screen.getByTestId("shell-jobs-toggle");
+    expect(pill).not.toHaveTextContent(/failed/i);
+    expect(pill.querySelector("svg.text-danger")).not.toBeNull();
   });
 
   it("keeps finished jobs resident instead of expiring them", async () => {

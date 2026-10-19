@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { useT } from "../../lib/i18n/use-t";
+import { parseUserAttachments } from "./transcript-model";
 
 /** One jump target on the rail: a user message turn in conversation order. */
 export type TurnRailStop = {
@@ -338,24 +339,52 @@ export function TurnJumpRail({
   );
 }
 
-/** Extract rail stops (user message turns) from transcript rows, in order. */
+/** One transcript row as far as the rail cares — structural, so tests can fake it. */
+export type TurnRailRow = {
+  role: string;
+  key: string;
+  sourceId?: string;
+  copyText: string;
+  status?: string;
+  blocks?: readonly { kind: string }[];
+};
+
+function firstLine(text: string): string {
+  return (
+    text
+      .split("\n")
+      .find((candidate) => candidate.trim().length > 0)
+      ?.trim() ?? ""
+  );
+}
+
+/**
+ * Extract rail stops (user message turns) from transcript rows, in order.
+ *
+ * 摘要一律取「用户自己说的话」：`[pixie|ui]` 标记行、`<pixie-context>` 前导、
+ * 委派回执信封都先剥掉（否则小精灵的第一条消息在轨道上显示成 `[pixie|ui]`）。
+ * 只有委派回执、没有用户可见内容的消息不占跳转位——轨道是「跳到我说过的话」，
+ * 不是系统事件列表。
+ */
 export function turnRailStops(
-  rows: readonly {
-    role: string;
-    key: string;
-    sourceId?: string;
-    copyText: string;
-    status?: string;
-  }[],
+  rows: readonly TurnRailRow[],
+  options?: { attachmentLabel?: string },
 ): TurnRailStop[] {
   const stops: TurnRailStop[] = [];
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]!;
     if (row.role !== "user" || !row.sourceId) continue;
 
-    // Extract user message excerpt
+    // 先剥注入块再取第一行；纯回执行（callbacks）不当跳转目标。
+    const parsed = parseUserAttachments(row.copyText);
+    const references = parsed.references.filter((reference) => reference.kind !== "pixie-callback");
     const userLine =
-      row.copyText.split("\n").find((candidate) => candidate.trim().length > 0) ?? "";
+      firstLine(parsed.text) ||
+      parsed.files[0]?.name ||
+      parsed.documents[0]?.name ||
+      references[0]?.title ||
+      (row.blocks?.some((block) => block.kind === "image") ? (options?.attachmentLabel ?? "") : "");
+    if (!userLine) continue;
 
     // Find the next assistant message(s) to extract agent response
     let agentExcerpt = "";
@@ -383,7 +412,7 @@ export function turnRailStops(
     stops.push({
       sourceId: row.sourceId,
       rowKey: row.key,
-      excerpt: userLine.trim(),
+      excerpt: userLine,
       agentExcerpt: agentExcerpt || undefined,
       agentPending,
     });

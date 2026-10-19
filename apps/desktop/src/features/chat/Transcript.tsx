@@ -69,6 +69,9 @@ import {
 } from "./transcript-model";
 import { stripAttachmentReferenceBlocks } from "@piabyss/protocol";
 import { InjectedReferenceChip } from "./InjectedReferenceChip";
+import { PixieCallbackCard } from "./PixieCallbackCard";
+import { TranscriptPreamble } from "./TranscriptPreamble";
+import { buildTranscriptPreamble } from "./transcript-preamble";
 import { ResultFilesRow } from "./ResultFilesRow";
 import { declaredResultFiles, filterRenderableBlocks } from "./result-files";
 import { BranchNavigator } from "../tree/BranchNavigator";
@@ -269,7 +272,10 @@ export function Transcript() {
 
   // Turn jump rail: user message turns for the right-edge quick jump strip —
   // the fast "back to the first / the Nth message" path for long chats.
-  const railStops = useMemo(() => turnRailStops(shownRows), [shownRows]);
+  const railStops = useMemo(
+    () => turnRailStops(shownRows, { attachmentLabel: t("transcriptAttachmentAlt") }),
+    [shownRows, t],
+  );
   const railVisible = railStops.length >= 2;
   const onRailJump = useCallback((sourceId: string) => {
     requestTranscriptScroll({ sourceId });
@@ -381,6 +387,17 @@ export function Transcript() {
     Math.max(0, shownRows.length - 1),
   );
   const visibleRows = hidden > 0 ? shownRows.slice(hidden) : shownRows;
+  // 开场物料（系统提示词 / `<pixie-context>` 运行规则 / 上一段回顾）从消息流里
+  // 摘出来折成一张卡：它们是会话级元数据，不该在首条消息前后各占一行。向上翻
+  // 更早消息时（hidden > 0）不画卡——那会儿用户看的是历史，「展开更早」本身
+  // 就在最顶上，卡片插进去反而是错的。
+  const preamble = useMemo(() => buildTranscriptPreamble(rows), [rows]);
+  const consumedKeys = preamble?.consumedKeys;
+  const displayRows =
+    consumedKeys && consumedKeys.size > 0
+      ? visibleRows.filter((row) => !consumedKeys.has(row.key))
+      : visibleRows;
+  const visiblePreamble = preamble && hidden === 0 ? preamble : null;
   const expandAnchorRef = useRef<{ prevHeight: number; prevTop: number } | null>(null);
   const hiddenRef = useRef(hidden);
   hiddenRef.current = hidden;
@@ -699,6 +716,7 @@ export function Transcript() {
           data-transcript-content
           className="conversation-content-width mx-auto flex flex-col gap-5 sm:gap-6"
         >
+          {visiblePreamble && <TranscriptPreamble model={visiblePreamble.model} />}
           {hidden > 0 && (
             <button
               type="button"
@@ -708,7 +726,7 @@ export function Transcript() {
               {t("transcriptShowEarlier", { count: hidden })}
             </button>
           )}
-          {visibleRows.map((row) => {
+          {displayRows.map((row) => {
             const streaming = row.key === streamingAssistantKey;
             const retryableTurn = retryableTurns.get(row.key);
             const retryVisible = Boolean(
@@ -803,6 +821,7 @@ export function Transcript() {
               >
                 <TranscriptRowView
                   row={row}
+                  suppressPixieContext={row.key === visiblePreamble?.contextRowKey}
                   mode={streaming ? "streaming" : "static"}
                   showCaret={Boolean(streaming)}
                   working={row.key === workingHeaderKey}
@@ -1008,6 +1027,7 @@ export const TranscriptRowView = memo(function TranscriptRowView({
   resultExpanded = false,
   onToggleResult,
   turnFold = true,
+  suppressPixieContext = false,
 }: {
   row: TranscriptRow;
   mode: "streaming" | "static";
@@ -1035,6 +1055,11 @@ export const TranscriptRowView = memo(function TranscriptRowView({
    * process is not folded twice.
    */
   turnFold?: boolean;
+  /**
+   * 首条用户消息的 `@小精灵上下文` chip 已经被「本段开场」卡接管时置 true：
+   * chip 从气泡上方消失，正文（和展开）都在开场卡里，不再重复一遍。
+   */
+  suppressPixieContext?: boolean;
 }) {
   const t = useT();
   if (row.role === "user") {
@@ -1042,6 +1067,29 @@ export const TranscriptRowView = memo(function TranscriptRowView({
       (block): block is Extract<TranscriptBlock, { kind: "image" }> => block.kind === "image",
     );
     const parsed = parseUserAttachments(row.copyText);
+    // 开场卡接管时卡片里已经有一份，气泡上方不再挂重复的 chip。
+    const references = suppressPixieContext
+      ? parsed.references.filter((reference) => reference.kind !== "pixie-context")
+      : parsed.references;
+    // 委派回执（`<pixie-error>` / `<pixie-stopped>` / `<pixie-report>` …）是 Host
+    // 当用户消息投回来的系统信封，不是用户说的话。消息里只有信封时折成工具式
+    // 回执卡——否则整段写给模型的指令会以一个巨大的"用户气泡"出现。
+    const callbacks = references.filter((reference) => reference.kind === "pixie-callback");
+    const hasOwnBody =
+      Boolean(parsed.text) ||
+      images.length > 0 ||
+      parsed.files.length > 0 ||
+      parsed.documents.length > 0 ||
+      references.length > callbacks.length;
+    if (callbacks.length > 0 && !hasOwnBody) {
+      return (
+        <div className="min-w-0 space-y-1.5">
+          {callbacks.map((reference, index) => (
+            <PixieCallbackCard key={`callback:${index}`} reference={reference} />
+          ))}
+        </div>
+      );
+    }
     const collapsed = userCollapsible && !userExpanded;
     if (collapsed) {
       const summary = (parsed.text || row.copyText || "").trim().split(/\r?\n/, 1)[0] ?? "";
@@ -1080,9 +1128,9 @@ export const TranscriptRowView = memo(function TranscriptRowView({
             ))}
           </div>
         )}
-        {parsed.references.length > 0 && (
+        {references.length > 0 && (
           <div className="mb-1 flex w-full flex-col items-end gap-1.5">
-            {parsed.references.map((reference, index) => (
+            {references.map((reference, index) => (
               <InjectedReferenceChip key={`ref:${index}`} reference={reference} align="end" />
             ))}
           </div>

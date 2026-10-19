@@ -175,4 +175,63 @@ describe("TurnJumpRail", () => {
       },
     ]);
   });
+
+  it("uses the user's own words, not the pixie channel marker or preamble", () => {
+    const firstPixieMessage = [
+      "[pixie|ui]",
+      "<pixie-context>",
+      "本段开始时间：2026-10-19 22:09",
+      "</pixie-context>",
+      "嗨",
+    ].join("\n");
+    const rows = [
+      { role: "user", key: "k1", sourceId: "u1", copyText: firstPixieMessage },
+      { role: "assistant", key: "k2", sourceId: "a1", copyText: "晚上好" },
+    ];
+    expect(turnRailStops(rows)[0]?.excerpt).toBe("嗨");
+  });
+
+  it("leaves delegation callbacks out of the jump targets", () => {
+    const callback = [
+      "[pixie|system]",
+      '<pixie-stopped dispatchId="pix_1">',
+      "委派任务（目标 cwd：/w）已被用户叫停：跑太慢",
+      "</pixie-stopped>",
+    ].join("\n");
+    const rows = [
+      { role: "user", key: "k1", sourceId: "u1", copyText: "发个任务" },
+      { role: "assistant", key: "k2", sourceId: "a1", copyText: "好" },
+      { role: "user", key: "k3", sourceId: "u3", copyText: callback },
+      { role: "assistant", key: "k4", sourceId: "a4", copyText: "已停止" },
+    ];
+    expect(turnRailStops(rows).map((stop) => stop.sourceId)).toEqual(["u1"]);
+  });
+
+  it("falls back to attachment names (and the image label) for attachment-only rows", () => {
+    const rows = [
+      {
+        role: "user",
+        key: "k1",
+        sourceId: "u1",
+        copyText: '<attached-path name="report.pdf" path="/w/report.pdf"/>',
+      },
+      { role: "user", key: "k2", sourceId: "u2", copyText: "", blocks: [{ kind: "image" }] },
+    ];
+    expect(turnRailStops(rows, { attachmentLabel: "Attachment" })).toEqual([
+      {
+        sourceId: "u1",
+        rowKey: "k1",
+        excerpt: "report.pdf",
+        agentExcerpt: undefined,
+        agentPending: false,
+      },
+      {
+        sourceId: "u2",
+        rowKey: "k2",
+        excerpt: "Attachment",
+        agentExcerpt: undefined,
+        agentPending: false,
+      },
+    ]);
+  });
 });

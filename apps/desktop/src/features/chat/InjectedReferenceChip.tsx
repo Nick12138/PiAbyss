@@ -15,12 +15,14 @@ import {
 } from "lucide-react";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 import type { InjectedReference, InjectedReferenceKind } from "./injected-references";
+import { pixieCallbackLabel } from "./pixie-callbacks";
 
 function referenceIcon(kind: InjectedReferenceKind) {
   if (kind === "memo") return ListTodo;
   if (kind === "memo-result") return NotebookPen;
   if (kind === "relay-mapping") return Bot;
   if (kind === "pixie-context") return Sparkles;
+  if (kind === "pixie-callback") return Bot;
   return CalendarClock;
 }
 
@@ -38,15 +40,21 @@ function referenceLabel(kind: InjectedReferenceKind, t: Translate): string {
       return t("injectedRefRelayMapping");
     case "pixie-context":
       return t("injectedRefPixieContext");
+    case "pixie-callback":
+      return t("pixieCallback");
   }
 }
 
 /** Chip caption, e.g. `@备忘录 · 修复登录按钮`. */
 function injectedReferenceCaption(
-  reference: Pick<InjectedReference, "kind" | "title">,
+  reference: Pick<InjectedReference, "kind" | "title" | "variant">,
   t: Translate,
 ): string {
-  const label = `@${referenceLabel(reference.kind, t)}`;
+  // 回调信封按种类命名（委派报错 / 委派结果…），比笼统的「小精灵回调」有信息量。
+  const label =
+    reference.kind === "pixie-callback"
+      ? pixieCallbackLabel(reference.variant, t)
+      : `@${referenceLabel(reference.kind, t)}`;
   return reference.title ? `${label} · ${reference.title}` : label;
 }
 
