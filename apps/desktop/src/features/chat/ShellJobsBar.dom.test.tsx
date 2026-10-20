@@ -282,7 +282,9 @@ describe("ShellJobsBar", () => {
     expect(panel.ownerDocument.body).toContain(panel);
     // Running job gets a stop control; the finished one stays visible without it.
     expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
-    expect(screen.getByText("30s")).toBeInTheDocument();
+    // 夹具的 startedAt 是模块加载时的 Date.now() - 30s，慢机器/CI 上跑到这条
+    // 断言时已经过了 1s 以上，写死 "30s" 会偶发变成 31s（P0 门控曾因此失败）。
+    expect(screen.getByText(/^3[0-2]s$/)).toBeInTheDocument();
     expect(screen.getAllByText("npm run dev")).toHaveLength(3);
   });
 
