@@ -6,16 +6,10 @@
  */
 import type { Translate } from "../../lib/i18n/use-t";
 
-export type PixieCallbackVariant =
-  | "ask"
-  | "error"
-  | "stopped"
-  | "progress"
-  | "report"
-  | "reply"
-  | "interject"
-  | "dispatch"
-  | "resume";
+/**
+ * 已知信封种类：ask / error / stopped / progress / report / reply /
+ * interject / dispatch / resume。
+ */
 
 /** 信封种类 → 卡片标题。未知种类走通用文案，不抛错。 */
 export function pixieCallbackLabel(variant: string | undefined, t: Translate): string {

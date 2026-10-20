@@ -20,7 +20,7 @@ import {
 } from "./transcript-model";
 
 /** 回顾卡里的一行：`0. 😀 Qoder反代项目推荐 · 10-19 12:47 · 65 条`。 */
-export type PixieSegmentSummary = {
+type PixieSegmentSummary = {
   index: number;
   title: string;
   /** 时间和条数原样保留（卡片文案由插件生成，别在这里翻译单位）。 */
