@@ -398,6 +398,54 @@ describe("PixieTodoSection", () => {
     expect(screen.getByTestId("pixie-todo-quick")).toHaveValue("第一行\n第二行");
   });
 
+  it("速记框 Ctrl+S 快捷保存：落一条、清空输入框、拦掉默认保存", async () => {
+    const user = userEvent.setup();
+    render(<PixieTodoSection active onCount={onCount} />);
+    await waitForRows();
+
+    const quick = screen.getByTestId("pixie-todo-quick");
+    await user.type(quick, "点2杯美式 #咖啡");
+    // fireEvent 的返回值是 dispatchEvent 的结果：被 preventDefault 时为 false。
+    expect(fireEvent.keyDown(quick, { key: "s", ctrlKey: true })).toBe(false);
+
+    await waitFor(() =>
+      expect(createMemoNote).toHaveBeenCalledWith({
+        title: "点2杯美式 #咖啡",
+        contentMd: "点2杯美式 #咖啡",
+        tags: ["咖啡"],
+      }),
+    );
+    await waitFor(() => expect(quick).toHaveValue(""));
+  });
+
+  it("⌘S 同样提交（两个平台主修饰键都认）", async () => {
+    const user = userEvent.setup();
+    render(<PixieTodoSection active onCount={onCount} />);
+    await waitForRows();
+
+    const quick = screen.getByTestId("pixie-todo-quick");
+    await user.type(quick, "回复张工");
+    expect(fireEvent.keyDown(quick, { key: "S", metaKey: true })).toBe(false);
+
+    await waitFor(() => expect(createMemoNote).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(quick).toHaveValue(""));
+  });
+
+  it("Ctrl+S 在空内容 / 已带修饰键组合时不落条", async () => {
+    render(<PixieTodoSection active onCount={onCount} />);
+    await waitForRows();
+
+    const quick = screen.getByTestId("pixie-todo-quick");
+    // 空白：不做事，但仍然拦住「另存为」。
+    expect(fireEvent.keyDown(quick, { key: "s", ctrlKey: true })).toBe(false);
+    // Ctrl+Shift+S（另存为）只换行序，不该被这里的保存吃掉。
+    fireEvent.change(quick, { target: { value: "只写了一行" } });
+    fireEvent.keyDown(quick, { key: "s", ctrlKey: true, shiftKey: true });
+
+    expect(createMemoNote).not.toHaveBeenCalled();
+    expect(quick).toHaveValue("只写了一行");
+  });
+
   it("＋ 开的是完整新建弹窗，落盘走 memo.create（标题从正文首行派生）", async () => {
     const user = userEvent.setup();
     render(<PixieTodoSection active onCount={onCount} />);

@@ -31,6 +31,18 @@ export function matchesCommandChord(event: KeyboardEvent, chord: string, isMac: 
   );
 }
 
+/**
+ * 平台主修饰键（⌘ / Ctrl）**两者都认**的 mod 判定。
+ *
+ * `matchesCommandChord` 只认当前平台那一个（mac 上 Ctrl 无效、Windows 上 ⌘ 无效），
+ * 适合全局 command 的精确分发；但文本框里的「保存」（Ctrl+S / ⌘S）是用户肌肉记忆，
+ * WebView 里两个键都该存盘，所以在不硬编码 `isMac` 分支的前提下，用这条把两种
+ * 平台假设各跑一遍：等于 `mod` 命中且另一个主修饰键没被同时按住（alt/shift 照旧排除）。
+ */
+export function matchesEitherPrimaryChord(event: KeyboardEvent, chord: string): boolean {
+  return matchesCommandChord(event, chord, true) || matchesCommandChord(event, chord, false);
+}
+
 function closest(target: EventTarget | null, selector: string): Element | null {
   return target instanceof Element ? target.closest(selector) : null;
 }

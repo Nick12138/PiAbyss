@@ -73,6 +73,7 @@ import { Dialog } from "../../components/Dialog";
 import { LightboxImage } from "../../components/ImageLightbox";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
+import { matchesEitherPrimaryChord } from "../../lib/commands/keymap";
 import { contextMenuTrigger, openContextMenu, type MenuItem } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import { draftTargetFor } from "../../lib/draft-target";
@@ -656,6 +657,15 @@ export function PixieTodoSection({
         className="w-full resize-none rounded-md border border-dashed border-border bg-transparent px-1.5 py-1 text-[12px] leading-5 outline-none transition-colors placeholder:text-muted focus-visible:outline-none"
         onChange={(event) => setQuickText(event.target.value)}
         onKeyDown={(event) => {
+          // Ctrl+S / ⌘S 与 Enter 走同一条提交路径（空内容、busy、组词都由 submitQuick 与本分支挡住）；
+          // preventDefault 是硬要求：WebView 里不拦就弹「另存为」。文本框里本地优先，不让全局层抢。
+          if (matchesEitherPrimaryChord(event.nativeEvent, "mod+s")) {
+            if (event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            event.stopPropagation();
+            void submitQuick();
+            return;
+          }
           if (event.key !== "Enter" || event.shiftKey) return;
           // 输入法组词中的回车是「选字」，不是「保存」。
           if (event.nativeEvent.isComposing) return;
