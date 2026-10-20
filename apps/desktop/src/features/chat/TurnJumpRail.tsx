@@ -23,19 +23,54 @@ const TOOLTIP_LIMIT = 96;
 /** Row tops at or above this fraction of the viewport count as "passed". */
 const ACTIVE_LINE = 0.25;
 
-/** The last user turn whose row top sits above the viewport's active line. */
+/** Comfortable tick pitch: 8px tick + 8px gap, the rail's original spacing. */
+const PITCH_MAX = 12;
+
+/** Smallest rail height kept for a handful of turns. */
+const MIN_RAIL_HEIGHT = 160;
+
+/** Share of the visible chat area a long rail may occupy. */
+const RAIL_HEIGHT_RATIO = 0.5;
+
+/**
+ * How tall the rail may get: half the window, but never past the chat area it
+ * is centered in. Turns beyond this are compressed instead of spilling off the
+ * top and bottom of the window (the old `max-h-[50vh]` did not clip: the ticks
+ * are `shrink-0` and `justify-center` overflows both ways).
+ */
+function railBudget(viewport: HTMLElement | null): number {
+  const windowHalf = typeof window === "undefined" ? 400 : window.innerHeight * RAIL_HEIGHT_RATIO;
+  const areaLimit = viewport ? viewport.clientHeight - 32 : Number.POSITIVE_INFINITY;
+  return Math.max(MIN_RAIL_HEIGHT, Math.min(windowHalf, areaLimit));
+}
+
+/**
+ * The last user turn whose row top sits above the viewport's active line.
+ *
+ * Rows are in transcript order, so their tops increase monotonically: scanning
+ * from the tail and returning the first hit is O(1) for a reader at the bottom
+ * of a long chat, where the old forward scan ran a `querySelector` plus a
+ * layout read for every turn on every scroll frame.
+ */
 function activeStopIndex(stops: TurnRailStop[], element: HTMLElement): number | null {
   const scrollerRect = element.getBoundingClientRect();
   const line = scrollerRect.top + scrollerRect.height * ACTIVE_LINE;
-  let best: number | null = null;
-  for (let index = 0; index < stops.length; index += 1) {
-    const rowElement = element.querySelector<HTMLElement>(
-      `[data-row-key="${CSS.escape(stops[index]!.rowKey)}"]`,
-    );
-    if (!rowElement) continue;
-    if (rowElement.getBoundingClientRect().top <= line) best = index;
+  // Resolve every mounted row in a single query instead of one selector parse
+  // per turn, then walk stops from the tail (row tops increase with order, so
+  // the first hit from the back is the answer).
+  const mounted = new Map<string, HTMLElement>();
+  for (const node of element.querySelectorAll<HTMLElement>("[data-row-key]")) {
+    const key = node.dataset.rowKey;
+    if (key !== undefined) mounted.set(key, node);
   }
-  return best;
+  for (let index = stops.length - 1; index >= 0; index -= 1) {
+    const rowElement = mounted.get(stops[index]!.rowKey);
+    // Unmounted rows (progressive mounting above the visible batch) don't
+    // resolve and are skipped.
+    if (!rowElement) continue;
+    if (rowElement.getBoundingClientRect().top <= line) return index;
+  }
+  return null;
 }
 
 function turnRailTooltip(stop: TurnRailStop, index: number, total: number): string {
@@ -50,12 +85,16 @@ function turnRailTooltip(stop: TurnRailStop, index: number, total: number): stri
  * Turn jump rail: one subtle tick per user message, docked to the transcript's
  * right edge. For long conversations (10+ sends) it answers "jump back to the
  * first / the Nth message" in one click — no dialog, no tree view. Hovering a
- * tick opens a custom popup left of the rail listing every turn (the hovered
- * one highlighted, the reading position marked); clicking a popup row — or the
- * tick itself — scrolls that turn into view through the transcript-navigation
- * bus (unmounted progressive rows mount first). The active tick tracks the
- * turn the reader is in. Hidden below two turns, where scrolling is already
- * fast enough.
+ * tick opens a custom popup left of the rail showing that turn (speaker line
+ * plus the agent's reply); clicking a tick scrolls the turn into view through
+ * the transcript-navigation bus (unmounted progressive rows mount first). The
+ * active tick tracks the turn the reader is in. Hidden below two turns, where
+ * scrolling is already fast enough.
+ *
+ * The rail never grows past its budget (half the window / the chat area): once
+ * turns outgrow it the pitch shrinks and every turn stays on screen and
+ * clickable, so a 200-turn chat does not push the first and last turns off the
+ * window where they cannot be hovered at all.
  */
 export function TurnJumpRail({
   stops,
@@ -70,10 +109,9 @@ export function TurnJumpRail({
   const t = useT();
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
-  const [popupTop, setPopupTop] = useState<number | null>(null);
+  const [budget, setBudget] = useState(() => railBudget(null));
   const lastHoveredRef = useRef<number | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
-  const hoveredRowRef = useRef<HTMLButtonElement | null>(null);
 
   // Track the last hovered item even when pointer moves to gaps
   useEffect(() => {
@@ -104,25 +142,18 @@ export function TurnJumpRail({
     };
   }, [hovered, onJump, stops]);
 
-  // Anchor the popup to the actual hovered/focused tick. The rail can be tall
-  // and its ticks are laid out with flex gaps, so an index-based offset drifts.
+  // Measure the rail's height budget against the live chat area (window
+  // resizes change both halves of the min()).
   useEffect(() => {
-    const rail = railRef.current;
-    if (!rail || hovered === null) {
-      setPopupTop(null);
-      return;
-    }
-    const tick = rail.querySelector<HTMLElement>(`[data-turn-rail-index="${hovered}"]`);
-    if (!tick) return;
-    const railRect = rail.getBoundingClientRect();
-    const tickRect = tick.getBoundingClientRect();
-    setPopupTop(tickRect.top + tickRect.height / 2 - railRect.top);
-  }, [hovered, stops]);
-
-  // Keep the hovered popup row in view when the list is taller than the clamp.
-  useEffect(() => {
-    hoveredRowRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [hovered]);
+    const element = viewport.current;
+    if (!element) return;
+    const update = () => setBudget(railBudget(element));
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [viewport]);
 
   // Center the rail inside the gutter between the scrollport's content edge
   // and the native scrollbar, measured at runtime: scrollbar width differs by
@@ -193,6 +224,13 @@ export function TurnJumpRail({
   if (stops.length < 2) return null;
 
   const total = stops.length;
+  // Compress the pitch once the turns outgrow the budget. Ticks tile the track
+  // exactly (no gaps, no negative margins), so every turn keeps a real hit
+  // area and the whole rail stays inside the window.
+  const pitch = Math.min(PITCH_MAX, budget / total);
+  const railHeight = pitch * total;
+  const tickThickness = Math.max(1, Math.min(2, pitch - 1));
+  const hoveredCenter = hovered === null ? 0 : hovered * pitch + pitch / 2;
   return (
     <div
       ref={railRef}
@@ -205,28 +243,19 @@ export function TurnJumpRail({
       className="absolute right-5 top-1/2 z-10 flex -translate-y-1/2"
     >
       <div
-        ref={hoveredRowRef as any}
-        className="flex max-h-[50vh] w-7 flex-col items-end justify-center gap-2"
-        onPointerMove={(e) => {
-          // Find the closest button element
-          const buttons = e.currentTarget.querySelectorAll("button");
-          let closestIndex = -1;
-          let minDistance = Infinity;
-
-          buttons.forEach((btn, index) => {
-            const rect = btn.getBoundingClientRect();
-            if (rect.height === 0) return;
-            const centerY = rect.top + rect.height / 2;
-            const distance = Math.abs(e.clientY - centerY);
-            if (distance < minDistance) {
-              minDistance = distance;
-              closestIndex = index;
-            }
-          });
-
-          if (closestIndex >= 0 && closestIndex < stops.length) {
-            setHovered(closestIndex);
-          }
+        data-turn-rail-track
+        className="relative w-7"
+        style={{ height: railHeight }}
+        onPointerMove={(event) => {
+          // Ticks tile the track and own their hover; this only catches the
+          // sub-pixel seams between them (and avoids recomputing the hovered
+          // index while the pointer is over the popup, which would make the
+          // popup chase the cursor).
+          if (event.target !== event.currentTarget) return;
+          const box = event.currentTarget.getBoundingClientRect();
+          const offset = event.clientY - box.top;
+          const index = Math.floor(offset / pitch);
+          setHovered(Math.min(total - 1, Math.max(0, index)));
         }}
         onPointerLeave={() => {
           setHovered(null);
@@ -245,7 +274,7 @@ export function TurnJumpRail({
           <div
             data-turn-rail-popup
             className="theme-floating-surface absolute right-full z-20 mr-2 w-80 -translate-y-1/2 rounded-lg border border-border bg-surface-raised p-3 shadow-xl"
-            style={{ top: popupTop ?? 0 }}
+            style={{ top: hoveredCenter }}
           >
             {/* User message with # prefix */}
             <div className="mb-2 text-sm leading-relaxed text-foreground">
@@ -312,7 +341,8 @@ export function TurnJumpRail({
               aria-label={tooltip}
               data-turn-rail-index={index}
               data-active={active ? "true" : undefined}
-              className="relative h-2 w-full shrink-0 flex items-center -my-0.5"
+              className="absolute right-0 flex w-full items-center justify-end"
+              style={{ top: index * pitch, height: pitch }}
               onPointerEnter={() => setHovered(index)}
               onFocus={() => setHovered(index)}
               onBlur={() => setHovered((current) => (current === index ? null : current))}
@@ -323,12 +353,15 @@ export function TurnJumpRail({
               }}
             >
               <span
-                className={`absolute right-0 h-0.5 rounded-full transition-all duration-200 ${
+                className={`absolute right-0 rounded-full transition-all duration-200 ${
                   shouldHighlight
                     ? "bg-accent" // highlight follows hover, or shows active when not hovering
-                    : "bg-border/60 group-hover:bg-accent/60"
+                    : "bg-border/60"
                 }`}
-                style={{ width: shouldHighlight && !isHovered ? 8 : lineWidth }}
+                style={{
+                  width: shouldHighlight && !isHovered ? 8 : lineWidth,
+                  height: tickThickness,
+                }}
               />
               <span className="sr-only">{tooltip}</span>
             </button>

@@ -97,39 +97,45 @@ describe("TurnJumpRail", () => {
     expect(onJump).toHaveBeenCalledWith("u2");
   });
 
-  it("anchors the popup to the hovered tick center", () => {
+  it("anchors the popup to the hovered tick center", async () => {
+    const user = userEvent.setup();
     render(<Harness stops={STOPS} onJump={vi.fn()} />);
 
-    const rail = document.querySelector<HTMLElement>("[data-turn-rail]")!;
-    const tick = document.querySelector<HTMLElement>('[data-turn-rail-index="1"]')!;
-    vi.spyOn(rail, "getBoundingClientRect").mockReturnValue({
-      top: 100,
-      bottom: 500,
-      left: 0,
-      right: 40,
-      width: 40,
-      height: 400,
-      x: 0,
-      y: 100,
-      toJSON: () => ({}),
-    });
-    vi.spyOn(tick, "getBoundingClientRect").mockReturnValue({
-      top: 270,
-      bottom: 278,
-      left: 20,
-      right: 40,
-      width: 20,
-      height: 8,
-      x: 20,
-      y: 270,
-      toJSON: () => ({}),
-    });
-
-    fireEvent.pointerEnter(tick);
+    await user.hover(screen.getByLabelText("#2/3 second ask"));
 
     const popup = document.querySelector<HTMLElement>("[data-turn-rail-popup]")!;
-    expect(popup.style.top).toBe("174px");
+    const tick = document.querySelector<HTMLElement>('[data-turn-rail-index="1"]')!;
+    const tickTop = parseFloat(tick.style.top);
+    const tickHeight = parseFloat(tick.style.height);
+    expect(popup.style.top).toBe(`${tickTop + tickHeight / 2}px`);
     expect(popup).toHaveClass("-translate-y-1/2");
+  });
+
+  it("compresses a long rail so every turn stays inside the height budget", () => {
+    const many: TurnRailStop[] = Array.from({ length: 200 }, (_, index) => ({
+      sourceId: `u${index}`,
+      rowKey: `k${index}`,
+      excerpt: `turn ${index}`,
+      agentPending: false,
+    }));
+    render(<Harness stops={many} onJump={vi.fn()} />);
+
+    const track = document.querySelector<HTMLElement>("[data-turn-rail-track]")!;
+    const railHeight = parseFloat(track.style.height);
+    // Budget floor in jsdom (the harness viewport has no measured height).
+    expect(railHeight).toBe(160);
+
+    const ticks = track.querySelectorAll<HTMLElement>("[data-turn-rail-index]");
+    expect(ticks).toHaveLength(200);
+
+    // The last tick ends inside the track: nothing spills off the window.
+    const last = ticks[199]!;
+    const lastBottom = parseFloat(last.style.top) + parseFloat(last.style.height);
+    expect(lastBottom).toBeLessThanOrEqual(railHeight + 0.01);
+
+    // Denser than the comfortable 12px pitch, but still one slot per turn.
+    expect(parseFloat(last.style.top)).toBeLessThan(railHeight);
+    expect(parseFloat(ticks[1]!.style.top)).toBeLessThan(12);
   });
 
   it("moves between turns with Alt+ArrowUp/Alt+ArrowDown", () => {
