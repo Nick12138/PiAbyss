@@ -7,6 +7,15 @@
  * （标题 / 摘要 / 标签·工作区·截止·图片数）+ 就地展开的 Markdown 正文与图片 + 两个新建入口
  * （速记框、`MemoNoteDialog` 的完整表单）。
  *
+ * ## 二级页签是筛选，不是导航
+ *
+ * 「待处理 / 已完成」两边数据同源、行渲染完全一样，只差一个 status 谓词，所以这一行刻意
+ * 做得比一级页签（`h-10` 下划线导航）更轻：`h-7` 文字按钮、无边框无底色，12px 标签 +
+ * 10px 计数，当前项只给文字加 1px accent 下划线（**只划标签，不划计数**）+ 颜色，
+ * 字重全程不变（换 weight 会改字宽，行内会蹭着挪位）；两端也不 `flex-1` 等分——
+ * 已完成是低频回看入口，没道理长期占掉半行。同形态也用在「自动化」那一行的
+ * 「当前活跃 / 已失效」上，改一处要连带改另一处，别再把实心块搬回来。
+ *
  * ## 数据新鲜度
  *
  * 备忘的写入方有三处，前端只听得到其中一路：桌面小窗（Tauri `memo-notes-changed`）、云同步
@@ -37,15 +46,17 @@
  * 逾期不单列计数——页签行右侧原来那枚「N 逾期」提示已去掉，逾期只看每条行尾的红色徽章；
  * 待处理数同时挂在随行面板的页签上（`onCount`），所以顶部也不放概览格。
  * 日期只用来排序（逾期在前、无日期沉底），不渲染分段标题——10 条时两个标题行
- * 吃掉的高度抵不上它们提供的信息。截断两档各一套：待处理只截排在最后的「无日期」
- * 那一档（前 5 条常驻），已完成整列只先给 5 条，其余收进列表下方的「查看更多」——
+ * 吃掉的高度抵不上它们提供的信息。两个页签用**同一条截断规则**：先给前 10 条，
+ * 其余收进列表下方的「查看更多」（待处理也是——不再单独豁免「已定日期」那几档），
  * 摊开后同一个位置换成「收起」，不再挂第二个入口；
  * 新建有两条路：列表下方的速记框（先记下来，虚线框常驻）与页签行尾 ＋ 打开的完整表单弹窗
  * （正文 / 图片 / 截止 / 周期 / ✨整理都在里面，与编辑同一条通道）。
  *
  * 展开区的正文按 Markdown 渲染（`MemoMarkdown` + `panel-markdown` 的 11px 档），
  * 与详情视图同源；记录带图时图排在正文之前，`data URL` 只给摊开的那条按需取，
- * 行上先报一个张数。只有标题一行、既没正文也没图的记录展开不出任何东西，点了不动。
+ * 行上先报一个张数。只有标题一行、既没正文也没图的记录展开不出任何东西，点了不动——
+ * 例外是**标题被截断**（`scrollWidth > clientWidth`）：那行原本只能靠右键编辑才读得全，
+ * 现在照样可点，展开区把整条标题补在正文之前（`pixie-todo-title-full`）。
  *
  * 插件门在 `PixieSidePanel`：待办 · 速记插件没启用时，这一块连同它的页签一起不渲染。
  * `active` = 这块是不是当前页签；不是的时候只把显示摘掉（数据与展开状态都留着）。
@@ -120,8 +131,8 @@ const NOW_TICK_MS = 60_000;
 const TODO_POLL_ACTIVE_MS = 15_000;
 const TODO_POLL_IDLE_MS = 60_000;
 
-/** 一屏先给几条：面板高度有限，剩下的收进「查看更多」（两个页签都截，见下）。 */
-const TODO_PREVIEW = 5;
+/** 一屏先给几条：面板高度有限，剩下的收进「查看更多」（两个页签同一条规则，见下）。 */
+const TODO_PREVIEW = 10;
 
 /**
  * selector 里不能新建数组：`?? []` 在字段还没加载完时每次都返回新引用，
@@ -230,32 +241,22 @@ export function PixieTodoSection({
   useEffect(() => {
     onCount(overview.open);
   }, [overview.open, onCount]);
-  const visible = useMemo(
-    () => sortNotesForList(todoTabNotes(all, tab), tab === "done" ? "done" : "open"),
-    [all, tab],
-  );
-  // 日期分组只负责定顺序（逾期 → 今天 → 明天 → 本周 → 更晚 → 无日期沉底），不渲染分段
-  // 标题。截断两个页签各一套：待处理只截排在最后的「无日期」那一档（逾期的、已经定了
-  // 日期的必须全给），已完成整列只先给 5 条。
+  const visible = useMemo(() => {
+    const sorted = sortNotesForList(todoTabNotes(all, tab), tab === "done" ? "done" : "open");
+    // 待处理按日期桶重排（逾期 → 今天 → 明天 → 本周 → 更晚 → 无日期沉底，桶内仍是 updatedAt
+    // 倒序），不渲染分段标题；已完成只看 completedAt 倒序，不再分组。
+    return tab === "done" ? sorted : groupTodoNotes(sorted, now).flatMap((group) => group.notes);
+  }, [all, tab, now]);
+  // 两个页签用同一套截断：前 10 条常驻，剩下的进「查看更多」。
   // `hiddenCount` 一律是「收起来时藏了几条」，与当前是否摊开无关：摊开后列表下方的位置
-  // 换成「收起」继续占着，既不出现第二个「查看更多」（已完成的旧 bug），也不会像待处理
-  // 那样把计数清零、连收起的入口一起弄没。
-  const { ordered, hiddenCount } = useMemo(() => {
-    if (tab === "done") {
-      return {
-        ordered: showAll ? visible : visible.slice(0, TODO_PREVIEW),
-        hiddenCount: Math.max(0, visible.length - TODO_PREVIEW),
-      };
-    }
-    const groups = groupTodoNotes(visible, now);
-    const noDate = groups.find((group) => group.bucket === "none");
-    const list: MemoNote[] = [];
-    for (const group of groups) {
-      if (group.bucket === "none" && !showAll) list.push(...group.notes.slice(0, TODO_PREVIEW));
-      else list.push(...group.notes);
-    }
-    return { ordered: list, hiddenCount: Math.max(0, (noDate?.notes.length ?? 0) - TODO_PREVIEW) };
-  }, [visible, now, tab, showAll]);
+  // 换成「收起」继续占着，不出现第二个「查看更多」，也不会把计数清零、连收起的入口一起弄没。
+  const { ordered, hiddenCount } = useMemo(
+    () => ({
+      ordered: showAll ? visible : visible.slice(0, TODO_PREVIEW),
+      hiddenCount: Math.max(0, visible.length - TODO_PREVIEW),
+    }),
+    [visible, showAll],
+  );
 
   // 编辑弹窗的工作区候选：当前工作区排第一，其后是从各记录提示里去重出来的历史候选。
   const workspaceOptions = useMemo(
@@ -464,7 +465,7 @@ export function PixieTodoSection({
       exitBatch();
       return;
     }
-    // 进入勾选模式先把整列摊开：「全选」要覆盖这一档全部记录，不能只覆盖屏上先给的 5 条。
+    // 进入勾选模式先把整列摊开：「全选」要覆盖这一档全部记录，不能只覆盖屏上先给的那 10 条。
     expandedBeforeBatch.current = expandedTab;
     setExpandedTab("done");
     setBatchMode(true);
@@ -504,52 +505,68 @@ export function PixieTodoSection({
 
   return (
     <PixiePanelBody tab="todo" active={active}>
-      {/* 这一行既是「待处理 / 已完成」二级页签，也是这一块的**工具条**：页签占满左边，
-        两个动作贴右。原来这些都写在折叠分组的标题行上，横排成页签之后那一行
-        没有了，计数与 ＋ 就搬到这里来。 */}
-      <div className="flex items-center gap-1">
-        {(["open", "done"] as const).map((candidate) => (
+      {/* 这一行既是「待处理 / 已完成」二级页签，也是这一块的**工具条**：页签靠左成文字，
+        两个动作贴右。
+        它**不是**导航而是一次筛选：两边数据同源、行渲染完全一样，只差一个 status 谓词，
+        所以刻意比上一行的一级页签（`h-10` 下划线）更轻——不要实心底色、不要边框，
+        12px 标签 + 10px 计数，当前项只给文字加 1px accent 下划线（只划标签、不划计数）
+        + 颜色，靠颜色而不是色块说话。
+        两端不再 `flex-1` 等分：已完成是低频回看入口，「已完成 34」没有理由长期占掉半行。 */}
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          {(["open", "done"] as const).map((candidate) => (
+            <button
+              key={candidate}
+              type="button"
+              data-testid={`pixie-todo-tab-${candidate}`}
+              aria-pressed={tab === candidate}
+              className={`flex h-7 items-center gap-1.5 text-[12px] font-medium transition-colors focus-visible:outline-none ${
+                tab === candidate ? "text-foreground" : "text-muted hover:text-foreground"
+              }`}
+              onClick={() => switchTab(candidate)}
+            >
+              {/* 下划线只画在标签上：计数是附属信息，不该跟着一起划线（像链接）；
+               * 字重也不跟着选中变——换 weight 会改字宽，两个页签会蹭着挪位。 */}
+              <span
+                className={
+                  tab === candidate
+                    ? "underline decoration-accent decoration-1 underline-offset-[3px]"
+                    : undefined
+                }
+              >
+                {candidate === "open" ? t("memoFilterTodo") : t("memoFilterDone")}
+              </span>
+              <span className="text-[10px] tabular-nums opacity-75">
+                {candidate === "open" ? overview.open : all.length - overview.open}
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="ml-auto flex items-center gap-0.5">
+          {tab === "done" && visible.length > 0 ? (
+            <button
+              type="button"
+              data-testid="pixie-todo-batch-toggle"
+              aria-pressed={batchMode}
+              title={t("pixieTodoBatch")}
+              aria-label={t("pixieTodoBatch")}
+              className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-danger focus-visible:outline-none"
+              onClick={toggleBatch}
+            >
+              <Trash2 size={12} aria-hidden="true" />
+            </button>
+          ) : null}
           <button
-            key={candidate}
             type="button"
-            data-testid={`pixie-todo-tab-${candidate}`}
-            aria-pressed={tab === candidate}
-            className={`flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border text-[11px] transition-colors focus-visible:outline-none ${
-              tab === candidate
-                ? "border-nav-active/50 bg-nav-active font-semibold text-nav-active-foreground"
-                : "border-border text-muted hover:bg-surface-overlay hover:text-foreground"
-            }`}
-            onClick={() => switchTab(candidate)}
+            data-testid="pixie-todo-new"
+            title={t("pixieTodoNew")}
+            aria-label={t("pixieTodoNew")}
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none"
+            onClick={() => setDialog({ note: null })}
           >
-            {candidate === "open" ? t("memoFilterTodo") : t("memoFilterDone")}
-            <span className="text-[10px] tabular-nums opacity-75">
-              {candidate === "open" ? overview.open : all.length - overview.open}
-            </span>
+            <Plus size={12} />
           </button>
-        ))}
-        {tab === "done" && visible.length > 0 ? (
-          <button
-            type="button"
-            data-testid="pixie-todo-batch-toggle"
-            aria-pressed={batchMode}
-            title={t("pixieTodoBatch")}
-            aria-label={t("pixieTodoBatch")}
-            className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-danger focus-visible:outline-none"
-            onClick={toggleBatch}
-          >
-            <Trash2 size={13} aria-hidden="true" />
-          </button>
-        ) : null}
-        <button
-          type="button"
-          data-testid="pixie-todo-new"
-          title={t("pixieTodoNew")}
-          aria-label={t("pixieTodoNew")}
-          className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none"
-          onClick={() => setDialog({ note: null })}
-        >
-          <Plus size={13} />
-        </button>
+        </div>
       </div>
 
       {batchMode ? (
@@ -560,7 +577,7 @@ export function PixieTodoSection({
           <button
             type="button"
             data-testid="pixie-todo-select-all"
-            className="flex h-9 items-center rounded px-1 transition-colors hover:text-foreground focus-visible:outline-none"
+            className="flex h-7 items-center rounded px-1 transition-colors hover:text-foreground focus-visible:outline-none"
             onClick={toggleSelectAll}
           >
             {allSelected ? t("pixieTodoBatchDeselectAll") : t("pixieTodoBatchSelectAll")}
@@ -573,7 +590,7 @@ export function PixieTodoSection({
             data-testid="pixie-todo-batch-delete"
             disabled={selected.length === 0 || busy}
             title={selected.length === 0 ? t("pixieTodoBatchNothingSelected") : undefined}
-            className="flex h-9 items-center gap-1 rounded border border-danger/40 px-1.5 text-danger transition-colors hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-7 items-center gap-1 rounded border border-danger/40 px-1.5 text-danger transition-colors hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-40"
             onClick={() => setPendingDelete(selected)}
           >
             <Trash2 size={10} aria-hidden="true" />
@@ -584,7 +601,7 @@ export function PixieTodoSection({
             data-testid="pixie-todo-batch-exit"
             title={t("pixieTodoBatchExit")}
             aria-label={t("pixieTodoBatchExit")}
-            className="flex size-9 shrink-0 items-center justify-center rounded text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none"
+            className="flex size-7 shrink-0 items-center justify-center rounded text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none"
             onClick={toggleBatch}
           >
             <X size={11} aria-hidden="true" />
@@ -651,7 +668,7 @@ export function PixieTodoSection({
         「要分好类再记」交给 ＋ 打开的完整表单弹窗。 */}
       <textarea
         data-testid="pixie-todo-quick"
-        rows={2}
+        rows={3}
         value={quickText}
         placeholder={t("memoWidgetInputPlaceholder")}
         className="w-full resize-none rounded-md border border-dashed border-border bg-transparent px-1.5 py-1 text-[12px] leading-5 outline-none transition-colors placeholder:text-muted focus-visible:outline-none"
@@ -750,8 +767,26 @@ function TodoRow({
   const body = note.contentMd.split("\n").slice(1).join("\n").trim();
   // 行内只给一行摘要，完整正文留在展开区；两者同源，摘要不会和正文各说一套。
   const excerpt = noteExcerpt(note);
-  /** 摊得出东西才算可点：只有标题一行、既没正文也没图的记录，点了不该有反应。 */
-  const expandable = body.length > 0 || note.images.length > 0;
+  // 标题只有一行、用 truncate 收着：真的被截断时（scrollWidth > clientWidth）把整条标题
+  // 摊进展开区，并让这一行可点——“只有标题”的记录不能只剩「右键 → 编辑」一条读全文的路。
+  const titleRef = useRef<HTMLDivElement>(null);
+  const [titleTruncated, setTitleTruncated] = useState(false);
+  useEffect(() => {
+    const element = titleRef.current;
+    if (!element) return;
+    const measure = () => {
+      // 1px 容差：zoom / 分数像素会让 scrollWidth 比 clientWidth 大一点点。
+      setTitleTruncated(element.scrollWidth > element.clientWidth + 1);
+    };
+    measure();
+    // 面板拖宽拖窄、换字号都会改折行，所以跟着元素尺寸重量。jsdom 没有这个 API。
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [note.title]);
+  /** 摊得出东西才算可点：有正文、有图，或者标题本身就被截断了。 */
+  const expandable = body.length > 0 || note.images.length > 0 || titleTruncated;
 
   /** 行主体点下去：勾选模式里是选中，否则是展开（只有真的有正文时才展开得出东西）。 */
   const onToggleBody = () => {
@@ -822,7 +857,11 @@ function TodoRow({
           className="min-w-0 flex-1 text-left"
           onClick={onToggleBody}
         >
-          <div className="truncate text-[12px] font-medium leading-5 text-foreground">
+          <div
+            ref={titleRef}
+            data-testid="pixie-todo-title"
+            className="truncate text-[12px] font-medium leading-5 text-foreground"
+          >
             {note.title}
           </div>
           {excerpt ? (
@@ -909,6 +948,17 @@ function TodoRow({
                 );
               })}
             </div>
+          ) : null}
+          {/* 标题被截断时（行上只看得见前半条）把整条标题补进展开区：这一行原本只有一条
+           * 单行标题的记录，原来只能右键编辑才读得全。它排在正文之前，读起来就是「首行 +
+           * 其余正文」，与记录本身的形状一致。 */}
+          {titleTruncated ? (
+            <p
+              data-testid="pixie-todo-title-full"
+              className="whitespace-pre-wrap pb-1 font-medium text-foreground"
+            >
+              {note.title}
+            </p>
           ) : null}
           {body ? <MemoMarkdown content={body} className="panel-markdown" /> : null}
         </div>

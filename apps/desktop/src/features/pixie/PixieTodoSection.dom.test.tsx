@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -100,7 +100,7 @@ const FIXTURE: MemoNote[] = [
     workspaceHint: "文案库",
     dueAt: YESTERDAY,
   }),
-  note({ id: "n-doing", title: "修复登录态串号", status: "in_progress" }),
+  note({ id: "n-doing", title: "修复登录态串号", status: "in_progress", updatedAt: 10 }),
   note({ id: "n-done", title: "订会议室", status: "done", completedAt: 1 }),
 ];
 
@@ -147,6 +147,8 @@ afterEach(() => {
   cleanup();
   closeContextMenu();
   vi.restoreAllMocks();
+  // 截断用例给全局装了 ResizeObserver 的桩件，不拆就带到下一条用例里。
+  vi.unstubAllGlobals();
   useAppStore.getState().setHost(null);
   useAppStore.getState().setWorkspace(null);
   useAppStore.getState().applySessionSnapshot(null);
@@ -172,19 +174,20 @@ describe("PixieTodoSection", () => {
     const list = await waitForRows();
 
     expect(document.querySelectorAll('[data-testid="pixie-todo-bucket"]')).toHaveLength(0);
+    // 时间戳更新的那条也得排在逾期那条后面：定顺序的是日期桶，不是 updatedAt。
     expect(list[0].textContent).toContain("回复张工的邮件");
     expect(list[1].textContent).toContain("修复登录态串号");
     // 已完成不进「待处理」页签。
     expect(screen.queryByText("订会议室")).toBeNull();
   });
 
-  it("速记框在列表下面、默认两行，两个页签都给", async () => {
+  it("速记框在列表下面、默认三行，两个页签都给", async () => {
     const user = userEvent.setup();
     render(<PixieTodoSection active onCount={onCount} />);
     await waitForRows();
 
     const quick = screen.getByTestId("pixie-todo-quick");
-    expect(quick).toHaveAttribute("rows", "2");
+    expect(quick).toHaveAttribute("rows", "3");
     // 列表之后：它是这一块的最后一行，不在页签上面。
     const row = rows()[0];
     expect(row.compareDocumentPosition(quick) & Node.DOCUMENT_POSITION_FOLLOWING).toBeGreaterThan(
@@ -195,33 +198,33 @@ describe("PixieTodoSection", () => {
     await user.click(screen.getByTestId("pixie-todo-tab-done"));
 
     expect(screen.getByText("订会议室")).toBeInTheDocument();
-    expect(screen.getByTestId("pixie-todo-quick")).toHaveAttribute("rows", "2");
+    expect(screen.getByTestId("pixie-todo-quick")).toHaveAttribute("rows", "3");
   });
 
-  it("无日期那一档只先给 5 条，点「查看更多」补齐", async () => {
+  it("待处理也只先给 10 条，点「查看更多」补齐", async () => {
     const user = userEvent.setup();
     vi.mocked(listMemoNotes).mockResolvedValue(
-      Array.from({ length: 7 }, (_, index) => note({ id: `x${index}`, title: `随手记 ${index}` })),
+      Array.from({ length: 12 }, (_, index) => note({ id: `x${index}`, title: `随手记 ${index}` })),
     );
     render(<PixieTodoSection active onCount={onCount} />);
 
-    await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(5));
+    await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(10));
     const more = screen.getByTestId("pixie-todo-show-more");
     expect(more).toHaveTextContent("2");
 
     await user.click(more);
-    await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(7));
+    await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(12));
     expect(screen.queryByTestId("pixie-todo-show-more")).toBeNull();
 
-    // 同一位置换成「收起」，点回去重新只给 5 条。
+    // 同一位置换成「收起」，点回去重新只给 10 条。
     await user.click(screen.getByTestId("pixie-todo-show-less"));
-    await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(5));
+    await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(10));
   });
 
-  it("已完成整列也只先给 5 条；「查看更多」两个页签各记一份", async () => {
+  it("已完成整列也只先给 10 条；「查看更多」两个页签各记一份", async () => {
     const user = userEvent.setup();
     vi.mocked(listMemoNotes).mockResolvedValue([
-      ...Array.from({ length: 8 }, (_, index) =>
+      ...Array.from({ length: 13 }, (_, index) =>
         note({
           id: `d${index}`,
           title: `办完 ${index}`,
@@ -232,21 +235,21 @@ describe("PixieTodoSection", () => {
       note({ id: "p1", title: "随手记一条" }),
     ]);
     render(<PixieTodoSection active onCount={onCount} />);
-    await waitFor(() => expect(screen.getByTestId("pixie-todo-tab-done")).toHaveTextContent("8"));
+    await waitFor(() => expect(screen.getByTestId("pixie-todo-tab-done")).toHaveTextContent("13"));
 
     await user.click(screen.getByTestId("pixie-todo-tab-done"));
-    await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(5));
+    await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(10));
     expect(screen.getByTestId("pixie-todo-show-more")).toHaveTextContent("3");
 
     await user.click(screen.getByTestId("pixie-todo-show-more"));
-    await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(8));
+    await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(13));
 
     // 摊开之后下面不再挂第二个「查看更多」（曾经的 bug），同一位置只剩「收起」。
     expect(screen.queryByTestId("pixie-todo-show-more")).toBeNull();
     const collapse = screen.getByTestId("pixie-todo-show-less");
     expect(collapse).toHaveTextContent("Show less");
     await user.click(collapse);
-    await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(5));
+    await waitFor(() => expect(screen.getAllByTestId("pixie-todo-row")).toHaveLength(10));
 
     // 切回待处理重新收起：一边点开不影响另一边。
     await user.click(screen.getByTestId("pixie-todo-tab-open"));
@@ -301,7 +304,7 @@ describe("PixieTodoSection", () => {
     expect(screen.queryByTestId("pixie-todo-delete")).toBeNull();
   });
 
-  it("只有标题一行的记录展不开：没有正文就不给空壳", async () => {
+  it("只有标题一行、且没被截断的记录展不开：没有东西可摊就不给空壳", async () => {
     const user = userEvent.setup();
     render(<PixieTodoSection active onCount={onCount} />);
     const list = await waitForRows();
@@ -313,6 +316,40 @@ describe("PixieTodoSection", () => {
       "false",
     );
     expect(screen.queryByTestId("pixie-todo-detail")).toBeNull();
+  });
+
+  it("标题被截断的「只有标题」记录：可点开，展开区给出完整标题", async () => {
+    const user = userEvent.setup();
+    const longTitle = "荥经县城区路灯更新改造项目施工图审查服务——路灯控制箱与箱变位置现场核对";
+    vi.mocked(listMemoNotes).mockResolvedValue([
+      note({ id: "n-long", title: longTitle, contentMd: longTitle }),
+    ]);
+    // jsdom 没有布局，scrollWidth / clientWidth 恒为 0：用 ResizeObserver 的桩件把
+    // 「这个标题被截断了」显式告诉组件，再手动触发一次重量。
+    const remeasure: (() => void)[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          remeasure.push(callback);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    render(<PixieTodoSection active onCount={onCount} />);
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    const title = within(rows()[0]).getByTestId("pixie-todo-title");
+    Object.defineProperty(title, "scrollWidth", { configurable: true, value: 480 });
+    Object.defineProperty(title, "clientWidth", { configurable: true, value: 200 });
+    act(() => remeasure.forEach((callback) => callback()));
+
+    const toggle = within(rows()[0]).getByTestId("pixie-todo-open-detail");
+    await user.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(await screen.findByTestId("pixie-todo-title-full")).toHaveTextContent(longTitle);
   });
 
   it("勾选标记完成，列表随之刷新", async () => {
@@ -623,10 +660,10 @@ describe("PixieTodoSection", () => {
     expect(screen.queryByTestId("pixie-todo-batch-bar")).toBeNull();
   });
 
-  it("批量模式的「全选」覆盖整列，不只是先给的 5 条", async () => {
+  it("批量模式的「全选」覆盖整列，不只是先给的 10 条", async () => {
     const user = userEvent.setup();
     vi.mocked(listMemoNotes).mockResolvedValue(
-      Array.from({ length: 8 }, (_, index) =>
+      Array.from({ length: 12 }, (_, index) =>
         note({
           id: `d${index}`,
           title: `办完 ${index}`,
@@ -636,23 +673,25 @@ describe("PixieTodoSection", () => {
       ),
     );
     render(<PixieTodoSection active onCount={onCount} />);
-    await waitFor(() => expect(screen.getByTestId("pixie-todo-tab-done")).toHaveTextContent("8"));
+    await waitFor(() => expect(screen.getByTestId("pixie-todo-tab-done")).toHaveTextContent("12"));
 
     await user.click(screen.getByTestId("pixie-todo-tab-done"));
+    // 默认只给前 10 条，剩下 2 条在「查看更多」后面。
+    await waitFor(() => expect(rows()).toHaveLength(10));
     await user.click(screen.getByTestId("pixie-todo-batch-toggle"));
 
     // 进入勾选模式即摊开整列，「全选」才谈得上覆盖全部。
-    await waitFor(() => expect(rows()).toHaveLength(8));
+    await waitFor(() => expect(rows()).toHaveLength(12));
     await user.click(screen.getByTestId("pixie-todo-select-all"));
-    expect(screen.getByTestId("pixie-todo-batch-bar")).toHaveTextContent("8");
+    expect(screen.getByTestId("pixie-todo-batch-bar")).toHaveTextContent("12");
 
     // 进入模式后入口图标自己不收场，退出靠选择条上的 ✕。
     await user.click(screen.getByTestId("pixie-todo-batch-exit"));
     expect(screen.queryByTestId("pixie-todo-batch-bar")).toBeNull();
-    // 退出时要把这次「被迫摊开」还回去：复选框换回状态圆圈，列表收回预览的 5 条。
-    // （进入前本来是收着的，留着 8 条摊在那儿就是「关掉删除后没折叠」。）
+    // 退出时要把这次「被迫摊开」还回去：复选框换回状态圆圈，列表收回预览的 10 条。
+    // （进入前本来是收着的，留着 12 条摊在那儿就是「关掉删除后没折叠」。）
     expect(screen.queryAllByTestId("pixie-todo-select")).toHaveLength(0);
-    expect(screen.getAllByTestId("pixie-todo-complete")).toHaveLength(5);
+    expect(screen.getAllByTestId("pixie-todo-complete")).toHaveLength(10);
   });
 
   it("云同步落地（MEMO_SYNCED_EVENT）后重新拉列表，不用等下一次操作", async () => {

@@ -9,6 +9,11 @@
  * `automation.listJobs`，也不会丢掉「列表摊开到哪条、勾选了哪几条、当前是哪个二级页签」。
  * 计数徽章常驻在页签上、要一直跟着数据走，所以三块的数据都得活着。
  *
+ * **选中不换字重**：三格都是 `font-medium`，只有颜色与 2px 下划线跟着选中走。
+ * 改字重（`font-semibold`）会连带改掉字宽——标题里那个「·」和整串文案一起变宽变窄，
+ * 三格等分、文案居中，于是切页签时那一行看起来在「挪位」。要强调选中，加色块或加下划线，
+ * 不要动 weight / letter-spacing。
+ *
  * 尺寸口径：栏高 `h-10`（35px，不是 40px），三格 `flex-1` 等分。面板最窄 350px → 每格 ~113px，
  * 图标 13 + 间距 5 + 标题（11px 四字 ≈ 44）+ 间距 4 + 计数 ≈ 8 + 左右内缩 16 ≈ 90，
  * 放得下。英文标题（"Scheduled Tasks"）放不下，靠 `truncate` 截断、`title` 给全称。
@@ -75,9 +80,9 @@ export function PixiePanelTabBar({
             aria-controls={`pixie-panel-${tab.id}`}
             title={tab.title}
             onClick={() => onSelect(tab.id)}
-            className={`flex min-w-0 flex-1 items-center justify-center gap-1 text-[11px] transition-colors focus-visible:outline-none ${
+            className={`flex min-w-0 flex-1 items-center justify-center gap-1 text-[11px] font-medium transition-colors focus-visible:outline-none ${
               selected
-                ? "font-semibold text-foreground shadow-[inset_0_-2px_0_var(--color-accent)]"
+                ? "text-foreground shadow-[inset_0_-2px_0_var(--color-accent)]"
                 : "text-muted hover:text-foreground"
             }`}
           >

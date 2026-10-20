@@ -205,49 +205,62 @@ export function PixieAutomationSection({
           </p>
         ) : (
           <>
-            {/* 二级页签行同时是这一块的**工具条**（与待办 · 速记同一套）：两桶占满左边，
+            {/* 二级页签行同时是这一块的**工具条**（与待办 · 速记同一套）：两桶靠左成文字，
              * 下次触发贴右，再后面是 ＋。原来那条单独的 hint 行就此省掉——
-             * 面板窄，能省一行就多出一行的列表。 */}
-            <div className="flex items-center gap-1">
-              {(["active", "expired"] as const).map((candidate) => (
-                <button
-                  key={candidate}
-                  type="button"
-                  data-testid={`pixie-automation-tab-${candidate}`}
-                  aria-pressed={bucket === candidate}
-                  className={`flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border text-[11px] transition-colors focus-visible:outline-none ${
-                    bucket === candidate
-                      ? "border-nav-active/50 bg-nav-active font-semibold text-nav-active-foreground"
-                      : "border-border text-muted hover:bg-surface-overlay hover:text-foreground"
-                  }`}
-                  onClick={() => setBucket(candidate)}
-                >
-                  {candidate === "active"
-                    ? t("automationSectionActive")
-                    : t("automationSectionExpired")}
-                  <span className="text-[10px] tabular-nums opacity-75">
-                    {candidate === "active" ? activeJobs.length : expiredJobs.length}
+             * 面板窄，能省一行就多出一行的列表。
+             * 形态与待办那一行保持一致：这是筛选不是导航，不用实心块/边框，
+             * 当前项靠 accent 下划线 + 常规字重说话（一级页签是 `h-10` 的下划线导航）。 */}
+            <div data-testid="pixie-automation-tabbar" className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5">
+                {(["active", "expired"] as const).map((candidate) => (
+                  <button
+                    key={candidate}
+                    type="button"
+                    data-testid={`pixie-automation-tab-${candidate}`}
+                    aria-pressed={bucket === candidate}
+                    className={`flex h-7 items-center gap-1.5 text-[12px] font-medium transition-colors focus-visible:outline-none ${
+                      bucket === candidate ? "text-foreground" : "text-muted hover:text-foreground"
+                    }`}
+                    onClick={() => setBucket(candidate)}
+                  >
+                    {/* 与待办那一行同一套：下划线只画标签，计数不划；字重不跟随选中变。 */}
+                    <span
+                      className={
+                        bucket === candidate
+                          ? "underline decoration-accent decoration-1 underline-offset-[3px]"
+                          : undefined
+                      }
+                    >
+                      {candidate === "active"
+                        ? t("automationSectionActive")
+                        : t("automationSectionExpired")}
+                    </span>
+                    <span className="text-[10px] tabular-nums opacity-75">
+                      {candidate === "active" ? activeJobs.length : expiredJobs.length}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="ml-auto flex min-w-0 items-center gap-1">
+                {hint ? (
+                  <span
+                    data-testid="pixie-automation-hint"
+                    className="min-w-0 shrink truncate text-right text-[10px] tabular-nums text-muted"
+                  >
+                    {hint}
                   </span>
-                </button>
-              ))}
-              {hint ? (
-                <span
-                  data-testid="pixie-automation-hint"
-                  className="min-w-0 shrink truncate text-right text-[10px] tabular-nums text-muted"
+                ) : null}
+                <button
+                  type="button"
+                  data-testid="pixie-automation-new"
+                  title={t("pixieAutomationNew")}
+                  aria-label={t("pixieAutomationNew")}
+                  className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none"
+                  onClick={() => setCreating(true)}
                 >
-                  {hint}
-                </span>
-              ) : null}
-              <button
-                type="button"
-                data-testid="pixie-automation-new"
-                title={t("pixieAutomationNew")}
-                aria-label={t("pixieAutomationNew")}
-                className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none"
-                onClick={() => setCreating(true)}
-              >
-                <Plus size={13} />
-              </button>
+                  <Plus size={12} />
+                </button>
+              </div>
             </div>
             {ordered.length === 0 ? (
               <p className="px-1 py-2 text-center text-[11px] text-muted">

@@ -215,8 +215,11 @@ describe("PixieAutomationSection", () => {
     const activeTab = await screen.findByTestId("pixie-automation-tab-active");
     const expiredTab = screen.getByTestId("pixie-automation-tab-expired");
     // 「＋」与两桶在同一行：这一行就是这一块的唯一工具条，不再单开一条 hint 行。
-    expect(screen.getByTestId("pixie-automation-new").parentElement).toBe(activeTab.parentElement);
-    expect(screen.getByTestId("pixie-automation-new").parentElement).toBe(expiredTab.parentElement);
+    // （同行不等于同父：两桶靠左成一组文字、动作贴右成一组，外层那个 flex 行才是工具条。）
+    const tabbar = screen.getByTestId("pixie-automation-tabbar");
+    for (const element of [activeTab, expiredTab, screen.getByTestId("pixie-automation-new")]) {
+      expect(tabbar).toContainElement(element);
+    }
     expect(activeTab).toHaveAttribute("aria-pressed", "true");
     expect(activeTab.textContent).toContain("1");
     expect(expiredTab.textContent).toContain("1");
