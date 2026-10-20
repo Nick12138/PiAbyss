@@ -31,6 +31,7 @@ import {
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { DefaultResourceLoader, SessionManager } from "@earendil-works/pi-coding-agent";
 import { logger } from "./logger.js";
+import { openSessionIntoGraph, type OpenedSessionInGraph } from "./session-lifecycle.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import type { WorkspaceGraph } from "./workspace-graph-types.js";
 import {
@@ -458,9 +459,17 @@ function watchDispatchTurn(
   factory: WorkspaceGraphFactory,
   session: AgentSession,
   dispatchId: string,
+  options: {
+    /**
+     * 注入侧已经确认过「信封确实进入了会话」（resume 的送达确认）——此时用户消息
+     * 事件可能已经发过，watcher 不能再指望从零数 envelopeSeen，否则续跑回合结束
+     * 会落进「不是本委派的回合」分支，记录永远停在 dispatched。
+     */
+    envelopeAlreadyDelivered?: boolean;
+  } = {},
 ): void {
   const agentDir = factory.deps.agentDir;
-  let envelopeSeen = false;
+  let envelopeSeen = options.envelopeAlreadyDelivered === true;
   let errorMessage: string | null = null;
   let finished = false;
   const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
@@ -607,31 +616,237 @@ function adoptDispatchSession(
 }
 
 /**
- * 解析委派记录对应的活会话：先查内存 Map（快路径），未命中再按 record.cwd 找
- * 已绑定图（active → backgroundSessions → idleSessionCache）兜底。真的找不到
- * （Host 重启 / 工作区已关闭 / 会话段已结束）才返回 null。
+ * 取（必要时后台重建）目标工作区的图：先找已绑定 / 已 parked 的图；工作区
+ * 目录还在盘上就交给 `ensureBackgroundGraph` 重建（与排队转正、派单同一条路径）。
+ *
+ * 为什么必须重建：`findBoundGraph` 只在 boundGraphs() 里查，用户不在该工作区
+ * 前台时图可能已被换出 / 根本没绑——但会话对象和 JSONL 都还活着。少了这一步
+ * 就会把「图没绑」误判成「会话不可达」。
  */
-function resolveDispatchSession(
+async function resolveGraphForCwd(
+  factory: WorkspaceGraphFactory,
+  canonicalCwd: string,
+  context: { dispatchId: string; purpose: string },
+): Promise<WorkspaceGraph | null> {
+  try {
+    const bound = factory.findBoundGraph(canonicalCwd);
+    if (bound) return bound;
+  } catch {
+    /* 查图失败按未绑定处理，继续走重建 */
+  }
+  if (!existsSync(canonicalCwd)) {
+    logger.info("pixie dispatch workspace missing on disk", {
+      dispatchId: context.dispatchId,
+      purpose: context.purpose,
+      cwd: canonicalCwd,
+    });
+    return null;
+  }
+  try {
+    const built = await factory.ensureBackgroundGraph(canonicalCwd);
+    if (!("error" in built)) {
+      logger.info("pixie dispatch graph rebuilt in background", {
+        dispatchId: context.dispatchId,
+        purpose: context.purpose,
+        cwd: canonicalCwd,
+      });
+      return built.graph;
+    }
+    logger.warn("pixie dispatch graph rebuild failed", {
+      dispatchId: context.dispatchId,
+      purpose: context.purpose,
+      cwd: canonicalCwd,
+      error: built.error.message,
+    });
+  } catch (error) {
+    logger.warn("pixie dispatch graph rebuild threw", {
+      dispatchId: context.dispatchId,
+      purpose: context.purpose,
+      cwd: canonicalCwd,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return null;
+}
+
+/** 会话找回结果：找不到时带可观测原因（区分「文件没了」/「重开失败」/「会话没了」）。 */
+type DispatchSessionResolution = { session: AgentSession } | { session: null; reason: string };
+
+/**
+ * 同一个 dispatchId 的重开去重：并发 resume 只能重开一次，否则同一个会话会挂上
+ * 两份 runtime（事件被处理两遍、正文重复）。以 agentDir + sessionPath 为键。
+ */
+const dispatchReopenInFlight = new Map<string, Promise<DispatchSessionResolution>>();
+
+/**
+ * 把记录的会话从 JSONL 重新打开进图（运行时对象已被释放的情况）。
+ *
+ * 会话对象会在切工作区（disposeIdleSessionRuntimes）、图被驱逐、idle TTL 到期时
+ * 被释放，但会话文件一直在盘上。这里用与 `session.open` 同一个重建路径把会话
+ * 重新挂回图（后台驻留，不抢前台会话位），再 adopt 回 dispatchedSessions。
+ */
+function reopenDispatchSession(
+  factory: WorkspaceGraphFactory,
+  dispatchId: string,
+  graph: WorkspaceGraph,
+  record: PixieDispatchRecord,
+): Promise<DispatchSessionResolution> {
+  const key = `${factory.deps.agentDir}::${dispatchId}::${record.sessionPath ?? ""}`;
+  const existing = dispatchReopenInFlight.get(key);
+  if (existing) {
+    logger.info("pixie dispatch session reopen joined an in-flight attempt", {
+      dispatchId,
+      sessionPath: record.sessionPath,
+    });
+    return existing;
+  }
+  const task = reopenDispatchSessionOnce(factory, dispatchId, graph, record).finally(() => {
+    if (dispatchReopenInFlight.get(key) === task) dispatchReopenInFlight.delete(key);
+  });
+  dispatchReopenInFlight.set(key, task);
+  return task;
+}
+
+async function reopenDispatchSessionOnce(
+  factory: WorkspaceGraphFactory,
+  dispatchId: string,
+  graph: WorkspaceGraph,
+  record: PixieDispatchRecord,
+): Promise<DispatchSessionResolution> {
+  const sessionPath = record.sessionPath?.trim() || null;
+  if (!sessionPath || !existsSync(sessionPath)) {
+    return {
+      session: null,
+      reason: `会话记录文件已不存在（${sessionPath ?? "记录里没有 sessionPath"}），请改用 redispatch 重派`,
+    };
+  }
+  logger.info("pixie dispatch session reopening from file", { dispatchId, sessionPath });
+  let opened: OpenedSessionInGraph | { error: { message: string; retryable: boolean } };
+  try {
+    opened = await openSessionIntoGraph(factory, graph, sessionPath);
+  } catch (error) {
+    return {
+      session: null,
+      reason: `重开会话失败：${textOfError(error)}，可重试`,
+    };
+  }
+  if ("error" in opened) {
+    return {
+      session: null,
+      reason: `重开会话失败：${opened.error.message}${opened.error.retryable ? "（可重试）" : ""}`,
+    };
+  }
+  const expectedSessionId = record.sessionId?.trim() || null;
+  if (expectedSessionId && opened.sessionId !== expectedSessionId) {
+    // 文件和记录不是同一条会话：不要静默换会话，也别把它留在图里。
+    discardReopenedSession(factory, graph, opened);
+    return {
+      session: null,
+      reason:
+        `重开会话后 sessionId 不匹配（期望 ${expectedSessionId}，实际 ${opened.sessionId}），` +
+        "已放弃续跑（会话文件可能被替换或归档）",
+    };
+  }
+  const expectedCwd = factory.canonicalizeCwd(record.cwd);
+  let openedCwd = graph.canonicalCwd;
+  try {
+    openedCwd = factory.canonicalizeCwd(opened.sessionManager.getCwd());
+  } catch {
+    /* 取不到就按图的工作区算 */
+  }
+  if (openedCwd !== expectedCwd) {
+    discardReopenedSession(factory, graph, opened);
+    return {
+      session: null,
+      reason: `重开的会话属于另一个工作区（${openedCwd}），不能在本工作区续跑；请改用 redispatch 重派`,
+    };
+  }
+  dispatchedSessions.set(dispatchId, opened.session);
+  logger.info("pixie dispatch session reopened and adopted", {
+    dispatchId,
+    sessionId: opened.sessionId,
+    sessionPath: opened.sessionPath,
+  });
+  return { session: opened.session };
+}
+
+/** 丢掉刚重开但不可用的会话（不留在图里，避免一个会话两份 runtime）。 */
+function discardReopenedSession(
+  factory: WorkspaceGraphFactory,
+  graph: WorkspaceGraph,
+  opened: OpenedSessionInGraph,
+): void {
+  if (graph.backgroundSessions.get(opened.sessionId)?.agentSession === opened.session) {
+    graph.backgroundSessions.delete(opened.sessionId);
+  }
+  if (graph.idleSessionCache?.get(opened.sessionId)?.agentSession === opened.session) {
+    graph.idleSessionCache.delete(opened.sessionId);
+  }
+  try {
+    opened.runtime.unsubscribeAgent?.();
+  } catch {
+    /* 退订是尽力而为 */
+  }
+  void factory.disposeAgentSessionOnly(opened.session).catch(() => undefined);
+}
+
+/**
+ * 解析委派记录对应的活会话：先查内存 Map（快路径），未命中再按 record.cwd 找
+ * 已绑定图；图没绑但工作区目录还在时后台重建图，再在图里按 sessionId 找
+ * （active → backgroundSessions → idleSessionCache）。真的找不到（Host 重启 /
+ * 工作区已删 / 会话段已结束）才报不可达，并给出具体原因。
+ */
+async function resolveDispatchSession(
   factory: WorkspaceGraphFactory,
   dispatchId: string,
   record: PixieDispatchRecord,
-): AgentSession | null {
+): Promise<DispatchSessionResolution> {
   const live = dispatchedSessions.get(dispatchId);
-  if (live) return live;
-  let graph: WorkspaceGraph | null = null;
-  try {
-    graph = factory.findBoundGraph(factory.canonicalizeCwd(record.cwd));
-  } catch {
-    graph = null;
+  if (live) return { session: live };
+  // 没有 sessionId 就无从在图里定位，别为了它白建一张工作区图。
+  if (!record.sessionId?.trim()) {
+    return {
+      session: null,
+      reason: "委派记录缺少 sessionId，无法定位目标会话；请改用 redispatch 重派",
+    };
   }
+  let canonical: string;
+  try {
+    canonical = factory.canonicalizeCwd(record.cwd);
+  } catch (error) {
+    return {
+      session: null,
+      reason:
+        `目标会话已不可达：目标工作区路径无效（${record.cwd}）：${textOfError(error)}；` +
+        "请改用 redispatch 重派",
+    };
+  }
+  const graph = await resolveGraphForCwd(factory, canonical, {
+    dispatchId,
+    purpose: "retry.resume",
+  });
+  if (!graph) {
+    return {
+      session: null,
+      reason: existsSync(canonical)
+        ? `目标会话已不可达：目标工作区无法在后台重新打开（${canonical}），工作区图重建失败；可稍后重试，或改用 redispatch 重派`
+        : `目标会话已不可达：目标工作区目录不存在（${canonical}），请改用 redispatch 重派`,
+    };
+  }
+  // 重建图期间可能已被别的路径 adopt 进 Map（Idempotent，免得用两个对象）。
+  const adopted = dispatchedSessions.get(dispatchId);
+  if (adopted) return { session: adopted };
   const recovered = adoptDispatchSession(dispatchId, graph, record.sessionId);
   if (recovered) {
     logger.info("pixie dispatch session recovered from graph", {
       dispatchId,
       sessionId: record.sessionId,
     });
+    return { session: recovered };
   }
-  return recovered;
+  // 图里确实没有：运行时对象可能已被释放（切工作区 / 图被驱逐 / idle TTL），
+  // 但 JSONL 还在——从文件重开进图后继续用，上下文零丢失。
+  return reopenDispatchSession(factory, dispatchId, graph, record);
 }
 
 /**
@@ -648,11 +863,10 @@ async function activateQueuedDispatch(
   const record = activateDispatch(dispatchId, agentDir);
   if (!record) return;
   const canonical = factory.canonicalizeCwd(record.cwd);
-  let graph = factory.findBoundGraph(canonical);
-  if (!graph && existsSync(canonical)) {
-    const built = await factory.ensureBackgroundGraph(canonical);
-    if (!("error" in built)) graph = built.graph;
-  }
+  const graph = await resolveGraphForCwd(factory, canonical, {
+    dispatchId,
+    purpose: "queue.activate",
+  });
   const session = adoptDispatchSession(dispatchId, graph, record.sessionId);
   if (!session) {
     const settled = failDispatch(
@@ -1346,16 +1560,249 @@ async function stopDispatchById(
   return { ok: true, action: "aborted" };
 }
 
+/* ── 续跑信封送达（resume 只认「真的进了会话」）────────────────────── */
+
+/**
+ * 续跑注入的时序预算（毫秒）：
+ * - idleWaitMs：上一轮 abort 的结算窗口。abort 结束后 isStreaming 可能还残留，
+ *   先等它复位再决定投递方式；
+ * - confirmMs：信封到底进没进会话的确认窗口（用户消息事件 / 会话 state 双路取证）。
+ * 测试用 setResumeInjectionTimingsForTests 缩短，免得真等十几秒。
+ */
+const RESUME_IDLE_WAIT_MS = 8_000;
+const RESUME_CONFIRM_MS = 15_000;
+const resumeTimings = { idleWaitMs: RESUME_IDLE_WAIT_MS, confirmMs: RESUME_CONFIRM_MS };
+
+const RESUME_ENVELOPE_MARK = "<pixie-resume";
+
+/** @internal test seam: 缩短续跑注入的两个等待窗口。 */
+export function setResumeInjectionTimingsForTests(
+  timings: { idleWaitMs?: number; confirmMs?: number } | null,
+): void {
+  resumeTimings.idleWaitMs = timings?.idleWaitMs ?? RESUME_IDLE_WAIT_MS;
+  resumeTimings.confirmMs = timings?.confirmMs ?? RESUME_CONFIRM_MS;
+}
+
+function textOfError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * 等 abort 结算（有限等待）：残留的 isStreaming 不能把续跑卡死，也不能让我们
+ * 对着一个没有活跃回合的会话走 steer（那只会把信封丢进一个永远不 flush 的队列）。
+ */
+async function waitForInjectableSession(
+  session: AgentSession,
+  timeoutMs: number,
+): Promise<boolean> {
+  if (!session.isStreaming) return true;
+  const idle = typeof session.waitForIdle === "function" ? session.waitForIdle() : null;
+  if (!idle) return false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      idle.catch(() => undefined),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+  return !session.isStreaming;
+}
+
+/** 会话 state 里已经落了几个续跑信封（用于排除旧轮次里残留的同款信封）。 */
+function countDeliveredEnvelopes(session: AgentSession, marker: string): number {
+  try {
+    const messages = (session.state?.messages ?? []) as Array<{
+      role?: string;
+      content?: unknown;
+    }>;
+    let count = 0;
+    for (const message of messages) {
+      if (message?.role === "user" && messageTextOf(message).includes(marker)) count += 1;
+    }
+    return count;
+  } catch {
+    // state 是尽力取证：取不到就只靠事件。
+    return 0;
+  }
+}
+
+type EnvelopeDeliveryProbe = {
+  /** true = 信封确实进入了会话（用户消息事件 / state 新增）。 */
+  landed: Promise<boolean>;
+  /** 注入侧拿到明确错误（prompt reject）：立刻判定未送达。 */
+  fail: () => void;
+  /** 放弃确认（不产生判断）：只在注入被同步拒绝时用。 */
+  cancel: () => void;
+};
+
+/**
+ * 先挂观察者、后注入：命中「带续跑信封的用户消息事件」或「state 里多了这条
+ * 用户消息」才算送达。仅入队不算——那正是「返回 ok 但 JSONL 零新增」的假成功。
+ */
+function createEnvelopeDeliveryProbe(session: AgentSession, marker: string): EnvelopeDeliveryProbe {
+  const baseline = countDeliveredEnvelopes(session, marker);
+  let settled = false;
+  let unsubscribe: (() => void) | null = null;
+  const control: { confirmTimer?: ReturnType<typeof setTimeout> } = {};
+  let resolveLanded: (landed: boolean) => void = () => undefined;
+  const landed = new Promise<boolean>((resolve) => {
+    resolveLanded = resolve;
+  });
+  const finish = (value: boolean) => {
+    if (settled) return;
+    settled = true;
+    if (control.confirmTimer !== undefined) clearTimeout(control.confirmTimer);
+    try {
+      unsubscribe?.();
+    } catch {
+      /* 退订是尽力而为 */
+    }
+    resolveLanded(value);
+  };
+  control.confirmTimer = setTimeout(
+    () => finish(countDeliveredEnvelopes(session, marker) > baseline),
+    resumeTimings.confirmMs,
+  );
+  try {
+    unsubscribe = session.subscribe((event: AgentSessionEvent) => {
+      if (event.type !== "message_start" && event.type !== "message_end") return;
+      if (event.message.role !== "user") return;
+      if (messageTextOf(event.message).includes(marker)) finish(true);
+    });
+  } catch {
+    // 订阅失败就只剩 state + 超时两路。
+  }
+  return {
+    landed,
+    fail: () => finish(false),
+    cancel: () => finish(false),
+  };
+}
+
+/**
+ * 把续跑信封送进目标会话，并等到「确实进入会话」为止。
+ *
+ * 关键：空闲会话必须用 prompt()——followUp()/steer() 在 SDK 里只入队，不会
+ * 自己开回合；对一个刚 abort、已经没有活跃回合的会话 followUp，消息会永远躺在
+ * 队列里（表现就是「返回 ok 但会话 JSONL 零新增」）。只有会话确实在流式（有
+ * 活跃回合会来消费队列）时才 steer，且不再静默吞掉 steer 的错误。
+ */
+async function deliverResumeEnvelope(
+  session: AgentSession,
+  envelope: string,
+): Promise<{ ok: true; mode: "prompt" | "steer" } | { ok: false; error: string }> {
+  const marker = RESUME_ENVELOPE_MARK;
+  const injectable = await waitForInjectableSession(session, resumeTimings.idleWaitMs);
+  if (injectable) {
+    const probe = createEnvelopeDeliveryProbe(session, marker);
+    const failure: { message: string | null } = { message: null };
+    // prompt 的 promise 要到整个回合结束才 resolve，所以这里必须 fire-and-forget，
+    // 送达与否由 probe（事件/state）确认——不能等回合跑完再挂 watcher。
+    void session.prompt(envelope).catch((error: unknown) => {
+      failure.message = textOfError(error);
+      probe.fail();
+    });
+    if (await probe.landed) return { ok: true, mode: "prompt" };
+    return {
+      ok: false,
+      error: failure.message
+        ? `续跑信封注入失败：${failure.message}`
+        : `续跑信封注入后 ${resumeTimings.confirmMs}ms 内没有进入目标会话（会话实例可能已失效）。` +
+          "请重启 pi-host 后重试，或改用 redispatch 重派",
+    };
+  }
+  const probe = createEnvelopeDeliveryProbe(session, marker);
+  try {
+    const disposition = await session.steer(envelope);
+    if (disposition === "handled") {
+      probe.cancel();
+      return { ok: true, mode: "steer" };
+    }
+  } catch (error) {
+    probe.cancel();
+    return { ok: false, error: `续跑信封插话失败：${textOfError(error)}` };
+  }
+  if (await probe.landed) return { ok: true, mode: "steer" };
+  return {
+    ok: false,
+    error:
+      `目标会话仍停在流式状态，续跑信封在 ${resumeTimings.confirmMs}ms 内没有真正投递` +
+      "（疑似会话实例已失效、没有活跃回合来消费队列）。" +
+      "请到该会话确认（可能已入队），或重启 pi-host 后用 redispatch 重派",
+  };
+}
+
+/**
+ * 续跑注入失败的可观测回执：记录保持 failed/stopped（绝不伪造 dispatched），
+ * 并把原因回调给小精灵，让用户/小精灵看到真实失败而不是假「进行中」。
+ */
+function reportResumeInjectionFailure(
+  factory: WorkspaceGraphFactory,
+  dispatchId: string,
+  reason: string,
+): void {
+  const agentDir = factory.deps.agentDir;
+  // 兜底：任何路径把记录留在 dispatched 都算假状态，强制落回 failed。
+  const current = findDispatchById(dispatchId);
+  const record =
+    current && current.status === "dispatched"
+      ? (failDispatch(dispatchId, `续跑注入失败：${reason}`, agentDir) ?? current)
+      : current;
+  logger.warn("pixie dispatch resume injection failed", { dispatchId, reason });
+  if (!record) return;
+  void deliverDispatchCallback(factory, {
+    agentDir,
+    record,
+    kind: "error",
+    summary: `续跑注入失败：${reason}`,
+    // 会话对象在手但送达无法确认 → 按「不可续跑」引导走 redispatch，别让用户反复 resume。
+    sessionAlive: "dead",
+    errorType: "session_gone",
+  });
+}
+
 /**
  * Retry a failed/stopped delegation (标准决策流的执行入口):
  * - resume: the delegated session is still reachable — in the live-session map
  *   OR recoverable from the bound workspace graph by record.sessionId — so
- *   reactivate the SAME record (context intact) and followUp a continue
- *   envelope (the turn watcher is re-armed for the continuation turn);
+ *   inject a continue envelope into that SAME session (context intact); the
+ *   record is only reactivated AFTER delivery is confirmed, so a failed
+ *   injection can never leave a fake "dispatched";
  * - redispatch: session really gone → a fresh record chained via retryOf;
  * - mode omitted → auto: resume when the session is reachable.
  */
 async function retryDispatchById(
+  factory: WorkspaceGraphFactory,
+  args: { dispatchId: string; mode?: "resume" | "redispatch" },
+): Promise<{ ok: true; dispatchId: string } | { ok: false; error: string }> {
+  const key = `${factory.deps.agentDir}::${args.dispatchId}`;
+  const existing = retryInFlight.get(key);
+  if (existing) {
+    // 并发 resume（前端双击 / 小精灵重复调用）：共用同一次尝试，不重复注入/重开。
+    logger.info("pixie dispatch retry joined an in-flight attempt", {
+      dispatchId: args.dispatchId,
+      mode: args.mode ?? "auto",
+    });
+    return existing;
+  }
+  const task = retryDispatchByIdOnce(factory, args).finally(() => {
+    if (retryInFlight.get(key) === task) retryInFlight.delete(key);
+  });
+  retryInFlight.set(key, task);
+  return task;
+}
+
+/** 同一 dispatchId + mode 的 in-flight 续跑（并发去重）。 */
+const retryInFlight = new Map<
+  string,
+  Promise<{ ok: true; dispatchId: string } | { ok: false; error: string }>
+>();
+
+async function retryDispatchByIdOnce(
   factory: WorkspaceGraphFactory,
   args: { dispatchId: string; mode?: "resume" | "redispatch" },
 ): Promise<{ ok: true; dispatchId: string } | { ok: false; error: string }> {
@@ -1366,33 +1813,50 @@ async function retryDispatchById(
     return { ok: false, error: `该任务当前状态为 ${record.status}，只有失败/被叫停的任务可以重试` };
   }
   // Map 未命中不等于会话死了（回合 abort/error 会把条目删掉但会话还活着）：
-  // 回绑定的工作区图里按 record.sessionId 兜底找回，找回即视为可 resume。
-  const session = resolveDispatchSession(factory, args.dispatchId, record);
+  // 回工作区图里按 record.sessionId 兜底找回；图没绑但工作区还在盘上时
+  // resolveDispatchSession 会后台重建图再找（用户不在该工作区前台也能 resume）。
+  // 显式 redispatch 不需要定位旧会话，跳过（避免白白重建一张图）。
+  const resolution =
+    args.mode === "redispatch" ? null : await resolveDispatchSession(factory, args.dispatchId, record);
+  const session = resolution?.session ?? null;
   const mode = args.mode ?? (session ? "resume" : "redispatch");
   if (mode === "resume") {
-    if (!session)
-      return { ok: false, error: "目标会话已不可达，无法原地续跑；请改用 redispatch 重派" };
-    const reactivated = reactivateDispatchForResume(args.dispatchId, agentDir);
-    if (!reactivated) return { ok: false, error: "原地续跑失败：记录状态已变化" };
+    if (!session) {
+      // 原因分层（文件没了 / 重开失败 / 图没了 / id 不匹配），不再一律「不可达」。
+      return {
+        ok: false,
+        error: resolution && !resolution.session ? resolution.reason : "目标会话不可用",
+      };
+    }
     const envelope = [
       `<pixie-resume dispatchId="${args.dispatchId}">`,
-      "用户要求原地续跑之前的任务（第 " + reactivated.failCount + " 次尝试）：",
+      "用户要求原地续跑之前的任务（第 " + (record.failCount + 1) + " 次尝试）：",
       record.task,
       "请从当前进度继续执行（不要重头开始）；完成后再按原要求回调。",
       "</pixie-resume>",
     ].join("\n");
-    watchDispatchTurn(factory, session, args.dispatchId);
-    try {
-      if (session.isStreaming) {
-        void session.steer(envelope).catch(() => undefined);
-      } else {
-        session.followUp(envelope);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      failDispatch(args.dispatchId, `续跑注入失败：${message}`, agentDir);
-      return { ok: false, error: `续跑注入失败：${message}` };
+    // 先送达、后改状态：信封没确认进入会话之前，记录一个字段都不动。
+    const delivered = await deliverResumeEnvelope(session, envelope);
+    if (!delivered.ok) {
+      reportResumeInjectionFailure(factory, args.dispatchId, delivered.error);
+      return { ok: false, error: delivered.error };
     }
+    const reactivated = reactivateDispatchForResume(args.dispatchId, agentDir);
+    if (!reactivated) {
+      // 信封已经进会话，只是记录被并发改掉了：续跑回合仍然需要归属，挂上 watcher。
+      watchDispatchTurn(factory, session, args.dispatchId, { envelopeAlreadyDelivered: true });
+      return {
+        ok: false,
+        error: "原地续跑失败：记录状态已变化（续跑信封已送达目标会话，请刷新面板核对）",
+      };
+    }
+    watchDispatchTurn(factory, session, args.dispatchId, { envelopeAlreadyDelivered: true });
+    logger.info("pixie dispatch resumed in place", {
+      dispatchId: args.dispatchId,
+      sessionId: session.sessionId,
+      delivery: delivered.mode,
+      attempt: reactivated.failCount,
+    });
     return { ok: true, dispatchId: args.dispatchId };
   }
   // redispatch: same cwd + task, fresh record chained to the failed one.

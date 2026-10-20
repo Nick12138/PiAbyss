@@ -22,7 +22,11 @@ import { bindForCandidate } from "./extension-ui-lifecycle.js";
 import { type GraphOperationKind } from "./locks.js";
 import { extractLatestAssistantText, generateRefinedSessionTitle } from "./session-title.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
-import type { ManagedSessionInfo, WorkspaceGraph } from "./workspace-graph-types.js";
+import type {
+  BackgroundSessionRuntime,
+  ManagedSessionInfo,
+  WorkspaceGraph,
+} from "./workspace-graph-types.js";
 import { captureActiveSessionState, commitActiveSessionState } from "./session-runtime-cache.js";
 import { sessionStorageDirs as resolveSessionStorageDirs } from "./session-storage.js";
 import {
@@ -1136,6 +1140,228 @@ export async function openSession(
     server.serviceGraphLock.release(requestId);
     operation.finish();
   }
+}
+
+/** 一条被重新打开进图的已有会话（后台驻留，不占前台会话位）。 */
+export type OpenedSessionInGraph = {
+  sessionId: string;
+  sessionPath: string;
+  session: AgentSession;
+  sessionManager: SessionManager;
+  resourceLoader: DefaultResourceLoader;
+  runtime: BackgroundSessionRuntime;
+};
+
+export type OpenSessionIntoGraphOptions = {
+  /** 会话所属 cwd（缺省 = 图的 canonicalCwd）。 */
+  cwd?: string;
+  /** 显式初始模型（小精灵体）；缺省沿用会话文件里记录的模型。 */
+  modelRef?: { provider: string; id: string } | null;
+  /**
+   * 同时把会话补进图的「前台会话槽位」（agentSession / sessionManager /
+   * sessionSnapshot / unsubscribeAgent）。小精灵驻留图需要（那张图从未走过
+   * 前台）；普通工作区的委派会话不要——那会顶掉用户下次切进该工作区时看到的
+   * 会话，还可能让后台会话冒充活动会话。
+   */
+  adoptForegroundSlots?: boolean;
+  /** 额外的 custom tools（缺省注入 read_attachment，与 session.open 一致）。 */
+  customTools?: Parameters<typeof createHostAgentSession>[0]["customTools"];
+  /** 打开前的准备（例如小精灵人格文件必须早于 resourceLoader 落盘）。 */
+  beforeOpen?: (cwd: string) => void | Promise<void>;
+  /** 自定义 resource loader（缺省 = 标准工作区 loader：离线守卫 + 状态桥扩展）。 */
+  createResourceLoader?: (cwd: string) => Promise<DefaultResourceLoader>;
+  /** 打开成功后的附加登记（例如小精灵段缓存）；异常不阻断。 */
+  onOpened?: (opened: OpenedSessionInGraph) => void;
+};
+
+/**
+ * 把一条已存在的 Session JSONL 重新打开并注册进工作区图（后台驻留）。
+ *
+ * 这是 `openSession` 的「后台版」——不抬前台、不换图、不抢服务锁：
+ *
+ *   SessionManager.open(sessionPath) → createHostAgentSession → buildSessionSnapshot
+ *   → 组装 BackgroundSessionRuntime（含 handleAgentEvent 订阅）→ backgroundSessions
+ *
+ * 为什么需要它：会话运行时对象会被释放（切工作区时 `disposeIdleSessionRuntimes`、
+ * 图被驱逐时 `disposeGraphSessionRuntimes`、idle TTL 到期），但 JSONL 一直在盘上。
+ * 靠「内存里找对象」的功能（委派 resume）不能把「对象没了」当成「会话没了」。
+ *
+ * SessionManager.open 会沿用文件 header 里的 sessionId（不新建段落），调用方负责
+ * 校验重开的 id 与预期一致。
+ */
+export async function openSessionIntoGraph(
+  factory: WorkspaceGraphFactory,
+  graph: WorkspaceGraph,
+  sessionPath: string,
+  options: OpenSessionIntoGraphOptions = {},
+): Promise<OpenedSessionInGraph | { error: HostError }> {
+  const agentDir = factory.deps.agentDir;
+  const settingsManager = graph.settingsManager;
+  if (!graph.servicesReady || !settingsManager) {
+    return { error: createHostError("AGENT_NOT_READY", "Workspace services not ready") };
+  }
+  if (!existsSync(sessionPath)) {
+    return {
+      error: createHostError("SESSION_NOT_FOUND", `Session file not found: ${sessionPath}`),
+    };
+  }
+  // 不传 cwd 时由文件 header 决定会话 cwd（与 session.open 一致），调用方可据此
+  // 核对「重开的确实是这个工作区的会话」，而不是盲目把别人的会话拉进本图。
+  const explicitCwd = options.cwd ?? null;
+  let sessionManager: SessionManager;
+  try {
+    const { activeDir } = resolveSessionStorageDirs(agentDir, explicitCwd ?? graph.canonicalCwd);
+    sessionManager = explicitCwd
+      ? SessionManager.open(sessionPath, activeDir, explicitCwd)
+      : SessionManager.open(sessionPath, activeDir);
+  } catch (err) {
+    return {
+      error: createHostError("SESSION_SWITCH_FAILED", `无法打开会话文件：${errorMessageOf(err)}`, {
+        retryable: true,
+      }),
+    };
+  }
+  const cwd = explicitCwd ?? sessionManager.getCwd();
+  let resourceLoader: DefaultResourceLoader;
+  try {
+    await options.beforeOpen?.(graph.canonicalCwd);
+    resourceLoader = options.createResourceLoader
+      ? await options.createResourceLoader(graph.canonicalCwd)
+      : await createSessionResourceLoader(factory, graph);
+  } catch (err) {
+    return {
+      error: createHostError("SESSION_SWITCH_FAILED", `工作区资源加载失败：${errorMessageOf(err)}`, {
+        retryable: true,
+      }),
+    };
+  }
+  const customTools =
+    options.customTools ??
+    (factory.deps.attachmentStore
+      ? [createReadAttachmentTool(factory.deps.attachmentStore)]
+      : undefined);
+  let created: Awaited<ReturnType<typeof createHostAgentSession>>;
+  try {
+    created = await createHostAgentSession({
+      cwd,
+      agentDir,
+      modelRuntime: factory.deps.modelRuntime,
+      settingsManager,
+      resourceLoader,
+      sessionManager,
+      ...(options.modelRef ? { modelRef: options.modelRef } : {}),
+      ...(customTools ? { customTools } : {}),
+    });
+  } catch (err) {
+    return {
+      error: createHostError("SESSION_SWITCH_FAILED", `会话加载失败：${errorMessageOf(err)}`, {
+        retryable: true,
+      }),
+    };
+  }
+  const session = created.session;
+  // 文件里的 sessionId 优先（open 不会新建段落）；两者理应一致。
+  const sessionId = sessionManager.getSessionId() || session.sessionId;
+  // 并发兵底：如果另一个路径刚刚把同一会话重开进图，就丢掉刚建的这份，
+  // 复用已有的 runtime——一个会话绝不能挂两份 runtime（事件会被处理两遍）。
+  const existing =
+    graph.backgroundSessions.get(sessionId) ?? graph.idleSessionCache?.get(sessionId);
+  if (existing) {
+    try {
+      await factory.disposeAgentSessionOnly(session);
+    } catch {
+      /* 丢弃副本失败不影响已有 runtime */
+    }
+    logger.info("openSessionIntoGraph reused an existing runtime", {
+      sessionId,
+      workspaceId: graph.workspaceId,
+    });
+    return {
+      sessionId: existing.sessionId,
+      sessionPath: existing.sessionSnapshot.sessionPath ?? sessionPath,
+      session: existing.agentSession,
+      sessionManager: existing.sessionManager,
+      resourceLoader: existing.resourceLoader,
+      runtime: existing,
+    };
+  }
+  try {
+    await factory.deps.attachmentStore?.reconcileSession(
+      sessionId,
+      sessionManager.getSessionFile(),
+    );
+  } catch {
+    /* 附件对账失败不影响会话本身 */
+  }
+  await factory.deps.recordMigrationMilestone?.("sessionOpened");
+  const snapshot = buildSessionSnapshot({
+    session,
+    sessionManager,
+    cwd,
+    sessionId,
+    revision: 0,
+    workspaceId: graph.workspaceId,
+    toolRevision: graph.toolRevision,
+  });
+  const runtime: BackgroundSessionRuntime = {
+    sessionId,
+    sessionRevision: 0,
+    sessionManager,
+    agentSession: session,
+    resourceLoader,
+    extensionsResult: created.extensionsResult,
+    toolRevision: graph.toolRevision,
+    sessionSnapshot: snapshot,
+    // 与 session.open / 小精灵驻留同一条事件接线：后台会话只外发终态信号，
+    // 但 runtime 状态、队列快照与 settles→idle 缓存这些生命周期归 Host 管。
+    unsubscribeAgent: session.subscribe((event) => factory.handleAgentEvent(graph, session, event)),
+    extensionUiActivate: null,
+    extensionUiCleanup: null,
+    extensionUiUpdateIdentity: null,
+    extensionUiReplayState: null,
+  };
+  graph.backgroundSessions.set(sessionId, runtime);
+  graph.idleSessionCache?.delete(sessionId);
+  if (options.adoptForegroundSlots && factory.getGraph() !== graph) {
+    // 旧的前台会话如果不属于这张图，它的订阅没有别的持有者，先摘掉。
+    if (graph.unsubscribeAgent && graph.unsubscribeAgent !== runtime.unsubscribeAgent) {
+      try {
+        graph.unsubscribeAgent();
+      } catch {
+        /* best-effort */
+      }
+    }
+    graph.agentSession = runtime.agentSession;
+    graph.sessionManager = runtime.sessionManager;
+    graph.sessionSnapshot = runtime.sessionSnapshot;
+    graph.unsubscribeAgent = runtime.unsubscribeAgent;
+  }
+  factory.touchIdleSession(graph, sessionId);
+  const opened: OpenedSessionInGraph = {
+    sessionId,
+    sessionPath: session.sessionFile ?? sessionPath,
+    session,
+    sessionManager,
+    resourceLoader,
+    runtime,
+  };
+  try {
+    options.onOpened?.(opened);
+  } catch (err) {
+    logger.warn("openSessionIntoGraph onOpened hook failed", { error: errorMessageOf(err) });
+  }
+  // 让前台图的前端立刻看到这条会话的 runtime 状态（停驻图会被内部路由过滤）。
+  factory.announceRetainedRuntime(runtime);
+  logger.info("session opened into graph (background)", {
+    sessionId,
+    sessionPath: opened.sessionPath,
+    workspaceId: graph.workspaceId,
+  });
+  return opened;
+}
+
+function errorMessageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function forkedUserText(content: unknown): string | undefined {

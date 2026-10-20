@@ -79,6 +79,7 @@ import { recordPixieInteraction } from "./pixie-usage.js";
 import { piabyssDataDir } from "./piabyss-data.js";
 import { sessionStorageDirs } from "./session-storage.js";
 import { upsertPixieSession } from "./pixie-session-cache.js";
+import { openSessionIntoGraph } from "./session-lifecycle.js";
 import { logger } from "./logger.js";
 
 /** 小精灵工作区的人格文件名（SDK context files 候选之一，见下）。 */
@@ -1268,6 +1269,21 @@ async function createPixieSessionInGraph(
   return { sessionId: session.sessionId, sessionPath: session.sessionFile ?? "", runtime };
 }
 
+/** 小精灵会话的 resource loader（不带状态桥扩展，与建段路径一致）。 */
+async function createPixieResourceLoader(
+  factory: WorkspaceGraphFactory,
+  cwd: string,
+): Promise<DefaultResourceLoader> {
+  const agentDir = factory.deps.agentDir;
+  const resourceLoader = new DefaultResourceLoader({
+    cwd,
+    agentDir,
+    settingsManager: workspaceSettingsManager(cwd, agentDir),
+  });
+  await resourceLoader.reload();
+  return resourceLoader;
+}
+
 /** Host 重启后把指针指向的 JSONL 重新打开进图（等价 openSession 的驻留路径）。 */
 async function openPixieSessionInGraph(
   factory: WorkspaceGraphFactory,
@@ -1276,49 +1292,26 @@ async function openPixieSessionInGraph(
 ): Promise<{ sessionId: string; sessionPath: string; runtime: PixieParkedRuntime }> {
   const agentDir = factory.deps.agentDir;
   const pixieCwd = graph.canonicalCwd;
-  ensurePixiePersonaFile(agentDir, pixieCwd);
-  const settingsManager = workspaceSettingsManager(pixieCwd, agentDir);
-  const resourceLoader = new DefaultResourceLoader({ cwd: pixieCwd, agentDir, settingsManager });
-  await resourceLoader.reload();
-  const sessionManager = SessionManager.open(sessionPath);
-  const created = await createHostAgentSession({
-    cwd: pixieCwd,
-    agentDir,
-    modelRuntime: requireHostModelRuntime(),
-    settingsManager,
-    resourceLoader,
-    sessionManager,
+  const opened = await openSessionIntoGraph(factory, graph, sessionPath, {
+    // 人格文件要在 resourceLoader 之前落盘，本次打开的会话才吃得到。
+    beforeOpen: () => {
+      ensurePixiePersonaFile(agentDir, pixieCwd);
+    },
+    createResourceLoader: (cwd) => createPixieResourceLoader(factory, cwd),
     modelRef: parsePixieModelRef(process.env.PIABYSS_PIXIE_MODEL),
+    // 小精灵图从未走过前台：会话四个槽位一起补（详见 markParkedForegroundSession）。
+    adoptForegroundSlots: true,
+    // v4.3 会话缓存：小精灵自己的工作区会话也登记（role=pixie）。
+    onOpened: ({ session }) => rememberPixieSegmentSession(agentDir, pixieCwd, session),
   });
-  const session = created.session;
-  rememberPixieSegmentSession(agentDir, pixieCwd, session);
-  const snapshot = buildSessionSnapshot({
-    session,
-    sessionManager,
-    cwd: pixieCwd,
-    sessionId: session.sessionId,
-    revision: 0,
-    workspaceId: graph.workspaceId,
-    toolRevision: graph.toolRevision,
-  });
-  const runtime: PixieParkedRuntime = {
-    sessionId: session.sessionId,
-    sessionRevision: 0,
-    sessionManager,
-    agentSession: session,
-    resourceLoader,
-    extensionsResult: created.extensionsResult,
-    toolRevision: graph.toolRevision,
-    sessionSnapshot: snapshot,
-    unsubscribeAgent: session.subscribe((event) => factory.handleAgentEvent(graph, session, event)),
-    extensionUiActivate: null,
-    extensionUiCleanup: null,
-    extensionUiUpdateIdentity: null,
-    extensionUiReplayState: null,
+  if ("error" in opened) {
+    throw new Error(opened.error.message);
+  }
+  return {
+    sessionId: opened.sessionId,
+    sessionPath: opened.sessionPath,
+    runtime: opened.runtime,
   };
-  graph.backgroundSessions.set(session.sessionId, runtime);
-  markParkedForegroundSession(factory, graph, runtime);
-  return { sessionId: session.sessionId, sessionPath: session.sessionFile ?? sessionPath, runtime };
 }
 
 /* ── 当前段对账（创建时间最新的那条会话就是当前段）─────────────────── */

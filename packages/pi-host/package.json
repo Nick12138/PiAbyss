@@ -21,7 +21,8 @@
     "start": "node dist/main.js",
     "test": "vitest run",
     "lint": "eslint src *.config.ts",
-    "spike:sidecar": "tsx src/spike/sidecar-extension-spike.ts"
+    "spike:sidecar": "tsx src/spike/sidecar-extension-spike.ts",
+    "accept:pixie-resume": "tsx src/spike/pixie-resume-acceptance.ts"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.1.0",
