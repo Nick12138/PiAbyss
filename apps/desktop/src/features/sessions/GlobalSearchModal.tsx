@@ -1,6 +1,10 @@
 import { Archive, Folder, LoaderCircle, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { SessionSearchReport, SessionSearchResultItem } from "@piabyss/protocol";
+import type {
+  SessionSearchMatch,
+  SessionSearchReport,
+  SessionSearchResultItem,
+} from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { openSessionAcrossWorkspaces } from "../../lib/bridge/session-navigation";
 import { requestSessionReveal } from "../../lib/session-reveal";
@@ -9,6 +13,7 @@ import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import { subscribeGlobalSearchOpen } from "../../lib/commands/events";
 import { useT } from "../../lib/i18n/use-t";
 import { clampSessionTitleForDisplay } from "../../lib/session-title-display";
+import { requestTranscriptScrollWhenReady } from "../../lib/transcript-navigation";
 import { useAppStore } from "../../lib/stores/app-store";
 import { workspaceDisplayName } from "../workspaces/WorkspacePicker";
 import {
@@ -111,7 +116,7 @@ export function GlobalSearchModal({ onClose }: { onClose: () => void }) {
     return () => window.clearTimeout(timer);
   }, [query, hostInstanceId, t]);
 
-  async function openResult(item: SessionSearchResultItem) {
+  async function openResult(item: SessionSearchResultItem, match?: SessionSearchMatch) {
     const state = useAppStore.getState();
     if (
       !state.host ||
@@ -131,6 +136,15 @@ export function GlobalSearchModal({ onClose }: { onClose: () => void }) {
         archived: item.archived,
       });
       if (outcome.status === "opened" || outcome.status === "already-active") {
+        // 消息级结果：等新 transcript 挂载后把它滚进视区（会话可能刚从别的
+        // 工作区切过来，此刻还是加载屏）。命中词用于把那段文字顶到视口顶部，
+        // 而不是只把整条消息居中。会话标题本身不带 entryId，打开即止。
+        if (match?.entryId) {
+          requestTranscriptScrollWhenReady({
+            sourceId: match.entryId,
+            ...(terms[0] ? { focusText: terms[0] } : {}),
+          });
+        }
         onClose();
       } else if (outcome.status === "archived") {
         // 归档会话打不开：把用户带到它在侧边栏「已归档」分组里的位置。
@@ -227,46 +241,66 @@ export function GlobalSearchModal({ onClose }: { onClose: () => void }) {
                 <ul className="flex flex-col gap-0.5">
                   {group.items.map((item) => (
                     <li key={item.sessionPath}>
-                      <button
-                        type="button"
-                        disabled={opening}
-                        onClick={() => void openResult(item)}
-                        title={item.name?.trim() || t("sessionsUntitled")}
-                        className="w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-surface-overlay disabled:cursor-wait"
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
-                            <Highlighted
-                              text={clampSessionTitleForDisplay(
-                                item.name?.trim() || t("sessionsUntitled"),
-                              )}
-                              terms={item.nameMatched ? terms : []}
-                            />
-                          </span>
-                          {item.archived && (
-                            <span
-                              className="flex shrink-0 items-center gap-1 rounded border border-border px-1 text-[10px] text-muted"
-                              title={t("sessionsFilterArchived")}
-                            >
-                              <Archive size={10} />
-                              {t("sessionsFilterArchived")}
+                      <div className="rounded-md pb-1 transition-colors hover:bg-surface-overlay/60">
+                        <button
+                          type="button"
+                          disabled={opening}
+                          onClick={() => void openResult(item)}
+                          title={item.name?.trim() || t("sessionsUntitled")}
+                          className="w-full px-2 pt-1.5 text-left disabled:cursor-wait"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+                              <Highlighted
+                                text={clampSessionTitleForDisplay(
+                                  item.name?.trim() || t("sessionsUntitled"),
+                                )}
+                                terms={item.nameMatched ? terms : []}
+                              />
                             </span>
-                          )}
-                          <span className="shrink-0 text-[11px] tabular-nums text-muted">
-                            {updatedAtFormat.format(item.updatedAt)}
-                          </span>
-                        </div>
-                        {item.matches.slice(0, 2).map((match, index) => (
-                          <p key={index} className="mt-0.5 truncate text-xs leading-5 text-muted">
-                            <Highlighted text={match.snippet} terms={terms} />
-                          </p>
-                        ))}
-                        {item.matchCount > 2 && (
-                          <p className="mt-0.5 text-[11px] text-muted/70">
+                            {item.archived && (
+                              <span
+                                className="flex shrink-0 items-center gap-1 rounded border border-border px-1 text-[10px] text-muted"
+                                title={t("sessionsFilterArchived")}
+                              >
+                                <Archive size={10} />
+                                {t("sessionsFilterArchived")}
+                              </span>
+                            )}
+                            <span className="shrink-0 text-[11px] tabular-nums text-muted">
+                              {updatedAtFormat.format(item.updatedAt)}
+                            </span>
+                          </div>
+                        </button>
+                        {item.matches.length > 0 && (
+                          <ul className="mt-0.5 flex flex-col gap-0.5 px-1">
+                            {item.matches.map((match, index) => (
+                              <li key={match.entryId ?? `${item.sessionPath}:${index}`}>
+                                <button
+                                  type="button"
+                                  disabled={opening}
+                                  onClick={() => void openResult(item, match)}
+                                  title={match.entryId ? t("globalSearchJumpToMatch") : undefined}
+                                  className="flex w-full items-start gap-1.5 rounded px-1 py-0.5 text-left text-xs leading-5 text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-wait"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    className="mt-2 inline-block size-1 shrink-0 rounded-full bg-muted/50"
+                                  />
+                                  <span className="min-w-0 flex-1 truncate">
+                                    <Highlighted text={match.snippet} terms={terms} />
+                                  </span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {item.matchCount > item.matches.length && (
+                          <p className="px-2 pt-0.5 text-[11px] text-muted/70">
                             {t("globalSearchMatchCount", { count: item.matchCount })}
                           </p>
                         )}
-                      </button>
+                      </div>
                     </li>
                   ))}
                 </ul>

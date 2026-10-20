@@ -372,6 +372,7 @@ describe("assistant turn entry ids", () => {
     expect(assistant).toHaveLength(1);
     expect(assistant[0]?.sourceId).toBe("e-a1");
     expect(assistant[0]?.sourceEndId).toBe("e-a2");
+    expect(assistant[0]?.sourceIds).toEqual(["e-a1", "e-a2"]);
     expect(assistant[0]?.copyText).toContain("part one");
     expect(assistant[0]?.copyText).toContain("part two");
   });

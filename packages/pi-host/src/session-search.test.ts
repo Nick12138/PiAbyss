@@ -91,6 +91,26 @@ describe("session-search", () => {
     expect(other.items[0]?.cwd).toBe("/proj/b");
   });
 
+  it("reports the session entry id of each matching message", async () => {
+    const messageId = randomUUID();
+    writeSessionFile(join(activeRoot, "--proj-a--"), "a.jsonl", {
+      cwd: "/proj/a",
+      rawLines: [
+        JSON.stringify({
+          type: "session",
+          version: 3,
+          id: randomUUID(),
+          timestamp: new Date().toISOString(),
+          cwd: "/proj/a",
+        }),
+        JSON.stringify({ type: "message", id: messageId, message: userText("jump target") }),
+      ],
+    });
+
+    const report = await searchSessions({ agentDir: layout.agentDir, query: "jump target" });
+    expect(report.items[0]?.matches[0]?.entryId).toBe(messageId);
+  });
+
   it("matches all terms case-insensitively within one block", async () => {
     writeSessionFile(join(activeRoot, "--proj-a--"), "a.jsonl", {
       cwd: "/proj/a",

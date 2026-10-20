@@ -92,6 +92,7 @@ import {
   SCROLL_QUIET_MS,
 } from "./progressive-mount";
 import {
+  flushPendingTranscriptScroll,
   requestTranscriptScroll,
   subscribeTranscriptScroll,
   type TranscriptScrollRequest,
@@ -148,6 +149,54 @@ const INITIAL_VISIBLE_ROWS = 60;
 const SHOW_EARLIER_CHUNK = 120;
 /** Rows mounted above a jump target for reading context. */
 const JUMP_CONTEXT_ROWS = 3;
+/** Breathing room above a search hit landed at the top of the viewport. */
+const SEARCH_HIT_TOP_PADDING = 12;
+/** CSS Custom Highlight name used to flash the matched text for a moment. */
+const SEARCH_HIT_HIGHLIGHT = "piabyss-search-hit";
+
+/** First text-node occurrence of `text` inside `root`, as a DOM Range. */
+function findTextRange(root: HTMLElement, text: string): Range | null {
+  const needle = text.trim().toLocaleLowerCase();
+  if (!needle) return null;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const value = node.nodeValue;
+    if (!value) continue;
+    const index = value.toLocaleLowerCase().indexOf(needle);
+    if (index < 0) continue;
+    const range = document.createRange();
+    range.setStart(node, index);
+    range.setEnd(node, index + needle.length);
+    return range;
+  }
+  return null;
+}
+
+/**
+ * Flash a landed search hit with the CSS Custom Highlight API (no DOM
+ * mutation, so React keeps owning the markdown). Older webviews without the
+ * API simply skip the flash — the scroll still lands. */
+type HighlightRegistryLike = {
+  set(name: string, highlight: Highlight): void;
+  delete(name: string): void;
+  get(name: string): Highlight | undefined;
+};
+
+function flashSearchHit(range: Range): void {
+  if (typeof Highlight === "undefined") return;
+  const registry = (CSS as unknown as { highlights?: HighlightRegistryLike }).highlights;
+  if (!registry) return;
+  try {
+    const highlight = new Highlight(range);
+    highlight.priority = 10;
+    registry.set(SEARCH_HIT_HIGHLIGHT, highlight);
+    window.setTimeout(() => {
+      if (registry.get(SEARCH_HIT_HIGHLIGHT) === highlight) registry.delete(SEARCH_HIT_HIGHLIGHT);
+    }, 2_000);
+  } catch {
+    // Unsupported webview: the scroll already landed, only the flash is lost.
+  }
+}
 
 /** Reopen a session at its remembered reading position, else at the tail. */
 function initialHiddenFor(sessionId: string | null, rowCount: number): number {
@@ -419,19 +468,33 @@ export function Transcript() {
 
   // Row-level navigation: outline/find/search request a row through the
   // transcript-navigation bus; unmounted targets mount synchronously first
-  // and the centering runs from the layout effect once the row exists.
-  const pendingJumpKeyRef = useRef<string | null>(null);
+  // and the reveal runs from the layout effect once the row exists.
+  const pendingJumpRef = useRef<{ key: string; focusText?: string } | null>(null);
 
-  const centerRow = useCallback(
-    (key: string): boolean => {
+  const revealRow = useCallback(
+    (key: string, focusText?: string): boolean => {
       const scroller = scrollRef.current;
       if (!scroller) return false;
       const rowElement = scroller.querySelector<HTMLElement>(`[data-row-key="${CSS.escape(key)}"]`);
       if (!rowElement) return false;
-      const rowRect = rowElement.getBoundingClientRect();
       const scrollerRect = scroller.getBoundingClientRect();
-      scroller.scrollTop +=
-        rowRect.top - scrollerRect.top - Math.max(0, (scroller.clientHeight - rowRect.height) / 2);
+      const range = focusText !== undefined ? findTextRange(rowElement, focusText) : null;
+      const hitRect = range?.getBoundingClientRect();
+      if (range && hitRect && (hitRect.height > 0 || hitRect.width > 0)) {
+        // Search jumps land on the matched words themselves, at the top of
+        // the viewport, with a short highlight so the eye finds the spot.
+        scroller.scrollTop += hitRect.top - scrollerRect.top - SEARCH_HIT_TOP_PADDING;
+        flashSearchHit(range);
+      } else {
+        const rowRect = rowElement.getBoundingClientRect();
+        // Search jumps still top-align the row when the exact words are not
+        // present in the rendered markdown; other callers keep centering.
+        const offset =
+          focusText !== undefined
+            ? SEARCH_HIT_TOP_PADDING
+            : Math.max(0, (scroller.clientHeight - rowRect.height) / 2);
+        scroller.scrollTop += rowRect.top - scrollerRect.top - offset;
+      }
       programmaticScrollTopRef.current = scroller.scrollTop;
       scrollMetricsRef.current = {
         top: scroller.scrollTop,
@@ -448,7 +511,10 @@ export function Transcript() {
     let key = request.rowKey;
     if (key === undefined && request.sourceId) {
       const match = rows.find(
-        (row) => row.sourceId === request.sourceId || row.sourceEndId === request.sourceId,
+        (row) =>
+          row.sourceId === request.sourceId ||
+          row.sourceEndId === request.sourceId ||
+          row.sourceIds?.includes(request.sourceId as string) === true,
       );
       key = match?.key;
     }
@@ -457,16 +523,26 @@ export function Transcript() {
     if (index < 0) return false;
     stopFollowing();
     if (index < hidden) {
-      pendingJumpKeyRef.current = key;
+      pendingJumpRef.current = {
+        key,
+        ...(request.focusText !== undefined ? { focusText: request.focusText } : {}),
+      };
       setHiddenState((current) => ({
         ...current,
         hidden: Math.max(0, Math.min(current.hidden, index - JUMP_CONTEXT_ROWS)),
       }));
       return true;
     }
-    return centerRow(key);
+    return revealRow(key, request.focusText);
   };
   useEffect(() => subscribeTranscriptScroll((request) => scrollToRowRef.current(request)), []);
+
+  // 打开会话后的「跳到那条消息」请求可能在旧 transcript 上落空（行还是旧会话
+  // 的）；新会话的行一换好就补投一次。progressive mount 让目标行重新挂载时也
+  // 会走到这里，落空的请求不会永远悬着。
+  useEffect(() => {
+    flushPendingTranscriptScroll();
+  }, [rows, sessionKey]);
 
   // Save the reading position when the transcript unmounts (e.g. workspace
   // switches); session switches are handled by the render-phase reset above.
@@ -535,11 +611,11 @@ export function Transcript() {
 
   useLayoutEffect(() => {
     // A pending jump wins over batch compensation: the target row just
-    // mounted, so center it and re-baseline instead of preserving the old
+    // mounted, so reveal it and re-baseline instead of preserving the old
     // viewport position.
-    const pendingJumpKey = pendingJumpKeyRef.current;
-    if (pendingJumpKey !== null && centerRow(pendingJumpKey)) {
-      pendingJumpKeyRef.current = null;
+    const pendingJump = pendingJumpRef.current;
+    if (pendingJump !== null && revealRow(pendingJump.key, pendingJump.focusText)) {
+      pendingJumpRef.current = null;
       expandAnchorRef.current = null;
       batchStartRef.current = null;
       return;
@@ -574,7 +650,7 @@ export function Transcript() {
       batchSizerRef.current.record(performance.now() - batchStartRef.current);
       batchStartRef.current = null;
     }
-  }, [hidden, alignToBottom, centerRow]);
+  }, [hidden, alignToBottom, revealRow]);
 
   const lastAssistantRow = [...rows].reverse().find((row) => row.role === "assistant");
   const streamingAssistantKey = findStreamingAssistantKey(

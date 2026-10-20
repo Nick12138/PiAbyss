@@ -107,6 +107,7 @@ export const zh: Record<MessageKey, string> = {
   globalSearchFailed: "搜索失败",
   globalSearchTruncated: "仅显示前 {count} 条结果",
   globalSearchMatchCount: "共 {count} 条匹配消息",
+  globalSearchJumpToMatch: "跳到这条消息",
   globalSearchArchivedRestoreHint: "该会话已归档，已在侧边栏「已归档」中定位；恢复后才能打开",
   globalSearchCurrentWorkspace: "当前",
   workspacesSwitchingTo: "正在打开 {name}…",

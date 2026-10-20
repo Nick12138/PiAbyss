@@ -32,6 +32,8 @@ type SearchBlock = {
   text: string;
   /** Lowercased once at parse time so repeated searches allocate nothing. */
   lower: string;
+  /** Session entry id — lets the UI jump to this message after opening it. */
+  entryId?: string;
 };
 
 type SearchDoc = {
@@ -151,13 +153,14 @@ async function parseSearchDoc(sessionPath: string): Promise<SearchDoc | null> {
     const message = entry.message as Record<string, unknown>;
     const role = message.role;
     if (role !== "user" && role !== "assistant") continue;
+    const entryId = typeof entry.id === "string" && entry.id ? entry.id : undefined;
     for (const rawText of textBlocksOf(message.content)) {
       const stripped = role === "user" ? stripAttachmentReferenceBlocks(rawText) : rawText;
       if (!stripped.trim()) continue;
       const text = stripped.slice(0, Math.min(MAX_BLOCK_CHARS, MAX_DOC_CHARS - totalChars));
       if (!text) break;
       totalChars += text.length;
-      blocks.push({ role, text, lower: text.toLocaleLowerCase() });
+      blocks.push({ role, text, lower: text.toLocaleLowerCase(), ...(entryId ? { entryId } : {}) });
       if (blocks.length >= MAX_BLOCKS_PER_SESSION || totalChars >= MAX_DOC_CHARS) break;
     }
   }
@@ -204,7 +207,11 @@ function matchDoc(
     if (!matchesAllTerms(block.lower, terms)) continue;
     matchCount += 1;
     if (matches.length < MAX_MATCHES_PER_SESSION) {
-      matches.push({ role: block.role, snippet: buildSnippet(block.text, terms[0] ?? "") });
+      matches.push({
+        role: block.role,
+        snippet: buildSnippet(block.text, terms[0] ?? ""),
+        ...(block.entryId ? { entryId: block.entryId } : {}),
+      });
     }
   }
   if (!nameMatched && matchCount === 0) return null;

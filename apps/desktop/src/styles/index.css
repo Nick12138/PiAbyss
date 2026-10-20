@@ -1990,6 +1990,13 @@ textarea:focus-visible {
   outline: none;
 }
 
+/* Global-search jump landing: flash the matched words briefly. Painted
+   through the CSS Custom Highlight API so the markdown DOM stays untouched. */
+::highlight(piabyss-search-hit) {
+  background-color: color-mix(in srgb, var(--color-accent) 32%, transparent);
+  color: var(--color-foreground);
+}
+
 /* Commit-message box: the 1px focus border is enough; the global 2px outline
    reads as a thick blue edge. */
 .commit-message-input:focus-visible {

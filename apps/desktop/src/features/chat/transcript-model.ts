@@ -138,6 +138,9 @@ export type TranscriptRow = {
   /** Last persisted entry id contributing to the row — an assistant turn can
    * merge several session entries; forking "at" the turn targets this one. */
   sourceEndId?: string;
+  /** Every persisted entry id contributing to the row. A merged assistant turn
+   * can span several entries; find/jump needs all of them, not just the ends. */
+  sourceIds?: string[];
   timestamp?: number;
   startedAt?: number;
   endedAt?: number;
@@ -1587,6 +1590,7 @@ export function buildTranscriptRows(
         ...(sourceId ? { sourceId, sourceEndId: sourceId } : {}),
         ...(timestamp !== undefined ? { timestamp } : {}),
       };
+      rememberSourceId(row, sourceId);
       rows.push(row);
       activeAssistant = row;
       return;
@@ -1614,6 +1618,7 @@ export function buildTranscriptRows(
         }
         activeAssistant.copyText = copyTextForBlocks(activeAssistant.blocks);
         if (sourceId) activeAssistant.sourceEndId = sourceId;
+        rememberSourceId(activeAssistant, sourceId);
       } else {
         const row: WorkingTranscriptRow = {
           key: `assistant:${sourceKey}`,
@@ -1625,6 +1630,7 @@ export function buildTranscriptRows(
           ...(timestamp !== undefined ? { timestamp } : {}),
         };
         for (const block of toolBlocks) registerToolTrace(block.tool);
+        rememberSourceId(row, sourceId);
         rows.push(row);
         activeAssistant = row;
       }
@@ -1649,6 +1655,7 @@ export function buildTranscriptRows(
         activeAssistant.rounds = [...(activeAssistant.rounds ?? []), [...blocks]];
         activeAssistant.usage = mergeUsage(activeAssistant.usage, message.usage);
         if (sourceId) activeAssistant.sourceEndId = sourceId;
+        rememberSourceId(activeAssistant, sourceId);
         if (outcome) activeAssistant.outcome = outcome;
         extendRowTiming(activeAssistant, messageStartedAt, messageEndedAt);
         extendRowTurnMetrics(activeAssistant, message);
@@ -1675,6 +1682,7 @@ export function buildTranscriptRows(
         ...(messageEndedAt !== undefined ? { endedAt: messageEndedAt } : {}),
         ...(message.usage ? { usage: message.usage } : {}),
       };
+      rememberSourceId(row, sourceId);
       rows.push(row);
       activeAssistant = row;
       extendRowTurnMetrics(row, message);
@@ -1702,6 +1710,7 @@ export function buildTranscriptRows(
         activeAssistant.rounds = [...(activeAssistant.rounds ?? []), [block]];
         activeAssistant.copyText = copyTextForBlocks(activeAssistant.blocks);
         if (sourceId) activeAssistant.sourceEndId = sourceId;
+        rememberSourceId(activeAssistant, sourceId);
       } else {
         const row: WorkingTranscriptRow = {
           key: `assistant:${sourceKey}`,
@@ -1713,6 +1722,7 @@ export function buildTranscriptRows(
           ...(timestamp !== undefined ? { timestamp } : {}),
         };
         rows.push(row);
+        rememberSourceId(row, sourceId);
         activeAssistant = row;
       }
       return;
@@ -1847,6 +1857,20 @@ function usageEquivalent(
   );
 }
 
+function rememberSourceId(row: TranscriptRow, sourceId: string | undefined): void {
+  if (!sourceId) return;
+  if (row.sourceIds === undefined) {
+    row.sourceIds = row.sourceId ? [row.sourceId] : [];
+  }
+  if (!row.sourceIds.includes(sourceId)) row.sourceIds.push(sourceId);
+}
+
+function sourceIdsEquivalent(a: TranscriptRow, b: TranscriptRow): boolean {
+  const left = a.sourceIds ?? [];
+  const right = b.sourceIds ?? [];
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
 function rowEquivalent(a: TranscriptRow, b: TranscriptRow): boolean {
   if (
     a.key !== b.key ||
@@ -1856,6 +1880,7 @@ function rowEquivalent(a: TranscriptRow, b: TranscriptRow): boolean {
     a.endedAt !== b.endedAt ||
     a.sourceId !== b.sourceId ||
     a.sourceEndId !== b.sourceEndId ||
+    !sourceIdsEquivalent(a, b) ||
     a.timestamp !== b.timestamp ||
     !valuesEquivalent(a.outcome, b.outcome) ||
     a.customType !== b.customType ||

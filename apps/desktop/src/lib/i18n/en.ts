@@ -111,6 +111,7 @@ export const en = {
   globalSearchFailed: "Search failed",
   globalSearchTruncated: "Showing the first {count} results",
   globalSearchMatchCount: "{count} matching messages",
+  globalSearchJumpToMatch: "Jump to this message",
   globalSearchArchivedRestoreHint:
     "This session is archived — located it under “Archived” in the sidebar; restore it to open it",
   globalSearchCurrentWorkspace: "Current",

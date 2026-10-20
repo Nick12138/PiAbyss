@@ -12,6 +12,10 @@ import type {
 } from "@piabyss/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
+import {
+  clearPendingTranscriptScrollForTest,
+  subscribeTranscriptScroll,
+} from "../../lib/transcript-navigation";
 import { GlobalSearchModal } from "./GlobalSearchModal";
 
 const HOST_ID = "11111111-1111-4111-8111-111111111111";
@@ -98,8 +102,12 @@ function searchReport(): SessionSearchReport {
         updatedAt: 1_700_000_000_000,
         matchCount: 2,
         matches: [
-          { role: "user", snippet: "how do I fix the login timeout?" },
-          { role: "assistant", snippet: "the login handler retries" },
+          { role: "user", snippet: "how do I fix the login timeout?", entryId: "entry-user-1" },
+          {
+            role: "assistant",
+            snippet: "the login handler retries",
+            entryId: "entry-assistant-1",
+          },
         ],
         nameMatched: true,
       },
@@ -146,6 +154,7 @@ describe("GlobalSearchModal", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    clearPendingTranscriptScrollForTest();
     cleanup();
   });
 
@@ -215,6 +224,39 @@ describe("GlobalSearchModal", () => {
     const methods = request.mock.calls.map((call) => call[0]);
     expect(methods).toContain("session.open");
     expect(methods).not.toContain("workspace.setCurrent");
+  });
+
+  it("jumps to the matched message after opening its session", async () => {
+    const onClose = vi.fn();
+    vi.spyOn(hostClient, "request").mockImplementation(((method: string) => {
+      if (method === "session.searchAll") {
+        return Promise.resolve(envelope(method, searchReport()));
+      }
+      if (method === "session.open") {
+        return Promise.resolve(
+          envelope(method, session({ sessionId: FOUND_SESSION_ID, revision: 1 })),
+        );
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    }) as never);
+    const scrollHandler = vi.fn(() => true);
+    const unsubscribe = subscribeTranscriptScroll(scrollHandler);
+    render(<GlobalSearchModal onClose={onClose} />);
+
+    const user = userEvent.setup();
+    await user.type(screen.getByPlaceholderText("Search conversations in every project…"), "login");
+    const jumpButtons = await screen.findAllByTitle("Jump to this message");
+    // 第二条命中是 assistant 的 snippet（entry-assistant-1）。
+    await user.click(jumpButtons[1]!);
+
+    await waitFor(() =>
+      expect(scrollHandler).toHaveBeenCalledWith({
+        sourceId: "entry-assistant-1",
+        focusText: "login",
+      }),
+    );
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    unsubscribe();
   });
 
   it("switches workspace before handling a result from another project", async () => {

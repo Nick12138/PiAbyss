@@ -1692,6 +1692,11 @@ export type SessionSearchMatch = {
   role: "user" | "assistant";
   /** Short excerpt around the first matched term, whitespace-collapsed. */
   snippet: string;
+  /**
+   * Session entry id of the matching message, so the UI can jump to it in the
+   * transcript after opening the session (absent on legacy cached reports).
+   */
+  entryId?: string;
 };
 
 export type SessionSearchResultItem = {

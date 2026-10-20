@@ -1563,9 +1563,10 @@ function isPluginLibraryCatalog(value: unknown): boolean {
 function isSessionSearchMatch(value: unknown): boolean {
   return (
     isPlainObject(value) &&
-    hasExactKeys(value, ["role", "snippet"]) &&
+    hasExactKeys(value, ["role", "snippet"], ["entryId"]) &&
     (value.role === "user" || value.role === "assistant") &&
-    isString(value.snippet)
+    isString(value.snippet) &&
+    isOptionalString(value.entryId)
   );
 }
 

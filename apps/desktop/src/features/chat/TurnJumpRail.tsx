@@ -143,8 +143,11 @@ export function TurnJumpRail({
   }, [hovered, onJump, stops]);
 
   // Measure the rail's height budget against the live chat area (window
-  // resizes change both halves of the min()).
+  // resizes change both halves of the min()). Hidden rails (fewer than two
+  // turns) must not observe the viewport: a stray observer would also catch
+  // the transcript's own resize signal in tests and in other listeners.
   useEffect(() => {
+    if (stops.length < 2) return;
     const element = viewport.current;
     if (!element) return;
     const update = () => setBudget(railBudget(element));
@@ -153,7 +156,7 @@ export function TurnJumpRail({
     const observer = new ResizeObserver(update);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [viewport]);
+  }, [viewport, stops.length]);
 
   // Center the rail inside the gutter between the scrollport's content edge
   // and the native scrollbar, measured at runtime: scrollbar width differs by

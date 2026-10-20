@@ -162,6 +162,9 @@ describe("Transcript Session-open scrolling", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    // jsdom has no range layout; tests that fake it must not leak the stub.
+    delete (Range.prototype as unknown as { getBoundingClientRect?: unknown })
+      .getBoundingClientRect;
     delete (navigator as { clipboard?: Clipboard }).clipboard;
     useAppStore.setState({ session: null, desktopSettings: null });
   });
@@ -307,6 +310,38 @@ describe("Transcript Session-open scrolling", () => {
     expect(
       screen.queryByRole("button", { name: "Jump to latest message" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("lands a text-focused jump on the matched words at the top of the viewport", () => {
+    const { container } = render(<Transcript />);
+    const scroll = container.querySelector<HTMLElement>("[data-transcript-scroll]")!;
+    Object.defineProperties(scroll, {
+      clientHeight: { configurable: true, get: () => 300 },
+      scrollHeight: { configurable: true, get: () => 2_000 },
+      scrollTop: { configurable: true, writable: true, value: 0 },
+    });
+    Object.defineProperty(scroll, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ top: 100, left: 0, right: 800, bottom: 400, width: 800, height: 300 }),
+    });
+    // jsdom has no range layout; fake the hit sitting 360px below the scrollport top.
+    Object.defineProperty(Range.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ top: 460, left: 0, right: 120, bottom: 480, width: 120, height: 20 }),
+    });
+
+    const row = container.querySelector<HTMLElement>(".transcript-row")!;
+    let handled = false;
+    act(() => {
+      handled = requestTranscriptScroll({
+        rowKey: row.dataset.rowKey,
+        focusText: "First",
+      });
+    });
+
+    expect(handled).toBe(true);
+    // 460 - 100 viewport offset - 12 breathing room.
+    expect(scroll.scrollTop).toBe(348);
   });
 
   it("opens a row context menu and copies the complete message", async () => {
