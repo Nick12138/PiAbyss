@@ -1042,7 +1042,7 @@ pub(crate) fn host_activity_snapshot(
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     Some(HostActivitySnapshot {
         cwd: canonical_cwd.to_string_lossy().to_string(),
-        cwds: workspaces.to_vec(),
+        cwds: snapshot_workspace_cwds(workspaces, &activity),
         busy: !activity.busy_sessions.is_empty(),
         // Same attribution chain as terminal markers (session → workspace →
         // cwd); busy sessions whose links are not yet known are skipped.
@@ -1070,6 +1070,39 @@ pub(crate) fn host_activity_snapshot(
             .count(),
         terminal_sessions: activity.terminal_sessions.clone(),
     })
+}
+
+/// Every workspace cwd this Host actually serves, for the renderer's per-cwd
+/// activity projection.
+///
+/// Two sources, unioned (deduped by `workspace_pool_key`):
+/// 1. `workspaces` — the pool's registered workspace keys. In shared-host mode
+///    this only grows when the USER switches to a workspace, so it misses
+///    workspaces the Host serves without ever having been foregrounded.
+/// 2. `activity.workspace_cwds` — the authoritative workspaceId→cwd list rebuilt
+///    from the Host's own `host.statusChanged` `boundWorkspaces` broadcast. This
+///    is the only source that includes a workspace whose graph was built in the
+///    BACKGROUND (pixie delegation via `ensureBackgroundGraph`).
+///
+/// Without (2) a delegated workspace the user has not opened yet never got an
+/// activity entry in the renderer, so its busy/terminal lamp could not light
+/// even though both attribution links were known.
+pub(crate) fn snapshot_workspace_cwds(
+    workspaces: &[String],
+    activity: &HostActivity,
+) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut cwds = Vec::with_capacity(workspaces.len() + activity.workspace_cwds.len());
+    for cwd in workspaces
+        .iter()
+        .cloned()
+        .chain(activity.workspace_cwds.values().cloned())
+    {
+        if seen.insert(workspace_pool_key(Path::new(&cwd))) {
+            cwds.push(cwd);
+        }
+    }
+    cwds
 }
 
 /// Testable core of `PiHostPool::acknowledge_session_terminal`: clears the
@@ -1259,12 +1292,18 @@ pub(crate) fn observe_host_activity(activity: &StdMutex<HostActivity>, line: &st
             // Only a real busy→idle completion (a session that actually ran)
             // creates the done marker; plain idle announcements for restored
             // sessions never ran and must stay quiet.
+            //
+            // `queued → idle` (without ever passing through running) is NOT a
+            // completion: the queued work was withdrawn again (a delegation
+            // cancelled by the user, or an SDK queue that was cleared) and no
+            // turn ever ran. It clears the busy lamp without leaving a
+            // spurious 「有结果没看」 done marker behind.
             let was_running = matches!(
                 activity
                     .last_state
                     .get(session_id)
                     .map(|state| state.as_str()),
-                Some("starting" | "running" | "queued")
+                Some("starting" | "running")
             );
             if was_running {
                 activity.next_terminal_generation += 1;

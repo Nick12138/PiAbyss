@@ -177,6 +177,17 @@ export class WorkspaceGraphFactory {
   }
 
   /**
+   * Publish a runtime state the SDK cannot report (engine-level queue). See
+   * `SessionRuntimeCache.publishEngineRuntimeState`. No-op when no bound graph
+   * owns the session any more.
+   */
+  publishEngineRuntimeState(session: AgentSession, state: SessionRuntimeState): void {
+    const identity = this.currentSessionIdentity(session);
+    if (!identity) return;
+    this.sessionRuntimeCache.publishEngineRuntimeState(session, identity, state);
+  }
+
+  /**
    * Identity to attribute `session`'s events to RIGHT NOW, computed from the
    * bound graph that currently owns the session. A detached run can outlive
    * the identity captured at prompt start: switching away parks the graph and

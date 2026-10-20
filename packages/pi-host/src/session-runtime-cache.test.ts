@@ -435,6 +435,96 @@ describe("active Session state", () => {
       .map((call) => (call[2] as { runId: string }).runId);
     expect(new Set(afterSettle).size).toBe(2);
   });
+
+  it("keeps a delegated run id stable after the foreground prompt that spawned it settles", () => {
+    // Field bug: pixie delegates via `session.prompt()` without registering a
+    // run id. The delegated run therefore inherited the host-wide
+    // `currentRunId` of the pixie turn that spawned it — and when THAT prompt
+    // settled mid-delegation, `currentRunId` became null and every remaining
+    // event minted a fresh random id. The desktop keys stream merging by
+    // runId, so one assistant message shattered into a row per delta.
+    const identity: HostIdentity = {
+      hostInstanceId: "host-1",
+      workspaceId: "ws-1",
+      workspaceRevision: 1,
+      sessionId: "delegated",
+      sessionRevision: 2,
+      packageRevision: 1,
+    };
+    const emitForIdentity = vi.fn();
+    const server = {
+      identity,
+      getIdentity: () => identity,
+      emitForIdentity,
+      emitForBoundIdentity: vi.fn(),
+      getPhase: () => "ready",
+    } as unknown as PiHostServer;
+    const session = {
+      sessionId: "delegated",
+      isIdle: false,
+      isCompacting: false,
+      isRetrying: false,
+      model: undefined,
+      messages: [],
+      thinkingLevel: "off",
+      autoCompactionEnabled: true,
+      autoRetryEnabled: true,
+      steeringMode: "all",
+      followUpMode: "all",
+      getSteeringMessages: () => [],
+      getFollowUpMessages: () => [],
+      getAllTools: () => [],
+      getActiveToolNames: () => [],
+    } as unknown as AgentSession;
+    const graph = {
+      ...graphFrom(activeSlots("delegated")),
+      canonicalCwd: "C:/workspace",
+      workspaceId: "ws-1",
+      backgroundSessions: new Map(),
+      sessionSnapshot: {
+        sessionId: "delegated",
+        revision: 2,
+        entries: [],
+        messages: [],
+        cwd: "C:/workspace",
+        workspaceId: "ws-1",
+        toolRevision: 3,
+      },
+      sessionManager: {},
+    } as unknown as WorkspaceGraph;
+    graph.agentSession = session;
+    let currentRunId: string | null = "pixie-run";
+    const cache = new SessionRuntimeCache({
+      getGraph: () => graph,
+      getServer: () => server,
+      getCurrentRunId: () => currentRunId,
+      sessionPathsEqual: () => false,
+    });
+
+    cache.handleAgentEvent(graph, session, { type: "agent_start" });
+    cache.handleAgentEvent(graph, session, {
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "我看" },
+    });
+    // The pixie turn that dispatched the task settles: its run id is cleared
+    // while the delegated run is still streaming.
+    currentRunId = null;
+    cache.handleAgentEvent(graph, session, {
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "到了" },
+    });
+    cache.handleAgentEvent(graph, session, {
+      type: "tool_execution_start",
+      toolCallId: "call-1",
+      toolName: "bash",
+      args: { command: "pwd" },
+    });
+    const runIds = emitForIdentity.mock.calls
+      .filter((call) => call[1] === "agent.event")
+      .map((call) => (call[2] as { runId: string }).runId);
+    expect(runIds.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(runIds).size).toBe(1);
+  });
 });
 
 describe("background runtime promotion", () => {

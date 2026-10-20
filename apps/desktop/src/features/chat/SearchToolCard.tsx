@@ -3,8 +3,8 @@ import { ChevronRight, PanelRightOpen, Search } from "lucide-react";
 import { openChatLink } from "./chat-link";
 import { isSafeExternalUrl } from "./markdown-utils";
 import {
-  formatDuration,
   statusLabel,
+  ToolDuration,
   ToolCard,
   ToolDetailsDisclosure,
   useToolDisclosure,
@@ -169,7 +169,7 @@ export function SearchToolCard(props: ToolCardProps) {
           {query || props.name}
         </span>
         <span className="shrink-0 text-[10px] text-muted max-[520px]:hidden">
-          {formatDuration(props.startedAt, props.endedAt)}
+          <ToolDuration status={props.status} startedAt={props.startedAt} endedAt={props.endedAt} />
         </span>
         <span className={`shrink-0 text-[10px] ${statusClass}`}>
           {statusLabel(props.status, t)}

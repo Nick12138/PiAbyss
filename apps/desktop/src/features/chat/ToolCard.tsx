@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { Braces, ChevronRight, FileCode2, Search, Terminal, Wrench } from "lucide-react";
 import type { ToolTraceStatus } from "./transcript-model";
 import { useT, type Translate } from "../../lib/i18n/use-t";
@@ -161,7 +161,7 @@ export function ToolCard(props: ToolCardProps) {
         )}
         {!summary && <span className="flex-1" />}
         <span className="shrink-0 text-[10px] text-muted max-[520px]:hidden">
-          {formatDuration(props.startedAt, props.endedAt)}
+          <ToolDuration status={props.status} startedAt={props.startedAt} endedAt={props.endedAt} />
         </span>
         <span className={`shrink-0 text-[10px] ${statusClass}`}>
           {statusLabel(props.status, t)}
@@ -268,9 +268,41 @@ export function ToolDetailsDisclosure({ details }: { details?: unknown }) {
   );
 }
 
+/**
+ * Wall-clock text for one tool card.
+ *
+ * Only a tool with a REAL end can carry a duration. The old fallback measured
+ * against `Date.now()` whenever `endedAt` was missing, so every unresolved
+ * placeholder grew a fresh fake "782ms" on each render (a whole trace read as
+ * 782 / 781 / 780 …). Waiting cards now show no time at all; a genuinely
+ * running call gets a ticking clock fed by its own interval, not by how often
+ * React happens to re-render.
+ */
+export function ToolDuration({
+  status,
+  startedAt,
+  endedAt,
+  className = "",
+}: {
+  status: ToolTraceStatus;
+  startedAt?: number;
+  endedAt?: number;
+  className?: string;
+}) {
+  const running = status === "running";
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!running || startedAt === undefined) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 200);
+    return () => window.clearInterval(timer);
+  }, [running, startedAt]);
+  const text = running ? formatDuration(startedAt, now) : formatDuration(startedAt, endedAt);
+  if (!text) return null;
+  return <span className={`tabular-nums text-[10px] text-muted ${className}`}>{text}</span>;
+}
+
 export function formatDuration(startedAt?: number, endedAt?: number): string {
-  if (!startedAt) return "";
-  const end = endedAt ?? Date.now();
-  const elapsed = Math.max(0, end - startedAt);
+  if (!startedAt || endedAt === undefined) return "";
+  const elapsed = Math.max(0, endedAt - startedAt);
   return elapsed < 1_000 ? `${elapsed}ms` : `${(elapsed / 1_000).toFixed(1)}s`;
 }

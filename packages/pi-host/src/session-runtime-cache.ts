@@ -182,6 +182,9 @@ export function commitActiveSessionState(
 export type SessionRuntimeCacheContext = {
   getGraph: () => WorkspaceGraph | null;
   getServer: () => PiHostServer | null;
+  /** Foreground prompt's run id. NOT a run-attribution fallback: it goes null
+   * when that prompt settles, so using it for a still-running background run
+   * would hand out a new random id per event (see resolveEventRunId). */
   getCurrentRunId: () => string | null;
   sessionPathsEqual: (left: string | undefined, right: string) => boolean;
   /** True when the graph is active or parked (bound) — events may flow. */
@@ -196,8 +199,9 @@ export class SessionRuntimeCache {
   private readonly sessionOperationLocks = new WeakMap<AgentSession, AgentOperationLock>();
   private readonly runIds = new WeakMap<AgentSession, string>();
   /** Fallback run identity for runs the Host did not start (extension
-   * sendMessage with triggerTurn, SDK-internal continuations): opened at
-   * agent_start, reused by every event of the run, retired at
+   * sendMessage with triggerTurn, SDK-internal continuations, pixie-injected
+   * prompts / delegated sessions): opened at agent_start (or at the first
+   * event seen mid-run), reused by every event of the run, retired at
    * agent_settled/error. Per-event randomUUID would give every delta its
    * own run id and the desktop's streamRunMatches row-adoption guard would
    * open a new message row per delta, shattering the live stream into
@@ -241,6 +245,37 @@ export class SessionRuntimeCache {
 
   publishCurrentRuntimeState(session: AgentSession, identity: HostIdentity): void {
     this.publishRuntimeState(session, identity);
+  }
+
+  /**
+   * Publish a runtime state the SDK itself cannot report yet.
+   *
+   * The delegation engine's gate (`pixie-controller`) is Host-owned
+   * bookkeeping: a dispatch that queues behind another one never touches the
+   * session, so no agent event will ever announce it — yet the target
+   * workspace does have work waiting for it, and the workspace list's busy
+   * lamp is driven by exactly these runtime frames (see
+   * `pi_host.rs::observe_host_activity`). Publishing here keeps "queued" and
+   * "running" on the same channel, so a later real state transition
+   * supersedes it naturally.
+   */
+  publishEngineRuntimeState(
+    session: AgentSession,
+    identity: HostIdentity,
+    state: SessionRuntimeState,
+  ): void {
+    const server = this.context.getServer();
+    if (!server || !identity.sessionId) return;
+    // Same dedupe rule as `publishRuntimeState`: an error edge is always worth
+    // announcing, because the marker it feeds may have been acknowledged away.
+    if (state !== "error" && this.runtimeStates.get(session) === state) return;
+    this.runtimeStates.set(session, state);
+    server.emitForBoundIdentity(identity, "session.runtimeChanged", {
+      sessionId: identity.sessionId,
+      sessionRevision: identity.sessionRevision,
+      state,
+      updatedAt: Date.now(),
+    });
   }
 
   beginQueueTransaction(session: AgentSession): QueueSnapshot {
@@ -555,26 +590,43 @@ export class SessionRuntimeCache {
   }
 
   /** Stable run identity for one agent run. Host-started runs are registered
-   * via setSessionRunId (agent.prompt). Runs the Host did not start — an
-   * extension calling sendMessage({triggerTurn:true}), SDK continuation
-   * after agent_end, retry/compaction loops — fall back to the host-wide
-   * currentRunId and then to a per-run derived id: opened at agent_start,
-   * reused until the run settles (agent_settled/error), so every event of
-   * the same run shares one id. */
+   * via setSessionRunId (agent.prompt). Runs the Host did not start — a pixie
+   * delegate/inject calling `session.prompt()` directly, an extension calling
+   * sendMessage({triggerTurn:true}), SDK continuation after agent_end, retry /
+   * compaction loops — derive ONE id per session-run: opened at agent_start,
+   * reused until the run settles (agent_settled/error).
+   *
+   * Never fall back to the host-wide currentRunId here: that id belongs to the
+   * foreground prompt and is nulled the moment THAT prompt settles. A delegated
+   * run that started while the pixie turn was alive would then mint a fresh
+   * random id for every remaining event. The desktop keys streaming deltas by
+   * runId (see transcript-reducer `streamRunMatches`), so an unstable id shreds
+   * one assistant message into a row per delta: thinking blocks split into one
+   * fragment per token, and each argument delta fabricates a nameless "tool"
+   * card stuck on 「等待中」.
+   */
   private resolveEventRunId(session: AgentSession, eventType: string): string {
-    const registered = this.runIds.get(session) ?? this.context.getCurrentRunId();
+    const registered = this.runIds.get(session);
     if (registered) return registered;
-    if (eventType === "agent_start") {
-      const derived = randomUUID();
-      this.derivedRunIds.set(session, derived);
-      return derived;
-    }
     if (eventType === "agent_settled" || eventType === "error") {
       const derived = this.derivedRunIds.get(session);
       this.derivedRunIds.delete(session);
       return derived ?? randomUUID();
     }
-    return this.derivedRunIds.get(session) ?? randomUUID();
+    // A new run always opens a fresh identity, so a stale derived id can never
+    // leak into the next turn (or into a late event of the settled one).
+    if (eventType === "agent_start") {
+      const derived = randomUUID();
+      this.derivedRunIds.set(session, derived);
+      return derived;
+    }
+    const derived = this.derivedRunIds.get(session);
+    if (derived) return derived;
+    // Subscription attached mid-run (events before agent_start were missed):
+    // pin one id now and keep every later event of this run on it.
+    const generated = randomUUID();
+    this.derivedRunIds.set(session, generated);
+    return generated;
   }
 
   async disposeBackgroundSessionRuntimeIfIdle(

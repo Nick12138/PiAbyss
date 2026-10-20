@@ -2343,3 +2343,147 @@ describe("persisted system prompt messages", () => {
     expect(rows[1]?.role).toBe("user");
   });
 });
+
+describe("tool trace projection from incomplete parts", () => {
+  type ToolBlock = Extract<TranscriptRow["blocks"][number], { kind: "tool" }>;
+
+  const toolBlocks = (rows: TranscriptRow[]): ToolBlock[] =>
+    rows.flatMap((row) => row.blocks.filter((block): block is ToolBlock => block.kind === "tool"));
+
+  it("drops a fragment that has neither an id nor a name", () => {
+    // Shape produced by older reducers from a `toolcall_delta` whose start was
+    // lost: no id, no name, only a startedAt. It can never match a result, so
+    // it must not become a card at all.
+    const rows = buildTranscriptRows(
+      [
+        {
+          role: "assistant",
+          content: [
+            { type: "toolCall", startedAt: 1 } as never,
+            { type: "toolCall", startedAt: 2 } as never,
+            { type: "toolCall", id: "call-1", name: "bash", arguments: { command: "pwd" } },
+          ],
+        },
+      ],
+      { turnActive: true },
+    );
+
+    const tools = toolBlocks(rows);
+    expect(tools).toHaveLength(1);
+    expect(tools[0]!.tool).toMatchObject({ id: "call-1", name: "bash" });
+  });
+
+  it("backfills the name, status and real timing from the paired tool result", () => {
+    const rows = buildTranscriptRows([
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "call-1", startedAt: 1_000 } as never],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "call-1",
+        toolName: "read",
+        content: [{ type: "text", text: "file body" }],
+        durationMs: 250,
+        timestamp: 2_000,
+      } as never,
+    ]);
+
+    const tools = toolBlocks(rows);
+    expect(tools).toHaveLength(1);
+    expect(tools[0]!.tool).toMatchObject({
+      id: "call-1",
+      name: "read",
+      status: "done",
+      result: "file body",
+      startedAt: 1_000,
+      endedAt: 2_000,
+    });
+  });
+
+  it("derives the timing window from a restored result when the call has none", () => {
+    const rows = buildTranscriptRows([
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "call-2", name: "bash", arguments: {} }],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "call-2",
+        toolName: "bash",
+        content: "ok",
+        durationMs: 782,
+        timestamp: 10_000,
+      } as never,
+    ]);
+
+    const tools = toolBlocks(rows);
+    expect(tools[0]!.tool).toMatchObject({
+      status: "done",
+      startedAt: 10_000 - 782,
+      endedAt: 10_000,
+    });
+  });
+
+  it("treats an inline result without a status as settled, never as waiting", () => {
+    const active = buildTranscriptRows(
+      [
+        {
+          role: "assistant",
+          content: [{ type: "toolCall", id: "call-3", name: "bash", result: "output" } as never],
+        },
+      ],
+      { turnActive: true },
+    );
+    const failed = buildTranscriptRows([
+      {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "call-4", name: "bash", result: "boom", isError: true } as never,
+        ],
+      },
+    ]);
+
+    expect(toolBlocks(active)[0]!.tool.status).toBe("done");
+    expect(toolBlocks(failed)[0]!.tool.status).toBe("error");
+  });
+
+  it("collapses a repeated open call id inside one turn into one card", () => {
+    const rows = buildTranscriptRows(
+      [
+        {
+          role: "assistant",
+          content: [
+            { type: "toolCall", id: "dup-1", argumentsText: '{"comm' } as never,
+            { type: "toolCall", id: "dup-1", name: "bash", arguments: { command: "pwd" } },
+          ],
+        },
+      ],
+      { turnActive: true },
+    );
+
+    const tools = toolBlocks(rows);
+    expect(tools).toHaveLength(1);
+    expect(tools[0]!.tool).toMatchObject({ id: "dup-1", name: "bash" });
+  });
+
+  it("merges adjacent thinking parts into one disclosure", () => {
+    // A session persisted while the stream was fragmented (one part per delta)
+    // still has to reopen as ONE thought, not a column of fragments.
+    const rows = buildTranscriptRows([
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "这" },
+          { type: "thinking", thinking: "个问" },
+          { type: "thinking", thinking: "题应该" },
+          { type: "text", text: "答案" },
+        ],
+      },
+    ]);
+
+    const thinking = rows[0]!.blocks.filter((block) => block.kind === "thinking");
+    expect(thinking).toHaveLength(1);
+    expect(thinking[0]).toMatchObject({ kind: "thinking", text: "这个问题应该" });
+  });
+});

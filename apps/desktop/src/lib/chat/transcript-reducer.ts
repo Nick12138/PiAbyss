@@ -677,10 +677,17 @@ function streamRunMatches(row: SerializableAgentMessage, runId: string | undefin
   // assistant message with the new run's content. A snapshot-restored row
   // carries no marker; it stays adoptable while unsealed (no endedAt) so
   // mid-turn rehydrate resumes into it instead of duplicating it.
+  //
+  // An UNSEALED row is adoptable even when its marker names another run: a new
+  // run seals the previous row at agent_start (`settleOpenRuntime`), so a
+  // still-open tail is the same logical stream. This keeps the transcript in
+  // one piece when a Host cannot pin a run id (a delegated run used to mint a
+  // fresh id per event) — the alternative was one row per streaming delta.
   if (runId === undefined) return true;
+  if (numericField(row, "endedAt") === undefined) return true;
   const marker = (row as { _streamRunId?: unknown })._streamRunId;
   if (typeof marker === "string") return marker === runId;
-  return numericField(row, "endedAt") === undefined;
+  return false;
 }
 
 function mergeLastAssistantInPlace(
@@ -777,11 +784,20 @@ function appendAssistantContentEventInPlace(
         startedAt: eventTime,
       };
     } else if (event.type === "toolcall_delta") {
+      // Arguments only make sense on top of the tool call the provider opened
+      // with `toolcall_start` (id + name). When that start never arrived (the
+      // run began before this renderer subscribed, or the frame was lost) a
+      // delta must NOT fabricate a bare `{type:"toolCall"}` part: it has no
+      // name and no id, can never match its tool result, and renders as an
+      // endless 「等待中 · tool」 row per argument chunk. `toolcall_end` (or the
+      // authoritative `message_end`) still delivers the complete part, and a
+      // missing end is covered by `tool_execution_start`.
+      if (!current || current.type !== "toolCall") return;
       const argumentsText = `${
-        current && typeof current.argumentsText === "string" ? current.argumentsText : ""
+        typeof current.argumentsText === "string" ? current.argumentsText : ""
       }${event.delta}`;
       parts[contentIndex] = {
-        ...(current?.type === "toolCall" ? current : { type: "toolCall" }),
+        ...current,
         arguments: parseToolArguments(argumentsText),
         argumentsText,
         startedAt: numericField(current, "startedAt") ?? eventTime,
@@ -801,33 +817,43 @@ function appendAssistantContentEventInPlace(
     return;
   }
 
+  // Text/thinking deltas are addressed by `contentIndex`, which is only stable
+  // while one provider stream feeds one message. When the index drifts for the
+  // SAME thought (a run whose assistant message was re-opened mid-stream),
+  // appending at the new index would split the thought into one block per
+  // delta. A thinking part without `endedAt` is still open — keep growing it.
+  const openThinkingIndex =
+    contentKind === "thinking" && current?.type !== "thinking" ? findOpenThinkingIndex(parts) : -1;
+  if (openThinkingIndex >= 0 && eventType === "thinking_start") return;
+  const targetIndex = openThinkingIndex >= 0 ? openThinkingIndex : contentIndex;
+  const target = targetIndex === contentIndex ? current : parts[targetIndex];
   const currentValue =
     contentKind === "thinking"
-      ? typeof current?.thinking === "string"
-        ? current.thinking
+      ? typeof target?.thinking === "string"
+        ? target.thinking
         : ""
-      : typeof current?.text === "string"
-        ? current.text
+      : typeof target?.text === "string"
+        ? target.text
         : "";
 
-  if (!current || current.type !== contentKind) {
-    parts[contentIndex] =
+  if (!target || target.type !== contentKind) {
+    parts[targetIndex] =
       contentKind === "thinking"
         ? { type: "thinking", thinking: delta, startedAt: eventTime }
         : { type: "text", text: delta };
   } else if (delta && eventType.endsWith("_delta")) {
-    parts[contentIndex] =
+    parts[targetIndex] =
       contentKind === "thinking"
-        ? { ...current, thinking: currentValue + delta }
-        : { ...current, text: currentValue + delta };
+        ? { ...target, thinking: currentValue + delta }
+        : { ...target, text: currentValue + delta };
   } else if (eventType.endsWith("_end")) {
-    parts[contentIndex] =
-      contentKind === "thinking" ? { ...current, thinking: delta } : { ...current, text: delta };
+    parts[targetIndex] =
+      contentKind === "thinking" ? { ...target, thinking: delta } : { ...target, text: delta };
   }
 
-  const updated = parts[contentIndex];
+  const updated = parts[targetIndex];
   if (contentKind === "thinking" && updated) {
-    parts[contentIndex] = {
+    parts[targetIndex] = {
       ...updated,
       startedAt: numericField(updated, "startedAt") ?? eventTime,
       ...(eventType === "thinking_end" ? { endedAt: eventTime } : {}),
@@ -835,6 +861,16 @@ function appendAssistantContentEventInPlace(
   }
 
   messages[messages.length - 1] = { ...assistant, content: parts };
+}
+
+/** Index of the still-open (no `endedAt`) thinking part in this message, or -1. */
+function findOpenThinkingIndex(parts: SerializableAgentContent[]): number {
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    const part = parts[index];
+    if (!part || typeof part !== "object") continue;
+    if (part.type === "thinking" && numericField(part, "endedAt") === undefined) return index;
+  }
+  return -1;
 }
 
 /**

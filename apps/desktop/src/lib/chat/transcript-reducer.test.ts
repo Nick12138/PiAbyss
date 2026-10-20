@@ -123,6 +123,114 @@ describe("applyAgentEvent", () => {
     expect(next.isStreaming).toBe(true);
   });
 
+  it("keeps one assistant row when the Host run id drifts mid-stream", () => {
+    // Field bug: a delegated run whose id was not pinned per run carried a
+    // fresh random id on every event, so the renderer opened a row per delta
+    // (thinking shattered into one fragment per token, one nameless tool card
+    // per argument chunk). An unsealed tail belongs to the same live stream.
+    let s = applyAgentEvent(baseSession(), {
+      runId: "run-a",
+      event: { type: "agent_start" },
+    })!;
+    s = applyAgentEvent(s, {
+      runId: "run-a",
+      event: { type: "message_start", message: { role: "assistant", content: [] } },
+    })!;
+    for (const [runId, delta] of [
+      ["run-a", "Let "] as const,
+      ["run-b", "me "] as const,
+      ["run-c", "check."] as const,
+    ]) {
+      s = applyAgentEvent(
+        s,
+        {
+          runId,
+          event: {
+            type: "message_update",
+            assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta },
+          },
+        },
+        100,
+      )!;
+    }
+
+    const assistants = s.messages.filter((message) => message.role === "assistant");
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0]?.content).toEqual([
+      { type: "thinking", thinking: "Let me check.", startedAt: 100 },
+    ]);
+  });
+
+  it("appends drifted thinking deltas to the open thought instead of splitting it", () => {
+    let s = applyAgentEvent(baseSession(), {
+      runId: "r1",
+      event: { type: "message_start", message: { role: "assistant", content: [] } },
+    })!;
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_update",
+        assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "这个问" },
+      },
+    })!;
+    // Same thought, different index (provider re-opened the content array).
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_update",
+        assistantMessageEvent: { type: "thinking_delta", contentIndex: 3, delta: "题应该" },
+      },
+    })!;
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_update",
+        assistantMessageEvent: { type: "thinking_end", contentIndex: 3, content: "这个问题应该" },
+      },
+    })!;
+
+    const content = s.messages[0]?.content as Array<Record<string, unknown>>;
+    expect(content.filter((part) => part.type === "thinking")).toHaveLength(1);
+    expect(content[0]).toMatchObject({ type: "thinking", thinking: "这个问题应该" });
+    expect(typeof content[0]?.endedAt).toBe("number");
+  });
+
+  it("never fabricates a nameless tool part from an argument delta without a start", () => {
+    // Field bug: with the run id unstable, `toolcall_delta` arrived against a
+    // fresh message whose slot held a text placeholder; the reducer built a
+    // bare {type:"toolCall"} part. Projection then showed it as "tool ·
+    // 等待中" forever, one row per argument chunk.
+    let s = applyAgentEvent(baseSession(), {
+      runId: "r1",
+      event: { type: "message_start", message: { role: "assistant", content: [] } },
+    })!;
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_update",
+        assistantMessageEvent: { type: "toolcall_delta", contentIndex: 0, delta: '{"comm' },
+      },
+    })!;
+
+    const content = s.messages[0]?.content as Array<Record<string, unknown>>;
+    expect(content.some((part) => part.type === "toolCall")).toBe(false);
+
+    // The execution events still deliver the real, named call.
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "tool_execution_start",
+        toolCallId: "call-1",
+        toolName: "bash",
+        args: { command: "pwd" },
+      },
+    })!;
+    const toolMessage = s.messages.find((message) => message.role === "tool");
+    expect(toolMessage?.content).toMatchObject([
+      { type: "toolCall", id: "call-1", name: "bash", status: "running" },
+    ]);
+  });
+
   it("streams assistant text deltas onto the last assistant message", () => {
     let s = baseSession();
     s = applyAgentEvent(s, {

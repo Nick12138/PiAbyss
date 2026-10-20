@@ -200,6 +200,11 @@ type ToolResultRecord = {
   details?: unknown;
   isError: boolean;
   aborted: boolean;
+  /** Provider-reported tool runtime (`durationMs`/`timestamp` on the result
+   *  message). Restored sessions carry it even though the assistant toolCall
+   *  part has no local `startedAt`/`endedAt`, so history can show real times. */
+  startedAt?: number;
+  endedAt?: number;
 };
 
 type MessageSource = {
@@ -402,6 +407,12 @@ function projectToolResultForMessage(message: SerializableAgentMessage): ToolRes
   const resultBlocks = contentBlocksForValue(message.content);
   const result = messageText(message);
   const isError = record.isError === true;
+  // pi stamps the persisted tool result with when it finished (`timestamp`) and
+  // how long `execute()` ran (`durationMs`). Deriving the window here is what
+  // lets a reopened session show “782ms” on a done tool instead of nothing (or,
+  // worse, a live clock faking a duration).
+  const endedAt = numberField(record, "timestamp");
+  const durationMs = numberField(record, "durationMs");
   return {
     id,
     name: typeof record.toolName === "string" ? record.toolName : "tool",
@@ -410,35 +421,60 @@ function projectToolResultForMessage(message: SerializableAgentMessage): ToolRes
     details: record.details,
     isError,
     aborted: isAbortedToolResult(message, isError),
+    ...(endedAt !== undefined ? { endedAt } : {}),
+    ...(endedAt !== undefined && durationMs !== undefined && durationMs >= 0
+      ? { startedAt: endedAt - durationMs }
+      : {}),
   };
 }
 
 function toolTraceFromPart(part: SerializableAgentContent, index: number): ToolTrace | null {
   if (!["toolCall", "tool_use", "functionCall"].includes(part.type)) return null;
   const record = asRecord(part);
-  const id = typeof record.id === "string" ? record.id : `tool:${index}`;
+  const rawId = typeof record.id === "string" ? record.id : "";
+  const rawName = typeof record.name === "string" ? record.name : "";
+  // A part with neither an id nor a name is not a tool call we can render or
+  // settle: it is a fragment of a stream whose `toolcall_start` was lost (older
+  // builds fabricated one per argument delta). Rendering it produced the wall
+  // of nameless 「tool · 等待中」 rows in the execution trace; skip it instead.
+  // The authoritative `message_end` projection carries the real part.
+  if (!rawId && !rawName) return null;
+  const id = rawId || `tool:${index}`;
   const rawStatus = typeof record.status === "string" ? record.status : undefined;
+  const inlineResult = record.result;
+  const resultBlocks = Array.isArray(record.resultBlocks)
+    ? contentBlocksForValue(record.resultBlocks)
+    : contentBlocksForValue(inlineResult);
+  const startedAt = typeof record.startedAt === "number" ? record.startedAt : undefined;
+  const endedAt = typeof record.endedAt === "number" ? record.endedAt : undefined;
+  const hasResult =
+    (inlineResult !== undefined && inlineResult !== null) || resultBlocks.length > 0;
+  // Never let "unknown" masquerade as a live call: an explicit terminal status
+  // wins, then a running one, then the evidence (a result or an end timestamp
+  // means the call settled), then — only when none of those exist — waiting.
   const status: ToolTraceStatus =
     rawStatus === "done" || rawStatus === "error" || rawStatus === "aborted"
       ? rawStatus
       : rawStatus === "running"
         ? "running"
-        : "waiting";
-  const inlineResult = record.result;
-  const resultBlocks = Array.isArray(record.resultBlocks)
-    ? contentBlocksForValue(record.resultBlocks)
-    : contentBlocksForValue(inlineResult);
+        : hasResult
+          ? record.isError === true
+            ? "error"
+            : "done"
+          : endedAt !== undefined
+            ? "done"
+            : "waiting";
   const details = record.details;
   return {
     id,
-    name: typeof record.name === "string" ? record.name : "tool",
+    name: rawName || "tool",
     args: record.arguments ?? record.input,
     result: inlineResult,
     ...(resultBlocks.length > 0 ? { resultBlocks } : {}),
     ...(details !== undefined && details !== null ? { details } : {}),
     status,
-    startedAt: typeof record.startedAt === "number" ? record.startedAt : undefined,
-    endedAt: typeof record.endedAt === "number" ? record.endedAt : undefined,
+    startedAt,
+    endedAt,
   };
 }
 
@@ -563,7 +599,39 @@ function projectBlocksForMessage(
     const block = contentBlockFromPart(part);
     if (block) blocks.push(block);
   }
-  return splitPlanFenceBlocks(splitLiteralThinkingBlocks(blocks), message.role, sourceIndex);
+  return splitPlanFenceBlocks(
+    mergeAdjacentThinkingBlocks(splitLiteralThinkingBlocks(blocks)),
+    message.role,
+    sourceIndex,
+  );
+}
+
+/**
+ * One reasoning stretch may reach the projector as several adjacent thinking
+ * parts: a provider block split, or a session persisted by an older desktop
+ * that appended a new part per delta. The transcript folds a thought into ONE
+ * disclosure, so join the parts here (the render layer never has to guess).
+ */
+function mergeAdjacentThinkingBlocks(blocks: TranscriptBlock[]): TranscriptBlock[] {
+  const result: TranscriptBlock[] = [];
+  for (const block of blocks) {
+    const previous = result[result.length - 1];
+    if (block.kind === "thinking" && previous?.kind === "thinking") {
+      result[result.length - 1] = {
+        kind: "thinking",
+        text: previous.text + block.text,
+        ...(previous.startedAt !== undefined ? { startedAt: previous.startedAt } : {}),
+        ...(block.endedAt !== undefined
+          ? { endedAt: block.endedAt }
+          : previous.endedAt !== undefined
+            ? { endedAt: previous.endedAt }
+            : {}),
+      };
+      continue;
+    }
+    result.push(block);
+  }
+  return result;
 }
 
 /**
@@ -573,7 +641,32 @@ function projectBlocksForMessage(
  * mirror the previous `Object.assign(pending, block.tool)` exactly.
  */
 function mergeToolTrace(current: ToolTrace, update: ToolTrace): ToolTrace {
-  return { ...current, ...update };
+  const merged = { ...current, ...update };
+  // A fragment never wins over a real identity: a nameless/generic update must
+  // not rename a call the provider already labelled.
+  if ((!update.name || update.name === "tool") && current.name !== "tool") {
+    merged.name = current.name;
+  }
+  // Settled evidence wins over a stale open projection: an assistant message
+  // replayed after the tool result must never reopen the card.
+  const settled = (status: ToolTraceStatus) =>
+    status === "done" || status === "error" || status === "aborted";
+  if (
+    settled(current.status) &&
+    !settled(update.status) &&
+    (current.result !== undefined || current.resultBlocks !== undefined)
+  ) {
+    merged.status = current.status;
+  }
+  return merged;
+}
+
+function toolTraceIsOpen(trace: ToolTrace): boolean {
+  return (
+    (trace.status === "waiting" || trace.status === "running") &&
+    trace.result === undefined &&
+    trace.resultBlocks === undefined
+  );
 }
 
 /**
@@ -584,7 +677,10 @@ function applyToolResult(trace: ToolTrace, result: ToolResultRecord): ToolTrace 
   return {
     ...trace,
     status: result.aborted ? "aborted" : result.isError ? "error" : "done",
-    ...(trace.name === "tool" ? { name: result.name } : {}),
+    // A provider that streamed the call without a name (or that the desktop
+    // projected as the generic fallback) is named by its result — the result
+    // message always carries `toolName`.
+    ...(!trace.name || trace.name === "tool" ? { name: result.name } : {}),
     ...((trace.result === undefined || trace.result === null) && result.result !== undefined
       ? { result: result.result }
       : {}),
@@ -592,6 +688,10 @@ function applyToolResult(trace: ToolTrace, result: ToolResultRecord): ToolTrace 
     ...(trace.details === undefined && result.details !== undefined
       ? { details: result.details }
       : {}),
+    ...(trace.startedAt === undefined && result.startedAt !== undefined
+      ? { startedAt: result.startedAt }
+      : {}),
+    ...(result.endedAt !== undefined ? { endedAt: result.endedAt } : {}),
   };
 }
 
@@ -1416,6 +1516,39 @@ export function buildTranscriptRows(
     activeAssistant = null;
     pendingToolTraces.clear();
   };
+  /**
+   * Collapse a repeated tool-call id inside one assistant turn. Two producers
+   * can emit the same call twice: a stream fragmented across messages (older
+   * Hosts minted a run id per event) and a replayed partial followed by the
+   * authoritative message. The first still-open occurrence owns the card; later
+   * ones only fill gaps, so the trace count matches the real call count instead
+   * of double-counting every re-send.
+   */
+  const absorbAssistantToolBlocks = (blocks: TranscriptBlock[]): TranscriptBlock[] => {
+    const seen = new Map<string, ToolTrace>();
+    const result: TranscriptBlock[] = [];
+    for (const block of blocks) {
+      if (block.kind !== "tool") {
+        result.push(block);
+        continue;
+      }
+      const pending = seen.get(block.tool.id) ?? firstPendingToolTrace(block.tool.id);
+      if (pending && toolTraceIsOpen(pending) && toolTraceIsOpen(block.tool)) {
+        const merged = mergeToolTrace(pending, block.tool);
+        const localIndex = result.findIndex(
+          (candidate) => candidate.kind === "tool" && candidate.tool === pending,
+        );
+        if (localIndex !== -1) result[localIndex] = { kind: "tool", tool: merged };
+        else replaceTraceInRow(activeAssistant, pending, merged);
+        replaceRegisteredTrace(block.tool.id, pending, merged);
+        seen.set(block.tool.id, merged);
+        continue;
+      }
+      seen.set(block.tool.id, block.tool);
+      result.push(block);
+    }
+    return result;
+  };
 
   sources.forEach((source, sourceIndex) => {
     if (source.kind === "row") {
@@ -1499,7 +1632,9 @@ export function buildTranscriptRows(
     }
     if (role === "assistant") {
       const outcome = assistantOutcome(message);
-      const blocks = applyAssistantOutcomeToBlocks(blocksForMessage(message, sourceIndex), outcome);
+      const blocks = absorbAssistantToolBlocks(
+        applyAssistantOutcomeToBlocks(blocksForMessage(message, sourceIndex), outcome),
+      );
       for (const block of blocks) {
         if (block.kind === "tool") registerToolTrace(block.tool);
       }

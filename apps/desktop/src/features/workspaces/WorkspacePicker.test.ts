@@ -86,6 +86,23 @@ describe("summarizeWorkspaceActivity", () => {
     expect(summarizeWorkspaceActivity(shared, "/b").busy).toBe(false);
   });
 
+  it("treats an empty busySessions map as authoritative (no busy lamp)", () => {
+    // A modern pool always ships busy_sessions; empty means "no session busy"
+    // and must override a stale entry-level flag (that flag describes the whole
+    // Host, and in shared-host mode it is not per-workspace).
+    const idlePool = entry({ busy: true, busySessions: {} });
+    expect(summarizeWorkspaceActivity(idlePool, "/a").busy).toBe(false);
+    expect(summarizeWorkspaceActivity(idlePool, "/b").busy).toBe(false);
+  });
+
+  it("scopes per-workspace busy across every cwd the entry serves", () => {
+    // Shared host: the pixie delegated a background run into /b while the user
+    // stays on /a. The lamp belongs to /b only.
+    const shared = entry({ cwd: "/a", cwds: ["/a", "/b"], busySessions: { s9: "/b" } });
+    expect(summarizeWorkspaceActivity(shared, "/a").busy).toBe(false);
+    expect(summarizeWorkspaceActivity(shared, "/b").busy).toBe(true);
+  });
+
   it("mirrors markers without ownership while scoping is active", () => {
     const mixed = entry({
       errorCount: 9,

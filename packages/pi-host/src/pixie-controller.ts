@@ -236,6 +236,29 @@ function resolveExplicitTargetSession(
 }
 
 /**
+ * 委派目标会话的 agent 事件接线。
+ *
+ * 必须和 `createSession` / `openSessionIntoGraph` / 小精灵常驻会话**完全同一条**
+ * 路径（`session.subscribe(event => factory.handleAgentEvent(graph, session, event))`）：
+ * 后台图没有任何别的东西会替它转发 agent 事件。少了这条线，委派会话跑起来时
+ * 一个 `session.runtimeChanged` 都不会发，Rust 池子里的 `busy_sessions` 自然是空
+ * 的——侧边栏那张工作区的灯要等用户切过去（激活时 promote 才补发一次运行态）
+ * 才会亮，这正是「委派在跑、灯不亮；切过去才亮」的根因。接上以后：
+ * - 开跑（agent_start）→ 以目标图自己的 workspaceId 发 running/queued；
+ * - 正常结束 → idle（Rust 转 done 未读标记）；
+ * - 失败/被中止 → error（Rust 转 error 标记）。
+ * 后台图（parked）只在 `isGraphActive` 时发全量 agent 事件，运行态与终态标记
+ * 照发——所以灯与用户当前停在哪张工作区无关。
+ */
+function subscribeDelegatedTargetSession(
+  factory: WorkspaceGraphFactory,
+  graph: WorkspaceGraph,
+  session: AgentSession,
+): () => void {
+  return session.subscribe((event) => factory.handleAgentEvent(graph, session, event));
+}
+
+/**
  * Spin up a brand-new formal session inside the target workspace.
  *
  * `name` 是这次委派为会话定的名（小精灵给的 sessionName，或 Host 用 task 前缀
@@ -297,7 +320,9 @@ async function createTargetSession(
       extensionsResult: created.extensionsResult,
       toolRevision: graph.toolRevision,
       sessionSnapshot: snapshot,
-      unsubscribeAgent: session.subscribe(() => undefined),
+      // 事件接线：后台图靠这条订阅发布运行态/终态（见
+      // subscribeDelegatedTargetSession 的注释）。
+      unsubscribeAgent: subscribeDelegatedTargetSession(factory, graph, session),
       extensionUiActivate: null,
       extensionUiCleanup: null,
       extensionUiUpdateIdentity: null,
@@ -325,10 +350,7 @@ const dispatchedSessions = new Map<string, AgentSession>();
  * @internal test seam: seed/clear the live-session map so the Map-hit resume
  * path can be exercised without driving a full dispatch through a real graph.
  */
-export function setDispatchSessionForTests(
-  dispatchId: string,
-  session: AgentSession | null,
-): void {
+export function setDispatchSessionForTests(dispatchId: string, session: AgentSession | null): void {
   if (session) dispatchedSessions.set(dispatchId, session);
   else dispatchedSessions.delete(dispatchId);
 }
@@ -945,6 +967,33 @@ function drainQueueAfterSettle(factory: WorkspaceGraphFactory, sessionId: string
   void activateQueuedDispatch(factory, head.id);
 }
 
+/**
+ * 收回排队的忙态（取消排队时用）。
+ *
+ * 排队不计入会话自身的运行态，所以没人会自动把它改回去；不收回的话，那条
+ * engine 级 queued 会让工作区一直亮绿灯。只在队列真的空了、而且会话本身没在
+ * 跑时才收回——后面还有排队任务、或者会话正在跑，忙态都该留着。
+ */
+function withdrawQueuedBusyState(factory: WorkspaceGraphFactory, record: PixieDispatchRecord) {
+  if (!record.sessionId) return;
+  if (queuedDispatchesFor(record.sessionId).length > 0) return;
+  let graph: WorkspaceGraph | null = null;
+  try {
+    graph = factory.findBoundGraph(factory.canonicalizeCwd(record.cwd));
+  } catch {
+    return;
+  }
+  const session = graph ? findSessionByIdInGraph(graph, record.sessionId) : null;
+  if (!session) return;
+  if (factory.isSessionBusy(session)) return;
+  try {
+    factory.publishEngineRuntimeState(session, "idle");
+  } catch (error) {
+    // 图刚好被换出 / 版本号变了：灯会由 Host 的终态回收搞定，这里不抛。
+    logger.debug("withdraw queued busy state failed", { error: String(error) });
+  }
+}
+
 /** 同请求重复提交的判定窗口（环回超时后模型原样重试的时间尺度）。 */
 const PIXIE_DISPATCH_DEDUPE_MS = 30_000;
 /** 在途受理的兜底上限：超过它认为上一次请求已经卡死，不再拦住同样的请求。 */
@@ -1223,6 +1272,16 @@ async function dispatchPixieTaskInner(
       sessionName: sessionLabel,
     });
     recordPixieDispatch(agentDir);
+    // 排队即忙（有活在等这个工作区）：侧边栏的灯来自 Rust 池子里的
+    // `busy_sessions`，而它只认 Host 发来的 `session.runtimeChanged`。
+    // 门禁成立时目标会话通常在跑上一单——那条 running 早就把工作区点亮了，
+    // 不需要也不该降级成 queued；只有上一单停成 awaiting_user/paused（会话
+    // 空闲、在等用户答复）时没人替这条排队任务报忙，这里补一条 engine 级
+    // queued 态。转正时（activateQueuedDispatch 注入）真实回合的
+    // running/idle 会自然接管，被取消时由 withdrawQueuedBusyState 收回。
+    if (!factory.isSessionBusy(session)) {
+      factory.publishEngineRuntimeState(session, "queued");
+    }
     return accepted({
       dispatchId: dispatch.id,
       sessionId,
@@ -1517,6 +1576,7 @@ async function stopDispatchById(
   if (record.status === "queued") {
     const cancelled = cancelQueuedDispatch(dispatchId, agentDir);
     if (!cancelled) return { ok: true, action: "already-stopped" };
+    withdrawQueuedBusyState(factory, cancelled);
     void deliverDispatchCallback(factory, {
       agentDir,
       record: cancelled,
@@ -1556,6 +1616,16 @@ async function stopDispatchById(
     void session.abort().catch(() => undefined);
   } catch {
     /* the settle already happened; abort is best-effort */
+  }
+  // 被叫停的委派留 error 标记（红点），不是「正常完成」：用户回到那个工作区要
+  // 能一眼看出这一单没跑完。abort 自己发出的 idle 帧（SDK 把 aborted 视为
+  // 非错误）会被这条覆盖：Rust 侧收到 error 后，后续 idle 不再补 done 标记，
+  // 两个到达顺序都收敛到 error。（只对持有会话对象的叫停生效；会话不可达时
+  // settle 分支已经报过 stopped 回执。）
+  try {
+    factory.publishEngineRuntimeState(session, "error");
+  } catch {
+    /* 图已换出 / 版本号变了：灯交给 Host 终态回收 */
   }
   return { ok: true, action: "aborted" };
 }
@@ -1817,7 +1887,9 @@ async function retryDispatchByIdOnce(
   // resolveDispatchSession 会后台重建图再找（用户不在该工作区前台也能 resume）。
   // 显式 redispatch 不需要定位旧会话，跳过（避免白白重建一张图）。
   const resolution =
-    args.mode === "redispatch" ? null : await resolveDispatchSession(factory, args.dispatchId, record);
+    args.mode === "redispatch"
+      ? null
+      : await resolveDispatchSession(factory, args.dispatchId, record);
   const session = resolution?.session ?? null;
   const mode = args.mode ?? (session ? "resume" : "redispatch");
   if (mode === "resume") {

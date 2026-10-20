@@ -2,8 +2,8 @@ import { useId, useMemo, type ReactNode } from "react";
 import { ChevronRight, FileCode2, FilePenLine, Terminal, type LucideIcon } from "lucide-react";
 import { sanitizeAgentText } from "./markdown-utils";
 import {
-  formatDuration,
   statusLabel,
+  ToolDuration,
   ToolCard,
   ToolDetailsDisclosure,
   useToolDisclosure,
@@ -113,7 +113,7 @@ function ToolRow({
           {summary}
         </span>
         <span className="shrink-0 text-[10px] text-muted">
-          {formatDuration(props.startedAt, props.endedAt)}
+          <ToolDuration status={props.status} startedAt={props.startedAt} endedAt={props.endedAt} />
         </span>
         <span className={`shrink-0 text-[10px] ${statusClass(props.status)}`}>
           {statusLabel(props.status, t)}

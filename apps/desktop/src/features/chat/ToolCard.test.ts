@@ -1,7 +1,25 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ToolCard, toolSummary, toolValueText } from "./ToolCard";
+import { formatDuration, ToolCard, toolSummary, toolValueText } from "./ToolCard";
+
+describe("tool duration", () => {
+  it("only reports a duration once the tool actually ended", () => {
+    expect(formatDuration(1_000, 1_782)).toBe("782ms");
+    expect(formatDuration(1_000, 3_500)).toBe("2.5s");
+    // The old implementation measured against Date.now(), so an unresolved
+    // card grew a fake "782ms" on every render.
+    expect(formatDuration(1_000, undefined)).toBe("");
+    expect(formatDuration(undefined, 2_000)).toBe("");
+  });
+
+  it("renders no clock text on a waiting card", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ToolCard, { name: "bash", status: "waiting", startedAt: 1_000 }),
+    );
+    expect(markup).not.toMatch(/\d+ms/);
+  });
+});
 
 describe("tool display helpers", () => {
   it("extracts useful path and command summaries", () => {

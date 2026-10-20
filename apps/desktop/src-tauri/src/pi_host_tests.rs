@@ -1155,4 +1155,212 @@ rl.on('line', (line) => {
         let json = serde_json::to_value(&snapshot).expect("snapshot json");
         assert!(json.get("busySessions").is_none());
     }
+
+    /// Busy attribution needs BOTH links: session→workspace (the envelope's
+    /// top-level `workspaceId`) and workspace→cwd (host.statusChanged's
+    /// `boundWorkspaces`). A workspace built in the BACKGROUND for a pixie
+    /// delegation only gets the second link once its status broadcast lands,
+    /// and until then its busy session is skipped — this test pins the
+    /// before/after of closing the chain.
+    #[test]
+    fn busy_attribution_needs_both_session_and_workspace_links() {
+        let activity = Mutex::new(HostActivity::default());
+        // Session→workspace link only (no host.statusChanged yet).
+        observe_host_activity(&activity, &runtime_line_in("s1", "running", "ws-a"));
+        let before: HostActivitySnapshot = host_activity_snapshot(
+            Path::new("C:\\ws\\a"),
+            &["c:\\ws\\a".to_string()],
+            &activity,
+        )
+        .expect("snapshot for a bound entry");
+        assert!(before.busy);
+        assert!(before.busy_sessions.is_empty());
+
+        // workspace→cwd link arrives → the same session is now attributable.
+        assert!(observe_host_activity(
+            &activity,
+            &status_changed_line(&[("ws-a", "C:\\ws\\a")])
+        ));
+        let after: HostActivitySnapshot = host_activity_snapshot(
+            Path::new("C:\\ws\\a"),
+            &["c:\\ws\\a".to_string()],
+            &activity,
+        )
+        .expect("snapshot for a bound entry");
+        assert_eq!(
+            after.busy_sessions.get("s1").map(String::as_str),
+            Some("C:\\ws\\a")
+        );
+    }
+
+    /// A workspace the Host serves WITHOUT the user ever switching to it (a
+    /// pixie delegation into a background graph) is absent from the pool's
+    /// registered `workspaces` but present in its own status broadcast — the
+    /// snapshot must advertise both, otherwise the renderer builds no activity
+    /// entry for that cwd and its busy lamp cannot light.
+    #[test]
+    fn snapshot_cwds_include_background_bound_workspaces() {
+        let activity = Mutex::new(HostActivity::default());
+        observe_host_activity(
+            &activity,
+            &status_changed_line(&[("ws-pixie", "c:\\ws\\pixie"), ("ws-a", "c:\\ws\\a")]),
+        );
+        let snapshot: HostActivitySnapshot = host_activity_snapshot(
+            Path::new("c:\\ws\\pixie"),
+            // The user only ever opened the pixie workspace on this Host.
+            &["c:\\ws\\pixie".to_string()],
+            &activity,
+        )
+        .expect("snapshot for a bound entry");
+        assert_eq!(snapshot.cwds.len(), 2);
+        assert!(snapshot.cwds.iter().any(|cwd| cwd == "c:\\ws\\pixie"));
+        assert!(snapshot.cwds.iter().any(|cwd| cwd == "c:\\ws\\a"));
+    }
+
+    /// Deduplicated by pool key: a registered workspace and its status binding
+    /// describe the same cwd (different letter case on Windows) and must not
+    /// produce two entries the renderer would project twice.
+    #[test]
+    fn snapshot_cwds_dedupe_across_the_two_sources() {
+        let activity = Mutex::new(HostActivity::default());
+        observe_host_activity(&activity, &status_changed_line(&[("ws-a", "C:\\ws\\a")]));
+        let deduped = host_activity_snapshot(
+            Path::new("C:\\ws\\a"),
+            &["c:\\ws\\a".to_string()],
+            &activity,
+        )
+        .expect("snapshot for a bound entry");
+        #[cfg(windows)]
+        assert_eq!(deduped.cwds.len(), 1);
+        #[cfg(not(windows))]
+        assert_eq!(deduped.cwds.len(), 2);
+    }
+
+    /// Frames copied verbatim from a REAL Host run (pixie delegation into a
+    /// workspace the user never switched to). They pin the wire contract the
+    /// whole busy-lamp chain depends on: the workspace id rides at the TOP
+    /// level of the envelope, and `host.statusChanged` carries the matching
+    /// workspaceId→cwd binding. If either moves (e.g. workspaceId nested into
+    /// payload), attribution silently degrades back to "no lamp".
+    #[test]
+    fn real_delegation_frames_attribute_the_background_run() {
+        let target_cwd = "C:\\Users\\liu\\AppData\\Local\\Temp\\piabyss-busylamp-2EGhBG\\ws-target";
+        let foreground_cwd = "C:\\Users\\liu\\AppData\\Local\\Temp\\piabyss-busylamp-2EGhBG\\ws-foreground";
+        let delegated_session = "01a15966-eefe-7107-896f-c28bde1e31b2";
+        let target_workspace = "323a3cb0-3372-404e-a192-8f459c320865";
+        let status_frame = serde_json::json!({
+            "protocolVersion": 1,
+            "hostInstanceId": "2egHbg-host",
+            "workspaceId": "d1d0549a-190e-4018-a289-0cb4f6837c37",
+            "event": "host.statusChanged",
+            "payload": {
+                "boundWorkspaces": [
+                    {
+                        "workspaceId": "d1d0549a-190e-4018-a289-0cb4f6837c37",
+                        "revision": 1,
+                        "cwd": foreground_cwd
+                    },
+                    { "workspaceId": target_workspace, "revision": 2, "cwd": target_cwd }
+                ]
+            }
+        })
+        .to_string();
+        let running_frame = serde_json::json!({
+            "protocolVersion": 1,
+            "hostInstanceId": "2egHbg-host",
+            "workspaceId": target_workspace,
+            "workspaceRevision": 2,
+            "sessionId": delegated_session,
+            "event": "session.runtimeChanged",
+            "payload": { "sessionId": delegated_session, "sessionRevision": 0, "state": "running" }
+        })
+        .to_string();
+        let idle_frame = running_frame.replace("\"running\"", "\"idle\"");
+
+        let activity = Mutex::new(HostActivity::default());
+        assert!(observe_host_activity(&activity, &status_frame));
+        assert!(observe_host_activity(&activity, &running_frame));
+
+        // The host pool only ever registered the foreground workspace (the user
+        // never switched into the target); the snapshot must still advertise
+        // the delegated one so the renderer builds an activity entry for it.
+        let snapshot: HostActivitySnapshot = host_activity_snapshot(
+            Path::new(foreground_cwd),
+            &[foreground_cwd.to_lowercase()],
+            &activity,
+        )
+        .expect("snapshot for a bound entry");
+        assert!(snapshot.busy);
+        assert_eq!(
+            snapshot.busy_sessions.get(delegated_session).map(String::as_str),
+            Some(target_cwd)
+        );
+        assert!(snapshot.cwds.iter().any(|cwd| cwd == target_cwd));
+
+        // Settle → done marker owned by the delegated session, scoped to the
+        // target cwd (that is what turns the lamp into the unread gray dot).
+        assert!(observe_host_activity(&activity, &idle_frame));
+        let settled: HostActivitySnapshot =
+            host_activity_snapshot(Path::new(foreground_cwd), &[], &activity)
+                .expect("snapshot for a bound entry");
+        assert!(settled.busy_sessions.is_empty());
+        assert_eq!(
+            settled.terminal_sessions[delegated_session]
+                .workspace_cwd
+                .as_deref(),
+            Some(target_cwd)
+        );
+        assert_eq!(settled.terminal_sessions[delegated_session].state, "done");
+    }
+
+    /// `queued → idle` without a running edge means the queued work was
+    /// withdrawn (a cancelled delegation): the busy lamp clears, but no
+    /// 「有结果没看」 done marker is invented for a turn that never ran.
+    #[test]
+    fn withdrawing_a_queued_session_clears_busy_without_a_done_marker() {
+        let activity = Mutex::new(HostActivity::default());
+        observe_host_activity(&activity, &status_changed_line(&[("ws-a", "c:\\ws\\a")]));
+        observe_host_activity(&activity, &runtime_line_in("s1", "queued", "ws-a"));
+        let busy_now = host_activity_snapshot(
+            Path::new("c:\\ws\\a"),
+            &["c:\\ws\\a".to_string()],
+            &activity,
+        )
+        .expect("snapshot for a bound entry");
+        assert!(busy_now.busy);
+        assert_eq!(
+            busy_now.busy_sessions.get("s1").map(String::as_str),
+            Some("c:\\ws\\a")
+        );
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line_in("s1", "idle", "ws-a")
+        ));
+        let snapshot: HostActivitySnapshot = host_activity_snapshot(
+            Path::new("c:\\ws\\a"),
+            &["c:\\ws\\a".to_string()],
+            &activity,
+        )
+        .expect("snapshot for a bound entry");
+        assert!(!snapshot.busy);
+        assert!(snapshot.terminal_sessions.is_empty());
+
+        // A queue that DOES run (queued → running → idle) still completes.
+        observe_host_activity(&activity, &runtime_line_in("s2", "queued", "ws-a"));
+        observe_host_activity(&activity, &runtime_line_in("s2", "running", "ws-a"));
+        observe_host_activity(&activity, &runtime_line_in("s2", "idle", "ws-a"));
+        let done = host_activity_snapshot(
+            Path::new("c:\\ws\\a"),
+            &["c:\\ws\\a".to_string()],
+            &activity,
+        )
+        .expect("snapshot for a bound entry");
+        assert_eq!(
+            done.terminal_sessions
+                .get("s2")
+                .map(|terminal| terminal.state.as_str()),
+            Some("done")
+        );
+        assert!(!done.terminal_sessions.contains_key("s1"));
+    }
 }
