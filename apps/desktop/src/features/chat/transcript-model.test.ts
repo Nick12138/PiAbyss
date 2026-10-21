@@ -1762,17 +1762,45 @@ describe("Pi extension and session entry messages", () => {
     ]);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.role).toBe("assistant");
+    // A one-line payload has nothing to hide: it becomes the headline and the
+    // raw text is dropped, so the row renders without an expand control.
     expect(rows[0]?.outcome).toMatchObject({
       status: "error",
       stopReason: "error",
-      errorMessage: "Provider failed",
+      headline: "Provider failed",
     });
+    expect(rows[0]?.outcome?.errorMessage).toBeUndefined();
     expect(rows[0]?.blocks).toEqual([]);
 
     const aborted = buildTranscriptRows([
       { role: "assistant", content: [], stopReason: "aborted" },
     ]);
     expect(aborted[0]?.outcome).toMatchObject({ status: "aborted", stopReason: "aborted" });
+  });
+
+  it("drops the abort payload: a stop is never a diagnostic", () => {
+    const rows = buildTranscriptRows([
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "partial" }],
+        stopReason: "aborted",
+        errorMessage: "Request was aborted.",
+      },
+    ]);
+    expect(rows[0]?.outcome).toEqual({ status: "aborted", stopReason: "aborted" });
+  });
+
+  it("splits a gateway payload into headline, hint and expandable raw", () => {
+    const raw =
+      "504 <html>\n<head><title>504 Gateway Time-out</title></head>\n<body>\n<center><h1>504 Gateway Time-out</h1></center>\n<hr><center>awselb/2.0</center>\n</body>\n</html>";
+    const rows = buildTranscriptRows([
+      { role: "assistant", content: [], stopReason: "error", errorMessage: raw },
+    ]);
+    const outcome = rows[0]?.outcome;
+    expect(outcome?.headline).toBe("504 Gateway Time-out");
+    expect(outcome?.hint).toContain("网关故障");
+    // The full HTML survives for the details drawer / copying.
+    expect(outcome?.errorMessage).toContain("<html>");
   });
 
   it("uses entry messages as the persisted prefix and keeps only the streaming tail", () => {

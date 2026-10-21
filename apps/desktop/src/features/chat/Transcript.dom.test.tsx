@@ -199,6 +199,54 @@ describe("Transcript Session-open scrolling", () => {
     expect(screen.getAllByText("Response stopped")).toHaveLength(1);
   });
 
+  it("collapses a gateway failure to one line and only reveals the raw payload on demand", async () => {
+    const raw =
+      "504 <html>\n<head><title>504 Gateway Time-out</title></head>\n<body>\n<center><h1>504 Gateway Time-out</h1></center>\n<hr><center>awselb/2.0</center>\n</body>\n</html>";
+    useAppStore.setState({
+      session: {
+        ...session(SESSION_A, "First Session"),
+        messages: [
+          { role: "user", content: "seed" },
+          { role: "assistant", content: [], stopReason: "error", errorMessage: raw },
+        ],
+      },
+    });
+    const { container } = render(<Transcript />);
+    const user = userEvent.setup();
+
+    // The row is one truncated line: the gist is there, the HTML page is not.
+    expect(container.textContent).toContain("504 Gateway Time-out");
+    expect(container.textContent).not.toContain("awselb");
+
+    const disclosure = await screen.findByRole("button", { name: /504 Gateway Time-out/ });
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
+    await user.click(disclosure);
+    await waitFor(() => expect(container.textContent).toContain("awselb/2.0"));
+  });
+
+  it("keeps a user-initiated stop to a single line with no disclosure", () => {
+    useAppStore.setState({
+      session: {
+        ...session(SESSION_A, "First Session"),
+        messages: [
+          { role: "user", content: "seed" },
+          {
+            role: "assistant",
+            content: "partial",
+            stopReason: "aborted",
+            errorMessage: "Request was aborted.",
+          },
+        ],
+        lastRunAborted: true,
+      },
+    });
+    const { container } = render(<Transcript />);
+    expect(container.textContent).toContain("Response stopped");
+    // The SDK's abort string never reaches the UI.
+    expect(container.textContent).not.toContain("Request was aborted");
+    expect(container.querySelector("button[aria-expanded]")).toBeNull();
+  });
+
   it("keeps a newly opened Session at the bottom through late content growth", () => {
     const { container } = render(<Transcript />);
     const scroll = container.querySelector<HTMLElement>("[data-transcript-scroll]")!;

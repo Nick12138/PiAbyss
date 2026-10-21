@@ -927,7 +927,7 @@ export function Transcript() {
             !lastAssistantAborted && (
               <div className="flex items-center gap-3">
                 <AssistantAvatar />
-                <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-warning">
+                <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-muted">
                   <Ban size={13} />
                   {t("transcriptResponseStopped")}
                 </span>
@@ -1283,14 +1283,7 @@ export const TranscriptRowView = memo(function TranscriptRowView({
   }
 
   if (row.role === "error") {
-    return (
-      <div className="flex items-start gap-3">
-        <CircleAlert className="mt-1 size-5 shrink-0 text-danger" />
-        <div className="min-w-0 flex-1 whitespace-pre-wrap break-words rounded-md border border-danger/25 bg-danger/10 px-3 py-2 text-sm text-danger">
-          {row.copyText}
-        </div>
-      </div>
-    );
+    return <ErrorRow row={row} />;
   }
 
   if (row.role === "custom") return <ExtensionMessageRow row={row} />;
@@ -1447,7 +1440,9 @@ export const TranscriptRowView = memo(function TranscriptRowView({
         )}
         {declaredFiles.length > 0 && <ResultFilesRow files={declaredFiles} />}
         {row.outcome && (row.outcome.status === "error" || row.outcome.status === "aborted") && (
-          <AssistantOutcome outcome={row.outcome} showGoOn={goOnVisible} />
+          <div className={outcomeTone(row.outcome.status === "aborted" ? "neutral" : "danger")}>
+            <AssistantOutcome outcome={row.outcome} showGoOn={goOnVisible} />
+          </div>
         )}
       </div>
       <div className="mt-2 flex h-7 items-center gap-2">
@@ -2483,6 +2478,113 @@ function SessionEventRow({ row }: { row: TranscriptRow }) {
   );
 }
 
+/**
+ * One-line failure summary with the raw payload behind an expand control.
+ *
+ * Kept as a standalone row (no assistant avatar / meta line) because these
+ * entries carry no turn of their own.
+ */
+function ErrorRow({ row }: { row: TranscriptRow }) {
+  const t = useT();
+  const detail = row.errorDetail;
+  const [expanded, setExpanded] = useState(false);
+  const contentId = useId();
+  const summary = detail?.headline || detail?.raw || row.copyText || t("transcriptResponseFailed");
+  const expandable = Boolean(detail?.raw && detail.headline && detail.raw !== detail.headline);
+  return (
+    <div className={outcomeTone("danger")}>
+      <OutcomeRowShell
+        icon={<CircleAlert size={12} aria-hidden="true" />}
+        summary={detail?.hint ? `${detail.hint} · ${summary}` : summary}
+        expanded={expanded}
+        expandable={expandable}
+        contentId={contentId}
+        onToggle={() => setExpanded((current) => !current)}
+      >
+        {expandable && detail?.raw ? <TranscriptOutcomeDetail raw={detail.raw} /> : null}
+      </OutcomeRowShell>
+    </div>
+  );
+}
+
+/** danger = 真故障；neutral = 用户自己停的，不该报警。 */
+function outcomeTone(tone: "danger" | "neutral"): string {
+  const base = "rounded-r-md text-xs leading-[1.5] ";
+  return tone === "neutral"
+    ? `${base}border-l-2 border-muted/50 bg-muted/8 text-muted`
+    : `${base}border-l-2 border-danger/60 bg-danger/7 text-danger`;
+}
+
+function OutcomeRowShell({
+  icon,
+  summary,
+  expanded,
+  expandable,
+  contentId,
+  onToggle,
+  action,
+  children,
+}: {
+  icon: ReactNode;
+  summary: string;
+  expanded: boolean;
+  expandable: boolean;
+  contentId: string;
+  onToggle: () => void;
+  action?: ReactNode;
+  children?: ReactNode;
+}) {
+  // 摘要可点时才用 <button>；「继续」与它平级（HTML 不允许嵌套按钮）。
+  const head = expandable ? (
+    <button
+      type="button"
+      className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pl-2 pr-1.5 text-left"
+      aria-expanded={expandable ? expanded : undefined}
+      aria-controls={expandable ? contentId : undefined}
+      title={summary}
+      onClick={expandable ? onToggle : undefined}
+    >
+      <span className="shrink-0">{icon}</span>
+      <span className="min-w-0 flex-1 truncate">{summary}</span>
+      {expandable ? (
+        <ChevronRight
+          size={12}
+          className={`shrink-0 opacity-60 transition-transform duration-[160ms] motion-reduce:transition-none ${
+            expanded ? "rotate-90" : ""
+          }`}
+          aria-hidden="true"
+        />
+      ) : null}
+    </button>
+  ) : (
+    <div className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pl-2 pr-1.5" title={summary}>
+      <span className="shrink-0">{icon}</span>
+      <span className="min-w-0 flex-1 truncate">{summary}</span>
+    </div>
+  );
+  return (
+    <div>
+      <div className="flex items-center gap-1 pr-2">
+        {head}
+        {action}
+      </div>
+      {expandable ? (
+        <CollapsibleRegion open={expanded} id={contentId}>
+          {children}
+        </CollapsibleRegion>
+      ) : null}
+    </div>
+  );
+}
+
+function TranscriptOutcomeDetail({ raw }: { raw: string }) {
+  return (
+    <pre className="mx-2 mb-2 mt-0.5 max-h-24 overflow-auto whitespace-pre-wrap break-words rounded bg-black/20 px-2 py-1.5 font-mono text-[11px] leading-5 opacity-90">
+      {raw}
+    </pre>
+  );
+}
+
 function AssistantOutcome({
   outcome,
   showGoOn = false,
@@ -2492,26 +2594,37 @@ function AssistantOutcome({
 }) {
   const t = useT();
   const aborted = outcome.status === "aborted";
-  const message =
-    outcome.errorMessage ||
-    (aborted ? t("transcriptOperationAborted") : t("transcriptAssistantIncomplete"));
+  const [expanded, setExpanded] = useState(false);
+  const contentId = useId();
+  // 中止恒为用户主动行为：只说一句「打住了」，不铺报文也不占告警色。
+  // 失败则把提示写在前面、报文首行在后，原始报文收进详情。
+  const fallback = aborted ? t("transcriptResponseStopped") : t("transcriptAssistantIncomplete");
+  const raw = aborted ? "" : outcome.errorMessage || "";
+  const summary =
+    aborted || (!outcome.headline && !outcome.hint)
+      ? fallback
+      : [outcome.hint, outcome.headline]
+          .filter((part): part is string => Boolean(part))
+          .join(" · ");
+  const expandable = Boolean(raw && raw !== summary);
   return (
-    <div
-      className={`flex items-start gap-2 border-l-2 px-3 py-2 text-xs ${aborted ? "border-warning/60 bg-warning/8 text-warning" : "border-danger/70 bg-danger/8 text-danger"}`}
+    <OutcomeRowShell
+      icon={
+        aborted ? (
+          <Ban size={12} aria-hidden="true" />
+        ) : (
+          <CircleAlert size={12} aria-hidden="true" />
+        )
+      }
+      summary={summary}
+      expanded={expanded}
+      expandable={expandable}
+      contentId={contentId}
+      onToggle={() => setExpanded((current) => !current)}
+      action={showGoOn ? <GoOnButton aborted={aborted} /> : undefined}
     >
-      {aborted ? (
-        <Ban size={14} className="mt-0.5 shrink-0" />
-      ) : (
-        <CircleAlert size={14} className="mt-0.5 shrink-0" />
-      )}
-      <div className="min-w-0 flex-1">
-        <div className="font-medium">
-          {aborted ? t("transcriptResponseStopped") : t("transcriptResponseFailed")}
-        </div>
-        <div className="mt-0.5 whitespace-pre-wrap break-words opacity-90">{message}</div>
-      </div>
-      {showGoOn && <GoOnButton aborted={aborted} />}
-    </div>
+      {expandable ? <TranscriptOutcomeDetail raw={raw} /> : null}
+    </OutcomeRowShell>
   );
 }
 
@@ -2519,22 +2632,23 @@ function GoOnButton({ aborted }: { aborted: boolean }) {
   const t = useT();
   const idle = useAppStore((s) => s.session?.isIdle ?? false);
   const [pending, setPending] = useState(false);
+  // 描边按钮：不填底色，与摘要行共用一层背景，只靠描边/焦点环表意。
   const tone = aborted
-    ? "border-warning/60 hover:bg-warning/15"
-    : "border-danger/60 hover:bg-danger/15";
+    ? "border-muted/45 hover:border-muted/70 hover:bg-muted/12"
+    : "border-danger/45 hover:border-danger/70 hover:bg-danger/12";
 
   return (
     <button
       type="button"
       title={t("transcriptGoOnHint")}
       disabled={!idle || pending}
-      className={`shrink-0 self-center inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${tone}`}
+      className={`inline-flex h-5 shrink-0 items-center gap-1 self-center rounded-[4px] border px-[7px] text-[11px] font-medium leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${tone}`}
       onClick={() => {
         setPending(true);
         void requestGoOn().finally(() => setPending(false));
       }}
     >
-      {pending ? <LoaderCircle size={12} className="animate-spin" /> : <Play size={12} />}
+      {pending ? <LoaderCircle size={11} className="animate-spin" /> : <Play size={11} />}
       <span>{t("transcriptGoOn")}</span>
     </button>
   );

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { dedupeRequestIds, friendlyErrorHint, withFriendlyErrorHint } from "./error-hints";
+import {
+  dedupeRequestIds,
+  describeErrorMessage,
+  errorHeadline,
+  friendlyErrorHint,
+  withFriendlyErrorHint,
+} from "./error-hints";
 
 describe("friendlyErrorHint", () => {
   it("flags 402 as channel out of balance", () => {
@@ -90,5 +96,65 @@ describe("withFriendlyErrorHint", () => {
     expect(dedupeRequestIds("x (request id: a) (request id: a) (request id: a)")).toBe(
       "x (request id: a)",
     );
+  });
+});
+
+describe("errorHeadline", () => {
+  it("takes the meaning out of a gateway HTML page", () => {
+    const raw =
+      "504 <html>\n<head><title>504 Gateway Time-out</title></head>\n<body>\n<center><h1>504 Gateway Time-out</h1></center>\n<hr><center>awselb/2.0</center>\n</body>\n</html>";
+    expect(errorHeadline(raw)).toBe("504 Gateway Time-out");
+  });
+
+  it("prefers a JSON error message over the braces", () => {
+    expect(errorHeadline('{"error":{"message":"Context length exceeded"}}')).toBe(
+      "Context length exceeded",
+    );
+  });
+
+  it("flattens multi-line plain text onto one line", () => {
+    expect(errorHeadline("line one\nline two\n\nline three")).toBe("line one line two line three");
+  });
+
+  it("clamps a long single-line payload", () => {
+    const headline = errorHeadline(`boom ${"x".repeat(400)}`);
+    expect(headline.length).toBeLessThanOrEqual(151);
+    expect(headline.endsWith("…")).toBe(true);
+  });
+});
+
+describe("describeErrorMessage", () => {
+  it("returns hint + headline and keeps raw only when it adds detail", () => {
+    const raw =
+      "504 <html>\n<head><title>504 Gateway Time-out</title></head>\n<body><center>alb</center></body>\n</html>";
+    const parts = describeErrorMessage(raw);
+    expect(parts.headline).toBe("504 Gateway Time-out");
+    expect(parts.hint).toContain("网关故障");
+    // The hint's 💡 marker is dropped: the row paints its own severity icon.
+    expect(parts.hint?.startsWith("💡")).toBe(false);
+    expect(parts.raw).toContain("<html>");
+  });
+
+  it("drops raw when the headline already says everything", () => {
+    const parts = describeErrorMessage("402 status code (no body)");
+    expect(parts).toEqual({
+      hint: "该渠道余额不足/已欠费（HTTP 402），重试无效。",
+      headline: "402 status code (no body)",
+    });
+  });
+
+  it("returns an empty object for missing text", () => {
+    expect(describeErrorMessage(null)).toEqual({});
+    expect(describeErrorMessage("   ")).toEqual({});
+  });
+
+  it("collapses duplicated request ids in the payload it hands to the drawer", () => {
+    const parts = describeErrorMessage(
+      "Error page <html><head><title>504 Gateway Time-out</title></head></html> (request id: abc) (request id: abc)",
+    );
+    expect(parts.raw).toBe(
+      "Error page <html><head><title>504 Gateway Time-out</title></head></html> (request id: abc)",
+    );
+    expect(parts.headline).toBe("504 Gateway Time-out");
   });
 });

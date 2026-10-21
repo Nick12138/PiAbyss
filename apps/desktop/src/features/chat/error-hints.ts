@@ -108,3 +108,113 @@ export function withFriendlyErrorHint(errorMessage: string): string {
   const hint = friendlyErrorHint(deduped);
   return hint ? `${deduped}\n\n${hint}` : deduped;
 }
+
+/**
+ * Structured view of a provider error, for the transcript's compact failure
+ * row: a friendly explanation first, a one-line gist of the raw payload, and
+ * the full text only when it actually adds something to the gist.
+ *
+ * Provider payloads arrive in three shapes — a bare status string
+ * ("402 status code (no body)"), an entire gateway HTML page, or a JSON error
+ * object. Rendering any of them verbatim is what made failure rows a screen
+ * tall, so the headline flattens all three to one line.
+ */
+export type ErrorMessageParts = {
+  /** Friendly explanation (💡 …), or undefined when no rule matches. */
+  hint?: string;
+  /** Single-line gist of the raw payload, markup/JSON flattened away. */
+  headline?: string;
+  /** Full payload, present only when the headline dropped information. */
+  raw?: string;
+};
+
+/** Roughly two lines of the collapsed row at the default conversation width. */
+const HEADLINE_MAX = 150;
+
+/**
+ * The row already paints its own severity icon, so the hint's leading "💡 "
+ * marker is dropped here. `friendlyErrorHint` / `withFriendlyErrorHint` keep
+ * emitting it for notifications and copied text, where there is no icon.
+ */
+export function stripErrorHintMarker(hint: string | undefined): string | undefined {
+  return hint?.replace(/^\s*[\u{1F4A1}\u{26A0}\u{2139}]\s*/u, "");
+}
+
+const HTML_MARKER = /<!doctype\s+html|<html[\s>]|<head[\s>]|<body[\s>]|<title[\s>]/i;
+
+function collapseWhitespace(text: string): string {
+  return text
+    .replace(/\s+/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .trim();
+}
+
+function truncate(text: string): string {
+  if (text.length <= HEADLINE_MAX) return text;
+  return `${text.slice(0, HEADLINE_MAX).trimEnd()}…`;
+}
+
+/** Gateway HTML pages carry their meaning in `<title>`; the rest is chrome. */
+function headlineFromHtml(text: string): string {
+  const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(text)?.[1];
+  const body = title ?? text.replace(/<[^>]*>/g, " ");
+  const gist = collapseWhitespace(body);
+  if (!gist) return "";
+  // Provider text usually prefixes the code ("504 <html>…"). The gateway title
+  // already repeats it, so don't print "504 504 Gateway Time-out".
+  const code = /^\s*([1-5]\d{2})\b/.exec(text)?.[1];
+  return code && !gist.startsWith(code) ? `${code} ${gist}` : gist;
+}
+
+/** JSON error bodies: dig out the human message instead of showing braces. */
+function headlineFromJson(text: string): string | undefined {
+  if (!/^[{[]/.test(text)) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  const queue: unknown[] = [parsed];
+  const seen = new Set<unknown>();
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+    for (const key of ["message", "error_message", "error", "detail"] as const) {
+      const value = (current as Record<string, unknown>)[key];
+      if (typeof value === "string" && value.trim()) return collapseWhitespace(value);
+      if (value && typeof value === "object") queue.push(value);
+    }
+  }
+  return undefined;
+}
+
+/** One-line gist of a raw provider payload: HTML/JSON flattened, then clamped. */
+export function errorHeadline(errorMessage: string): string {
+  const text = errorMessage.trim();
+  if (!text) return "";
+  const gist = HTML_MARKER.test(text)
+    ? headlineFromHtml(text)
+    : (headlineFromJson(text) ?? collapseWhitespace(text));
+  return truncate(gist);
+}
+
+/**
+ * Splits a provider error into the pieces the compact failure row needs.
+ * `raw` is omitted when the headline already says everything, which is what
+ * keeps "402 status code (no body)" from growing a pointless expand arrow.
+ */
+export function describeErrorMessage(errorMessage: string | null | undefined): ErrorMessageParts {
+  if (!errorMessage) return {};
+  const raw = dedupeRequestIds(errorMessage).trim();
+  if (!raw) return {};
+  const hint = stripErrorHintMarker(friendlyErrorHint(raw));
+  const headline = errorHeadline(raw);
+  const addsDetail = headline !== raw && headline.length < raw.length;
+  return {
+    ...(hint ? { hint } : {}),
+    ...(headline ? { headline } : {}),
+    ...(addsDetail ? { raw } : {}),
+  };
+}

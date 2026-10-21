@@ -13,7 +13,7 @@ import {
   stripAttachmentReferenceBlocks,
 } from "@piabyss/protocol";
 import { isAbortedToolResult } from "../../lib/chat/tool-result-status";
-import { withFriendlyErrorHint } from "./error-hints";
+import { describeErrorMessage } from "./error-hints";
 import { parseInjectedReferences, type InjectedReference } from "./injected-references";
 import {
   splitPlanFenceSegments,
@@ -82,7 +82,23 @@ export type TranscriptBlock =
 type AssistantOutcome = {
   status: "streaming" | "complete" | "error" | "aborted";
   stopReason?: string;
+  /**
+   * Full provider payload for the expandable detail. `aborted` never carries
+   * one: the string there is always the SDK's own "Request was aborted.",
+   * which tells a user nothing they did not already know.
+   */
   errorMessage?: string;
+  /** Friendly explanation shown ahead of any raw text. */
+  hint?: string;
+  /** One-line gist of the payload, used for the collapsed summary. */
+  headline?: string;
+};
+
+/** Compact failure copy for a standalone `role === "error"` row. */
+export type TranscriptErrorDetail = {
+  hint?: string;
+  headline?: string;
+  raw?: string;
 };
 
 type BashExecution = {
@@ -133,6 +149,7 @@ export type TranscriptRow = {
   details?: unknown;
   bash?: BashExecution;
   summary?: TranscriptSummary;
+  errorDetail?: TranscriptErrorDetail;
   event?: TranscriptEvent;
   sourceId?: string;
   /** Last persisted entry id contributing to the row — an assistant turn can
@@ -864,15 +881,17 @@ function assistantOutcome(message: SerializableAgentMessage): AssistantOutcome |
   const errorMessage = stringField(message, "errorMessage");
   if (!stopReason && !errorMessage) return undefined;
   if (stopReason === "aborted") {
-    return { status: "aborted", stopReason, ...(errorMessage ? { errorMessage } : {}) };
+    // 中止恒为用户主动行为，不占告警色也不带报文：这里刻意丢弃 errorMessage。
+    return { status: "aborted", stopReason };
   }
   if (stopReason === "error" || errorMessage) {
+    const parts = describeErrorMessage(errorMessage);
     return {
       status: "error",
       ...(stopReason ? { stopReason } : {}),
-      // Real provider failures get a friendly explanation appended; the raw
-      // text is preserved so logs/copy still carry the original detail.
-      ...(errorMessage ? { errorMessage: withFriendlyErrorHint(errorMessage) } : {}),
+      ...(parts.raw ? { errorMessage: parts.raw } : {}),
+      ...(parts.hint ? { hint: parts.hint } : {}),
+      ...(parts.headline ? { headline: parts.headline } : {}),
     };
   }
   return {
@@ -886,8 +905,12 @@ function applyAssistantOutcomeToBlocks(
   outcome: AssistantOutcome | undefined,
 ): TranscriptBlock[] {
   if (!outcome || (outcome.status !== "error" && outcome.status !== "aborted")) return blocks;
+  // 失败时没有任何报文（headline 与 raw 相同就不单独存 raw），这里退化用摘要，
+  // 免得卡住的工具只拿到一个 "Error"。
   const fallback =
-    outcome.errorMessage ?? (outcome.status === "aborted" ? "Operation aborted" : "Error");
+    outcome.errorMessage ??
+    outcome.headline ??
+    (outcome.status === "aborted" ? "Operation aborted" : "Error");
   return blocks.map((block) => {
     if (block.kind !== "tool") return block;
     if (block.tool.status !== "waiting" && block.tool.status !== "running") return block;
@@ -1086,13 +1109,26 @@ function projectNonAssistantRow(
   const copyText = copyTextForBlocks(blocks);
   if (role === "user" || role === "error") {
     if (blocks.length === 0 && role !== "error") return null;
-    const errorText =
-      role === "error" && blocks.length === 0
-        ? withFriendlyErrorHint(stringField(message, "errorMessage") ?? "Agent error")
-        : undefined;
-    const finalBlocks = errorText
-      ? [{ kind: "text", text: errorText } satisfies TranscriptBlock]
-      : blocks;
+    if (role === "error") {
+      // A standalone error entry keeps the full payload for copying but
+      // renders as one compact line; the raw text only exists behind an
+      // expand control when the headline had to drop information.
+      const detail = describeErrorMessage(
+        stringField(message, "errorMessage") ?? copyText ?? "Agent error",
+      );
+      const copyFallback =
+        detail.raw ?? detail.headline ?? stringField(message, "errorMessage") ?? "Agent error";
+      return {
+        key: `${role}:${sourceKey}`,
+        role,
+        blocks,
+        copyText: copyFallback,
+        ...(detail.headline || detail.hint || detail.raw ? { errorDetail: detail } : {}),
+        ...(sourceId ? { sourceId } : {}),
+        ...(timestamp !== undefined ? { timestamp } : {}),
+      };
+    }
+    const finalBlocks = blocks;
     return {
       key: `${role}:${sourceKey}`,
       role,

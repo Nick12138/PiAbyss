@@ -1263,7 +1263,6 @@ export const en = {
   transcriptPreambleSegmentCount: "{count} segments",
   transcriptPreambleRaw: "raw",
   transcriptRawMessage: "Raw message",
-  transcriptOperationAborted: "Operation aborted",
   transcriptAssistantIncomplete: "The assistant could not complete this response.",
   transcriptResponseStopped: "Response stopped",
   transcriptResponseFailed: "Response failed",
