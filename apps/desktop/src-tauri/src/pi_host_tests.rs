@@ -1245,7 +1245,8 @@ rl.on('line', (line) => {
     #[test]
     fn real_delegation_frames_attribute_the_background_run() {
         let target_cwd = "C:\\Users\\liu\\AppData\\Local\\Temp\\piabyss-busylamp-2EGhBG\\ws-target";
-        let foreground_cwd = "C:\\Users\\liu\\AppData\\Local\\Temp\\piabyss-busylamp-2EGhBG\\ws-foreground";
+        let foreground_cwd =
+            "C:\\Users\\liu\\AppData\\Local\\Temp\\piabyss-busylamp-2EGhBG\\ws-foreground";
         let delegated_session = "01a15966-eefe-7107-896f-c28bde1e31b2";
         let target_workspace = "323a3cb0-3372-404e-a192-8f459c320865";
         let status_frame = serde_json::json!({
@@ -1292,7 +1293,10 @@ rl.on('line', (line) => {
         .expect("snapshot for a bound entry");
         assert!(snapshot.busy);
         assert_eq!(
-            snapshot.busy_sessions.get(delegated_session).map(String::as_str),
+            snapshot
+                .busy_sessions
+                .get(delegated_session)
+                .map(String::as_str),
             Some(target_cwd)
         );
         assert!(snapshot.cwds.iter().any(|cwd| cwd == target_cwd));
