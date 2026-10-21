@@ -610,9 +610,9 @@ export function RemoteSettings() {
               <section>
                 <h2 className="mb-2 text-sm font-medium text-muted">{t("remoteRuntimeTitle")}</h2>
                 <div className="rounded-lg border border-border p-4 text-sm">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs ${
+                      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs ${
                         status.runtime === "ready"
                           ? "border-success/40 bg-success/10 text-success"
                           : status.runtime === "install"
