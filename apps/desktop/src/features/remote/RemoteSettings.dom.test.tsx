@@ -201,6 +201,22 @@ describe("RemoteSettings", () => {
     expect(screen.getByText(/installed connector includes the Pi runtime/i)).toBeInTheDocument();
   });
 
+  it("reinstalls with the current connector source", async () => {
+    requestMock.mockResolvedValue({
+      ok: true,
+      result: makeStatus({
+        settings: { ...makeStatus().settings, enabled: true },
+        stage: "installed",
+      }),
+    });
+    render(<RemoteSettings />);
+    await userEvent.click(await screen.findByRole("button", { name: /^Show$/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /Reinstall dependencies/i }));
+    await waitFor(() =>
+      expect(requestMock).toHaveBeenCalledWith("remote.install", expect.anything(), null),
+    );
+  });
+
   it("shows the management view and generates a pairing code", async () => {
     const ready = makeStatus({
       settings: { ...makeStatus().settings, enabled: true },

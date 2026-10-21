@@ -2322,6 +2322,9 @@ export const en = {
   remotePypiIndex: "PyPI index (leave empty for the default)",
   remotePypiIndexPlaceholder: "https://pypi.org/simple",
   remoteConnectorSource: "Connector install source",
+  remoteConnectorSourceHint:
+    "Reinstall dependencies after changing it; only affects the next install.",
+  remoteReinstall: "Reinstall dependencies",
   remoteOpenDataDir: "Open data folder",
   remoteOpenFolder: "Open install folder",
   remoteDisable: "Turn off remote control",

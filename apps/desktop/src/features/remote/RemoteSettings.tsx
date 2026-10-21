@@ -714,6 +714,9 @@ export function RemoteSettings() {
                         onChange={(event) => setSourceDraft(event.target.value)}
                         className="h-8 rounded-md border border-border bg-surface px-2 font-mono text-xs"
                       />
+                      <span className="text-[11px] text-muted">
+                        {t("remoteConnectorSourceHint")}
+                      </span>
                     </label>
                     <div className="flex items-center gap-2">
                       <button
@@ -731,6 +734,15 @@ export function RemoteSettings() {
                       >
                         <FolderOpen size={12} />
                         {t("remoteOpenDataDir")}
+                      </button>
+                      <button
+                        type="button"
+                        className={secondaryButton}
+                        disabled={busy !== null || installing}
+                        onClick={() => void requestStatus("remote.install", null)}
+                      >
+                        <RefreshCw size={12} />
+                        {t("remoteReinstall")}
                       </button>
                       <button
                         type="button"

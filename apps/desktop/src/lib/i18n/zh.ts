@@ -2230,6 +2230,8 @@ export const zh: Record<MessageKey, string> = {
   remotePypiIndex: "PyPI 索引（留空使用默认）",
   remotePypiIndexPlaceholder: "https://pypi.org/simple",
   remoteConnectorSource: "Connector 安装源",
+  remoteConnectorSourceHint: "改完点「重装依赖」生效；只影响新安装的 Connector。",
+  remoteReinstall: "重装依赖",
   remoteOpenDataDir: "打开数据目录",
   remoteOpenFolder: "打开安装目录",
   remoteDisable: "关闭远程控制",
