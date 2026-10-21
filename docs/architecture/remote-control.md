@@ -102,10 +102,11 @@ Node 对非子进程抛错。
 
 ## 当前边界与 Pi runtime
 
-上游 Connector 默认只注册 Codex / Claude / DSH；Pi runtime 不在上游默认列表里。要让它
-出现，需要把「高级设置 → Connector 安装源」指向包含 `runtimes/pi` 的源（本地 fork 或
-合并后的上游），再执行一次安装/重装。页面里的「PiAbyss 运行时」状态会如实显示
-「取决于 Connector 源」，不会假装已经支持。
+上游 Connector 默认只注册 Codex / Claude / DSH；Pi runtime 不在上游默认列表里。
+PiAbyss 的默认安装源因此指向带 Pi runtime 的维护仓库
+`github.com/Nick12138/agents-anywhere-pi#subdirectory=connector`。页面「高级设置」可以
+换成别的 commit、fork 或本地目录，改完点「重装依赖」。页面里的「PiAbyss 运行时」状态
+按实际安装结果如实显示（已就绪 / 重装后生效 / 取决于 Connector 源）。
 
 本地 fork 的形态（`connector/connector/runtimes/pi/`）：
 

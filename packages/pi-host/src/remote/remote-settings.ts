@@ -13,14 +13,13 @@ import { dirname, join } from "node:path";
 import type { RemoteSettings, RemoteSettingsUpdate } from "@piabyss/protocol";
 
 /**
- * 默认安装源。
+ * 默认安装源：带 Pi runtime 的 connector。
  *
- * 用主分支而不是某个 tag：AA 的 connector 版本与产品版本相互独立，仓库当前也没有
- * 为 connector 单独打 tag；页面「高级设置」允许用户把它换成某个 commit 或本地目录，
- * 需要可复现部署时改这里即可。
+ * 用主分支而不是某个 tag：connector 版本与 PiAbyss 产品版本相互独立。页面
+ * 「高级设置」允许用户把它换成某个 commit 或本地目录，需要可复现部署时改这里即可。
  */
 export const DEFAULT_CONNECTOR_SOURCE =
-  "git+https://github.com/anywhere-labs/Agents-Anywhere.git#subdirectory=connector";
+  "git+https://github.com/Nick12138/agents-anywhere-pi#subdirectory=connector";
 
 const MAX_SERVER_URL_LENGTH = 2_048;
 
