@@ -25,6 +25,7 @@ import type {
   ToolSnapshot,
 } from "./types.js";
 import { RELAY_ITEM_FIELD_KEYS } from "./types.js";
+import { MAX_REMOTE_LOG_LINES, REMOTE_INSTALL_STEP_IDS, type RemoteStatus } from "./remote.js";
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -3018,6 +3019,141 @@ function isAutomationHealth(value: unknown): boolean {
   );
 }
 
+function isRemoteInstallStep(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["id", "state", "detail"]) &&
+    REMOTE_INSTALL_STEP_IDS.includes(value.id as (typeof REMOTE_INSTALL_STEP_IDS)[number]) &&
+    (value.state === "pending" ||
+      value.state === "running" ||
+      value.state === "done" ||
+      value.state === "failed" ||
+      value.state === "skipped") &&
+    (value.detail === null || (isString(value.detail) && value.detail.length <= 2_000))
+  );
+}
+
+function isRemoteSettings(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "enabled",
+      "autoStart",
+      "serverUrl",
+      "uvPath",
+      "pypiIndex",
+      "connectorSource",
+    ]) &&
+    isBoolean(value.enabled) &&
+    isBoolean(value.autoStart) &&
+    isBoundedString(value.serverUrl, 2_048) &&
+    (value.uvPath === null || isBoundedNonEmptyString(value.uvPath, 4_096)) &&
+    (value.pypiIndex === null || isBoundedNonEmptyString(value.pypiIndex, 2_048)) &&
+    isBoundedNonEmptyString(value.connectorSource, 2_048)
+  );
+}
+
+function isRemoteConnectorStatus(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["state", "pid", "source", "serverUrl", "connectorId", "configured"]) &&
+    (value.state === "unconfigured" ||
+      value.state === "stopped" ||
+      value.state === "running" ||
+      value.state === "foreign") &&
+    (value.pid === null || isSafeRevision(value.pid)) &&
+    (value.source === null || isBoundedString(value.source, 128)) &&
+    (value.serverUrl === null || isBoundedString(value.serverUrl, 2_048)) &&
+    (value.connectorId === null || isBoundedString(value.connectorId, 256)) &&
+    isBoolean(value.configured)
+  );
+}
+
+function isRemoteStatus(value: unknown): value is RemoteStatus {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "settings",
+      "stage",
+      "steps",
+      "error",
+      "versions",
+      "paths",
+      "connector",
+      "pairing",
+      "activeServerOrigin",
+      "logTail",
+      "runtimeSupported",
+      "runtimeNote",
+      "updatedAt",
+    ]) &&
+    isRemoteSettings(value.settings) &&
+    (value.stage === "idle" ||
+      value.stage === "installing" ||
+      value.stage === "installed" ||
+      value.stage === "failed") &&
+    Array.isArray(value.steps) &&
+    value.steps.length === REMOTE_INSTALL_STEP_IDS.length &&
+    value.steps.every(isRemoteInstallStep) &&
+    (value.error === null || (isString(value.error) && value.error.length <= 4_000)) &&
+    isPlainObject(value.versions) &&
+    hasExactKeys(value.versions, ["uv", "python", "connector"]) &&
+    (value.versions.uv === null || isBoundedString(value.versions.uv, 200)) &&
+    (value.versions.python === null || isBoundedString(value.versions.python, 200)) &&
+    (value.versions.connector === null || isBoundedString(value.versions.connector, 200)) &&
+    isPlainObject(value.paths) &&
+    hasExactKeys(value.paths, [
+      "installDir",
+      "dataDir",
+      "connectorConfigPath",
+      "connectorLogPath",
+      "installLogPath",
+    ]) &&
+    isBoundedString(value.paths.installDir, 4_096) &&
+    isBoundedString(value.paths.dataDir, 4_096) &&
+    isBoundedString(value.paths.connectorConfigPath, 4_096) &&
+    isBoundedString(value.paths.connectorLogPath, 4_096) &&
+    isBoundedString(value.paths.installLogPath, 4_096) &&
+    isRemoteConnectorStatus(value.connector) &&
+    (value.pairing === "idle" ||
+      value.pairing === "pending" ||
+      value.pairing === "claimed" ||
+      value.pairing === "expired" ||
+      value.pairing === "failed") &&
+    isBoundedNonEmptyString(value.activeServerOrigin, 2_048) &&
+    Array.isArray(value.logTail) &&
+    value.logTail.length <= MAX_REMOTE_LOG_LINES &&
+    value.logTail.every((line) => isString(line) && line.length <= 2_000) &&
+    isBoolean(value.runtimeSupported) &&
+    isBoundedString(value.runtimeNote, 4_000) &&
+    isSafeRevision(value.updatedAt)
+  );
+}
+
+function isRemotePairStartResult(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["pairingId", "code", "webUrl", "expiresAt"]) &&
+    isBoundedNonEmptyString(value.pairingId, 200) &&
+    isBoundedNonEmptyString(value.code, 64) &&
+    isBoundedNonEmptyString(value.webUrl, 2_048) &&
+    isSafeRevision(value.expiresAt)
+  );
+}
+
+function isRemotePairPollResult(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["state", "detail"]) &&
+    (value.state === "idle" ||
+      value.state === "pending" ||
+      value.state === "claimed" ||
+      value.state === "expired" ||
+      value.state === "failed") &&
+    (value.detail === null || (isString(value.detail) && value.detail.length <= 4_000))
+  );
+}
+
 export function validateMethodResultShape(method: HostMethod, result: unknown): string | null {
   const exactAccepted = () =>
     isPlainObject(result) && hasExactKeys(result, ["accepted"]) && result.accepted === true;
@@ -4020,6 +4156,16 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         result.resources.every(isResourceRecord)
         ? null
         : "invalid package.getResources result";
+    case "remote.getStatus":
+    case "remote.configure":
+    case "remote.install":
+    case "remote.uninstall":
+    case "remote.setConnectorRunning":
+      return isRemoteStatus(result) ? null : "invalid RemoteStatus result";
+    case "remote.pairStart":
+      return isRemotePairStartResult(result) ? null : "invalid remote.pairStart result";
+    case "remote.pairPoll":
+      return isRemotePairPollResult(result) ? null : "invalid remote.pairPoll result";
     default:
       // Exhaustiveness guard: a new HostMethod without a result validator is a
       // compile error here — outbound validation can never be silently skipped.

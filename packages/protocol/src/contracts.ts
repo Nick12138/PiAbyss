@@ -120,6 +120,12 @@ import type {
   MemoDraftInput,
   MemoSyncSettings,
 } from "./types.js";
+import type {
+  RemotePairPollResult,
+  RemotePairStartResult,
+  RemoteSettingsUpdate,
+  RemoteStatus,
+} from "./remote.js";
 
 export type HostContextMap = {
   "system.hello": EmptyContext;
@@ -294,6 +300,13 @@ export type HostContextMap = {
   "pixie.retryDispatch": HostContext;
   "pixie.listSessions": HostContext;
   "pixie.taskTree": HostContext;
+  "remote.getStatus": HostContext;
+  "remote.configure": HostContext;
+  "remote.install": HostContext;
+  "remote.uninstall": HostContext;
+  "remote.setConnectorRunning": HostContext;
+  "remote.pairStart": HostContext;
+  "remote.pairPoll": HostContext;
 };
 
 export type HostRequestParams = {
@@ -608,6 +621,13 @@ export type HostRequestParams = {
    * sessionId = 用户当前打开的小精灵会话；缺省/null = Host 退回当前段指针。
    */
   "pixie.taskTree": { sessionId?: string | null };
+  "remote.getStatus": null;
+  "remote.configure": RemoteSettingsUpdate;
+  "remote.install": null;
+  "remote.uninstall": null;
+  "remote.setConnectorRunning": { running: boolean };
+  "remote.pairStart": null;
+  "remote.pairPoll": { pairingId: string };
   /** 可选模型列表 + 当前段生效的模型选择（与普通会话 model.list 同源）。 */
 };
 
@@ -858,6 +878,13 @@ export type HostResultMap = {
   "pixie.retryDispatch": { ok: boolean; dispatchId: string | null; error: string | null };
   "pixie.listSessions": { sessions: PixieWorkspaceSessionSummary[] };
   "pixie.taskTree": { groups: PixieTaskTreeWorkspace[] };
+  "remote.getStatus": RemoteStatus;
+  "remote.configure": RemoteStatus;
+  "remote.install": RemoteStatus;
+  "remote.uninstall": RemoteStatus;
+  "remote.setConnectorRunning": RemoteStatus;
+  "remote.pairStart": RemotePairStartResult;
+  "remote.pairPoll": RemotePairPollResult;
 };
 
 export type HostEventPayloadMap = {

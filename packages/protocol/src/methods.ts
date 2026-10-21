@@ -172,6 +172,13 @@ export const HOST_METHODS = [
   "pixie.retryDispatch",
   "pixie.listSessions",
   "pixie.taskTree",
+  "remote.getStatus",
+  "remote.configure",
+  "remote.install",
+  "remote.uninstall",
+  "remote.setConnectorRunning",
+  "remote.pairStart",
+  "remote.pairPoll",
 ] as const;
 
 export type HostMethod = (typeof HOST_METHODS)[number];
@@ -279,7 +286,14 @@ export type HostOnlyMethod =
   | "pixie.stopDispatch"
   | "pixie.retryDispatch"
   | "pixie.listSessions"
-  | "pixie.taskTree";
+  | "pixie.taskTree"
+  | "remote.getStatus"
+  | "remote.configure"
+  | "remote.install"
+  | "remote.uninstall"
+  | "remote.setConnectorRunning"
+  | "remote.pairStart"
+  | "remote.pairPoll";
 export type WorkspaceOnlyMethod =
   | "workspace.setCurrent"
   | "workspace.getCurrent"
@@ -577,6 +591,13 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "pixie.retryDispatch": "host",
   "pixie.listSessions": "host",
   "pixie.taskTree": "host",
+  "remote.getStatus": "host",
+  "remote.configure": "host",
+  "remote.install": "host",
+  "remote.uninstall": "host",
+  "remote.setConnectorRunning": "host",
+  "remote.pairStart": "host",
+  "remote.pairPoll": "host",
   "extensionUi.respond": "sessionTarget",
   "extensionUi.customInput": "sessionTarget",
   "extensionUi.customResize": "sessionTarget",

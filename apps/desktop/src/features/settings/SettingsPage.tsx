@@ -9,6 +9,7 @@ import {
   RefreshCw,
   ServerCog,
   Settings2,
+  Smartphone,
   Wand2,
 } from "lucide-react";
 import type {
@@ -35,6 +36,7 @@ import { HostSettings } from "./HostSettings";
 import { ProvidersSettings } from "./ProvidersSettings";
 import { SkillsSettings } from "../skills/SkillsSettings";
 import { ExtensionsPage } from "../extensions/ExtensionsPage";
+import { RemoteSettings } from "../remote/RemoteSettings";
 import { UsageSettings } from "./UsageSettings";
 import { ShortcutsSettings } from "./ShortcutsSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
@@ -407,6 +409,7 @@ const SETTINGS_NAV: Array<{
   { id: "providers", label: "navProviders", icon: KeyRound },
   { id: "skills", label: "navSkills", icon: Wand2 },
   { id: "extensions", label: "navExtensions", icon: Blocks },
+  { id: "remote", label: "navRemote", icon: Smartphone },
   { id: "usage", label: "navUsage", icon: ChartColumn },
   { id: "host", label: "navHost", icon: ServerCog },
   { id: "shortcuts", label: "navShortcuts", icon: Keyboard },
@@ -656,6 +659,8 @@ export function SettingsPage({
               <SkillsSettings />
             ) : localSection === "extensions" ? (
               <ExtensionsPage />
+            ) : localSection === "remote" ? (
+              <RemoteSettings />
             ) : localSection === "host" ? (
               <HostSettings />
             ) : (

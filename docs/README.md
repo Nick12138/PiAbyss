@@ -42,6 +42,7 @@ Landed behavior updates these pages in the same change.
 | [architecture/chat-runtime.md](./architecture/chat-runtime.md) | Current | Session, chat, tools, Extension UI |
 | [architecture/extension-presentation.md](./architecture/extension-presentation.md) | Current | Cross-Extension transcript presentation and inline requests |
 | [architecture/packages-workspaces.md](./architecture/packages-workspaces.md) | Current | Workspace loading, packages, resources |
+| [architecture/remote-control.md](./architecture/remote-control.md) | Current | Agents Anywhere connector install, pairing, and lifecycle |
 | [architecture/commands-and-menus.md](./architecture/commands-and-menus.md) | Current | Command registry, keyboard dispatch, and context-menu ownership |
 | [architecture/source-map.md](./architecture/source-map.md) | Current | Feature → source paths + gating scripts |
 | [operations/p0-scope.md](./operations/p0-scope.md) | Authoritative | Product P0/P1/P2 scope, acceptance evidence, verification layers |

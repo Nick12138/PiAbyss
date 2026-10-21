@@ -136,7 +136,7 @@ const HEADLINE_MAX = 150;
  * marker is dropped here. `friendlyErrorHint` / `withFriendlyErrorHint` keep
  * emitting it for notifications and copied text, where there is no icon.
  */
-export function stripErrorHintMarker(hint: string | undefined): string | undefined {
+function stripErrorHintMarker(hint: string | undefined): string | undefined {
   return hint?.replace(/^\s*[\u{1F4A1}\u{26A0}\u{2139}]\s*/u, "");
 }
 

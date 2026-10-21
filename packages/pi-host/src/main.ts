@@ -39,6 +39,8 @@ import { automationRoot } from "./automation-api.js";
 import { startAutomationNotifyWatcher } from "./automation-notify-watcher.js";
 import { createMemoHandlers } from "./memo-controller.js";
 import { createShellJobHandlers } from "./shelljob-controller.js";
+import { RemoteService } from "./remote/remote-service.js";
+import { createRemoteHandlers } from "./remote/remote-controller.js";
 import { startShellJobWatcher } from "./shelljob-watcher.js";
 import {
   configurePixieRuntime,
@@ -447,6 +449,9 @@ async function main(): Promise<void> {
     });
   }
 
+  // 远程控制：安装/配对/Connector 进程都归 Host 管，页面只通过 remote.* 读写。
+  const remoteService = new RemoteService({ agentDir });
+
   const handlers = {
     ...createWorkspaceHandlers(graphFactory, workspaceFiles, gitService),
     ...createGitHandlers(graphFactory, gitService, gitAsyncTasks),
@@ -466,6 +471,7 @@ async function main(): Promise<void> {
     ...createPiSettingsHandlers(graphFactory, agentDir),
     ...createSkillHandlers(graphFactory),
     ...createPromptHandlers(graphFactory),
+    ...createRemoteHandlers(remoteService),
   };
 
   const server = new PiHostServer({
@@ -485,6 +491,7 @@ async function main(): Promise<void> {
       };
     },
     onShutdown: async () => {
+      await remoteService.dispose();
       workspaceFiles.dispose();
       gitAsyncTasks.abortAll("Host shutdown");
       gitService.dispose();
@@ -604,6 +611,13 @@ async function main(): Promise<void> {
     initialWorkspace: initialCwd ? (deferPreload ? "deferred" : "preloaded") : "none",
   });
   await migrationBackup?.recordMilestone("serverStart");
+  // 已授权且开启自动启动时，恢复本机 Connector。放启动末尾：host.ready 已经发出，
+  // 安装探测/进程拉起不阻塞桌面首屏。
+  void remoteService.ensureAutoStart().catch((err) => {
+    logger.warn("Remote control auto-start failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
 }
 
 main().catch((err) => {

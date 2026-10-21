@@ -52,6 +52,21 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
+/**
+ * 远程控制的服务地址：空串（官方云端）、带 http(s) 的 URL，或省略 scheme 的主机名。
+ * 归一化（补 scheme、去掉 `/api/v2`）由 Host 负责，协议层只挡住带控制字符的垃圾值。
+ */
+function isRemoteServerUrl(value: unknown): value is string {
+  if (typeof value !== "string" || value.length > 2_048) return false;
+  if (/[\u0000-\u001f\u007f\s]/u.test(value)) return false;
+  return (
+    value === "" ||
+    value.startsWith("http://") ||
+    value.startsWith("https://") ||
+    !value.includes("://")
+  );
+}
+
 function isValidAttachmentText(value: unknown): value is string {
   return (
     typeof value === "string" &&
@@ -1691,6 +1706,40 @@ export function validateRequestParams<M extends HostMethod>(
         params.cwd.length <= 1_024
         ? ok(params)
         : fail("invalid pixie.listSessions params", { method });
+    case "remote.getStatus":
+    case "remote.install":
+    case "remote.uninstall":
+    case "remote.pairStart":
+      return params === null ? ok(params) : fail(`invalid ${method} params`, { method });
+    case "remote.configure":
+      return exactObject(
+        params,
+        [],
+        ["enabled", "autoStart", "serverUrl", "uvPath", "pypiIndex", "connectorSource"],
+      ) &&
+        (params.enabled === undefined || isBoolean(params.enabled)) &&
+        (params.autoStart === undefined || isBoolean(params.autoStart)) &&
+        (params.serverUrl === undefined || isRemoteServerUrl(params.serverUrl)) &&
+        (params.uvPath === undefined ||
+          params.uvPath === null ||
+          (isNonEmptyString(params.uvPath) && params.uvPath.length <= 4_096)) &&
+        (params.pypiIndex === undefined ||
+          params.pypiIndex === null ||
+          (isNonEmptyString(params.pypiIndex) && params.pypiIndex.length <= 2_048)) &&
+        (params.connectorSource === undefined ||
+          (isNonEmptyString(params.connectorSource) && params.connectorSource.length <= 2_048))
+        ? ok(params)
+        : fail("invalid remote.configure params", { method });
+    case "remote.setConnectorRunning":
+      return exactObject(params, ["running"]) && isBoolean(params.running)
+        ? ok(params)
+        : fail("invalid remote.setConnectorRunning params", { method });
+    case "remote.pairPoll":
+      return exactObject(params, ["pairingId"]) &&
+        isNonEmptyString(params.pairingId) &&
+        params.pairingId.length <= 200
+        ? ok(params)
+        : fail("invalid remote.pairPoll params", { method });
     default:
       // Exhaustiveness guard: adding a HostMethod without a params validator
       // is a compile error here, not a silently-undefined result at runtime.

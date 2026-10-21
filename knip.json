@@ -22,7 +22,7 @@
       "project": ["src/**/*.ts"]
     },
     "packages/pi-host": {
-      "ignoreBinaries": ["where"],
+      "ignoreBinaries": ["where", "tasklist"],
       "entry": ["src/**/*.test.ts"],
       "project": ["src/**/*.ts"]
     }

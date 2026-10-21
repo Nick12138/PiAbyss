@@ -335,6 +335,13 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "pixie.retryDispatch": { dispatchId: "pix_abc", mode: "resume" },
   "pixie.listSessions": { cwd: "C:/work/alpha" },
   "pixie.taskTree": { sessionId: "01a0ae5d-fc1b-7fd4-9a56-91b32c4d5150" },
+  "remote.getStatus": null,
+  "remote.configure": { enabled: true, serverUrl: "https://web.agents-anywhere.com" },
+  "remote.install": null,
+  "remote.uninstall": null,
+  "remote.setConnectorRunning": { running: true },
+  "remote.pairStart": null,
+  "remote.pairPoll": { pairingId: "pair_1" },
 };
 
 function contextFor(method: HostMethod): Record<string, unknown> {

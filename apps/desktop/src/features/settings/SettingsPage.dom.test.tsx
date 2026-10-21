@@ -112,6 +112,7 @@ describe("SettingsPage navigation guard", () => {
       "Providers",
       "Skills",
       "Extensions",
+      "Remote control",
       "Usage",
       "Host",
       "Shortcuts",

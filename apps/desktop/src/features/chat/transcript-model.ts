@@ -95,7 +95,7 @@ type AssistantOutcome = {
 };
 
 /** Compact failure copy for a standalone `role === "error"` row. */
-export type TranscriptErrorDetail = {
+type TranscriptErrorDetail = {
   hint?: string;
   headline?: string;
   raw?: string;
