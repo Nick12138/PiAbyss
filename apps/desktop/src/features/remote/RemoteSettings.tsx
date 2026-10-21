@@ -435,7 +435,7 @@ export function RemoteSettings() {
                 <div className="flex flex-col gap-3 rounded-lg border border-border p-4 text-sm">
                   <div className="flex items-center justify-between gap-3">
                     <span
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs ${statusTone(status.connector.state)}`}
+                      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs ${statusTone(status.connector.state)}`}
                     >
                       <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
                       {status.connector.state === "running"
