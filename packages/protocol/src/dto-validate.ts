@@ -3083,8 +3083,7 @@ function isRemoteStatus(value: unknown): value is RemoteStatus {
       "pairing",
       "activeServerOrigin",
       "logTail",
-      "runtimeSupported",
-      "runtimeNote",
+      "runtime",
       "updatedAt",
     ]) &&
     isRemoteSettings(value.settings) &&
@@ -3124,8 +3123,7 @@ function isRemoteStatus(value: unknown): value is RemoteStatus {
     Array.isArray(value.logTail) &&
     value.logTail.length <= MAX_REMOTE_LOG_LINES &&
     value.logTail.every((line) => isString(line) && line.length <= 2_000) &&
-    isBoolean(value.runtimeSupported) &&
-    isBoundedString(value.runtimeNote, 4_000) &&
+    (value.runtime === "ready" || value.runtime === "install" || value.runtime === "missing") &&
     isSafeRevision(value.updatedAt)
   );
 }

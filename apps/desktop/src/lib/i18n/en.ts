@@ -2302,7 +2302,15 @@ export const en = {
   remotePairExpired: "The pairing code expired. Generate a new one.",
   remoteRepair: "Pair again",
   remoteRuntimeTitle: "PiAbyss runtime",
-  remoteRuntimePending: "Depends on connector source",
+  remoteRuntimeReady: "Pi runtime ready",
+  remoteRuntimeReadyNote:
+    "The installed connector includes the Pi runtime, so “Pi Coding Agent” should appear in AA. Models follow the providers enabled in Settings → Model services.",
+  remoteRuntimeInstall: "Takes effect after reinstall",
+  remoteRuntimeInstallNote:
+    "The current connector source includes the Pi runtime, but the installed version does not; reinstall to enable it.",
+  remoteRuntimeMissing: "Depends on connector source",
+  remoteRuntimeMissingNote:
+    "The upstream connector ships only Codex / Claude / DSH. Point Advanced settings → Connector source at a source with a pi provider (e.g. a local fork) and reinstall to see it in AA.",
   remoteVersionsTitle: "Installed versions",
   remoteNotInstalled: "Not installed",
   remoteInstallNow: "Install dependencies",

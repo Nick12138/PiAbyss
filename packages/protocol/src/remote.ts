@@ -36,6 +36,15 @@ export type RemoteConnectorState =
 
 export type RemotePairingState = "idle" | "pending" | "claimed" | "expired" | "failed";
 
+/**
+ * Connector 里 Pi runtime 的可用状态。
+ *
+ * - `ready`：已安装的 Connector 含 pi provider，AA 里应能看到 Pi 会话；
+ * - `install`：当前安装源含 pi provider，但已安装版本还没有，重装后生效；
+ * - `missing`：安装源和已安装版本都不含 pi provider。
+ */
+export type RemoteRuntimeState = "ready" | "install" | "missing";
+
 export type RemoteInstallStep = {
   id: RemoteInstallStepId;
   state: RemoteInstallStepState;
@@ -104,10 +113,8 @@ export type RemoteStatus = {
   activeServerOrigin: string;
   /** 安装日志尾部（有上限）。 */
   logTail: string[];
-  /** PiAbyss runtime 是否已被 AA Connector 支持。 */
-  runtimeSupported: boolean;
-  /** `runtimeSupported` 为 false 时的原因说明。 */
-  runtimeNote: string;
+  /** Pi runtime 在 Connector 里的可用状态。 */
+  runtime: RemoteRuntimeState;
   /** 本次状态生成的时间戳（毫秒）。 */
   updatedAt: number;
 };

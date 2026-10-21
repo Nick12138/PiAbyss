@@ -2210,7 +2210,15 @@ export const zh: Record<MessageKey, string> = {
   remotePairExpired: "配对码已过期，请重新生成。",
   remoteRepair: "重新配对",
   remoteRuntimeTitle: "PiAbyss 运行时",
-  remoteRuntimePending: "取决于 Connector 源",
+  remoteRuntimeReady: "Pi runtime 已就绪",
+  remoteRuntimeReadyNote:
+    "已安装的 Connector 含 Pi runtime，AA 里应能看到「Pi Coding Agent」；模型列表跟随「设置 → 模型服务」的启停。",
+  remoteRuntimeInstall: "重装后生效",
+  remoteRuntimeInstallNote:
+    "当前 Connector 安装源已包含 Pi runtime，但已安装版本还没有；点「重装」后生效。",
+  remoteRuntimeMissing: "取决于 Connector 源",
+  remoteRuntimeMissingNote:
+    "上游 Connector 默认只含 Codex / Claude / DSH。Pi runtime 需要把「高级设置 → Connector 安装源」指向包含 pi provider 的源（例如本地 fork），重装后才会出现在 AA 里。",
   remoteVersionsTitle: "已安装版本",
   remoteNotInstalled: "未安装",
   remoteInstallNow: "安装依赖",

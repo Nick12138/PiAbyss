@@ -105,11 +105,39 @@ describe("RemoteService status", () => {
     expect(status.stage).toBe("idle");
     expect(status.settings.enabled).toBe(false);
     expect(status.connector.state).toBe("unconfigured");
-    expect(status.runtimeSupported).toBe(false);
-    expect(status.runtimeNote.length).toBeGreaterThan(0);
+    expect(status.runtime).toBe("missing");
     expect(status.activeServerOrigin).toBe("https://web.agents-anywhere.com");
     expect(status.steps.map((step) => step.id)).toEqual(["uv", "python", "connector", "verify"]);
     expect(status.logTail).toEqual([]);
+  });
+
+  it("reports ready when the installed connector contains the pi runtime", async () => {
+    const { service, agentDir } = await makeService({});
+    mkdirSync(
+      join(
+        agentDir,
+        "piabyss",
+        "remote",
+        "tools",
+        "anywhere-cli",
+        "lib",
+        "python3.12",
+        "site-packages",
+        "connector",
+        "runtimes",
+        "pi",
+      ),
+      { recursive: true },
+    );
+    expect((await service.status()).runtime).toBe("ready");
+  });
+
+  it("reports install when the configured source contains the pi runtime", async () => {
+    const { service } = await makeService({});
+    const source = await tempDir("pi-source-");
+    mkdirSync(join(source, "connector", "runtimes", "pi"), { recursive: true });
+    await service.configure({ connectorSource: source });
+    expect((await service.status()).runtime).toBe("install");
   });
 
   it("reports a foreign connector without taking it over", async () => {

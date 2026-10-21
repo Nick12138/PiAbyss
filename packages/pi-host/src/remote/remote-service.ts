@@ -23,7 +23,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { createWriteStream, type WriteStream } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import {
   AA_CLOUD_ORIGIN,
   MAX_REMOTE_LOG_LINE_CHARS,
@@ -34,6 +34,7 @@ import {
   type RemotePairPollResult,
   type RemotePairStartResult,
   type RemotePairingState,
+  type RemoteRuntimeState,
   type RemoteSettings,
   type RemoteSettingsUpdate,
   type RemoteStatus,
@@ -59,6 +60,50 @@ import {
   type EnvironmentProbe,
 } from "./remote-installer.js";
 import { RemoteSettingsStore } from "./remote-settings.js";
+
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** 已安装的 uv tool 里是否有 pi runtime（Windows 用 Lib，POSIX 用 lib/pythonX.Y）。 */
+async function installedHasPiRuntime(installDir: string): Promise<boolean> {
+  const toolRoot = join(installDir, "tools", "anywhere-cli");
+  for (const lib of ["lib", "Lib"]) {
+    const root = join(toolRoot, lib);
+    if (await isDirectory(join(root, "site-packages", "connector", "runtimes", "pi"))) {
+      return true;
+    }
+    let entries: string[];
+    try {
+      entries = await readdir(root);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.startsWith("python")) continue;
+      if (await isDirectory(join(root, entry, "site-packages", "connector", "runtimes", "pi"))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** `connectorSource` 只在是本地目录时才能检查；PyPI 名称 / URL 一律返回 null。 */
+function localConnectorSource(source: string): string | null {
+  let value = source.trim();
+  if (!value) return null;
+  if (/^file:\/\//i.test(value)) value = value.slice("file://".length);
+  const drive = /^[A-Za-z]:[\/]/.test(value);
+  const unc = value.startsWith("\\\\") || value.startsWith("//");
+  if (!drive && !unc && !isAbsolute(value)) return null;
+  if (/^(git\+|https?:|ssh:|hg\+|svn\+)/i.test(value)) return null;
+  return value;
+}
 
 const PAIRING_TTL_SECONDS = 600;
 const MAX_CONNECTOR_LOG_BYTES = 5 * 1024 * 1024;
@@ -208,12 +253,23 @@ export class RemoteService {
       pairing: this.pairing?.state ?? "idle",
       activeServerOrigin: settings.serverUrl || AA_CLOUD_ORIGIN,
       logTail: this.tail(),
-      // 上游还没有 pi runtime：页面如实说明，而不是让用户以为装完就能远程开会话。
-      runtimeSupported: false,
-      runtimeNote:
-        "上游 Connector 默认只含 Codex / Claude / DSH。Pi runtime 需要把「高级设置 → Connector 安装源」指向包含 pi provider 的源（例如本地 fork），重装后才会出现在 AA 里。",
+      runtime: await this.runtimeState(settings),
       updatedAt: this.now(),
     };
+  }
+
+  /** 检查已安装 Connector 与当前安装源里是否带 `runtimes/pi`。 */
+  private async runtimeState(settings: RemoteSettings): Promise<RemoteRuntimeState> {
+    if (await installedHasPiRuntime(this.installDir)) return "ready";
+    const source = localConnectorSource(settings.connectorSource);
+    if (
+      source &&
+      ((await isDirectory(join(source, "connector", "runtimes", "pi"))) ||
+        (await isDirectory(join(source, "runtimes", "pi"))))
+    ) {
+      return "install";
+    }
+    return "missing";
   }
 
   async configure(patch: RemoteSettingsUpdate): Promise<RemoteStatus> {

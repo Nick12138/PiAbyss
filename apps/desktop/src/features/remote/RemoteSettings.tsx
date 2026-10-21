@@ -611,10 +611,28 @@ export function RemoteSettings() {
                 <h2 className="mb-2 text-sm font-medium text-muted">{t("remoteRuntimeTitle")}</h2>
                 <div className="rounded-lg border border-border p-4 text-sm">
                   <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs text-warning">
-                      {t("remoteRuntimePending")}
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs ${
+                        status.runtime === "ready"
+                          ? "border-success/40 bg-success/10 text-success"
+                          : status.runtime === "install"
+                            ? "border-info/40 bg-info/10 text-info"
+                            : "border-warning/40 bg-warning/10 text-warning"
+                      }`}
+                    >
+                      {status.runtime === "ready"
+                        ? t("remoteRuntimeReady")
+                        : status.runtime === "install"
+                          ? t("remoteRuntimeInstall")
+                          : t("remoteRuntimeMissing")}
                     </span>
-                    <span className="text-xs text-muted">{status.runtimeNote}</span>
+                    <span className="text-xs text-muted">
+                      {status.runtime === "ready"
+                        ? t("remoteRuntimeReadyNote")
+                        : status.runtime === "install"
+                          ? t("remoteRuntimeInstallNote")
+                          : t("remoteRuntimeMissingNote")}
+                    </span>
                   </div>
                 </div>
               </section>

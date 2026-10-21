@@ -79,8 +79,7 @@ function makeStatus(overrides: Partial<RemoteStatus> = {}): RemoteStatus {
     pairing: "idle",
     activeServerOrigin: "https://web.agents-anywhere.com",
     logTail: [],
-    runtimeSupported: false,
-    runtimeNote: "PiAbyss runtime is not available in the AA Connector yet.",
+    runtime: "missing",
     updatedAt: 1,
   };
   return { ...base, ...overrides };
@@ -186,6 +185,20 @@ describe("RemoteSettings", () => {
     await waitFor(() =>
       expect(requestMock).toHaveBeenCalledWith("remote.install", expect.anything(), null),
     );
+  });
+
+  it("reflects the detected pi runtime state", async () => {
+    requestMock.mockResolvedValue({
+      ok: true,
+      result: makeStatus({
+        settings: { ...makeStatus().settings, enabled: true },
+        stage: "installed",
+        runtime: "ready",
+      }),
+    });
+    render(<RemoteSettings />);
+    expect(await screen.findByText("Pi runtime ready")).toBeInTheDocument();
+    expect(screen.getByText(/installed connector includes the Pi runtime/i)).toBeInTheDocument();
   });
 
   it("shows the management view and generates a pairing code", async () => {
