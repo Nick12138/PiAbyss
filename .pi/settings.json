@@ -3,9 +3,7 @@
     {
       "source": "npm:betterwright",
       "autoload": false,
-      "extensions": [
-        "-dist/src/pi-extension.js"
-      ],
+      "extensions": ["-dist/src/pi-extension.js"],
       "skills": [
         "-skills/1password/SKILL.md",
         "-skills/bitwarden/SKILL.md",
