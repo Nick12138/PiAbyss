@@ -20,9 +20,6 @@ coverage/
 .piabyss-tmp/
 .runtime-cache/
 
-# Pi agent runtime config — per-machine, recreated locally, never shared
-/.pi/settings.json
-
 # Local release kit & runtime state — contains signing keys and passphrase, never commit
 /.local/
 

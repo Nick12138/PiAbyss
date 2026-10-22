@@ -1,0 +1,20 @@
+{
+  "packages": [
+    {
+      "source": "npm:betterwright",
+      "autoload": false,
+      "extensions": [
+        "-dist/src/pi-extension.js"
+      ],
+      "skills": [
+        "-skills/1password/SKILL.md",
+        "-skills/bitwarden/SKILL.md",
+        "-skills/browser-console/SKILL.md",
+        "-skills/checkout-verification/SKILL.md",
+        "-skills/credential-manager/SKILL.md",
+        "-skills/full-stack-e2e-review/SKILL.md",
+        "-skills/github/SKILL.md"
+      ]
+    }
+  ]
+}
