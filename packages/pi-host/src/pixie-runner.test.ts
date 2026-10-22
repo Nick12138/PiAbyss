@@ -10,7 +10,6 @@ import {
   listDispatches,
   listDispatchesForPanel,
   parsePixieModelRef,
-  pixieClockLine,
   pixieDir,
   pixieFallbackName,
   reactivateDispatchAfterReply,
@@ -459,17 +458,6 @@ describe("pixie dispatch 重复提交防护", () => {
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
     expect(outcome.error).toContain("目标工作区未打开");
-  });
-});
-
-describe("pixie 时间锚点（新会话段前导）", () => {
-  it("写明日期、周几、时刻与时区，并提示跨天要重新校准", () => {
-    const line = pixieClockLine(new Date(2026, 9, 15, 9, 24));
-    expect(line).toContain("2026-10-15");
-    expect(line).toContain("周四");
-    expect(line).toContain("09:24");
-    expect(line).toContain("UTC");
-    expect(line).toContain("date");
   });
 });
 

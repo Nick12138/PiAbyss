@@ -55,9 +55,10 @@ const AUTOMATION_PREAMBLE_PATTERN =
 const AUTOMATION_JOB_PATTERN = /<automation-job\s+([^>]*)>\s*([\s\S]*?)\s*<\/automation-job>/gu;
 
 /**
- * 小精灵会话段前导：Host 在段的首条用户消息外面包一层 `<pixie-context>` 契约正文
- * （身份、时间锚点、委派契约、已知工作区列表）。它必须原样送给模型，但用户气泡里
- * 只该看见自己说的话——和 memo / automation 一样折成一张 chip。
+ * 小精灵会话段前导：历史上 Host 会在段的首条用户消息外面包一层 `<pixie-context>`
+ * 契约正文（身份、时间锚点、委派契约、已知工作区列表）。现在改由 pi-pixie 插件注入
+ * custom message，但**已落盘的旧段仍带这层包装**，所以解析必须保留。它必须原样送给
+ * 模型，但用户气泡里只该看见自己说的话——和 memo / automation 一样折成一张 chip。
  */
 const PIXIE_CONTEXT_PATTERN = /<pixie-context>\s*([\s\S]*?)\s*<\/pixie-context>/gu;
 /**

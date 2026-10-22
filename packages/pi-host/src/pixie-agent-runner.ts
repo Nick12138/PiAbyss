@@ -16,9 +16,9 @@
  * segment is whatever session the pixie workspace created LAST (by header
  * timestamp, not by last-write) — normally the one the sidebar 新会话 button
  * just made. Acquisition reconciles the pointer against the session directory
- * and adopts that newest segment, so delegation callbacks, the page anchor and
- * the `<pixie-context>` preamble all follow the segment the user is actually
- * in. Cross-segment memory is the plugin's job (`pixie-segments` card +
+ * and adopts that newest segment, so delegation callbacks and the page anchor
+ * follow the segment the user is actually in. Cross-segment memory is the
+ * plugin's job (`pixie-segments` card +
  * `pixie_recall`), reading the same JSONL files — the Host keeps no summary.
  *
  * The delegation registry (dispatch records) also lives here now, persisted
@@ -40,8 +40,9 @@
  *      前端）；换段本身由用户在界面里「新会话」触发，Host 不主动换段；
  *   3. 委派回调与控制面 inject 的信封投递（session.prompt/steer，与委派落点
  *      同一机制）；回调优先送回派单的那一段；
- *   4. 首条用户消息的 <pixie-context> 前导注入（agent-controller 的 prompt
- *      路径调 maybeWrapPixiePrompt；控制面通道在 deliverToCurrentSegment 内）。
+ *   4. 段指针与已知工作区的落盘（`setPixieContext` → `context.json`）：
+ *      `<pixie-context>` 运行契约与时间锚点已搬到 pi-pixie 插件注入，Host
+ *      不再往用户消息外层包前导。
  *
  * 委派登记表（dispatches.json，done/error/ask 回调）依旧住在这里——它跟会话
  * 所有权无关。pi-pixie 插件的环回控制面端点契约保持不变。
@@ -97,7 +98,7 @@ const PIXIE_CONTEXT_FILE_NAMES = [
 /**
  * 默认人格：首次创建小精灵工作区时写进 `<工作区>/CLAUDE.md`。
  *
- * 与 Host 注入的 `<pixie-context>` 分工：
+ * 与 pi-pixie 插件注入的 `<pixie-context>` 分工：
  * - 这里 = **人格与工作方式**（身份、语气、分工、指挥台怎么用）——可以直接手改，
  *   改完从下一个新段生效（SDK 的 context files 在段会话创建/恢复时 reload）。
  * - 那边 = **与 Host 行为绑定的契约 + 运行期数据**（落点规则、排队、回调总则、
@@ -1478,7 +1479,7 @@ async function reconcilePointer(
 /**
  * 把某条会话认作当前段（指针 + `pixie.segmentChanged`）。调用方：
  * `notePixieUserTurn`（用户在段里发出首条消息）与 `acquireCurrentSession` 的懒建
- * 分支。认段之后委派回传、页面锚点与前导判定才有落点。
+ * 分支。认段之后委派回传、页面锚点与「首条用户消息」判定才有落点。
  */
 function adoptPixieSegment(
   agentDir: string,
@@ -1701,9 +1702,9 @@ async function acquireCurrentSession(
 }
 
 /**
- * 本段是否还没吃过 `<pixie-context>` 前导：按会话条目本身判定（还没有 user
- * 消息），不再用进程内的全局位——用户在界面里「新会话」开出的段同样要拿到前导，
- * Host 重启与段切换也都不会让它重复或漏发。
+ * 本段是否还没有用户消息：按会话条目本身判定，不用进程内的全局位——用户在
+ * 界面里「新会话」开出的段、Host 重启与段切换都不会让它重复或漏发（认段指针
+ * 与「首条用户消息」判定共用这一条）。
  */
 function needsSegmentPreamble(session: AgentSession): boolean {
   try {
@@ -1714,10 +1715,9 @@ function needsSegmentPreamble(session: AgentSession): boolean {
 }
 
 /**
- * Unified prompt-injection entry（控制面 inject 与委派回调信封）。Handles: 新段
- * 的 context 前导、把回调送回派单的那一段、以及忙时 steer 非交互信封。
- * UI 用户消息不走这里——它们是标准 agent.prompt，前导由 maybeWrapPixiePrompt
- * 在 prompt 路径注入。
+ * Unified prompt-injection entry（控制面 inject 与委派回调信封）。Handles:
+ * 把回调送回派单的那一段、以及忙时 steer 非交互信封。UI 用户消息不走这里——
+ * 它们是标准 agent.prompt。
  */
 async function deliverToSegment(
   factory: WorkspaceGraphFactory,
@@ -1746,12 +1746,8 @@ async function deliverToSegment(
       : found?.where === "parked"
         ? found.runtime.agentSession
         : acquired.session;
-  const preamble = needsSegmentPreamble(session)
-    ? buildSegmentContextPreamble(args.agentDir, args.source)
-    : null;
-  // 前导自带 `[pixie|<source>]` 标记行，此时不要再补一个；只有没前导时才由这里补
-  // ——保证每条消息恰好一个标记，且标签反映真实来源。
-  const tagged = preamble ? `${preamble}\n${args.text}` : `[pixie|${args.source}]\n${args.text}`;
+  // 每条投递消息恰好一个 `[pixie|<source>]` 标记行，标签反映真实来源。
+  const tagged = `[pixie|${args.source}]\n${args.text}`;
   if (session.isStreaming) {
     if (args.interactive) return { ok: false, error: "上一条回复还在生成中" };
     // Non-interactive envelopes must not be lost: steer into the running turn.
@@ -1780,7 +1776,7 @@ export async function injectPixieMessage(
   return deliverToSegment(factory, { ...args, interactive: false });
 }
 
-/* ── 页面入口与 prompt 前导 ─────────────────────────────────────── */
+/* ── 页面入口 ─────────────────────────────────────────────────── */
 
 /**
  * Desktop 页面打开时的入口（pixie.ensureCurrent）：确保图与当前会话存在（顺带
@@ -1808,8 +1804,7 @@ export async function ensurePixieCurrent(
 
 /**
  * 会话是否属于小精灵工作区（防御性：测试桩/非常规工厂按非小精灵处理）。
- * agent-controller 用它决定「新会话」是否要链上上一段、以及首条消息要不要吃
- * <pixie-context> 前导。
+ * agent-controller 用它决定「新会话」是否要链上上一段。
  */
 function isPixieWorkspaceCwd(factory: WorkspaceGraphFactory, sessionCwd: string): boolean {
   const agentDir = factory?.deps?.agentDir;
@@ -1824,93 +1819,6 @@ function isPixieWorkspaceCwd(factory: WorkspaceGraphFactory, sessionCwd: string)
     return false;
   }
   return sessionCwd === pixieCwd;
-}
-
-/**
- * agent-controller prompt 路径的前导注入：会话属于小精灵工作区且这条会话还没有
- * 用户消息时，把身份 + 契约 + 已知工作区前导包在首条用户消息外层。
- */
-export function maybeWrapPixiePrompt(
-  factory: WorkspaceGraphFactory,
-  sessionCwd: string,
-  text: string,
-  session: AgentSession | null,
-): string {
-  // 防御：测试桩/非常规工厂可能没有 deps —— 此时按「非小精灵会话」处理。
-  const agentDir = factory?.deps?.agentDir;
-  if (!agentDir || typeof factory?.canonicalizeCwd !== "function") return text;
-  if (!isPixieWorkspaceCwd(factory, sessionCwd)) return text;
-  if (!session || !needsSegmentPreamble(session)) return text;
-  return `${buildSegmentContextPreamble(agentDir)}\n${text}`;
-}
-
-/**
- * 新会话段的时间锚点。前导只吃一次（段的首条用户消息），所以这行写的是「本段
- * 开始」的时刻；不注入的话，模型会拿备忘录里的「周一」这类线索硬猜今天。
- *
- * 这行只是**锚点**，不承担「当前时间」——段可能开很久（锚点很快就是旧的），
- * 所以措辞上把「今天/周几/是否逾期」一律指向现跑的 date。原文写的是「跨天了
- * 先跑一次 date 校准」，等于要模型先知道跨没跨天才能校准，是个循环，故改掉。
- */
-export function pixieClockLine(now: Date): string {
-  const date = new Intl.DateTimeFormat("en-CA", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now);
-  const weekday = new Intl.DateTimeFormat("zh-CN", { weekday: "short" }).format(now);
-  const time = new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(now);
-  const offsetHours = -now.getTimezoneOffset() / 60;
-  const zone = `UTC${offsetHours < 0 ? "−" : "+"}${Math.abs(offsetHours)}`;
-  return `本段开始时间：${date}（${weekday}）${time}，${zone}。这是段开始那一刻的锚点，段可能开很久；判断今天/周几/是否逾期，一律以现跑 date 为准，不要凭记忆推。`;
-}
-
-/**
- * Built-in delegation contract + known-workspaces preamble.
- *
- * 这里只放**必须跟 Host 实现同源**的契约与运行期数据；人格与说话方式不在此处——
- * 那份 `CLAUDE.md` 由 SDK 作为 `<project_instructions>` 注入系统提示词，不再复述。
- *
- * `source` 必须是投递方的真实来源：标记行 `[pixie|<source>]` 由本块自带，投递方
- * 此时不要再补一个（见 deliverToSegment 里 tagged 的拼法）。
- */
-function buildSegmentContextPreamble(
-  agentDir: string,
-  source: "ui" | "tg" | "system" = "ui",
-): string {
-  const workspaces = knownWorkspacesOf(agentDir);
-  const lines = [
-    `[pixie|${source}]`,
-    "<pixie-context>",
-    pixieClockLine(new Date()),
-    "- 落点：默认只复用【你自己创建的】会话，没有就新开一个。用户自己在界面里创建的会话不要自动复用；只有用户明确给出会话 id 时才用 sessionId 参数指定——找不到会直接报错，不要改派到别的会话。",
-    "- 排队：目标会话有活在跑时，新任务会排队并返回排队说明。不要重复派单，也不用自己数着等——对方回调时你会收到信封。",
-    "- 回调：信封自带处理要求，照它办。三种各按规矩来：",
-    "  - 完成：只转述、不代写总结。",
-    "  - 报错：在「原样重试 / 调整委派词再派 / 如实报告」里选；同一任务连败 3 次就别再试，带全部现场升级给用户。",
-    "  - 询问：立刻转述给用户、不要代答；用户的下一条消息就是答复。",
-    "- 模型与推理深度：默认不传 model / thinkingLevel（跟随会话当前设置）。仅当用户在对话中明确指定（如「用 xxx 模型跑」「深度调到 high」）时才传，绝不主动更换。",
-    "- 委派 cwd：必须来自下方已知工作区列表（或用户当前打开的工作区）；用户手动指令的优先级最高。",
-    // 计划是无人值守的重复执行，写这一笔必须人点头：工具能力在她那边是齐的（pi-automation
-    // 注册了 automation 工具，create/run_now 全都调得动），所以约束只能写在这里。
-    // 字段规范也住在这儿——前端不再每条消息重念信封，段内一次注入就够。
-    "- 自动化（`automation` 工具）：**只读不写**。可以 list / get / history / status 查现状与结果；create / update / cancel / enable / disable / run_now / reply 一律不许调用，落库由用户在确认卡上点「确认」完成，你只出草案、也不许声称已创建或已更新。",
-    "  要改配置时，输出一个 ```automation-plan 代码块，内容为完整配置的 JSON（每次都写完整，未确定的字段写 null，用户没说的不要臆造）：",
-    '  name: string；kind: "prompt" | "command"；prompt: string（command 型写 ""）；command: string | null；cwd: string 绝对路径；',
-    '  trigger: { "type": "manual" } | { "type": "once", "at": "<ISO时间>" } | { "type": "interval", "every": "<数字><s|m|h|d|w|mo>" } | { "type": "cron", "cron": "<5段表达式>", "timezone"?: string }；',
-    '  permission: "read_only" | "write" | "full"（仅 prompt 型有意义）；model: { "provider": string, "id": string } | null（null=宿主默认）；',
-    '  missedWindow: "catch_up_one" | "skip"；timeoutMs: number（毫秒）；maxRuns: number | null；tags: string[]；notify: "none" | "system" | "tg"；',
-    "  jobId: string | null（只有这份草案是改现有计划时才带上它的 id，新建一律不写）。",
-    ...(workspaces.length > 0
-      ? ["已知的 PiAbyss 工作区：", ...workspaces.map((path) => `- ${path}`)]
-      : []),
-    "</pixie-context>",
-  ];
-  return lines.join("\n");
 }
 
 /* ── 消息投影 ────────────────────────────────────────────────────── */

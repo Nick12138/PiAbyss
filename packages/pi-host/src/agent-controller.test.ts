@@ -454,7 +454,7 @@ describe("agent.prompt startup", () => {
     expect(fixture.session.prompt).not.toHaveBeenCalled();
   });
 
-  it("pixie 段名打首条消息上，且用的是包装前的原话", async () => {
+  it("pixie 段名打首条消息上", async () => {
     const agentDir = mkdtempSync(join(tmpdir(), "pixie-title-test-"));
     try {
       const fixture = stableHandlerFixture(Promise.resolve());
@@ -481,10 +481,11 @@ describe("agent.prompt startup", () => {
         .calls[0]?.[0] as string;
       expect(named).toContain("你好");
       expect(named).not.toContain("pixie-context");
-      // 前导照旧包在正文外层——名字取的是包之前的原话。
+      // 契约前导已搬去 pi-pixie 插件：Host 原样发用户消息，不再包 <pixie-context>。
       const sent = (fixture.session.prompt as ReturnType<typeof vi.fn>).mock
         .calls[0]?.[0] as string;
-      expect(sent).toContain("<pixie-context>");
+      expect(sent).not.toContain("<pixie-context>");
+      expect(sent).not.toContain("</pixie-context>");
       expect(sent).toContain("你好，小精灵");
     } finally {
       resetPixieStateForTests();

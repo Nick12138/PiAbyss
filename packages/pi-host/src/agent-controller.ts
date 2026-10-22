@@ -41,7 +41,7 @@ import {
   diffPromptCacheFingerprints,
   type PromptCacheFingerprint,
 } from "./prompt-cache-contract.js";
-import { maybeWrapPixiePrompt, notePixieUserTurn } from "./pixie-agent-runner.js";
+import { notePixieUserTurn } from "./pixie-agent-runner.js";
 
 /** Protocol images ({mediaType,data}) → SDK ImageContent ({type,mimeType,data}). */
 export function toSdkImages(images: SerializableImage[] | undefined): ImageContent[] | undefined {
@@ -152,8 +152,9 @@ function startDetachedPrompt(args: {
   images?: ImageContent[];
   streamingBehavior?: "steer" | "followUp";
   /**
-   * 起会话名用的文本，默认就是 text。小精灵首条消息外面包着 <pixie-context>
-   * 前导，调用方把用户原话传这里，段名才不会取到前导的第一句。
+   * 起会话名用的文本，默认就是 text。调用方可传用户原话；历史上小精灵首条
+   * 消息外面还包着 <pixie-context> 前导（Host 现已不再注入），此处仅为兼容
+   * 历史段：剥包装后取名。
    */
   titleText?: string;
 }): string {
@@ -192,8 +193,9 @@ function startDetachedPrompt(args: {
     // below may run after the active graph changed.
     const initiatingOwner = args.factory.getGraph()?.providerOwner ?? null;
     const runIdentity = args.server.getIdentity();
-    // 标题取用户原话：小精灵首条消息外面包着 <pixie-context> 前导，拿包装后的
-    // 文本起名会得到「你是小精灵…」这种名字。
+    // 标题取用户原话：历史段的小精灵首条消息外面曾包着 <pixie-context> 前导
+    // （Host 已不再注入，此处仅为兼容历史段），拿包装后的文本起名会得到
+    // 「你是小精灵…」这种名字。
     const visibleText = stripAttachmentReferenceBlocks(args.titleText ?? args.text);
     const provisionalTitle =
       args.session.sessionName?.trim() || !visibleText.trim()
@@ -324,7 +326,7 @@ function buildOcrGuideText(attachments: readonly AttachmentSnapshot[]): string |
     list,
     "",
     "提取文字内容时按以下优先级处理：",
-    "1. 优先使用 wpscli（WPS CLI 的 OCR 转换，即 wps 工具的 pdf2word action：wps(action:\"pdf2word\", scanned=true, range=...)）；",
+    '1. 优先使用 wpscli（WPS CLI 的 OCR 转换，即 wps 工具的 pdf2word action：wps(action:"pdf2word", scanned=true, range=...)）；',
     "2. 其次使用 PyMuPDF（fitz）把 PDF 逐页渲染成图片，再用 ocr_image（百度 OCR）逐页识别；",
     "3. 兕底：使用视觉能力一张一张查看渲染出的图片；",
     "4. 若以上全部失败，请明确提示需要用户帮助并说明原因。",
@@ -570,9 +572,8 @@ export function createAgentHandlers(
         operationLock.release(ctx.id);
         return { error: attachmentHostError(error) };
       }
-      // 小精灵首条用户消息：包上 <pixie-context> 前导（runner 判定，非小精灵
-      // 工作区或本段已有用户消息时原样返回）。
-      prompt.text = maybeWrapPixiePrompt(factory, g.canonicalCwd, prompt.text, g.agentSession);
+      // 小精灵首条用户消息的 <pixie-context> 前导由 pi-pixie 插件注入，Host
+      // 不再往用户消息外层包任何东西。
       // 用户真的在小精灵工作区里发了消息：这条会话这时才被认作小精灵的当前段
       // （点「新会话」建出来的空会话不算）。必须在消息落库之前认——首条消息的
       // 判定（本段还没有用户消息）过了这一刻就不再成立。落点路径此刻多半还

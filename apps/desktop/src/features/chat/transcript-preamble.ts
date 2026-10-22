@@ -5,7 +5,9 @@
  * 三块来源：
  * 1. `system` 消息（SDK 会话 v3 落盘的系统提示词）——每次工具集变化都会再写
  *    一条**增量**（只含变化的小节），所以这里按小节做 last-wins 合并，只留一份。
- * 2. 段首用户消息外面的 `<pixie-context>` 契约——Host 注入，用户没写过。
+ * 2. `<pixie-context>` 契约——Host 曾注入在段首用户消息外（历史段仍带这层包装），
+ *    现已改由 pi-pixie 插件注入，且**内嵌在交接卡里**。两处都要认，优先历史段
+ *    那份（同段只会有一份存在）。契约正文归 `model.rules`，不从回顾卡的 intro 里漏出来。
  * 3. `<pixie-segments>` 上一段交接卡（插件写入的 custom message）——落盘顺序
  *    排在首条用户消息后面 2ms，行序上却属于"开场"，所以按"首个 assistant 之前"
  *    认定，避免把它留在对话中间。
@@ -37,6 +39,8 @@ export type PixieSegmentsRecap = {
   tail: string;
   /** 剥掉 `<pixie-segments>` 外壳的全文，解析失败时兜底。 */
   text: string;
+  /** 卡片内嵌的 `<pixie-context>` 契约正文（插件注入形态）；没有则为空串。 */
+  rules: string;
 };
 
 const PIXIE_SEGMENTS_WRAPPER = /<\/?pixie-segments>/gu;
@@ -44,10 +48,17 @@ const PIXIE_SEGMENTS_WRAPPER = /<\/?pixie-segments>/gu;
 const RECAP_ENTRY =
   /^\s*(\d+)\.\s+(.+?)\s+·\s+(\d{1,2}-\d{1,2}\s+\d{1,2}:\d{2})\s+·\s+(\d+)\s*条\s*$/u;
 const RECAP_HEADING_LINE = /^最近\s*\d+\s*段/u;
+// 交接卡内嵌的运行契约（pi-pixie v0.10 起随卡片落盘）。
+const PIXIE_CONTEXT_INLINE = /<pixie-context>\s*([\s\S]*?)\s*<\/pixie-context>/u;
 const RECAP_TAIL_LINE = /的收尾[：:]\s*$/u;
 
 export function parsePixieSegmentsRecap(raw: string): PixieSegmentsRecap {
-  const text = raw.replace(PIXIE_SEGMENTS_WRAPPER, "").trim();
+  const shellless = raw.replace(PIXIE_SEGMENTS_WRAPPER, "").trim();
+  // 插件把运行契约内嵌进交接卡（v0.10 起）。这里先抽走，卡片其余部分才是"回顾"。
+  // 契约本体由 buildTranscriptPreamble 归入 model.rules，别混进 intro 显示。
+  const rulesMatch = PIXIE_CONTEXT_INLINE.exec(shellless);
+  const rules = (rulesMatch?.[1] ?? "").trim();
+  const text = rules ? shellless.replace(PIXIE_CONTEXT_INLINE, "").trim() : shellless;
   const lines = text.split(/\r?\n/);
   let entriesStart = -1;
   let tailStart = -1;
@@ -84,7 +95,7 @@ export function parsePixieSegmentsRecap(raw: string): PixieSegmentsRecap {
           .slice(tailStart + 1)
           .join("\n")
           .trim();
-  return { intro, entries, tailHeading, tail, text };
+  return { intro, entries, tailHeading, tail, text, rules };
 }
 
 export type TranscriptPreambleModel = {
@@ -152,8 +163,11 @@ export function buildTranscriptPreamble(rows: readonly TranscriptRow[]): Transcr
 
   const model: TranscriptPreambleModel = {};
   if (systemRows.length > 0) model.systemPrompt = mergeSystemPrompts(systemRows);
+  const recap = recapRow ? parsePixieSegmentsRecap(recapRow.copyText) : null;
+  if (recap) model.recap = recap;
+  // 历史段：契约在首条用户消息的包装里；新段：内嵌在交接卡里。同段只会有一份。
   if (contextReference) model.rules = contextReference.body;
-  if (recapRow) model.recap = parsePixieSegmentsRecap(recapRow.copyText);
+  else if (recap?.rules) model.rules = recap.rules;
 
   const consumedKeys = new Set<string>();
   for (const row of systemRows) consumedKeys.add(row.key);

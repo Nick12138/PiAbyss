@@ -20,6 +20,22 @@ const PIXIE_CONTEXT = `<pixie-context>
 - 落点：默认只复用【你自己创建的】会话。
 </pixie-context>`;
 
+/** pi-pixie v0.10：契约不再包在首条用户消息外，而是内嵌在交接卡开头。 */
+const RECAP_WITH_INLINE_CONTEXT = `<pixie-segments>
+${PIXIE_CONTEXT}
+
+你在小精灵工作区开启了一个新的会话段。上一段并没有丢：正文都存在本机 Pi 会话目录里。
+要回看细节就调用 pixie_recall（segment 省略 = 上一段；mode=search 可按关键词找）。
+
+最近 2 段（新→旧，序号即 pixie_recall 的 segment 参数，0 = 上一段）：
+0. 😀 Qoder反代项目推荐 · 10-19 12:47 · 65 条
+1. 💬 下午好问候 · 10-18 09:22 · 2 条
+
+上一段（😀 Qoder反代项目推荐）的收尾：
+[1] 10-19 13:52 用户: 面板密码是 0.0
+[2] 10-19 14:02 小精灵: 改好了，没走浏览器。
+</pixie-segments>`;
+
 function systemRow(key: string, sections: Record<string, string>): TranscriptRow {
   return {
     key,
@@ -77,6 +93,25 @@ describe("parsePixieSegmentsRecap", () => {
     expect(recap.entries).toEqual([]);
     expect(recap.text).toBe("handoff");
   });
+
+  it("lifts a contract embedded in the recap card out of the intro", () => {
+    const recap = parsePixieSegmentsRecap(RECAP_WITH_INLINE_CONTEXT);
+    expect(recap.rules).toContain("本段开始时间");
+    // 契约不再从回顾文案里漏出来（标签与正文都不进 intro / text）。
+    expect(recap.intro).not.toContain("pixie-context");
+    expect(recap.intro).not.toContain("本段开始时间");
+    expect(recap.intro).toContain("你在小精灵工作区开启了一个新的会话段");
+    expect(recap.text).not.toContain("<pixie-context>");
+    expect(recap.entries).toEqual([
+      { index: 0, title: "😀 Qoder反代项目推荐", meta: "10-19 12:47 · 65 条" },
+      { index: 1, title: "💬 下午好问候", meta: "10-18 09:22 · 2 条" },
+    ]);
+    expect(recap.tail).toContain("面板密码是 0.0");
+  });
+
+  it("keeps rules empty for a contract-free card", () => {
+    expect(parsePixieSegmentsRecap(RECAP).rules).toBe("");
+  });
 });
 
 describe("buildTranscriptPreamble", () => {
@@ -117,6 +152,20 @@ describe("buildTranscriptPreamble", () => {
     });
     expect(preamble?.model.rules).toContain("本段开始时间");
     expect(preamble?.model.recap?.entries[0]?.title).toBe("😀 Qoder反代项目推荐");
+  });
+
+  it("folds an embedded contract from the card into rules for new segments", () => {
+    // 新形态：首条用户消息没有包装（Host 已不再注入），契约内嵌在卡片里。
+    const preamble = buildTranscriptPreamble([
+      systemRow("event:0", { preamble: "You are pi" }),
+      userRow("user:1", "嗨"),
+      recapRow("custom:2", RECAP_WITH_INLINE_CONTEXT),
+      assistantRow("assistant:3"),
+    ]);
+    expect(preamble?.model.rules).toContain("本段开始时间");
+    expect(preamble?.model.rules).not.toContain("<pixie-context>");
+    expect(preamble?.model.recap?.intro).not.toContain("本段开始时间");
+    expect(preamble?.model.recap?.entries).toHaveLength(2);
   });
 
   it("leaves a recap that appears mid-conversation in the message flow", () => {

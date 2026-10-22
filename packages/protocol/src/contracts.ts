@@ -593,7 +593,7 @@ export type HostRequestParams = {
   "pixie.ensureCurrent": null;
   /** 用户对 ask 询问的答复：路由回被委派会话（followUp）。 */
   "pixie.reply": { dispatchId: string; text: string };
-  /** 前端推送已知工作区列表（新段 <pixie-context> 注入用）。 */
+  /** 前端推送已知工作区列表（落盘到 context.json，供 pi-pixie 插件读取）。 */
   "pixie.setContext": { workspaces: string[] };
   /** 向进行中委派的目标会话插话（补充/修正/进度检查点；非新任务，不建记录）。 */
   "pixie.interject": {
