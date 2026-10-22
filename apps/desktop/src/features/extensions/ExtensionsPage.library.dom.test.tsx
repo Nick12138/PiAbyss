@@ -947,6 +947,58 @@ describe("ExtensionsPage library DOM workflows", () => {
     );
   });
 
+  it("only offers install in the global scope; every workspace disables it", async () => {
+    currentSnapshot = emptySnapshot();
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    const user = userEvent.setup();
+    render(<ExtensionsPage />);
+
+    // Global scope: an uninstalled registry plugin is installable.
+    const globalCard = (await screen.findByText("浏览器")).closest("article")!;
+    expect(within(globalCard).getByRole("button", { name: "Install" })).toBeEnabled();
+
+    // Workspace scopes (active or previewed) keep the same uninstalled state but
+    // the install button is inert and points at the global scope.
+    await user.click(screen.getByRole("button", { name: /workspace.*Current workspace/ }));
+    const workspaceCard = (await screen.findByText("浏览器")).closest("article")!;
+    const install = within(workspaceCard).getByRole("button", { name: "Install" });
+    expect(install).toBeDisabled();
+    expect(install).toHaveAttribute("title", expect.stringContaining("switch to Global"));
+  });
+
+  it("treats a configured source without an install on disk as not installed", async () => {
+    // Leftover settings entry (e.g. WPS cloud folder whose node_modules never
+    // arrived): the record exists but was never resolved on disk.
+    currentSnapshot = {
+      ...emptySnapshot(),
+      configured: [packageRecord({ installed: false })],
+      resources: [resource()],
+    };
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    const user = userEvent.setup();
+    render(<ExtensionsPage />);
+
+    const pluginCard = (await screen.findByText("浏览器")).closest("article")!;
+    expect(within(pluginCard).queryByRole("switch")).toBeNull();
+    expect(within(pluginCard).getByRole("button", { name: "Install" })).toBeEnabled();
+
+    // The stale package row is not installed either, and Install replays the
+    // source install instead of pretending a switch can manage it.
+    const packageCard = screen.getByText("betterwright").closest("article")!;
+    expect(within(packageCard).queryByRole("switch")).toBeNull();
+    await user.click(within(packageCard).getByRole("button", { name: "Install" }));
+    const dialog = await screen.findByRole("dialog", { name: "Review package install" });
+    await user.click(within(dialog).getByRole("button", { name: "Install package" }));
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "package.install",
+        expect.objectContaining({ expectedWorkspaceId: "w1" }),
+        { source: "npm:betterwright", scope: "user" },
+        expect.any(Number),
+      ),
+    );
+  });
+
   it("persists plugin config via the dialog and applies env vars live", async () => {
     currentSnapshot = snapshotWithRepo(true);
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);

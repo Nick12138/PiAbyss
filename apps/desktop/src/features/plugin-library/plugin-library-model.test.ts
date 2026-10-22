@@ -174,6 +174,16 @@ describe("pluginCardState for npm/git entries", () => {
     const state = pluginCardState(BROWSER_ENTRY, CATALOG, snapshot([record], []));
     expect(state.status).toBe("enabled");
   });
+
+  it("is not-installed when the configured source has no install on disk", () => {
+    // Stale settings entry (leftover project override, cloud folder that never
+    // received node_modules): the record exists but was never resolved.
+    const record = pkg({ installed: false });
+    const state = pluginCardState(BROWSER_ENTRY, CATALOG, snapshot([record], [resource()]));
+    expect(state.status).toBe("not-installed");
+    expect(state.packageRecord?.id).toBe("pkg-1");
+    expect(state.extensionResources).toHaveLength(0);
+  });
 });
 
 describe("pluginCardState for repo entries", () => {
@@ -201,6 +211,16 @@ describe("pluginCardState for repo entries", () => {
   it("is not-installed when the plugin has no resources in the repository package", () => {
     const state = pluginCardState(WEB_ENTRY, CATALOG, snapshot([repoPkg], [ocrExtension]));
     expect(state.status).toBe("not-installed");
+  });
+
+  it("is not-installed when the repository package is not resolved on disk", () => {
+    const state = pluginCardState(
+      WEB_ENTRY,
+      CATALOG,
+      snapshot([{ ...repoPkg, installed: false }], [webExtension, ocrExtension]),
+    );
+    expect(state.status).toBe("not-installed");
+    expect(state.extensionResources).toHaveLength(0);
   });
 
   it("is enabled when its extension resource is enabled", () => {

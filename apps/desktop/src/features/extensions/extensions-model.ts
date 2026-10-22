@@ -300,7 +300,10 @@ export function buildLibraryItems({
       author: record.kind,
       version: record.versionOrRef,
       tags: [],
-      installed: true,
+      // Configured but unresolved (stale settings entry, missing cloud folder)
+      // is not installed: the card offers Install through the source install
+      // flow again instead of pretending a switch can manage it.
+      installed: record.installed,
       enabled: packageEnabled(owned, mode),
       toggleable: packageToggleable(owned, mode),
       globalOnly: false,
@@ -365,21 +368,20 @@ export function findLibraryItem(
   return id === null ? undefined : items.find((item) => item.id === id);
 }
 
-/** Why the registry entry cannot be installed from the managed scope, or null
- ** when the install button is live.
- ** - "scope": another workspace is being previewed — installing always targets
- **   the live workspace, so the user has to switch first.
- ** - "repo-global-only": repo plugins are applied through
- **   pluginLibrary.apply, which writes the user-level settings only. */
-export type InstallBlockReason = "scope" | "repo-global-only" | null;
+/** Why an uninstalled registry entry cannot be installed from the managed
+ ** scope, or null when the install button is live.
+ **
+ ** Installs are global-only by design: every uninstalled plugin can be added
+ ** once, at the user level, and every workspace then manages the same install
+ ** with its own enable/disable preference. Allowing a workspace to install
+ ** would fork the plugin into that workspace's project settings and leave the
+ ** other scopes showing a different install state for the same plugin.
+ ** Workspace scopes therefore render the install button disabled with the
+ ** "install globally" tooltip. */
+export type InstallBlockReason = "global-only" | null;
 
-export function installBlockReason(
-  entry: PluginLibraryEntry,
-  scope: LibraryScope,
-): InstallBlockReason {
-  if (scope.kind === "workspace" && !scope.current) return "scope";
-  if (entry.install.type === "repo" && scope.kind === "workspace") return "repo-global-only";
-  return null;
+export function installBlockReason(scope: LibraryScope): InstallBlockReason {
+  return scope.kind === "global" ? null : "global-only";
 }
 
 /** Install target scope for a registry plugin at the managed scope. */

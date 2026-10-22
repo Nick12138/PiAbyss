@@ -151,6 +151,29 @@ describe("buildLibraryItems", () => {
     expect(browser.toggleable).toBe(false);
   });
 
+  it("does not treat a configured-but-missing package as an installed plugin", () => {
+    const phantom = pkg({
+      id: "pkg-browser",
+      identity: "npm:betterwright",
+      source: "npm:betterwright",
+      kind: "npm",
+      installed: false,
+      displayName: "betterwright",
+    });
+    const packages = snapshot({ configured: [phantom], resources: [] });
+
+    for (const scope of [globalScope, workspaceScope, previewScope]) {
+      const browser = buildLibraryItems({
+        catalog: catalog(),
+        packages,
+        scope,
+        updates: new Map(),
+      }).find((item) => item.id === "pi-browser")!;
+      expect(browser.installed, scope.kind).toBe(false);
+      expect(browser.toggleable).toBe(false);
+    }
+  });
+
   it("lists packages in every scope and reads the layer the scope manages", () => {
     const resources = [
       resource({ preferences: { user: "enabled", project: "disabled" } }),
@@ -292,18 +315,9 @@ describe("computeExtensionUpdateRows", () => {
 });
 
 describe("installBlockReason", () => {
-  const repoEntry = catalog().plugins[0]!;
-  const npmEntry = catalog().plugins[1]!;
-
-  it("allows the global scope, the active workspace, and blocks previews", () => {
-    expect(installBlockReason(npmEntry, globalScope)).toBeNull();
-    expect(installBlockReason(npmEntry, workspaceScope)).toBeNull();
-    expect(installBlockReason(npmEntry, previewScope)).toBe("scope");
-    expect(installBlockReason(repoEntry, previewScope)).toBe("scope");
-  });
-
-  it("keeps repo plugins on the user layer", () => {
-    expect(installBlockReason(repoEntry, globalScope)).toBeNull();
-    expect(installBlockReason(repoEntry, workspaceScope)).toBe("repo-global-only");
+  it("only allows installing from the global scope", () => {
+    expect(installBlockReason(globalScope)).toBeNull();
+    expect(installBlockReason(workspaceScope)).toBe("global-only");
+    expect(installBlockReason(previewScope)).toBe("global-only");
   });
 });

@@ -221,6 +221,11 @@ export function pluginCardState(
   if (install.type === "repo") {
     const repoPkg = packages.configured.find((record) => sourceMatches(record, catalog.repoSource));
     if (!repoPkg) return { status: "not-installed", extensionResources: [] };
+    // A package listed in settings but absent on disk is not installed: the
+    // record keeps `installed: false` when its source cannot be resolved.
+    if (!repoPkg.installed) {
+      return { status: "not-installed", packageRecord: repoPkg, extensionResources: [] };
+    }
     const owned = repoPluginResources(packages, repoPkg, install.path);
     const extensions = owned.filter((resource) => resource.type === "extension");
     if (extensions.length === 0) {
@@ -236,6 +241,13 @@ export function pluginCardState(
 
   const pkg = packages.configured.find((record) => sourceMatches(record, install.source));
   if (!pkg) return { status: "not-installed", extensionResources: [] };
+  // A leftover settings entry (e.g. written in another workspace, or a cloud
+  // folder whose node_modules never arrived) must not masquerade as a real
+  // install: without a resolved install path the card offers Install instead
+  // of a switch.
+  if (!pkg.installed) {
+    return { status: "not-installed", packageRecord: pkg, extensionResources: [] };
+  }
   const extensions = packages.resources.filter(
     (resource) => resource.packageId === pkg.id && resource.type === "extension",
   );

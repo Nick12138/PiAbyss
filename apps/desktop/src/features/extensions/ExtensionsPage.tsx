@@ -804,6 +804,15 @@ export function ExtensionsPage() {
   /* ------------------------------ installs ------------------------------ */
 
   function beginPluginInstall(item: LibraryItem) {
+    if (item.kind === "package") {
+      // A package that is configured but missing on disk (stale settings entry,
+      // an unresolved cloud folder) offers Install again and reinstalls from its
+      // recorded source.
+      const source = item.record?.source;
+      if (!source) return;
+      setReview({ kind: "install-package", params: { source, scope: "user" } });
+      return;
+    }
     const entry = item.entry;
     if (!entry) return;
     setReview({ kind: "install-plugin", entry, scope: pluginInstallScope(scope) });
@@ -992,12 +1001,8 @@ export function ExtensionsPage() {
   }
 
   /** Disabled-install tooltip for the managed scope (null when install is live). */
-  function installBlockedTitleFor(item: LibraryItem): string | undefined {
-    if (!item.entry) return undefined;
-    const reason = installBlockReason(item.entry, scope);
-    if (reason === "scope") return t("pluginsWorkspaceInstallDisabled");
-    if (reason === "repo-global-only") return t("extensionsRepoInstallGlobalOnly");
-    return undefined;
+  function installBlockedTitleFor(): string | undefined {
+    return installBlockReason(scope) === "global-only" ? t("pluginsGlobalOnlyInstall") : undefined;
   }
 
   if (!workspace?.servicesReady) {
@@ -1131,7 +1136,7 @@ export function ExtensionsPage() {
           resources={itemResources(drawerItem, allResources)}
           pending={pendingOps[drawerItem.id] === true}
           mutationBlocked={mutationBlocked}
-          installBlockedTitle={installBlockedTitleFor(drawerItem)}
+          installBlockedTitle={installBlockedTitleFor()}
           returnFocusTo={drawerReturnFocus.current}
           anchor={pageRef.current}
           onClose={() => setDrawerId(null)}
@@ -1580,7 +1585,7 @@ export function ExtensionsPage() {
                   item={item}
                   scope={scope}
                   pending={pendingOps[item.id] === true}
-                  installBlockedTitle={installBlockedTitleFor(item)}
+                  installBlockedTitle={installBlockedTitleFor()}
                   onOpen={openDrawer}
                   onInstall={beginPluginInstall}
                   onToggle={toggleItem}

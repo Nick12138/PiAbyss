@@ -695,13 +695,13 @@ export const en = {
   extensionsDrawerClose: "Close details",
   extensionsRepoRemoveHint:
     "Repo plugins share the registry package; disable it here or remove the package instead.",
-  extensionsRepoInstallGlobalOnly:
-    "This plugin can only be installed for all workspaces (user level).",
   pluginInstallReviewBodyProject:
     "Install “{name}” from the plugin library? This writes the project-level pi settings.",
   packagesMarketInstallHint:
     "Packages can run local code. Installing adds it globally (user level); manage it per workspace from the plugin library afterwards.",
   pluginsManageScope: "Managing",
+  pluginsGlobalOnlyInstall:
+    "Uninstalled plugins can only be installed for all workspaces (user level); switch to Global to install. Workspaces just enable or disable it.",
   pluginsScopeGlobalChip: "Global",
   pluginsScopeUserHint:
     "Global scope: switches write the user-level preference (all workspaces inherit it).",
@@ -710,8 +710,6 @@ export const en = {
   pluginsWorkspaceLoadFailed: "Failed to load this workspace's plugin state.",
   pluginsWorkspaceTargetBusy:
     "A session is running; stop it before modifying the selected workspace's plugins.",
-  pluginsWorkspaceInstallDisabled:
-    "Switch to this workspace to install plugins — installation always lands in the active workspace.",
   pluginsScopeGlobalOnly: "Global only",
   pluginsScopeGlobalOnlyHint:
     "This plugin can only be enabled or disabled globally; workspaces have no enable switch.",
