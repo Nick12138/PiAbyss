@@ -146,7 +146,7 @@ describe("workspace hints", () => {
   it("does not match an ancestor path segment (regression: DefaultProject vs piabyss hint)", () => {
     // DefaultProject 的路径是 <agentDir>/piabyss/DefaultProject：其中的 piabyss
     // 只是祖先段，不能因此把 PiAbyss 工作区的记录误判为「就在当前工作区」。
-    const defaultProject = "C:\\Users\\liu\\.pi\\agent\\piabyss\\DefaultProject";
+    const defaultProject = "C:\\Users\\example\\.pi\\agent\\piabyss\\DefaultProject";
     expect(noteMatchesWorkspace(note({ workspaceHint: "PiAbyss" }), defaultProject)).toBe(false);
     expect(noteMatchesWorkspace(note({ workspaceHint: "DefaultProject" }), defaultProject)).toBe(
       true,
@@ -199,7 +199,7 @@ describe("resolveWorkspaceHint", () => {
     expect(resolveWorkspaceHint("shared", ["D:/a/shared", "D:/b/shared"])).toBe("D:/a/shared");
   });
   it("does not substring-match an ancestor path segment (regression)", () => {
-    const defaultProject = "C:\\Users\\liu\\.pi\\agent\\piabyss\\DefaultProject";
+    const defaultProject = "C:\\Users\\example\\.pi\\agent\\piabyss\\DefaultProject";
     const piabyss = "D:\\我的项目\\PiAbyss";
     // 末段优先：真正的工作区胜出，不再被 DefaultProject 的祖先段截胡。
     expect(resolveWorkspaceHint("PiAbyss", [defaultProject, piabyss])).toBe(piabyss);
@@ -212,8 +212,8 @@ describe("resolveWorkspaceHint", () => {
 
 describe("defaultProjectWorkspacePath", () => {
   it("joins the agent dir with piabyss/DefaultProject (windows backslashes)", () => {
-    expect(defaultProjectWorkspacePath("C:\\Users\\liu\\.pi\\agent")).toBe(
-      "C:\\Users\\liu\\.pi\\agent\\piabyss\\DefaultProject",
+    expect(defaultProjectWorkspacePath("C:\\Users\\example\\.pi\\agent")).toBe(
+      "C:\\Users\\example\\.pi\\agent\\piabyss\\DefaultProject",
     );
   });
   it("joins with forward slashes for posix-style agent dirs", () => {
@@ -234,8 +234,8 @@ describe("defaultProjectWorkspacePath", () => {
 
 describe("memoImagePath", () => {
   it("joins the agent dir with piabyss/memo/images (windows backslashes)", () => {
-    expect(memoImagePath("C:\\Users\\liu\\.pi\\agent", "note-1", "a.png")).toBe(
-      "C:\\Users\\liu\\.pi\\agent\\piabyss\\memo\\images\\note-1\\a.png",
+    expect(memoImagePath("C:\\Users\\example\\.pi\\agent", "note-1", "a.png")).toBe(
+      "C:\\Users\\example\\.pi\\agent\\piabyss\\memo\\images\\note-1\\a.png",
     );
   });
 
@@ -243,8 +243,8 @@ describe("memoImagePath", () => {
     expect(memoImagePath("/home/liu/.pi/agent/", "note-1", "a.png")).toBe(
       "/home/liu/.pi/agent/piabyss/memo/images/note-1/a.png",
     );
-    expect(memoImagePath("C:/Users/liu/.pi/agent/", "note-1", "a.png")).toBe(
-      "C:/Users/liu/.pi/agent/piabyss/memo/images/note-1/a.png",
+    expect(memoImagePath("C:/Users/example/.pi/agent/", "note-1", "a.png")).toBe(
+      "C:/Users/example/.pi/agent/piabyss/memo/images/note-1/a.png",
     );
   });
 
@@ -265,14 +265,14 @@ describe("composeMemoPrompt", () => {
         workspaceHint: "PiAbyss",
         images: [{ id: "img", fileName: "a.png", mediaType: "image/png", bytes: 8 }],
       }),
-      "C:\\Users\\liu\\.pi\\agent",
+      "C:\\Users\\example\\.pi\\agent",
     );
     expect(block).toContain('<piabyss-memo id="note-');
     expect(block).toContain('status="open"');
     expect(block).toContain('tags="bug,p0"');
     expect(block).toContain('workspace="PiAbyss"');
     expect(block).toContain("# 修复 bug");
-    expect(block).toContain("- C:\\Users\\liu\\.pi\\agent\\piabyss\\memo\\images\\note-");
+    expect(block).toContain("- C:\\Users\\example\\.pi\\agent\\piabyss\\memo\\images\\note-");
     expect(block).toContain("\\a.png");
     expect(block.trim().endsWith("</piabyss-memo>")).toBe(true);
   });

@@ -35,7 +35,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 ## 🚀 一键启动开发环境
 
 ```bash
-cd C:/Users/liu/Documents/我的项目/PiAbyss
+cd C:/Users/example/Documents/我的项目/PiAbyss
 pnpm --filter @piabyss/desktop run tauri:dev
 ```
 

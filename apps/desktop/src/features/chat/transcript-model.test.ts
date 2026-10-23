@@ -29,16 +29,16 @@ describe("attached file blocks", () => {
   });
 
   it("folds attached-file blocks carrying a source path back into chips", () => {
-    const raw = `查看这个文件\n\n${buildAttachedFileBlock("123.md", "你好\n", "C:\\Users\\liu\\Desktop\\123.md")}`;
+    const raw = `查看这个文件\n\n${buildAttachedFileBlock("123.md", "你好\n", "C:\\Users\\example\\Desktop\\123.md")}`;
     const parsed = parseUserAttachments(raw);
     expect(parsed.text).toBe("查看这个文件");
     expect(parsed.files).toEqual([
-      { name: "123.md", content: "你好", path: "C:\\Users\\liu\\Desktop\\123.md" },
+      { name: "123.md", content: "你好", path: "C:\\Users\\example\\Desktop\\123.md" },
     ]);
   });
 
   it("folds path-only attachments into chips without reading content", () => {
-    const raw = `打开这个\n\n<attached-path name="CC Switch.lnk" path="C:\\Users\\liu\\Desktop\\CC Switch.lnk"/>`;
+    const raw = `打开这个\n\n<attached-path name="CC Switch.lnk" path="C:\\Users\\example\\Desktop\\CC Switch.lnk"/>`;
     const parsed = parseUserAttachments(raw);
     expect(parsed.text).toBe("打开这个");
     expect(parsed.files).toEqual([
@@ -46,7 +46,7 @@ describe("attached file blocks", () => {
         name: "CC Switch.lnk",
         content: "",
         pathOnly: true,
-        path: "C:\\Users\\liu\\Desktop\\CC Switch.lnk",
+        path: "C:\\Users\\example\\Desktop\\CC Switch.lnk",
       },
     ]);
   });

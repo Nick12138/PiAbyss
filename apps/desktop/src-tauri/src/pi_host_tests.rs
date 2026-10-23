@@ -1244,9 +1244,9 @@ rl.on('line', (line) => {
     /// payload), attribution silently degrades back to "no lamp".
     #[test]
     fn real_delegation_frames_attribute_the_background_run() {
-        let target_cwd = "C:\\Users\\liu\\AppData\\Local\\Temp\\piabyss-busylamp-2EGhBG\\ws-target";
+        let target_cwd = "C:\\Users\\example\\AppData\\Local\\Temp\\piabyss-busylamp-2EGhBG\\ws-target";
         let foreground_cwd =
-            "C:\\Users\\liu\\AppData\\Local\\Temp\\piabyss-busylamp-2EGhBG\\ws-foreground";
+            "C:\\Users\\example\\AppData\\Local\\Temp\\piabyss-busylamp-2EGhBG\\ws-foreground";
         let delegated_session = "01a15966-eefe-7107-896f-c28bde1e31b2";
         let target_workspace = "323a3cb0-3372-404e-a192-8f459c320865";
         let status_frame = serde_json::json!({

@@ -86,7 +86,7 @@ describe("四态收敛", () => {
   });
 
   it("工作区标签取路径最后一段", () => {
-    expect(pixieWorkspaceLabel("C:\\Users\\liu\\Documents\\我的项目\\PiAbyss")).toBe("PiAbyss");
+    expect(pixieWorkspaceLabel("C:\\Users\\example\\Documents\\我的项目\\PiAbyss")).toBe("PiAbyss");
     expect(pixieWorkspaceLabel("/home/me/wps/")).toBe("wps");
   });
 });
