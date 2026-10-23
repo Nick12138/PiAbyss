@@ -22,9 +22,11 @@ import {
 /**
  * Top-bar subagent entry.
  *
- * Main session view: a bot-icon button with a running-count badge appears
- * next to the session title whenever the session has subagent runs; clicking
- * it opens the run list.
+ * Main session view: a pill with icon + count + word sits next to the session
+ * title whenever the session has subagent runs. It reports two states only —
+ * how many subagents are running, or how many finished once none run — never
+ * a run name; failed/stopped runs are left out (their result cards stay in the
+ * transcript). Clicking the pill opens the run list.
  *
  * Subagent view (the chat area shows one run's conversation): a
  * "主会话标题 / 子代理标题 ▾" breadcrumb segment; the chevron button re-opens
@@ -43,13 +45,18 @@ export function SubagentTitleMenu() {
   const contentId = useId();
 
   const nodes = useMemo(() => flattenNodes(status.runs), [status.runs]);
-  const runningCount = useMemo(
-    () => nodes.filter(({ node }) => node.state === "running").length,
+  // 只呈现「还在跑的」和「跑完的」：失败/拒绝/停止不进列表也不计数。
+  const visibleNodes = useMemo(
+    () =>
+      nodes.filter(
+        ({ node }) =>
+          node.state !== "failed" && node.state !== "rejected" && node.state !== "stopped",
+      ),
     [nodes],
   );
-  const failedCount = useMemo(
-    () => nodes.filter(({ node }) => node.state === "failed" || node.state === "rejected").length,
-    [nodes],
+  const runningCount = useMemo(
+    () => visibleNodes.filter(({ node }) => node.state === "running").length,
+    [visibleNodes],
   );
   const activeNode = useMemo(
     () => nodes.find(({ node }) => node.id === activeSubagentNodeId)?.node ?? null,
@@ -81,7 +88,7 @@ export function SubagentTitleMenu() {
 
   // Anchor the dropdown below the trigger, clamped to the viewport.
   useLayoutEffect(() => {
-    if (!open || nodes.length === 0) return;
+    if (!open || visibleNodes.length === 0) return;
     const updatePosition = () => {
       const trigger = triggerRef.current;
       if (!trigger) return;
@@ -108,11 +115,12 @@ export function SubagentTitleMenu() {
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [open, nodes.length, activeSubagentNodeId]);
+  }, [open, visibleNodes.length, activeSubagentNodeId]);
 
-  // Hide the trigger when the extension is missing or no run exists — the
-  // top-bar title stays clean when there is nothing to browse.
-  if (!status.available || nodes.length === 0) return null;
+  // Hide the trigger when the extension is missing or nothing is left to
+  // browse — except while the user is inside a run's conversation, where the
+  // breadcrumb must keep a way back to the run list.
+  if (!status.available || (visibleNodes.length === 0 && !activeSubagentNodeId)) return null;
 
   // Role emoji before the breadcrumb title — same visibility rule as the run
   // list rows and the composer status line: only when the role has a glyph
@@ -121,6 +129,17 @@ export function SubagentTitleMenu() {
   const activeDisplayName = activeNode ? (activeNode.name ?? activeNode.label) : undefined;
   const roleEmoji =
     activeRole && activeRole !== activeDisplayName ? subagentRoleEmoji(activeRole) : undefined;
+
+  // 收起态只有两种：有子代理在跑 → 报在跑的数量；都跑完了 → 报已完成的总数。
+  // 数量写进文案（图标 + 数量 + 文字），不报子代理名字。
+  const pillLabel =
+    runningCount > 0
+      ? t(runningCount === 1 ? "subagentsPillRunningOne" : "subagentsPillRunningMany", {
+          count: runningCount,
+        })
+      : t(visibleNodes.length === 1 ? "subagentsPillIdleOne" : "subagentsPillIdleMany", {
+          count: visibleNodes.length,
+        });
 
   const trigger = activeSubagentNodeId ? (
     <button
@@ -155,38 +174,28 @@ export function SubagentTitleMenu() {
       type="button"
       aria-expanded={open}
       aria-controls={contentId}
-      aria-label={t("subagentsTitle")}
-      title={t("subagentsTitle")}
+      aria-label={pillLabel}
+      title={pillLabel}
       data-tauri-drag-region="false"
       data-subagents-running={runningCount > 0 ? "true" : "false"}
-      className={`pointer-events-auto relative flex size-7 items-center justify-center rounded-md transition-colors ${
-        open
-          ? "bg-accent/15 text-accent"
-          : runningCount > 0
-            ? "text-accent hover:bg-accent/15"
-            : failedCount > 0
-              ? "text-danger hover:bg-danger/15"
-              : "text-muted hover:bg-surface-overlay hover:text-foreground"
-      }`}
+      className={`pointer-events-auto flex min-w-0 items-center gap-1.5 rounded-full border border-border bg-surface-raised px-2.5 py-1 text-xs transition-colors hover:bg-surface-overlay hover:text-foreground ${
+        open ? "bg-surface-overlay" : ""
+      } ${runningCount > 0 ? "text-accent" : "text-muted"}`}
       onClick={() => setOpen((value) => !value)}
     >
-      {/* Running fleet: accent tone + a gentle breathing animation so the
-          entry reads as "live" at a glance; failures pin a danger tone;
-          idle stays muted and quiet. */}
-      <Bot size={15} className={runningCount > 0 ? "animate-pulse" : undefined} />
+      {/* Running fleet: spinner + accent tone so the entry reads as "live" at
+          a glance; idle keeps a quiet bot glyph and muted tone. */}
       {runningCount > 0 ? (
-        <span
-          className="absolute -right-1 -top-1 flex min-w-3.5 items-center justify-center rounded-full bg-accent px-0.5 text-[9px] font-medium leading-3.5 text-white"
-          aria-hidden="true"
-        >
-          {runningCount}
-        </span>
-      ) : failedCount > 0 ? (
-        <span
-          className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-danger"
-          aria-hidden="true"
-        />
-      ) : null}
+        <LoaderCircle size={12} className="shrink-0 animate-spin" aria-hidden="true" />
+      ) : (
+        <Bot size={12} className="shrink-0" aria-hidden="true" />
+      )}
+      <span className="shrink-0 whitespace-nowrap tabular-nums">{pillLabel}</span>
+      <ChevronDown
+        size={12}
+        className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+        aria-hidden="true"
+      />
     </button>
   );
 
@@ -207,7 +216,7 @@ export function SubagentTitleMenu() {
       </div>
       <div className="scrollbar-subtle min-h-0 overflow-y-auto p-2 pt-1.5">
         <ul className="flex flex-col gap-0.5">
-          {nodes.map(({ node, depth }) => {
+          {visibleNodes.map(({ node, depth }) => {
             const displayName = node.name ?? node.label;
             const role = node.role?.trim();
             const localizedRole = subagentRoleLabel(role, t);

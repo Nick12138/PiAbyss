@@ -103,19 +103,21 @@ describe("SubagentTitleMenu", () => {
     expect(screen.queryByRole("button", { name: "Subagents" })).not.toBeInTheDocument();
   });
 
-  it("shows the bot trigger with a running badge and opens the run list", async () => {
+  it("shows an icon + count + word pill for the running fleet and opens the run list", async () => {
     setStatus([
       { id: "run-1", kind: "subagent", label: "Scout task", role: "scout", state: "running" },
       { id: "run-2", kind: "subagent", label: "Done task", state: "complete" },
     ]);
     render(<SubagentTitleMenu />);
 
-    const trigger = screen.getByRole("button", { name: "Subagents" });
+    const trigger = screen.getByRole("button", { name: "1 subagent running" });
     expect(trigger).toHaveAttribute("aria-expanded", "false");
-    expect(trigger.textContent).toContain("1");
-    // Live fleet: accent tone + breathing icon.
+    // 图标 + 数量 + 文字：不写子代理名字，只报在跑的数量。
+    expect(trigger).toHaveTextContent("1 subagent running");
+    expect(trigger).not.toHaveTextContent("Scout task");
+    // Live fleet: accent tone + spinner icon.
     expect(trigger).toHaveClass("text-accent");
-    expect(trigger.querySelector("svg")).toHaveClass("animate-pulse");
+    expect(trigger.querySelector("svg")).toHaveClass("animate-spin");
 
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
@@ -126,13 +128,38 @@ describe("SubagentTitleMenu", () => {
     expect(useAppStore.getState().activeSubagentNodeId).toBe("run-2");
   });
 
-  it("keeps the bot trigger muted without running children", () => {
-    setStatus([{ id: "run-2", kind: "subagent", label: "Done task", state: "complete" }]);
+  it("falls back to the finished total once nothing runs", () => {
+    setStatus([
+      { id: "run-1", kind: "subagent", label: "Done task", state: "complete" },
+      { id: "run-2", kind: "subagent", label: "Other task", state: "complete" },
+    ]);
     render(<SubagentTitleMenu />);
 
-    const trigger = screen.getByRole("button", { name: "Subagents" });
+    const trigger = screen.getByRole("button", { name: "2 subagents completed" });
     expect(trigger).toHaveClass("text-muted");
-    expect(trigger.querySelector("svg")).not.toHaveClass("animate-pulse");
+    expect(trigger.querySelector("svg.animate-spin")).toBeNull();
+  });
+
+  it("leaves failed and stopped runs out of the count and the list", () => {
+    setStatus([
+      { id: "run-1", kind: "subagent", label: "Crashed task", state: "failed" },
+      { id: "run-2", kind: "subagent", label: "Aborted task", state: "stopped" },
+      { id: "run-3", kind: "subagent", label: "Done task", state: "complete" },
+    ]);
+    render(<SubagentTitleMenu />);
+
+    const trigger = screen.getByRole("button", { name: "1 subagent completed" });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("button", { name: /Done task/ })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Crashed task/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Aborted task/ })).not.toBeInTheDocument();
+  });
+
+  it("renders nothing when every run failed or stopped", () => {
+    setStatus([{ id: "run-1", kind: "subagent", label: "Crashed task", state: "failed" }]);
+    render(<SubagentTitleMenu />);
+
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("renders the breadcrumb segment for the active subagent and can switch runs", async () => {

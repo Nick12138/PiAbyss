@@ -83,6 +83,24 @@ describe("shelljob-store", () => {
     });
   });
 
+  it("maps pi-shelljob's on-disk statuses onto the protocol vocabulary", () => {
+    // The plugin writes succeeded/killed/interrupted; the desktop only knows
+    // running/completed/failed/killed — a clean exit must not become "unknown"
+    // (that used to make finished jobs vanish from the status bar).
+    writeJob("job_ok", { status: "succeeded" });
+    writeJob("job_interrupted", { status: "interrupted" });
+    writeJob("job_bad", { status: "failed" });
+    writeJob("job_weird", { status: "something-new" });
+
+    const status = Object.fromEntries(readShellJobs().map((job) => [job.id, job.status]));
+    expect(status).toEqual({
+      job_ok: "completed",
+      job_interrupted: "killed",
+      job_bad: "failed",
+      job_weird: "unknown",
+    });
+  });
+
   it("reads a single job", () => {
     writeJob("job_x");
     expect(readShellJob("job_x")?.sessionId).toBe(SESSION_ID);

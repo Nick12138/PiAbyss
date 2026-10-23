@@ -11,12 +11,15 @@ import { useT } from "../../lib/i18n/use-t";
 /**
  * Background shell job status above the composer.
  *
- * A compact pill (job count + first command) is the only persistent UI.
+ * A compact pill (icon + count + word) is the only persistent UI. It reports
+ * exactly two states: how many jobs are running, and — once nothing runs
+ * anymore — how many jobs finished. Failed/stopped jobs are left out of both
+ * the count and the list (a running→failed transition still raises an error
+ * notification), and no job name is ever shown on the pill.
  * Clicking it opens a floating popover (portal, viewport-clamped) listing
  * the current session's jobs only — another session's jobs belong to that
  * conversation and never leak in here. Finished jobs stay resident with
- * their final status instead of expiring after a grace window, and a
- * running→failed transition raises an error notification. Each row can
+ * their final status instead of expiring after a grace window. Each row can
  * open a live tail of the job's output.log.
  */
 
@@ -364,8 +367,12 @@ export function ShellJobsBar() {
     ? jobs.filter((job) => job.sessionId === currentSessionId)
     : [];
   const running = sessionJobs.filter((job) => job.status === "running");
-  const finished = sessionJobs.filter((job) => job.status !== "running");
-  const visible = [...running, ...finished];
+  // 「已完成」= 跑完且没失败/没被停。`unknown` 也算跑完：别人写了个我们
+  // 不认识的终态时宁可留着让用户点开看输出，也不要凭空消失。
+  const completed = sessionJobs.filter(
+    (job) => job.status !== "running" && job.status !== "failed" && job.status !== "killed",
+  );
+  const visible = [...running, ...completed];
   const now = useNowTicker(running.length > 0);
   // Close the popover once nothing is left to show, so a future job starts
   // from the compact pill again.
@@ -426,13 +433,16 @@ export function ShellJobsBar() {
     setOutputJobId((current) => (current === job.id ? null : job.id));
   };
 
-  // 收起态只两种面貌：有活在跑 → 报“在跑哪个”；都跑完了 → 图标 + 数量。
-  // 失败不另占文字，红点（图标变色）就够了；也不报总状态——一成一败时
-  // “总状态”本来就不成立，每行的点才是权威。
-  const runningHeadline = running[0]?.title ?? running[0]?.command;
-  const hasFailure = finished.some((job) => job.status === "failed");
-  // Resident: the pill counts every job this session owns, not only running ones.
-  const title = t("shellJobsTitle", { count: visible.length });
+  // 收起态只两种面貌：有活在跑 → 报在跑的数量；都跑完了 → 报已完成的总数。
+  // 数量写进文案（图标 + 数量 + 文字），不再挂单独的圆形徽标，也不报任务名。
+  const title =
+    running.length > 0
+      ? t(running.length === 1 ? "shellJobsRunningOne" : "shellJobsRunningMany", {
+          count: running.length,
+        })
+      : t(visible.length === 1 ? "shellJobsIdleOne" : "shellJobsIdleMany", {
+          count: visible.length,
+        });
 
   const jobRows = visible.map((job) => (
     <JobRow
@@ -455,7 +465,7 @@ export function ShellJobsBar() {
       id={panelId}
       className="theme-floating-surface fixed z-50 flex w-max min-w-80 max-w-full flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl"
       style={panelStyle ?? { visibility: "hidden", left: 0, bottom: 0 }}
-      aria-label={title}
+      aria-label={t("shellJobsHeading")}
       data-testid="shell-jobs-panel"
     >
       <div className="flex min-h-9 shrink-0 items-center gap-2 border-b border-border px-3">
@@ -486,25 +496,17 @@ export function ShellJobsBar() {
         data-testid="shell-jobs-toggle"
       >
         {running.length > 0 ? (
-          <>
-            <Loader2 size={12} className="shrink-0 animate-spin text-accent" aria-hidden="true" />
-            {runningHeadline && (
-              <span className="min-w-0 max-w-56 truncate text-foreground">{runningHeadline}</span>
-            )}
-            {running.length > 1 && (
-              <span className="shrink-0 text-[11px] text-muted">+{running.length - 1}</span>
-            )}
-          </>
+          <Loader2 size={12} className="shrink-0 animate-spin text-accent" aria-hidden="true" />
         ) : (
-          <>
-            <Terminal
-              size={12}
-              className={`shrink-0 ${hasFailure ? "text-danger" : "text-muted"}`}
-              aria-hidden="true"
-            />
-            <JobCountBadge count={visible.length} />
-          </>
+          <Terminal size={12} className="shrink-0 text-muted" aria-hidden="true" />
         )}
+        <span
+          className={`shrink-0 whitespace-nowrap tabular-nums ${
+            running.length > 0 ? "text-accent" : "text-muted"
+          }`}
+        >
+          {title}
+        </span>
         <ChevronDown
           size={12}
           className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}

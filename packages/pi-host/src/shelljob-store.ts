@@ -54,12 +54,23 @@ function readJson<T>(path: string): T | null {
 }
 
 function mapStatus(status: unknown): ShellJobStatus {
-  return status === "running" ||
-    status === "completed" ||
-    status === "failed" ||
-    status === "killed"
-    ? status
-    : "unknown";
+  switch (status) {
+    case "running":
+      return "running";
+    // pi-shelljob writes `succeeded` for a clean exit (and `interrupted` for a
+    // host restart); PiAbyss spells those "completed" / "killed". Mismatching
+    // them used to dump every finished job into "unknown".
+    case "succeeded":
+    case "completed":
+      return "completed";
+    case "failed":
+      return "failed";
+    case "killed":
+    case "interrupted":
+      return "killed";
+    default:
+      return "unknown";
+  }
 }
 
 function asPositiveInt(value: unknown): number | undefined {

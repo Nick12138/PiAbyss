@@ -122,6 +122,14 @@ const FAILED_JOB = {
   finishedAt: Date.now() - 500,
 };
 
+// A finished job whose on-disk status PiAbyss cannot name (e.g. a status the
+// plugin added later) — must stay resident instead of silently disappearing.
+const UNKNOWN_JOB = {
+  ...FINISHED_JOB,
+  id: "job_unknown1",
+  status: "unknown" as const,
+};
+
 /** Mocks shelljobs.* requests with the given job snapshot + output tail. */
 function mockShellJobRequests(
   jobs: unknown[],
@@ -169,17 +177,15 @@ describe("ShellJobsBar", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("renders the job count as a round badge instead of a parenthesized heading", async () => {
+  it("renders the finished count as icon + count + word, with a badge in the panel header", async () => {
     const user = userEvent.setup();
     mockShellJobRequests([STALE_JOB]);
     useAppStore.getState().setShellJobs([STALE_JOB] as never);
     render(<ShellJobsBar />);
 
-    // 没有活在跑：图标 + 圆形数量徽标，不写任务名、不写失败数。
+    // 没有活在跑：图标 + 「1 个后台任务已完成」文字，不写任务名、不写失败数。
     const pill = screen.getByTestId("shell-jobs-toggle");
-    const pillBadge = within(pill).getByTestId("shell-jobs-count");
-    expect(pillBadge).toHaveTextContent("1");
-    expect(pillBadge).toHaveClass("rounded-full", "h-4", "tabular-nums");
+    expect(pill).toHaveTextContent("1 background job completed");
     expect(pill).not.toHaveTextContent(/failed/i);
 
     await expand(user);
@@ -189,25 +195,47 @@ describe("ShellJobsBar", () => {
     expect(within(panel).queryByText(/Background jobs \(/)).not.toBeInTheDocument();
   });
 
-  it("shows the running job's title instead of the count while one is live", () => {
+  it("shows a count pill instead of the command name while a job runs", () => {
     mockShellJobRequests([RUNNING_JOB, FINISHED_JOB]);
     useAppStore.getState().setShellJobs([RUNNING_JOB, FINISHED_JOB] as never);
     render(<ShellJobsBar />);
 
+    // 图标 + 数量 + 文字：只报在跑的数量，不报任务名，不报失败数。
     const pill = screen.getByTestId("shell-jobs-toggle");
-    expect(pill).toHaveTextContent("npm run dev");
-    expect(within(pill).queryByTestId("shell-jobs-count")).not.toBeInTheDocument();
+    expect(pill).toHaveTextContent("1 background job running");
+    expect(pill).not.toHaveTextContent("npm run dev");
     expect(pill).not.toHaveTextContent(/failed/i);
   });
 
-  it("marks failures with the icon colour only, without a failure count", () => {
+  it("falls back to the finished total once nothing runs", () => {
+    mockShellJobRequests([STALE_JOB]);
+    useAppStore.getState().setShellJobs([STALE_JOB] as never);
+    render(<ShellJobsBar />);
+
+    const pill = screen.getByTestId("shell-jobs-toggle");
+    expect(pill).toHaveTextContent("1 background job completed");
+    expect(pill).toHaveAttribute("aria-label", "1 background job completed");
+    expect(pill).not.toHaveTextContent(/running/i);
+  });
+
+  it("leaves failed and stopped jobs out of the count", () => {
     mockShellJobRequests([STALE_JOB, FAILED_JOB]);
     useAppStore.getState().setShellJobs([STALE_JOB, FAILED_JOB] as never);
     render(<ShellJobsBar />);
 
+    // 失败/停止既不计数也不进列表，只剩那件跑完的。
     const pill = screen.getByTestId("shell-jobs-toggle");
+    expect(pill).toHaveTextContent("1 background job completed");
     expect(pill).not.toHaveTextContent(/failed/i);
-    expect(pill.querySelector("svg.text-danger")).not.toBeNull();
+    expect(pill.querySelector("svg.text-danger")).toBeNull();
+  });
+
+  it("renders nothing when only failed and stopped jobs exist", () => {
+    mockShellJobRequests([FAILED_JOB]);
+    useAppStore.getState().setShellJobs([FAILED_JOB] as never);
+    const { container } = render(<ShellJobsBar />);
+
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("keeps finished jobs resident instead of expiring them", async () => {
@@ -219,11 +247,24 @@ describe("ShellJobsBar", () => {
     // A long-finished job still counts and is listed.
     expect(screen.getByTestId("shell-jobs-toggle")).toHaveAttribute(
       "aria-label",
-      "Background jobs (1)",
+      "1 background job completed",
     );
     await expand(user);
     expect(screen.getByTestId("shell-jobs-panel")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a finished job with an unrecognised status resident", async () => {
+    const user = userEvent.setup();
+    mockShellJobRequests([UNKNOWN_JOB]);
+    useAppStore.getState().setShellJobs([UNKNOWN_JOB] as never);
+    render(<ShellJobsBar />);
+
+    // 不认识的终态也不能让胶囊凭空消失。
+    const pill = screen.getByTestId("shell-jobs-toggle");
+    expect(pill).toHaveTextContent("1 background job completed");
+    await expand(user);
+    expect(screen.getByTestId("shell-jobs-panel")).toBeInTheDocument();
   });
 
   it("never shows jobs that belong to another session", () => {
@@ -252,13 +293,13 @@ describe("ShellJobsBar", () => {
         "job_done1",
       ]),
     );
-    // Collapsed: a compact pill (not the full-width bar) with the resident
-    // job count in its accessible name and the first command as a preview.
+    // Collapsed: a compact pill (not the full-width bar) whose label carries
+    // the running count instead of any command name.
     const pill = screen.getByTestId("shell-jobs-toggle");
     expect(pill).toHaveAttribute("aria-expanded", "false");
-    expect(pill).toHaveAttribute("aria-label", "Background jobs (2)");
+    expect(pill).toHaveAttribute("aria-label", "1 background job running");
     expect(pill).toHaveClass("rounded-full");
-    expect(screen.getByText("npm run dev")).toBeInTheDocument();
+    expect(pill).toHaveTextContent("1 background job running");
     // No per-job rows (or the finished job) before expanding.
     expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
     expect(screen.queryByText("job_done1")).not.toBeInTheDocument();
@@ -285,7 +326,8 @@ describe("ShellJobsBar", () => {
     // 夹具的 startedAt 是模块加载时的 Date.now() - 30s，慢机器/CI 上跑到这条
     // 断言时已经过了 1s 以上，写死 "30s" 会偶发变成 31s（P0 门控曾因此失败）。
     expect(screen.getByText(/^3[0-2]s$/)).toBeInTheDocument();
-    expect(screen.getAllByText("npm run dev")).toHaveLength(3);
+    // 两行任务（都在跑 / 已跑完）各写一次命令；收起态 pill 不再写命令。
+    expect(screen.getAllByText("npm run dev")).toHaveLength(2);
   });
 
   it("closes the popover on outside click, Escape, and pill toggle", async () => {
