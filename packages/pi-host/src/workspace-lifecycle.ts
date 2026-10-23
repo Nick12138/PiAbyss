@@ -787,9 +787,12 @@ export class WorkspaceLifecycle {
       join(this.context.deps.agentDir, "models-store.json"),
       join(this.context.deps.agentDir, "auth.json"),
     ]);
-    for (const directory of ["packages", "npm", "git"]) {
-      roots.add(join(this.context.deps.agentDir, directory));
-    }
+    // Only the declared-package directory belongs here. `npm` and `git` are
+    // package-manager caches (<agentDir>/npm alone is ~9k files) and walking
+    // them made every parked graph's fingerprint a several-hundred-ms stat
+    // storm (p50 424ms, worst 42s). Install/update/remove paths invalidate the
+    // retained graph explicitly, so drift detection never needs those trees.
+    roots.add(join(this.context.deps.agentDir, "packages"));
     const markers: string[] = [];
     if (graph.packageManager) {
       try {

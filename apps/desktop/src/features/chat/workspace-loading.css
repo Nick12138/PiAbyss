@@ -31,36 +31,40 @@
   background: radial-gradient(circle, var(--color-accent) 0%, transparent 72%);
   opacity: 0;
   filter: blur(var(--ws-b));
-  /* 下沉和横向摇摆用不同周期：合起来不会「整排一起晃」。 */
-  animation:
-    ws-loading-sink var(--ws-dur) linear infinite,
-    ws-loading-drift var(--ws-drift) ease-in-out infinite alternate;
-  animation-delay: var(--ws-delay), var(--ws-d2);
+  /* 只动 transform/opacity：`top` 是布局属性，几十个光点各自动 top，正好在
+     切换（主线程最忙的时刻）逼它每帧重排整块聊天区。translate3d 走合成器，
+     横向摇摆并进同一条 keyframes（两个动画同时写 transform 会互相覆盖）。 */
+  will-change: transform, opacity;
+  animation: ws-loading-sink var(--ws-dur) linear infinite;
+  animation-delay: var(--ws-delay);
 }
 
 @keyframes ws-loading-sink {
   0% {
-    top: -4%;
+    transform: translate3d(0, -8vh, 0);
     opacity: 0;
   }
   14% {
+    opacity: var(--ws-o);
+  }
+  34% {
+    transform: translate3d(-6px, 26vh, 0);
+    opacity: var(--ws-o);
+  }
+  52% {
+    transform: translate3d(5px, 50vh, 0);
+    opacity: var(--ws-o);
+  }
+  70% {
+    transform: translate3d(-4px, 74vh, 0);
     opacity: var(--ws-o);
   }
   84% {
     opacity: var(--ws-o);
   }
   100% {
-    top: 102%;
+    transform: translate3d(0, 108vh, 0);
     opacity: 0;
-  }
-}
-
-@keyframes ws-loading-drift {
-  from {
-    transform: translateX(-7px);
-  }
-  to {
-    transform: translateX(7px);
   }
 }
 

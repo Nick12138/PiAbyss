@@ -27,15 +27,15 @@ function buildMotes(): StyleVars[] {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-  return Array.from({ length: 46 }, () => ({
+  // 14 而不是 46：每个光点都是一个带 blur 的合成层，几十个同时在切换窗口里
+  // 起动画，GPU 和主线程都要为"看不见的等待"付钱。种子不变，样式与之前一致。
+  return Array.from({ length: 14 }, () => ({
     "--ws-x": `${(2 + rnd() * 94).toFixed(1)}%`,
     "--ws-s": `${4 + Math.round(rnd() * 9)}px`,
     "--ws-dur": `${(17 + rnd() * 24).toFixed(1)}s`,
     "--ws-delay": `-${(rnd() * 40).toFixed(1)}s`,
-    "--ws-drift": `${(6 + rnd() * 8).toFixed(1)}s`,
-    "--ws-d2": `-${(rnd() * 9).toFixed(1)}s`,
     "--ws-o": (0.24 + rnd() * 0.34).toFixed(2),
-    "--ws-b": `${(0.15 + rnd() * 0.75).toFixed(2)}px`,
+    "--ws-b": `${(rnd() * 0.75).toFixed(2)}px`,
   }));
 }
 

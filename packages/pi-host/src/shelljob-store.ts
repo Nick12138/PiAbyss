@@ -8,7 +8,15 @@
  * malformed files (the directory also accumulates test debris), and all
  * layout knowledge is intentionally confined to this module.
  */
-import { closeSync, fstatSync, openSync, readSync, readdirSync, readFileSync } from "node:fs";
+import {
+  closeSync,
+  fstatSync,
+  openSync,
+  readSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ShellJobStatus, ShellJobSummary } from "@piabyss/protocol";
@@ -75,6 +83,38 @@ function mapStatus(status: unknown): ShellJobStatus {
 
 function asPositiveInt(value: unknown): number | undefined {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
+/**
+ * Cheap change detector for the job store: one `readdir` plus one `stat` per
+ * job directory (its `status.json`), with no file contents read.
+ *
+ * The 2s watcher only needs to know "did anything change"; comparing this
+ * signature first turns an unchanged poll from ~200 `open`+`read`+`JSON.parse`
+ * calls into ~100 `stat` calls. A job created but not yet given a status file
+ * still changes the signature (name list + the "missing" marker), so the first
+ * snapshot is never swallowed.
+ */
+export function shelljobStoreSignature(root: string = shelljobJobsRoot()): string {
+  let entries: string[];
+  try {
+    entries = readdirSync(root);
+  } catch {
+    return "missing";
+  }
+  const parts: string[] = [];
+  for (const name of entries.slice(0, 1024).sort()) {
+    if (!name.startsWith("job_")) continue;
+    let stamp = "no-status";
+    try {
+      const stat = statSync(join(shelljobDir(name, root), "status.json"));
+      stamp = `${Math.trunc(stat.mtimeMs)}:${stat.size}`;
+    } catch {
+      stamp = "no-status";
+    }
+    parts.push(`${name}=${stamp}`);
+  }
+  return parts.join("\n");
 }
 
 /** Read every parseable job under the store, newest first. */

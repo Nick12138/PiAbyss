@@ -47,13 +47,18 @@ function integerFromEnv(name: string, fallback: number, min: number, max: number
 
 /**
  * Number of hot Sessions (the active Session plus idle cached Sessions).
- * The default should cover the typical multi-workspace × multi-session usage
- * without eviction: cold rebuilds (full Session re-open) only happen when the
- * limit is exceeded or a cached runtime's TTL expires.
+ *
+ * Each entry keeps a full AgentSession alive — message history, tool registry,
+ * extension runtime — so this number *is* the host's resident memory floor.
+ * 20 (the old default) meant up to twenty live conversations, which on a
+ * long-transcript workload puts hundreds of MB beyond the one session the user
+ * is actually looking at. 4 covers "current + a couple of neighbours" and makes
+ * an evicted session pay only the cheap re-open (p50 134ms) instead.
+ * Override with PIABYSS_IDLE_SESSION_CACHE_LIMIT when a workflow needs more.
  */
-export const MAX_IDLE_SESSION_CACHE = integerFromEnv("PIABYSS_IDLE_SESSION_CACHE_LIMIT", 20, 1, 32);
+export const MAX_IDLE_SESSION_CACHE = integerFromEnv("PIABYSS_IDLE_SESSION_CACHE_LIMIT", 4, 1, 32);
 export const IDLE_SESSION_CACHE_TTL_MS =
-  integerFromEnv("PIABYSS_IDLE_SESSION_TIMEOUT_MINUTES", 120, 1, 24 * 60) * 60 * 1000;
+  integerFromEnv("PIABYSS_IDLE_SESSION_TIMEOUT_MINUTES", 30, 1, 24 * 60) * 60 * 1000;
 
 type DisposalStepResult =
   { status: "completed" } | { status: "failed"; error: unknown } | { status: "timed_out" };

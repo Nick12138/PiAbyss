@@ -299,26 +299,56 @@ export function RightDock() {
   // transparent the moment layout has room. Re-attach on every tick so a chat
   // page that mounts late (services still warming up) is picked up too.
   useEffect(() => {
+    // Closed dock: the overflow attribute is not observable and the measurement
+    // costs two forced layouts, so skip the observers entirely.
+    if (!dockOpen) {
+      setMainOverflows(false);
+      return;
+    }
+    let observedMain: HTMLElement | null = null;
+    let observedChatPage: HTMLElement | null = null;
     const readOverflow = () => {
       const mainEl = document.querySelector<HTMLElement>("[data-content-main]");
       const chatPageEl = document.querySelector<HTMLElement>("[data-chat-page]");
-      resizeObserver.disconnect();
-      if (mainEl) resizeObserver.observe(mainEl);
-      if (chatPageEl) resizeObserver.observe(chatPageEl);
-      setMainOverflows(dockContentOverflow(mainEl, chatPageEl));
-      return { mainEl, chatPageEl };
+      // Re-attach only when the element identity changes (a chat page that
+      // mounts late still gets picked up) instead of tearing down both
+      // observers on every call.
+      if (mainEl !== observedMain) {
+        if (observedMain) resizeObserver.unobserve(observedMain);
+        if (mainEl) resizeObserver.observe(mainEl);
+        observedMain = mainEl;
+      }
+      if (chatPageEl !== observedChatPage) {
+        if (observedChatPage) resizeObserver.unobserve(observedChatPage);
+        if (chatPageEl) resizeObserver.observe(chatPageEl);
+        observedChatPage = chatPageEl;
+      }
+      const next = dockContentOverflow(mainEl, chatPageEl);
+      setMainOverflows((previous) => (previous === next ? previous : next));
     };
-    const resizeObserver = new ResizeObserver(readOverflow);
-    const mutationObserver = new MutationObserver(readOverflow);
+    // The body observer fires for every inserted transcript row — thousands of
+    // them during a workspace switch or a streaming turn. Coalesce into one
+    // layout read per frame instead of one per mutation.
+    let frame = 0;
+    const scheduleMeasure = () => {
+      if (frame !== 0) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        readOverflow();
+      });
+    };
+    const resizeObserver = new ResizeObserver(scheduleMeasure);
+    const mutationObserver = new MutationObserver(scheduleMeasure);
     readOverflow();
     mutationObserver.observe(document.body, { childList: true, subtree: true });
-    window.addEventListener("resize", readOverflow);
+    window.addEventListener("resize", scheduleMeasure);
     return () => {
+      if (frame !== 0) cancelAnimationFrame(frame);
       resizeObserver.disconnect();
       mutationObserver.disconnect();
-      window.removeEventListener("resize", readOverflow);
+      window.removeEventListener("resize", scheduleMeasure);
     };
-  }, []);
+  }, [dockOpen]);
 
   const { visible: visibleTabIds, overflow: overflowTabIds } = partitionDockTabs(
     tabOrder,

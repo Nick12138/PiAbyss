@@ -14,7 +14,7 @@
  */
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import type { HostIdentity, SubagentStatusNode, SubagentsStatusSnapshot } from "@piabyss/protocol";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { closeSync, openSync, readSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   getSubagentApi,
@@ -23,7 +23,14 @@ import {
 } from "./subagent-api.js";
 import { mapSubagentRunState } from "./subagent-runs.js";
 
-const POLL_MS = 750;
+/** Poll cadence: fast while a run is live, slow when the fleet is idle.
+ *
+ * The 750ms tick issues a loopback HTTP request that makes the plugin re-read
+ * its whole run store; an idle fleet (nothing running) kept paying that for a
+ * panel that had nothing to update. Idle backoff keeps the panel live without
+ * the per-second disk churn. */
+const ACTIVE_POLL_MS = 750;
+const IDLE_POLL_MS = 5_000;
 /** dto-validate caps the runs array at 32; anything beyond becomes `omitted`. */
 const MAX_RUNS = 32;
 
@@ -97,7 +104,12 @@ export function normalizeSubagentRuns(
   };
 }
 
-let sessionRunIdCache: { sessionId: string; mtime: number; ids: Set<string> } | null = null;
+let sessionRunIdCache: {
+  sessionId: string;
+  mtime: number;
+  offset: number;
+  ids: Set<string>;
+} | null = null;
 
 /** Clear the per-session mtime cache (test isolation). */
 export function resetSessionRunIdCache(): void {
@@ -174,45 +186,99 @@ export function collectSessionRunIds(
       }
     })[0];
   if (!target) return null;
-  let mtime: number;
+  let fileStat;
   try {
-    mtime = statSync(target).mtimeMs;
+    fileStat = statSync(target);
   } catch {
     return null;
   }
-  if (
-    sessionRunIdCache &&
-    sessionRunIdCache.sessionId === sessionId &&
-    sessionRunIdCache.mtime === mtime
-  ) {
-    return sessionRunIdCache.ids;
-  }
-  const ids = new Set<string>();
-  try {
-    for (const line of readFileSync(target, "utf8").split(/\r?\n/)) {
-      let entry: unknown;
+  const mtime = fileStat.mtimeMs;
+  const size = fileStat.size;
+  const previous =
+    sessionRunIdCache && sessionRunIdCache.sessionId === sessionId ? sessionRunIdCache : null;
+  if (previous && previous.mtime === mtime && previous.offset === size) return previous.ids;
+
+  // A session transcript is append-only, so a growing file only needs the new
+  // bytes parsed. Re-reading it whole made every 750ms poll pay for the entire
+  // conversation once the session got long — exactly when switching felt worst.
+  const ids = new Set<string>(previous ? previous.ids : []);
+  let offset = previous && size >= previous.offset ? previous.offset : 0;
+  const pending = size - offset;
+  if (pending > 0) {
+    try {
+      const fd = openSync(target, "r");
       try {
-        entry = JSON.parse(line);
-      } catch {
-        continue;
+        const buffer = Buffer.alloc(pending);
+        const read = readSync(fd, buffer, 0, pending, offset);
+        const chunk = buffer.subarray(0, read).toString("utf8");
+        // Consume whole lines only; a partially written tail line is left for
+        // the next poll (the writer has not finished the JSON yet).
+        const boundary = chunk.lastIndexOf("\n");
+        const complete = boundary >= 0 ? chunk.slice(0, boundary + 1) : "";
+        if (complete) {
+          offset += Buffer.byteLength(complete, "utf8");
+          for (const line of complete.split("\n")) {
+            let entry: unknown;
+            try {
+              entry = JSON.parse(line);
+            } catch {
+              continue;
+            }
+            if (!entry || typeof entry !== "object") continue;
+            const message = (entry as { message?: unknown }).message;
+            if (!message || typeof message !== "object") continue;
+            const record = message as {
+              role?: unknown;
+              toolName?: unknown;
+              content?: unknown;
+              details?: unknown;
+            };
+            if (record.role !== "toolResult" || record.toolName !== "subagent") continue;
+            for (const id of spawnedRunIds(record)) ids.add(id);
+          }
+        }
+      } finally {
+        closeSync(fd);
       }
-      if (!entry || typeof entry !== "object") continue;
-      const message = (entry as { message?: unknown }).message;
-      if (!message || typeof message !== "object") continue;
-      const record = message as {
-        role?: unknown;
-        toolName?: unknown;
-        content?: unknown;
-        details?: unknown;
-      };
-      if (record.role !== "toolResult" || record.toolName !== "subagent") continue;
-      for (const id of spawnedRunIds(record)) ids.add(id);
+    } catch {
+      return null;
     }
-  } catch {
-    return null;
   }
-  sessionRunIdCache = { sessionId, mtime, ids };
+  sessionRunIdCache = { sessionId, mtime, offset, ids };
   return ids;
+}
+
+/**
+ * Structural equality of two snapshots, ignoring `generatedAt`.
+ *
+ * Every poll builds a fresh object, so the desktop's store saw a "change" on
+ * each tick — 80 re-renders a minute for a panel whose content had not moved.
+ * Comparing the payload (runs are bounded at MAX_RUNS) is far cheaper than the
+ * React work it avoids.
+ */
+function sameSnapshotPayload(
+  left: SubagentsStatusSnapshot,
+  right: SubagentsStatusSnapshot,
+): boolean {
+  if (left === right) return true;
+  if (
+    left.available !== right.available ||
+    left.totalActive !== right.totalActive ||
+    left.omitted !== right.omitted ||
+    left.runs.length !== right.runs.length
+  ) {
+    return false;
+  }
+  for (let index = 0; index < left.runs.length; index += 1) {
+    const a = left.runs[index];
+    const b = right.runs[index];
+    if (a === b) continue;
+    if (!a || !b) return false;
+    if (a.id !== b.id || a.state !== b.state || a.updatedAt !== b.updatedAt) return false;
+    if (a.activity?.state !== b.activity?.state) return false;
+    if (a.label !== b.label || a.role !== b.role || a.model !== b.model) return false;
+  }
+  return true;
 }
 
 function toolResultText(content: unknown): string {
@@ -263,7 +329,9 @@ export function createSubagentStatusBridge(
   };
 
   const publish = (generation: number, snapshot: SubagentsStatusSnapshot) => {
+    const unchanged = sameSnapshotPayload(latest, snapshot);
     latest = snapshot;
+    if (unchanged) return;
     if (generation === activeGeneration) emitCurrent();
   };
 
@@ -287,13 +355,25 @@ export function createSubagentStatusBridge(
       identityGeneration = generation;
       readyGeneration = generation;
     }
-    let interval: ReturnType<typeof setInterval> | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let pollDelay = ACTIVE_POLL_MS;
     let sessionDisposed = false;
     let polling = false;
+
+    /** Re-arm the next poll; the delay comes from the previous poll's result. */
+    const armPoll = () => {
+      if (disposed || sessionDisposed || generation !== activeGeneration) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        void pollOnce().then(armPoll, armPoll);
+      }, pollDelay);
+      timer.unref?.();
+    };
+
     const stop = () => {
       sessionDisposed = true;
-      if (interval) clearInterval(interval);
-      interval = undefined;
+      if (timer) clearTimeout(timer);
+      timer = undefined;
     };
     stopActiveExtension = stop;
 
@@ -309,12 +389,17 @@ export function createSubagentStatusBridge(
         const ownedRunIds = options.sessionsDir
           ? collectSessionRunIds(options.sessionsDir, identity?.sessionId)
           : null;
-        publish(
-          generation,
+        const snapshot =
           data && Array.isArray(data.runs)
             ? normalizeSubagentRuns(data.runs, Date.now(), identity?.sessionId, ownedRunIds)
-            : unavailable(),
-        );
+            : unavailable();
+        // Anything actually running keeps the fast cadence; an idle fleet backs
+        // off so the panel stops re-reading the plugin store every 750ms.
+        pollDelay = snapshot.totalActive > 0 ? ACTIVE_POLL_MS : IDLE_POLL_MS;
+        publish(generation, snapshot);
+      } catch {
+        // Plugin absent or unreachable: back off instead of hammering the port.
+        pollDelay = IDLE_POLL_MS;
       } finally {
         polling = false;
       }
@@ -323,10 +408,10 @@ export function createSubagentStatusBridge(
     const startPolling = () => {
       if (disposed || sessionDisposed || generation !== activeGeneration) return;
       publish(generation, unavailable());
-      if (interval) clearInterval(interval);
-      interval = setInterval(() => void pollOnce(), POLL_MS);
-      interval.unref?.();
-      void pollOnce();
+      if (timer) clearTimeout(timer);
+      timer = undefined;
+      pollDelay = ACTIVE_POLL_MS;
+      void pollOnce().then(armPoll, armPoll);
     };
 
     pi.on("session_start", () => {
@@ -344,10 +429,9 @@ export function createSubagentStatusBridge(
       // on the unavailable snapshot forever.
       if (identity && identityGeneration === activeGeneration) {
         sessionDisposed = false;
-        if (!interval) {
-          interval = setInterval(() => void pollOnce(), POLL_MS);
-          interval.unref?.();
-          void pollOnce();
+        if (!timer) {
+          pollDelay = ACTIVE_POLL_MS;
+          void pollOnce().then(armPoll, armPoll);
         }
         return;
       }

@@ -11,8 +11,15 @@
  * "show earlier" control as a memory escape hatch.
  */
 
-/** Upper bound on automatically mounted rows per session. */
-export const FULL_MOUNT_MAX_ROWS = 4000;
+/**
+ * Upper bound on automatically mounted rows per session.
+ *
+ * Every auto-mounted row is a live DOM subtree with text, code highlighting
+ * and layout boxes — a long session settles at hundreds of MB of renderer
+ * memory once it converges. 1200 keeps a working window around the reader
+ * (and all of it reachable through "show earlier") while bounding that cost.
+ */
+export const FULL_MOUNT_MAX_ROWS = 1200;
 
 /**
  * Initial rows per idle slice. Each mounted row pays full render and layout;

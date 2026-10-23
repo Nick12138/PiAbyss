@@ -3,7 +3,7 @@
  * PiAbyss Host entry — owns all Pi SDK services.
  * Transport: JSONL on stdin/stdout; logs on stderr.
  */
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -351,13 +351,43 @@ async function main(): Promise<void> {
   // queue behind each other instead of interleaving; each keeps its own
   // abort signal and rejection.
   let refreshChain: Promise<unknown> = Promise.resolve();
+  // Every session open/switch asks for a model-health refresh, and each run
+  // re-registers every provider and re-reads models.json (measured p50 31ms,
+  // p90 117ms, worst 2.3s on the switch critical path). The result cannot
+  // change while models.json/auth.json are untouched, so remember the health
+  // together with the config signature and skip the redundant pass inside the
+  // TTL. Config writes change the signature (or the controllers invalidate
+  // explicitly), so a real edit still refreshes immediately.
+  const MODEL_HEALTH_TTL_MS = 2_000;
+  let modelHealthSignature = "";
+  let modelHealthAt = 0;
+  const modelHealthConfigSignature = (): string => {
+    const parts: string[] = [];
+    for (const name of ["models.json", "auth.json"]) {
+      try {
+        const stat = statSync(join(agentDir, name));
+        parts.push(`${name}:${Math.trunc(stat.mtimeMs)}:${stat.size}`);
+      } catch {
+        parts.push(`${name}:missing`);
+      }
+    }
+    return parts.join("|");
+  };
   const refreshModelHealthNow = (signal?: AbortSignal): Promise<ModelConfigHealth> => {
+    const signature = modelHealthConfigSignature();
+    if (signature === modelHealthSignature && Date.now() - modelHealthAt < MODEL_HEALTH_TTL_MS) {
+      return Promise.resolve(modelConfigHealth);
+    }
     const run = refreshChain.then(() => runRefreshModelHealth(signal));
     refreshChain = run.then(
       () => undefined,
       () => undefined,
     );
-    return run;
+    return run.then((health) => {
+      modelHealthSignature = signature;
+      modelHealthAt = Date.now();
+      return health;
+    });
   };
 
   // Inline neutral profile pass FIRST: it must land before the first graph

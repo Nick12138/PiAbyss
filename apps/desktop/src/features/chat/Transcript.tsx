@@ -146,6 +146,19 @@ function LazyMarkdownMessage({
  * progressive-mount.ts converges the rest afterwards.
  */
 const INITIAL_VISIBLE_ROWS = 60;
+
+/**
+ * Upper bound on how many rows a fresh mount may bring in immediately when a
+ * session is reopened at its remembered reading position.
+ *
+ * The remembered position can be almost the whole conversation (scroll memory
+ * has no cap), and every mounted row parses its markdown/shiki/mermaid
+ * synchronously — so switching back into a long session used to block the
+ * main thread for as long as the whole conversation took to render. Rows above
+ * the cap stay behind the manual "load earlier" path, which is exactly what
+ * the lazy mount above the fold already does.
+ */
+const RESTORED_VISIBLE_ROWS_CAP = 240;
 const SHOW_EARLIER_CHUNK = 120;
 /** Rows mounted above a jump target for reading context. */
 const JUMP_CONTEXT_ROWS = 3;
@@ -204,7 +217,7 @@ function initialHiddenFor(sessionId: string | null, rowCount: number): number {
   if (sessionId === null) return tailHidden;
   const remembered = readTranscriptScrollPosition(sessionId);
   if (remembered === undefined) return tailHidden;
-  return Math.min(remembered.hidden, Math.max(0, rowCount - 1));
+  return Math.min(remembered.hidden, Math.max(0, rowCount - 1), RESTORED_VISIBLE_ROWS_CAP);
 }
 
 export function Transcript() {

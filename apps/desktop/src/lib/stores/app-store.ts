@@ -1486,7 +1486,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         extensionStatus: values.length > 0 ? values[values.length - 1] : null,
       };
     }),
-  setSubagentsStatus: (subagentsStatus) => set({ subagentsStatus }),
+  // Every poll publishes a fresh object even when nothing changed; without an
+  // equality check each one re-renders the whole subagent panel's subscribers
+  // (and, through the shell-jobs bar, the chat page around it) ~80 times a minute.
+  setSubagentsStatus: (subagentsStatus) =>
+    set((state) => (state.subagentsStatus === subagentsStatus ? {} : { subagentsStatus })),
   setShellJobs: (shellJobs) => set({ shellJobs }),
   /** Switch the chat area to a subagent's conversation (null = back to the
    * main session). Cleared automatically on session/workspace/host resets. */
