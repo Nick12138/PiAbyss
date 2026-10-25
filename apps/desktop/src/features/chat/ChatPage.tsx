@@ -61,19 +61,29 @@ export function ChatPage() {
     );
   }
 
-  if (!workspace.servicesReady) {
-    // 等待态不写文案：整块区域交给动效（背景下沉的光点 + 绕着 π 转的两颗）。
-    // 状态文字只留给读屏软件，切换失败时的 host 报错仍然会落到底部一行。
-    return <WorkspaceLoading error={host?.lastError?.message} />;
-  }
+  // Services not ready yet (optimistic workspace switch): keep the chat subtree
+  // mounted and cover it, instead of unmounting it. Unmounting threw away the
+  // transcript scroll container, the composer, the extension UI host and every
+  // panel; when the host finished building the graph the tree was rebuilt from
+  // scratch — two jank spikes back to back, and a scroll position to rebuild.
+  // The cover is opaque and the content goes `inert`, so nothing is reachable
+  // while the workspace is still building.
+  //
+  // 等待态不写文案：整块区域交给动效（背景下沉的光点 + 绕着 π 转的两颗）。
+  // 状态文字只留给读屏软件，切换失败时的 host 报错仍然会落到底部一行。
+  const servicesPending = !workspace.servicesReady;
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col"
+      className="relative flex min-h-0 flex-1 flex-col"
       data-chat-page
       style={conversationContentWidthStyle(conversationMinWidth, conversationMaxWidth)}
     >
-      <div data-chat-content className="flex min-h-0 flex-1 flex-col">
+      <div
+        data-chat-content
+        className="flex min-h-0 flex-1 flex-col"
+        {...(servicesPending ? { inert: true, "aria-hidden": true } : {})}
+      >
         {authBlocked && (
           <div
             role="status"
@@ -138,6 +148,11 @@ export function ChatPage() {
           </div>
         )}
       </div>
+      {servicesPending && (
+        <div className="absolute inset-0 z-20 flex" data-chat-services-pending>
+          <WorkspaceLoading error={host?.lastError?.message} />
+        </div>
+      )}
     </div>
   );
 }

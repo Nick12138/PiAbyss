@@ -77,7 +77,26 @@ function workspaceCanonicalPathsEqual(
 }
 
 export class WorkspaceLifecycle {
-  private static readonly MAX_RETAINED_GRAPHS = 5;
+  /**
+   * How many idle workspace graphs stay warm.
+   *
+   * A cold build is not cheap and cannot be made cheap from here: the Pi SDK
+   * keeps its compiled-extension cache global and single-cwd, so loading a
+   * second cwd clears it and the next `resourceLoader.reload()` re-compiles
+   * every extension (measured p50 415ms / p90 1.3s / worst 29.5s). Retention is
+   * the only lever that removes that cost outright — a parked graph
+   * reactivates in ~20ms.
+   *
+   * Five slots covered fewer cwds than one real session touches (the log shows
+   * eight), so the LRU evicted exactly the graphs the user was about to return
+   * to and every return was cold. Ten keeps a normal multi-project session warm
+   * on both sides of the switch.
+   *
+   * The price is memory, not CPU: a parked graph keeps its AgentSession and its
+   * compiled extensions, but drops the agent subscription and the extension UI.
+   * Hosts that need a different bound pass `deps.maxBoundWorkspaces`.
+   */
+  static readonly MAX_RETAINED_GRAPHS = 10;
   private readonly retainedGraphs = new Map<string, WorkspaceGraph>();
   /** Graph currently being re-activated by a switch (bound, but in neither set). */
   private reactivatingGraph: WorkspaceGraph | null = null;

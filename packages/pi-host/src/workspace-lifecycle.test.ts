@@ -246,16 +246,18 @@ describe("Workspace lifecycle bound cap (C1 maxBoundWorkspaces)", () => {
     expect(dispose).toHaveBeenCalledWith(first);
   });
 
-  it("keeps the built-in cap (5) and its eviction when the dep is absent", async () => {
+  it("applies the built-in cap and its eviction when the dep is absent", async () => {
     const subject = lifecycleWith({ platform: "linux" });
-    const cwds = ["/repo/1", "/repo/2", "/repo/3", "/repo/4", "/repo/5", "/repo/6"];
+    const cap = WorkspaceLifecycle.MAX_RETAINED_GRAPHS;
+    const cwds = Array.from({ length: cap + 1 }, (_, index) => `/repo/${index + 1}`);
     const graphs = cwds.map((cwd) => retainableGraph(cwd));
     const dispose = vi.spyOn(subject, "disposeGraph").mockResolvedValue();
     for (const graph of graphs) await retain(subject, graph);
 
-    expect(retainedMap(subject).size).toBe(5);
-    expect(retainedMap(subject).has(workspaceIdentityKey("/repo/1", "linux"))).toBe(false);
-    expect(retainedMap(subject).has(workspaceIdentityKey("/repo/2", "linux"))).toBe(true);
+    expect(cap).toBeGreaterThanOrEqual(8);
+    expect(retainedMap(subject).size).toBe(cap);
+    expect(retainedMap(subject).has(workspaceIdentityKey(cwds[0]!, "linux"))).toBe(false);
+    expect(retainedMap(subject).has(workspaceIdentityKey(cwds[1]!, "linux"))).toBe(true);
     expect(dispose).toHaveBeenCalledTimes(1);
     expect(dispose).toHaveBeenCalledWith(graphs[0]);
   });

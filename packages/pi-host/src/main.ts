@@ -358,7 +358,12 @@ async function main(): Promise<void> {
   // together with the config signature and skip the redundant pass inside the
   // TTL. Config writes change the signature (or the controllers invalidate
   // explicitly), so a real edit still refreshes immediately.
-  const MODEL_HEALTH_TTL_MS = 2_000;
+  // The signature — not the TTL — is what keeps this honest: models.json and
+  // auth.json are stat'ed on every call, so a real edit refreshes immediately
+  // no matter how long the TTL is. The TTL only bounds how often an unchanged
+  // config is re-registered, and 2s was short enough that nearly every session
+  // open paid it again.
+  const MODEL_HEALTH_TTL_MS = 15_000;
   let modelHealthSignature = "";
   let modelHealthAt = 0;
   const modelHealthConfigSignature = (): string => {

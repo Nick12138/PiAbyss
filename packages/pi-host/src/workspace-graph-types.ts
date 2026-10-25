@@ -126,7 +126,7 @@ export type GraphFactoryDeps = {
   /**
    * C1: how many idle workspace graphs the lifecycle may retain for instant
    * return (LRU-evicted beyond this). Omit for the built-in default
-   * (MAX_RETAINED_GRAPHS = 5).
+   * (MAX_RETAINED_GRAPHS = 10).
    */
   maxBoundWorkspaces?: number;
   /**
