@@ -124,6 +124,13 @@ export type GraphFactoryDeps = {
   /** Local reconcile only — never reaches the network. */
   refreshModelHealth: (signal?: AbortSignal) => Promise<ModelConfigHealth> | ModelConfigHealth;
   /**
+   * Drop any memoised model-health result. Called whenever extension-provider
+   * ownership changes (suspend / resume / release) so the next reader
+   * re-reconciles instead of reusing a snapshot built from the previous
+   * workspace's providers.
+   */
+  invalidateModelHealth?: () => void;
+  /**
    * C1: how many idle workspace graphs the lifecycle may retain for instant
    * return (LRU-evicted beyond this). Omit for the built-in default
    * (MAX_RETAINED_GRAPHS = 10).

@@ -182,12 +182,29 @@ export class WorkspaceLifecycle {
     graph.suspendedProviders = this.context.deps.providerOwnership.suspendOwner(
       graph.providerOwner,
     );
+    this.invalidateModelHealth();
   }
 
   private resumeGraphProviders(graph: WorkspaceGraph): void {
     if (!graph.providerOwner || graph.suspendedProviders === undefined) return;
     this.context.deps.providerOwnership.resumeOwner(graph.providerOwner, graph.suspendedProviders);
     graph.suspendedProviders = undefined;
+    this.invalidateModelHealth();
+  }
+
+  /**
+   * Parking/suspending a workspace changes which extension providers exist, so
+   * the memoised model-health snapshot (and the model list derived from it) is
+   * stale for the workspace we are switching into. Clearing it here costs one
+   * local reconcile on the next read — never a network call — and prevents a
+   * suspended workspace's models from leaking into its successor.
+   */
+  private invalidateModelHealth(): void {
+    try {
+      this.context.deps.invalidateModelHealth?.();
+    } catch {
+      /* never let a cache reset fail a workspace switch */
+    }
   }
 
   async disposeGraph(graph: WorkspaceGraph): Promise<void> {
@@ -197,6 +214,7 @@ export class WorkspaceLifecycle {
     if (graph.providerOwner) {
       this.context.deps.providerOwnership.releaseOwner(graph.providerOwner);
       graph.providerOwner = null;
+      this.invalidateModelHealth();
     }
     graph.suspendedProviders = undefined;
     graph.settingsManager = null;

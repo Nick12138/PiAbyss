@@ -463,6 +463,13 @@ async function main(): Promise<void> {
     providerOwnership,
     getModelConfigHealth: () => modelConfigHealth,
     refreshModelHealth: (signal) => refreshModelHealthNow(signal),
+    // Extension-provider ownership changes (workspace suspend/resume/release)
+    // make the memoised health result describe the previous workspace. Clearing
+    // it forces the next reader to reconcile against the live provider set.
+    invalidateModelHealth: () => {
+      modelHealthSignature = "";
+      modelHealthAt = 0;
+    },
     ...(maxBoundWorkspaces !== undefined ? { maxBoundWorkspaces } : {}),
     ...(migrationBackup
       ? {
