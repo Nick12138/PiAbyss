@@ -298,6 +298,32 @@ describe("extension-ui-bridge", () => {
     await expect(pending).resolves.toBe(false);
   });
 
+  it("reads generic askUserQuestion metadata and prefers it over the legacy key", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const pendingSelect = ui.select("Pick", ["alpha", "beta"], {
+      askUserQuestion: { questionIndex: 2, questionCount: 3, allowFreeform: true },
+      // Older plugin builds only send this key; it must not win over the
+      // generic one when both are present.
+      piabyss: { questionIndex: 1, questionCount: 1 },
+    } as never);
+
+    const request = events.find((event) => event.e === "extensionUi.request")?.p as {
+      requestId: string;
+      questionIndex?: number;
+      questionCount?: number;
+      allowFreeform?: boolean;
+    };
+    expect(request.questionIndex).toBe(2);
+    expect(request.questionCount).toBe(3);
+    expect(request.allowFreeform).toBe(true);
+    respondExtensionUi(request.requestId, "cancelled", undefined, id);
+    await expect(pendingSelect).resolves.toBeUndefined();
+  });
+
   it("normalizes namespaced PiAbyss presentation metadata", async () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
     const ui = createExtensionUiContext({

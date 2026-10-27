@@ -24,8 +24,8 @@ describe("WorkspaceLoading", () => {
     const { container } = render(<WorkspaceLoading />);
 
     expect(container.querySelector(".ws-loading")).toBeInTheDocument();
-    // 背景光点：固定 46 颗，位置由种子生成，不随重渲染变化
-    expect(container.querySelectorAll(".ws-loading-mote")).toHaveLength(46);
+    // 背景光点：固定 14 颗（省 GPU 合成层），位置由种子生成，不随重渲染变化
+    expect(container.querySelectorAll(".ws-loading-mote")).toHaveLength(14);
     // 圆心是共用的「环绕」标记：两颗光点，不画轨道圈线
     expect(container.querySelectorAll(".pi-orbit-path")).toHaveLength(0);
     const orbs = container.querySelectorAll(".pi-orbit-orb");

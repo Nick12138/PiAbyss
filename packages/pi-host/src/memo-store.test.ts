@@ -4,11 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { MemoNote } from "@piabyss/protocol";
-import { MemoStore } from "./memo-store.js";
+import { MemoStore, resolveMemoDataDir } from "./memo-store.js";
 
 const tempDirs: string[] = [];
 
 afterEach(async () => {
+  delete process.env.PI_MEMO_DIR;
   await Promise.all(tempDirs.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
@@ -20,6 +21,28 @@ async function tempLayout(): Promise<{ agentDir: string; store: MemoStore }> {
 }
 
 const PNG_BASE64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString("base64");
+
+describe("resolveMemoDataDir（与 pi-memo 插件同构）", () => {
+  it("honours PI_MEMO_DIR, resolving relative paths against agentDir", async () => {
+    const root = await mkdtemp(join(tmpdir(), "piabyss-memo-dir-"));
+    tempDirs.push(root);
+    process.env.PI_MEMO_DIR = "custom-memo";
+    expect(resolveMemoDataDir(root)).toBe(join(root, "custom-memo"));
+    process.env.PI_MEMO_DIR = join(root, "absolute-memo");
+    expect(resolveMemoDataDir(root)).toBe(join(root, "absolute-memo"));
+  });
+
+  it("prefers <agentDir>/memo, then the legacy <agentDir>/piabyss/memo", async () => {
+    const root = await mkdtemp(join(tmpdir(), "piabyss-memo-dir-"));
+    tempDirs.push(root);
+    // Neither exists → new generic default (created on first write).
+    expect(resolveMemoDataDir(root)).toBe(join(root, "memo"));
+    mkdirSync(join(root, "piabyss", "memo"), { recursive: true });
+    expect(resolveMemoDataDir(root)).toBe(join(root, "piabyss", "memo"));
+    mkdirSync(join(root, "memo"), { recursive: true });
+    expect(resolveMemoDataDir(root)).toBe(join(root, "memo"));
+  });
+});
 
 describe("MemoStore", () => {
   it("starts empty and persists across instances", async () => {
@@ -242,7 +265,7 @@ describe("MemoStore", () => {
 describe("MemoStore v0.4.0 计划与状态收敛", () => {
   /** 手写 notes.json（模拟旧版/云端落盘数据）。 */
   function writeRawNotes(agentDir: string, notes: Record<string, unknown>[]): void {
-    const dir = join(agentDir, "piabyss", "memo");
+    const dir = join(agentDir, "memo");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "notes.json"), JSON.stringify({ schemaVersion: 1, notes }), "utf8");
   }

@@ -192,22 +192,21 @@ export function defaultProjectWorkspacePath(agentDir: string | null | undefined)
 }
 
 /**
- * 备忘录图片的磁盘绝对路径：`<agentDir>/piabyss/memo/images/<noteId>/<fileName>`
- * （与 pi-host memo-store 的落盘位置同一约定）。agentDir 缺失时退回云同步的
- * 相对键名——仅供提示参考，agent 无法直接按 cwd 解析读取。
+ * 备忘录图片的磁盘绝对路径：`<memoDataDir>/images/<noteId>/<fileName>`。
+ * memoDataDir 由 Host 解析（`<agentDir>/memo` 或旧版 `<agentDir>/piabyss/memo`，
+ * 见 pi-host resolveMemoDataDir），与 pi-memo 插件共用同一份数据目录。
+ * 缺失时退回相对键名——仅供提示参考，agent 无法直接按 cwd 解析读取。
  */
 export function memoImagePath(
-  agentDir: string | null | undefined,
+  memoDataDir: string | null | undefined,
   noteId: string,
   fileName: string,
 ): string {
-  const base = agentDir?.trim();
-  if (!base) return `piabyss/memo/images/${noteId}/${fileName}`;
-  // 含反斜杠的 Windows agentDir 用反斜杠拼接，其余用正斜杠（同 defaultProjectWorkspacePath）
+  const base = memoDataDir?.trim();
+  if (!base) return `memo/images/${noteId}/${fileName}`;
+  // 含反斜杠的 Windows 路径用反斜杠拼接，其余用正斜杠（同 defaultProjectWorkspacePath）
   const separator = base.includes("\\") ? "\\" : "/";
-  return [base.replace(/[\\/]+$/, ""), "piabyss", "memo", "images", noteId, fileName].join(
-    separator,
-  );
+  return [base.replace(/[\\/]+$/, ""), "images", noteId, fileName].join(separator);
 }
 
 /** 全部记录里出现过的工作区提示。 */
@@ -260,10 +259,10 @@ export function formatMemoDateTime(timestamp: number): string {
 
 /**
  * 「用 Agent 处理」的引用块：结构化 XML 标签承载记录元数据与正文，
- * 图片以磁盘绝对路径列出（需要 agentDir，见 memoImagePath），
+ * 图片以磁盘绝对路径列出（需要 Host 解析后的 memoDataDir，见 memoImagePath），
  * agent 可用自己的读取工具直接查看。
  */
-export function composeMemoPrompt(note: MemoNote, agentDir?: string | null): string {
+export function composeMemoPrompt(note: MemoNote, memoDataDir?: string | null): string {
   const attributes = [
     `id="${note.id}"`,
     `status="${note.status}"`,
@@ -271,7 +270,7 @@ export function composeMemoPrompt(note: MemoNote, agentDir?: string | null): str
     ...(note.workspaceHint ? [`workspace="${note.workspaceHint}"`] : []),
   ].join(" ");
   const imageLines = note.images.map((image) => {
-    const path = memoImagePath(agentDir, note.id, image.fileName);
+    const path = memoImagePath(memoDataDir, note.id, image.fileName);
     return `- ${path}`;
   });
   const sections = [

@@ -325,7 +325,13 @@ export function isHostStatusSnapshot(value: unknown): boolean {
         "capabilities",
         "modelConfigHealth",
       ],
-      ["extensionDecisionPresentation", "lastError", "fatalError", "boundWorkspaces"],
+      [
+        "extensionDecisionPresentation",
+        "lastError",
+        "fatalError",
+        "boundWorkspaces",
+        "memoDataDir",
+      ],
     )
   ) {
     return false;
@@ -348,6 +354,7 @@ export function isHostStatusSnapshot(value: unknown): boolean {
     isString(value.sdkVersion) &&
     isString(value.nodeVersion) &&
     isString(value.agentDir) &&
+    (value.memoDataDir === undefined || isString(value.memoDataDir)) &&
     phases.includes(String(value.phase)) &&
     isPlainObject(caps) &&
     hasExactKeys(caps, ["packageUpdateCheck", "extensionUi", "sessionExport"]) &&

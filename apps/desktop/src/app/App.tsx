@@ -19,6 +19,7 @@ import { openMemoWithAgentById } from "../features/memo/memo-agent";
 import { PixiePage } from "../features/pixie/PixiePage";
 import { startPixieAutostart } from "../features/pixie/pixie-autostart";
 import { usePluginStatus } from "../features/plugin-library/plugin-gate";
+import { migratePluginEnvAliases } from "../features/plugin-library/plugin-env-migration";
 
 /** The plugin-library entry backing the Pixie page（待办 · 速记现在只是它右侧面板的一块）。 */
 const PIXIE_PLUGIN_ID = "pi-pixie";
@@ -917,6 +918,14 @@ export function App() {
             const snapshot = await invoke<DesktopSettingsSnapshot>("desktop_settings_get");
             if (!cancelled && snapshot.settings) {
               store.setDesktopSettings(snapshot.settings);
+              // Plugin config values from before the my-pi-plugins rename live
+              // under the old plugin id / PIABYSS_* env names. Persist the
+              // canonical map once so the next Host spawn injects the values
+              // under the names updated plugins read.
+              const migratedPluginEnv = migratePluginEnvAliases(snapshot.settings.pluginEnv);
+              if (migratedPluginEnv) {
+                void persistDesktopSettings({ pluginEnv: migratedPluginEnv });
+              }
               applyTheme(snapshot.settings.theme, { family: snapshot.settings.themeFamily });
               applyAppearancePreferences(snapshot.settings);
               if (snapshot.warning) {

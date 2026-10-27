@@ -44,7 +44,8 @@ Element.prototype.hasPointerCapture = vi.fn(() => false);
 // 好把「页签栏装得下三块」这件事单独断言出来。`memo` 可以按用例关掉，验页签的退回路径。
 const gateState = { memo: true };
 vi.mock("../plugin-library/plugin-gate", () => ({
-  usePluginEnabled: (id: string) => (id === "piabyss-memo" ? gateState.memo : true),
+  usePluginEnabled: (id: string) =>
+    id === "pi-memo" || id === "piabyss-memo" ? gateState.memo : true,
   usePluginCatalogData: () => ({ catalog: null, packages: null }),
 }));
 

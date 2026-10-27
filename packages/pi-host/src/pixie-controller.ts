@@ -105,7 +105,7 @@ export function buildDispatchTaskPrompt(input: { task: string; from: string }): 
     "- 失败或部分完成时把 success 设为 false 并说明原因。",
     "用户随时可能插入进度检查点（<pixie-interject> 信封）：append 模式是补充约束，读完继续；checkpoint 模式要求你立即调用 pixie_report（kind=progress）汇报当前进度，然后按信封指示继续或暂停。",
     "需要用户决策时（方案选择、信息补充、确认操作等），调用 pixie_ask 工具把问题转给小精灵转述给用户（question 填问题，options 可附选项）；不要干等，也不要替用户下结论——用户答复会以 <pixie-reply> 信封回到本会话。",
-    "如果本任务源自某条备忘录，先调用 piabyss_memo complete 回填该备忘录（提交结果总结），再调用 pixie_report。",
+    "如果本任务源自某条备忘录，先调用 memo complete 回填该备忘录（提交结果总结），再调用 pixie_report。",
     "用户在会话中手动发送的指令优先级最高，与上述要求冲突时以用户指令为准。",
     "只有任务已产出最终结果、不再等待用户输入时才回填备忘录 complete；若需要用户决策（如让用户选择方案）或任务未完成，先回调 pixie_report 或 pixie_ask 如实报告进度，等有结论再回填。",
     "不要代用户下结论；做不完就如实报告进度。",

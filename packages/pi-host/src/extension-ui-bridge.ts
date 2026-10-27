@@ -216,13 +216,13 @@ type NormalizedPiAbyssDialogMetadata = {
 
 /**
  * `ui.input` has no `options` parameter, so a multi-select extension can only
- * ship its choices through `piabyss.optionDetails`. Rebuild the option list the
- * Desktop needs from that map, preserving insertion order (the positions the
- * Desktop sends back are 1-based indexes into this list).
+ * ship its choices through dialog metadata. New extensions use the generic
+ * `askUserQuestion` key; the legacy `piabyss` key is still read for older
+ * plugin builds. Rebuild the option list the Desktop needs from that map,
+ * preserving insertion order (the positions the Desktop sends back are
+ * 1-based indexes into this list).
  */
-function optionsFromOptionDetails(
-  optionDetails: Map<string, PiAbyssDialogOptionDetails>,
-): Array<{
+function optionsFromOptionDetails(optionDetails: Map<string, PiAbyssDialogOptionDetails>): Array<{
   id: string;
   label: string;
   description?: string;
@@ -293,8 +293,10 @@ function prepareSelectOptions(values: string[]): {
   return { options, responseValues };
 }
 
-function piAbyssMetadataFromDialogOptions(options: unknown): unknown {
-  return plainRecord(options)?.piabyss;
+function askUserQuestionMetadataFromDialogOptions(options: unknown): unknown {
+  const record = plainRecord(options);
+  // Generic key first, legacy PiAbyss key as fallback (old plugin builds).
+  return record?.askUserQuestion ?? record?.piabyss;
 }
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
@@ -571,9 +573,9 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
       riskHint,
       defaultValue: metadataDefaultValue,
       ...requestMetadata
-    } = normalizePiAbyssDialogMetadata(payload.piabyss);
+    } = normalizePiAbyssDialogMetadata(payload.askUserQuestion ?? payload.piabyss);
     // `ui.select` has no defaultValue parameter, so the preselect hint can only
-    // arrive through the Extension's piabyss metadata. Explicit payload wins.
+    // arrive through the extension's questionnaire metadata. Explicit payload wins.
     const requestDefaultValue = payload.defaultValue ?? metadataDefaultValue;
     const options = Array.isArray(payload.options)
       ? payload.options.slice(0, MAX_EXTENSION_UI_OPTIONS).map((option) => {
@@ -711,7 +713,7 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
         {
           title,
           options: prepared.options,
-          piabyss: piAbyssMetadataFromDialogOptions(dialogOpts),
+          piabyss: askUserQuestionMetadataFromDialogOptions(dialogOpts),
         },
         dialogOpts,
       );
@@ -725,13 +727,13 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
     confirm: async (title, message, dialogOpts) => {
       const value = await requestBlocking(
         "confirm",
-        { title, message, piabyss: piAbyssMetadataFromDialogOptions(dialogOpts) },
+        { title, message, piabyss: askUserQuestionMetadataFromDialogOptions(dialogOpts) },
         dialogOpts,
       );
       return value === true;
     },
     input: async (title, placeholder, dialogOpts) => {
-      const rawMetadata = piAbyssMetadataFromDialogOptions(dialogOpts);
+      const rawMetadata = askUserQuestionMetadataFromDialogOptions(dialogOpts);
       const metadata = normalizePiAbyssDialogMetadata(rawMetadata);
       const value = await requestBlocking(
         "input",
@@ -1027,7 +1029,7 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
         {
           title,
           defaultValue: prefill ?? "",
-          piabyss: piAbyssMetadataFromDialogOptions(dialogOpts),
+          piabyss: askUserQuestionMetadataFromDialogOptions(dialogOpts),
         },
         dialogOpts,
       );

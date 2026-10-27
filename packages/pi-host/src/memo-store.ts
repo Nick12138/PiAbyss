@@ -1,7 +1,7 @@
 /**
  * 备忘录本地存储层。
  *
- * v1（纯本地）：数据落盘在 `<agentDir>/piabyss/memo/` 下：
+ * v1（纯本地）：数据落盘在备忘录数据目录下（`resolveMemoDataDir`）：
  *   - `notes.json`  全量记录（单文件，原子写入）
  *   - `images/<noteId>/<imageId>.<ext>`  记录图片
  *
@@ -132,7 +132,28 @@ export type MemoUpdatePatch = {
   recurrence?: unknown;
 };
 
-/** piabyss_memo 工具 complete 时提交的结果总结及会话关联。 */
+/**
+ * Where memo data lives. Mirrors pi-memo's `memoDataDir` exactly so the plugin
+ * and the Host always read/write the same notes.json:
+ *   1. `PI_MEMO_DIR` (absolute, or relative to agentDir);
+ *   2. `<agentDir>/memo/` when it already exists (new generic default);
+ *   3. `<agentDir>/piabyss/memo/` when that legacy directory exists;
+ *   4. otherwise `<agentDir>/memo/` (created on first write).
+ * Keeping step 3 is what preserves existing PiAbyss installs.
+ */
+export function resolveMemoDataDir(agentDir: string): string {
+  const configured = process.env.PI_MEMO_DIR?.trim();
+  if (configured) {
+    return /^[A-Za-z]:[\\/]|^\\\\|^\//.test(configured) ? configured : join(agentDir, configured);
+  }
+  const generic = join(agentDir, "memo");
+  const legacy = join(agentDir, "piabyss", "memo");
+  if (existsSync(generic)) return generic;
+  if (existsSync(legacy)) return legacy;
+  return generic;
+}
+
+/** memo 工具 complete 时提交的结果总结及会话关联。 */
 export type MemoCompleteResultInput = {
   resultMd: string;
   sessionId: string;
@@ -165,7 +186,7 @@ export class MemoStore {
   private readonly draftPath: string;
 
   constructor(agentDir: string) {
-    this.root = join(agentDir, "piabyss", "memo");
+    this.root = resolveMemoDataDir(agentDir);
     this.imagesRoot = join(this.root, "images");
     this.filePath = join(this.root, "notes.json");
     this.draftPath = join(this.root, "draft.json");

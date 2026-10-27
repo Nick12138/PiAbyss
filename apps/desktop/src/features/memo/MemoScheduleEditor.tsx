@@ -3,7 +3,7 @@
  *
  * - `MemoScheduleEditor`：编辑器内的计划设置行（一次性截止时间 + 周期规则
  *   子表单）。规则为结构化字段（frequency / interval / weekdays / monthDay /
- *   time / tz），与 pi-host 的 recurrence.ts 及 piabyss_memo 插件保持同一形状；
+ *   time / tz），与 pi-host 的 recurrence.ts 及 memo 插件保持同一形状；
  *   时区固定 Asia/Shanghai（Host 侧时刻计算不依赖设备本地时区）。
  * - `formatMemoDue`：人读的截止时间，随行面板的行内计划标记用它。
  */

@@ -233,24 +233,24 @@ describe("defaultProjectWorkspacePath", () => {
 });
 
 describe("memoImagePath", () => {
-  it("joins the agent dir with piabyss/memo/images (windows backslashes)", () => {
-    expect(memoImagePath("C:\\Users\\example\\.pi\\agent", "note-1", "a.png")).toBe(
+  it("joins the host-resolved memo dir with images (windows backslashes)", () => {
+    expect(memoImagePath("C:\\Users\\example\\.pi\\agent\\piabyss\\memo", "note-1", "a.png")).toBe(
       "C:\\Users\\example\\.pi\\agent\\piabyss\\memo\\images\\note-1\\a.png",
     );
   });
 
   it("trims trailing separators and uses forward slashes otherwise", () => {
-    expect(memoImagePath("/home/liu/.pi/agent/", "note-1", "a.png")).toBe(
-      "/home/liu/.pi/agent/piabyss/memo/images/note-1/a.png",
+    expect(memoImagePath("/home/liu/.pi/agent/memo/", "note-1", "a.png")).toBe(
+      "/home/liu/.pi/agent/memo/images/note-1/a.png",
     );
-    expect(memoImagePath("C:/Users/example/.pi/agent/", "note-1", "a.png")).toBe(
-      "C:/Users/example/.pi/agent/piabyss/memo/images/note-1/a.png",
+    expect(memoImagePath("C:/Users/example/.pi/agent/memo/", "note-1", "a.png")).toBe(
+      "C:/Users/example/.pi/agent/memo/images/note-1/a.png",
     );
   });
 
-  it("falls back to the cloud-relative key when agentDir is missing", () => {
-    expect(memoImagePath(null, "note-1", "a.png")).toBe("piabyss/memo/images/note-1/a.png");
-    expect(memoImagePath("   ", "note-1", "a.png")).toBe("piabyss/memo/images/note-1/a.png");
+  it("falls back to the cloud-relative key when the host has no data dir", () => {
+    expect(memoImagePath(null, "note-1", "a.png")).toBe("memo/images/note-1/a.png");
+    expect(memoImagePath("   ", "note-1", "a.png")).toBe("memo/images/note-1/a.png");
   });
 });
 
@@ -265,7 +265,7 @@ describe("composeMemoPrompt", () => {
         workspaceHint: "PiAbyss",
         images: [{ id: "img", fileName: "a.png", mediaType: "image/png", bytes: 8 }],
       }),
-      "C:\\Users\\example\\.pi\\agent",
+      "C:\\Users\\example\\.pi\\agent\\piabyss\\memo",
     );
     expect(block).toContain('<piabyss-memo id="note-');
     expect(block).toContain('status="open"');
@@ -277,11 +277,11 @@ describe("composeMemoPrompt", () => {
     expect(block.trim().endsWith("</piabyss-memo>")).toBe(true);
   });
 
-  it("falls back to relative image keys without agentDir", () => {
+  it("falls back to relative image keys without a memo data dir", () => {
     const block = composeMemoPrompt(
       note({ images: [{ id: "img", fileName: "a.png", mediaType: "image/png", bytes: 8 }] }),
     );
-    expect(block).toContain("- piabyss/memo/images/");
+    expect(block).toContain("- memo/images/");
   });
 
   it("omits optional attributes when absent", () => {

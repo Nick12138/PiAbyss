@@ -56,6 +56,7 @@ import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 import { classifyDragResize } from "../../lib/layout-motion";
 import { usePluginEnabled } from "../plugin-library/plugin-gate";
+import { MEMO_PLUGIN_ID, MEMO_PLUGIN_ID_LEGACY } from "../plugin-library/plugin-ids";
 import { useAutomationPluginEnabled } from "../automation/automation-plugin-gate";
 import {
   PixiePanelBody,
@@ -66,8 +67,6 @@ import {
 import { PixieAutomationSection } from "./PixieAutomationSection";
 import { PixieTaskTree } from "./PixieTaskTree";
 import { PixieTodoSection } from "./PixieTodoSection";
-
-const MEMO_PLUGIN_ID = "piabyss-memo";
 
 /** 用户拖出来的面板宽度（localStorage）；没拖过就用默认宽度（见 `readStoredPanelWidth`）。
  *  v1 存的是 rail 口径（300~404 那档）的偏好，宽度口径与 dock 对齐后直接作废——
@@ -172,7 +171,9 @@ export function PixieSidePanel({ groups }: { groups: PixieTaskTreeWorkspace[] })
   const sidebarCollapsed = useAppStore((state) => state.sidebarCollapsed);
   const sidebarAutoCollapsed = useAppStore((state) => state.sidebarAutoCollapsed);
   const navSidebarWidth = useAppStore((state) => state.sidebarWidth);
-  const memoEnabled = usePluginEnabled(MEMO_PLUGIN_ID);
+  const memoPluginEnabled = usePluginEnabled(MEMO_PLUGIN_ID);
+  const memoLegacyEnabled = usePluginEnabled(MEMO_PLUGIN_ID_LEGACY);
+  const memoEnabled = memoPluginEnabled || memoLegacyEnabled;
   const automationEnabled = useAutomationPluginEnabled();
   const asideRef = useRef<HTMLElement>(null);
   const [customWidth, setCustomWidth] = useState<number | null>(readStoredPanelWidth);

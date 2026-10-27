@@ -59,6 +59,7 @@ import {
   type PluginUpdateRow,
 } from "../plugin-library/plugin-updates";
 import { takePluginConfigDeepLink } from "../plugin-library/plugin-config-deeplink";
+import { MEMO_PLUGIN_ID, MEMO_PLUGIN_ID_LEGACY } from "../plugin-library/plugin-ids";
 import {
   applyOptimisticResourcePreferences,
   buildResourcePreferenceUpdate,
@@ -502,7 +503,10 @@ export function ExtensionsPage() {
     const pluginId = takePluginConfigDeepLink();
     if (pluginId === null) return;
     deepLinkConsumed.current = true;
-    const entry = catalog.plugins.find((candidate) => candidate.id === pluginId);
+    const legacyId = pluginId === MEMO_PLUGIN_ID ? MEMO_PLUGIN_ID_LEGACY : null;
+    const entry =
+      catalog.plugins.find((candidate) => candidate.id === pluginId) ??
+      (legacyId ? catalog.plugins.find((candidate) => candidate.id === legacyId) : undefined);
     if (!entry || (entry.config?.length ?? 0) === 0) return;
     const state = pluginWorkspaceCardState(entry, catalog, managedPackages);
     if (state.installed) setConfigFor(entry);

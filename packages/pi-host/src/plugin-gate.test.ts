@@ -6,6 +6,8 @@ import {
   isRepoPluginEnabled,
   MEMO_PLUGIN_ENTRY_FILE,
   PIXIE_PLUGIN_ENTRY_FILE,
+  isMemoPluginEnabled,
+  MEMO_PLUGIN_ENTRY_FILE_LEGACY,
 } from "./plugin-gate.js";
 
 const REPO_ENTRY_BASE = {
@@ -14,11 +16,7 @@ const REPO_ENTRY_BASE = {
 
 function writeSettings(agentDir: string, packages: unknown): void {
   mkdirSync(agentDir, { recursive: true });
-  writeFileSync(
-    join(agentDir, "settings.json"),
-    JSON.stringify({ packages }, null, 2),
-    "utf8",
-  );
+  writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ packages }, null, 2), "utf8");
 }
 
 describe("isRepoPluginEnabled", () => {
@@ -44,7 +42,7 @@ describe("isRepoPluginEnabled", () => {
         ...REPO_ENTRY_BASE,
         extensions: [
           "packages/pi-subagent/extensions/**",
-          "-packages/piabyss-memo/extensions/piabyss-memo.ts",
+          "-packages/pi-memo/extensions/pi-memo.ts",
           "-packages/pi-pixie/extensions/pi-pixie.ts",
         ],
       },
@@ -58,10 +56,7 @@ describe("isRepoPluginEnabled", () => {
     writeSettings(agentDir, [
       {
         ...REPO_ENTRY_BASE,
-        extensions: [
-          "packages/pi-subagent/extensions/**",
-          "packages/piabyss-memo/extensions/**",
-        ],
+        extensions: ["packages/pi-subagent/extensions/**", "packages/pi-memo/extensions/**"],
       },
     ]);
     expect(isRepoPluginEnabled(agentDir, MEMO_PLUGIN_ENTRY_FILE)).toBe(true);
@@ -91,7 +86,7 @@ describe("isRepoPluginEnabled", () => {
         ...REPO_ENTRY_BASE,
         extensions: [
           "packages/pi-subagent/extensions/**",
-          "+packages/piabyss-memo/extensions/piabyss-memo.ts",
+          "+packages/pi-memo/extensions/pi-memo.ts",
         ],
       },
     ]);
@@ -103,14 +98,36 @@ describe("isRepoPluginEnabled", () => {
     writeSettings(agentDir, [
       {
         ...REPO_ENTRY_BASE,
-        extensions: [
-          "packages/*/extensions/**",
-          "-packages/piabyss-memo/extensions/piabyss-memo.ts",
-        ],
+        extensions: ["packages/*/extensions/**", "-packages/pi-memo/extensions/pi-memo.ts"],
       },
     ]);
     expect(isRepoPluginEnabled(agentDir, MEMO_PLUGIN_ENTRY_FILE)).toBe(false);
     expect(isRepoPluginEnabled(agentDir, PIXIE_PLUGIN_ENTRY_FILE)).toBe(true);
+  });
+
+  it("recognizes the legacy memo entry path until the settings migration runs", () => {
+    agentDir = mkdtempSync(join(tmpdir(), "piabyss-gate-"));
+    writeSettings(agentDir, [
+      {
+        ...REPO_ENTRY_BASE,
+        extensions: ["packages/piabyss-memo/extensions/**"],
+      },
+    ]);
+    expect(isRepoPluginEnabled(agentDir, MEMO_PLUGIN_ENTRY_FILE)).toBe(false);
+    expect(isRepoPluginEnabled(agentDir, MEMO_PLUGIN_ENTRY_FILE_LEGACY)).toBe(true);
+    expect(isMemoPluginEnabled(agentDir)).toBe(true);
+  });
+
+  it("memo gate accepts either the new or the legacy entry path", () => {
+    agentDir = mkdtempSync(join(tmpdir(), "piabyss-gate-"));
+    writeSettings(agentDir, [
+      {
+        ...REPO_ENTRY_BASE,
+        extensions: ["packages/pi-memo/extensions/**"],
+      },
+    ]);
+    expect(isMemoPluginEnabled(agentDir)).toBe(true);
+    expect(isRepoPluginEnabled(agentDir, MEMO_PLUGIN_ENTRY_FILE_LEGACY)).toBe(false);
   });
 
   it("returns a boolean without throwing when the settings file cannot be parsed", () => {

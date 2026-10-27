@@ -132,7 +132,7 @@ export function createAutomationHandlers(): Partial<Record<string, MethodHandler
     "automation.createJob": async (ctx) => {
       const params = ctx.params as Record<string, unknown>;
       const outcome = await automationApi<{ job: unknown }>("/api/jobs", "POST", {
-        body: { ...params, by: "piabyss" },
+        body: { ...params, by: "host" },
       });
       return expectOk(outcome);
     },
@@ -140,7 +140,7 @@ export function createAutomationHandlers(): Partial<Record<string, MethodHandler
     "automation.updateJob": async (ctx) => {
       const { id, ...patch } = ctx.params as Record<string, unknown> & { id: string };
       const outcome = await automationApi<{ job: unknown }>(`/api/jobs/${id}`, "PATCH", {
-        body: { ...patch, by: "piabyss" },
+        body: { ...patch, by: "host" },
       });
       return expectOk(outcome);
     },

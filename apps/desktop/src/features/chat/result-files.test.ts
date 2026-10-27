@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   RESULT_FILES_TOOL_NAME,
+  RESULT_FILES_TOOL_NAME_LEGACY,
   declaredResultFiles,
   filterRenderableBlocks,
   parseDeclaredFiles,
@@ -62,6 +63,18 @@ describe("declaredResultFiles", () => {
       { kind: "text", text: "done" },
     ];
     expect(declaredResultFiles(blocks)).toEqual([]);
+  });
+});
+
+describe("legacy present_files name", () => {
+  it("restores chips and hides the tool call for pre-rename sessions", () => {
+    const legacy = toolTrace({
+      id: "a",
+      name: RESULT_FILES_TOOL_NAME_LEGACY,
+      args: { files: [{ path: "reports/old.pdf" }] },
+    });
+    expect(declaredResultFiles([legacy])).toEqual([{ path: "reports/old.pdf", label: undefined }]);
+    expect(filterRenderableBlocks([legacy])).toEqual([]);
   });
 });
 

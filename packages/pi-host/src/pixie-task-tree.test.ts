@@ -29,6 +29,7 @@ function freshAgentDir(): string {
 
 afterEach(() => {
   resetPixieStateForTests();
+  delete process.env.PI_PIXIE_WORKSPACE;
   delete process.env.PIABYSS_PIXIE_WORKSPACE;
 });
 

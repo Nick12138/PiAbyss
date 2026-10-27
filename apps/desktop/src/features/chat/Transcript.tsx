@@ -1391,7 +1391,7 @@ export const TranscriptRowView = memo(function TranscriptRowView({
   // summary row ("N tool calls · M messages") and only the final result
   // message stays visible. While the turn is running (or the process adds
   // nothing beyond the final message) everything renders in streaming order.
-  // 前端隐藏只喂 UI 的工具调用（如 piabyss_present_files）：不渲染卡片、
+  // 前端隐藏只喂 UI 的工具调用（如 present_files）：不渲染卡片、
   // 不计入折叠统计，但数据仍在 sections 里驱动结尾的文件胶囊。
   const declaredFiles = row.sections ? declaredResultFiles(row.sections.ordered) : [];
   const finalBlocks: TranscriptBlock[] = sections.final.filter(

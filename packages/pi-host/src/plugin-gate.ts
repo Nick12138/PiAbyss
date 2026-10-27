@@ -22,7 +22,10 @@ import { PLUGIN_LIBRARY_REPO_SOURCE } from "./plugin-library-catalog.js";
 /** The my-pi-plugins repo install source every gated plugin belongs to. */
 const PLUGIN_REPO_SOURCE = PLUGIN_LIBRARY_REPO_SOURCE;
 
-export const MEMO_PLUGIN_ENTRY_FILE = "packages/piabyss-memo/extensions/piabyss-memo.ts";
+export const MEMO_PLUGIN_ENTRY_FILE = "packages/pi-memo/extensions/pi-memo.ts";
+/** Pre-v0.8 my-pi-plugins checkouts used this path; still recognized so a
+ *  Host update does not disable the memo page before the repo is updated. */
+export const MEMO_PLUGIN_ENTRY_FILE_LEGACY = "packages/piabyss-memo/extensions/piabyss-memo.ts";
 export const PIXIE_PLUGIN_ENTRY_FILE = "packages/pi-pixie/extensions/pi-pixie.ts";
 
 function repoExtensionPatterns(packages: PackageSource[] | undefined): string[] | undefined {
@@ -60,4 +63,17 @@ export function isRepoPluginEnabled(agentDir: string, entryFile: string): boolea
     // is off.
     return true;
   }
+}
+
+/**
+ * Memo plugin gate. The registry entry was renamed (piabyss-memo → pi-memo),
+ * so settings written by older hosts may still reference the legacy path.
+ * Recognize either candidate: the rename migration rewrites them when the new
+ * checkout is present, while this keeps an un-updated repo working.
+ */
+export function isMemoPluginEnabled(agentDir: string): boolean {
+  return (
+    isRepoPluginEnabled(agentDir, MEMO_PLUGIN_ENTRY_FILE) ||
+    isRepoPluginEnabled(agentDir, MEMO_PLUGIN_ENTRY_FILE_LEGACY)
+  );
 }

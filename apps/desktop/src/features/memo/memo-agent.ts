@@ -159,7 +159,7 @@ export async function openMemoWithAgent(note: MemoNote): Promise<void> {
     note,
     withMemoPrompt(
       "",
-      composeMemoPrompt(note, state.host?.agentDir ?? null),
+      composeMemoPrompt(note, state.host?.memoDataDir ?? null),
       tCurrent("memoAgentPrompt"),
     ),
   );

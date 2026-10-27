@@ -59,6 +59,8 @@ import { refreshModelsLocal } from "./model-runtime-refresh.js";
 import { ensureMigrationBackup, MIGRATION_ID } from "./migration-backup.js";
 import { migrateLegacyPiAbyssData } from "./piabyss-data.js";
 import { applyHostNetworkSettings, ensureGlobalSettingsFile } from "./network-bootstrap.js";
+import { migratePluginLibraryRenames } from "./plugin-library-migration.js";
+import { applyPluginEnvAliases } from "./plugin-env-aliases.js";
 import { AttachmentStore } from "./attachment-store.js";
 import { createAttachmentHandlers } from "./attachment-controller.js";
 import { createGitHandlers } from "./git-controller.js";
@@ -77,7 +79,7 @@ function resolveAgentDir(): string {
   const resolved = arg ? arg.slice("--agent-dir=".length) : join(homedir(), ".pi", "agent");
   // Align plugins that resolve the agent dir via the SDK (getAgentDir reads
   // this env): without the write-back, a Host started with --agent-dir= would
-  // disagree with the piabyss-memo plugin about <agentDir>/piabyss/memo.
+  // disagree with the memo plugin about the memo data directory.
   process.env.PI_CODING_AGENT_DIR ??= resolved;
   return resolved;
 }
@@ -104,8 +106,9 @@ function resolveMaxBoundWorkspaces(): number | undefined {
 /**
  * Pixie control-plane token: generated once per agent dir, re-read on every
  * Host start. The value is shared with the pi-pixie plugin through the
- * process environment (PIABYSS_PIXIE_HTTP_TOKEN) and enforced by the loopback
- * control plane on every request.
+ * process environment (PI_PIXIE_HTTP_TOKEN, with the legacy PIABYSS_* copy for
+ * older plugin builds) and enforced by the loopback control plane on every
+ * request.
  */
 function ensurePixieControlToken(agentDir: string): string {
   const tokenPath = join(pixieDir(agentDir), "control-token");
@@ -251,6 +254,25 @@ async function main(): Promise<void> {
   // settings file for the desktop "Open settings.json" affordance.
   ensureGlobalSettingsFile(agentDir);
   applyHostNetworkSettings(agentDir);
+
+  // Generic plugin names read PI_MEMO_* / PI_PIXIE_*; desktop settings written
+  // before the rename only hold the PIABYSS_* copies. Needs to run before any
+  // extension is loaded by a workspace graph.
+  const aliasedEnvCount = applyPluginEnvAliases();
+  if (aliasedEnvCount > 0) {
+    logger.info("Copied legacy plugin env vars to generic names", { count: aliasedEnvCount });
+  }
+
+  // The plugin library persists repo-relative extension filters. Rewrite the
+  // renamed plugin paths once the new checkout is on disk; an older repo keeps
+  // its old paths and stays loadable.
+  try {
+    await migratePluginLibraryRenames(agentDir);
+  } catch (err) {
+    logger.warn("Plugin library rename migration failed; keeping existing settings", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   logger.info("Starting Pi Host", {
     agentDir,
@@ -467,10 +489,13 @@ async function main(): Promise<void> {
   let pixieControlPlane: PixieControlPlane | null = null;
   try {
     const pixieToken = ensurePixieControlToken(agentDir);
+    // New generic names first; legacy copies keep pre-rename plugin builds working.
+    process.env.PI_PIXIE_HTTP_TOKEN = pixieToken;
     process.env.PIABYSS_PIXIE_HTTP_TOKEN = pixieToken;
     pixieControlPlane = await startPixieControlPlane(createPixieControlPlaneDeps(graphFactory), {
       token: pixieToken,
     });
+    process.env.PI_PIXIE_HTTP_PORT = String(pixieControlPlane.port);
     process.env.PIABYSS_PIXIE_HTTP_PORT = String(pixieControlPlane.port);
     // v4.1 失联提醒：定时扫描 dispatches.json，超时未回调的委派推送
     // pixie.staleWarning（每条仅一次）。事件发射器在下方才接线，扫描在
@@ -532,7 +557,9 @@ async function main(): Promise<void> {
       gitService.dispose();
       if (pixieControlPlane) {
         await pixieControlPlane.close();
+        delete process.env.PI_PIXIE_HTTP_PORT;
         delete process.env.PIABYSS_PIXIE_HTTP_PORT;
+        delete process.env.PI_PIXIE_HTTP_TOKEN;
         delete process.env.PIABYSS_PIXIE_HTTP_TOKEN;
       }
       stopPixieStaleWatcher();

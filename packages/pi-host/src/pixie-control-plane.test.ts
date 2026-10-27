@@ -24,6 +24,7 @@ import {
   PIXIE_REST_PATH,
   PIXIE_STOP_PATH,
   PIXIE_TOKEN_HEADER,
+  PIXIE_TOKEN_HEADER_LEGACY,
   handlePixieControlPlaneRequest,
   parseAskBody,
   parseDispatchBody,
@@ -399,6 +400,15 @@ describe("pixie control-plane endpoints", () => {
       { token, headers },
     );
     expect(allowed.status).toBe(200);
+    // Pre-rename plugin builds still send the legacy header.
+    const legacyAllowed = await handlePixieControlPlaneRequest(
+      d,
+      "GET",
+      `${PIXIE_DISPATCH_STATE_PATH}?sessionId=s1`,
+      null,
+      { token, headers: { [PIXIE_TOKEN_HEADER_LEGACY]: token } },
+    );
+    expect(legacyAllowed.status).toBe(200);
     // No token configured (test stub) → auth skipped.
     const open = await handlePixieControlPlaneRequest(
       d,

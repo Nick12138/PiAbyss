@@ -1,8 +1,8 @@
 /**
  * 备忘录协议 handler（memo.* 方法）。
  *
- * v1 纯本地：所有操作直接落在 MemoStore（`<agentDir>/piabyss/memo/`）。
- * v2 云同步：由 piabyss-memo 插件自持的 R2 同步引擎处理，本文件只做两件事：
+ * v1 纯本地：所有操作直接落在 MemoStore（数据目录解析见 memo-store.ts 的 resolveMemoDataDir）。
+ * v2 云同步：由 pi-memo 插件自持的 R2 同步引擎处理，本文件只做两件事：
  *   - memo.getSyncConfig / memo.testSync / memo.syncNow 代理到插件进程内的
  *     环回控制面（memo-sync-api.ts，端口 127.0.0.1:18768）；密钥不进协议层；
  *   - memo.create / update / delete 落盘后经 /api/auto-sync 通知插件引擎
@@ -21,13 +21,13 @@ import {
   testMemoSyncConnection,
   type MemoSyncApiOutcome,
 } from "./memo-sync-api.js";
-import { isRepoPluginEnabled, MEMO_PLUGIN_ENTRY_FILE } from "./plugin-gate.js";
+import { isMemoPluginEnabled } from "./plugin-gate.js";
 
-/** Error returned for every memo.* call while the piabyss-memo plugin is off. */
+/** Error returned for every memo.* call while the pi-memo plugin is off. */
 function memoPluginDisabledError() {
   return createHostError(
     "RESOURCE_NOT_FOUND",
-    "The memo plugin (piabyss-memo) is disabled. Enable it in the plugin library to use the memo page.",
+    "The memo plugin (pi-memo) is disabled. Enable it in the plugin library to use the memo page.",
   );
 }
 
@@ -36,7 +36,7 @@ function mapMemoSyncHttpError(outcome: { status: number | null; error: string })
   if (outcome.status === null) {
     return createHostError(
       "CATALOG_UNAVAILABLE",
-      `备忘录同步插件不可用（piabyss-memo 控制面未启动或端口被占用）：${outcome.error}`,
+      `备忘录同步插件不可用（pi-memo 控制面未启动或端口被占用）：${outcome.error}`,
       { retryable: true },
     );
   }
@@ -148,11 +148,11 @@ export function createMemoHandlers(
   // Host 侧不再持有同步引擎。
 
   // The memo page's backend lives in the Host (memo.* handlers), but the
-  // feature is owned by the piabyss-memo plugin: gate every method on the
+  // feature is owned by the pi-memo plugin: gate every method on the
   // plugin's user-level enablement so the plugin-library switch controls both
   // the agent tool and this page. Checked per call — toggling in the plugin
   // library takes effect without a Host restart.
-  const gate = (): boolean => isRepoPluginEnabled(agentDir, MEMO_PLUGIN_ENTRY_FILE);
+  const gate = (): boolean => isMemoPluginEnabled(agentDir);
 
   return {
     "memo.list": async () => {
@@ -364,7 +364,7 @@ export function createMemoHandlers(
       return { result: { ok: true } };
     },
 
-    // v2 云同步：引擎由 piabyss-memo 插件自持，下面三个方法代理到插件的
+    // v2 云同步：引擎由 pi-memo 插件自持，下面三个方法代理到插件的
     // 环回控制面；密钥与 autoSync 配置在「设置 → 插件 → PiAbyss 备忘录」。
     "memo.getSyncConfig": async () => {
       if (!gate()) return { error: memoPluginDisabledError() };

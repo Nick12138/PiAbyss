@@ -2091,7 +2091,7 @@ export const zh: Record<MessageKey, string> = {
   memoAgentPrompt:
     "请处理上面引用的待办 · 速记记录。规则：\n" +
     "1. 用户在会话中手动发送的指令优先级最高；若与本提示词冲突（例如要求先不要标记完成），以用户指令为准。\n" +
-    "2. 只有在任务已产出最终结果、不再等待用户任何输入时，才调用 piabyss_memo 的 complete 动作，并在 result 参数中提交结果总结（做了什么、结论或产出、遗留事项）。\n" +
+    "2. 只有在任务已产出最终结果、不再等待用户任何输入时，才调用 memo 的 complete 动作，并在 result 参数中提交结果总结（做了什么、结论或产出、遗留事项）。\n" +
     "3. 若需要用户决策（如让用户在多个方案中选择）或任务尚未完成，不要标记完成；先回复等待用户输入，待有结论后再 complete。",
   memoActionResult: "完成总结",
   memoResultTitle: "Agent 完成总结",
@@ -2104,12 +2104,12 @@ export const zh: Record<MessageKey, string> = {
   memoFollowupPrompt:
     "上面引用的是一条待办 · 速记记录及其最近一次 Agent 处理的结果总结。请在此基础上继续讨论或继续处理。规则：\n" +
     "1. 用户在会话中手动发送的指令优先级最高；若与本提示词冲突（例如要求先不要标记完成），以用户指令为准。\n" +
-    "2. 只有在得出最终结论且不再等待用户输入时，才调用 piabyss_memo 的 complete 动作，并在 result 中提交更新后的总结（会覆盖旧总结）。\n" +
+    "2. 只有在得出最终结论且不再等待用户输入时，才调用 memo 的 complete 动作，并在 result 中提交更新后的总结（会覆盖旧总结）。\n" +
     "3. 若需要用户决策或讨论尚未收敛，不要标记完成，先回复等待用户输入。",
   memoAgentCreateFailed: "打开新会话失败，未能注入待办速记提示词",
   memoSyncTitle: "云同步（Cloudflare R2）",
   memoSyncDesc:
-    "通过 Cloudflare R2（S3 兼容）在多台设备间同步待办 · 速记记录：每次同步 = 拉取云端 → 逐条合并（较新者胜）→ 推送合并结果；删除也会通过墓碑同步。同步由 piabyss-memo 插件处理，密钥仅保存在本机。",
+    "通过 Cloudflare R2（S3 兼容）在多台设备间同步待办 · 速记记录：每次同步 = 拉取云端 → 逐条合并（较新者胜）→ 推送合并结果；删除也会通过墓碑同步。同步由 pi-memo 插件处理，密钥仅保存在本机。",
   memoSyncNotConfigured:
     "尚未配置 R2 连接信息：点击「插件配置」填写 Account ID / Access Key ID / Secret Access Key / 桶名，也可在那里开启自动同步。",
   memoSyncOpenConfig: "插件配置",

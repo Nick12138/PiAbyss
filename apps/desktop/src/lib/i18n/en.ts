@@ -2181,7 +2181,7 @@ export const en = {
   memoAgentPrompt:
     "Please handle the Nook note referenced above. Rules:\n" +
     "1. Instructions the user sends manually in the session have the highest priority; if they conflict with this prompt (e.g. do not mark it done yet), follow the user.\n" +
-    "2. Only call the complete action of the piabyss_memo tool once the task has produced a final result and nothing is awaited from the user, always passing a `result` parameter containing a summary of what was done, the outcome, and any remaining follow-ups.\n" +
+    "2. Only call the complete action of the memo tool once the task has produced a final result and nothing is awaited from the user, always passing a `result` parameter containing a summary of what was done, the outcome, and any remaining follow-ups.\n" +
     "3. If you need the user to decide (e.g. choose between options) or the task is not finished, do NOT mark it complete — reply and wait for the user's input, then complete once there is a conclusion.",
   memoActionResult: "Agent summary",
   memoResultTitle: "Agent completion summary",
@@ -2194,12 +2194,12 @@ export const en = {
   memoFollowupPrompt:
     "Referenced above is a Nook note together with the latest Agent completion summary. Please continue the discussion or the work based on it. Rules:\n" +
     "1. Instructions the user sends manually in the session have the highest priority; if they conflict with this prompt (e.g. do not mark it done yet), follow the user.\n" +
-    "2. Only call the complete action of piabyss_memo again once a final conclusion is reached and nothing is awaited from the user, passing an updated summary in `result` (it overwrites the previous one).\n" +
+    "2. Only call the complete action of memo again once a final conclusion is reached and nothing is awaited from the user, passing an updated summary in `result` (it overwrites the previous one).\n" +
     "3. If the user's decision is needed or the discussion has not converged, do NOT mark it complete — reply and wait for the user's input.",
   memoAgentCreateFailed: "Failed to open a new session — Nook prompt was not injected",
   memoSyncTitle: "Cloud sync (Cloudflare R2)",
   memoSyncDesc:
-    "Sync Nook notes across devices via Cloudflare R2 (S3-compatible): each sync downloads the cloud copy, merges note-by-note (newest wins) and pushes the result; deletions propagate via tombstones. The sync engine is owned by the piabyss-memo plugin; keys stay on this device.",
+    "Sync Nook notes across devices via Cloudflare R2 (S3-compatible): each sync downloads the cloud copy, merges note-by-note (newest wins) and pushes the result; deletions propagate via tombstones. The sync engine is owned by the pi-memo plugin; keys stay on this device.",
   memoSyncNotConfigured:
     "R2 connection is not configured yet: click “Plugin config” to fill in Account ID / Access Key ID / Secret Access Key / bucket — auto sync can be enabled there too.",
   memoSyncOpenConfig: "Plugin config",

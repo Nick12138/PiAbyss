@@ -1,11 +1,17 @@
 import type { TranscriptBlock } from "./transcript-model";
 
 /**
- * `piabyss_present_files` — the host tool the agent calls at the end of a
- * turn to declare the files it actually delivers. The declaration lives in
- * the persisted tool call, so the chips below survive a session reload.
+ * `present_files` — the plugin tool the agent calls at the end of a turn to
+ * declare the files it actually delivers. The declaration lives in the
+ * persisted tool call, so the chips below survive a session reload.
+ *
+ * Pre-rename sessions (and older plugin builds) used `piabyss_present_files`;
+ * both names are recognized so replaying an old transcript still restores the
+ * file chips.
  */
-export const RESULT_FILES_TOOL_NAME = "piabyss_present_files";
+export const RESULT_FILES_TOOL_NAME = "present_files";
+export const RESULT_FILES_TOOL_NAME_LEGACY = "piabyss_present_files";
+const RESULT_FILES_TOOL_NAMES = new Set([RESULT_FILES_TOOL_NAME, RESULT_FILES_TOOL_NAME_LEGACY]);
 
 export type DeclaredResultFile = { path: string; label?: string };
 
@@ -38,7 +44,7 @@ export function declaredResultFiles(blocks: readonly TranscriptBlock[]): Declare
   for (const block of blocks) {
     if (block.kind !== "tool") continue;
     const tool = block.tool;
-    if (tool.name !== RESULT_FILES_TOOL_NAME) continue;
+    if (!RESULT_FILES_TOOL_NAMES.has(tool.name)) continue;
     if (tool.status !== "done") continue;
     for (const file of parseDeclaredFiles(tool.args)) {
       const key = `${file.path.toLowerCase()}`;
@@ -54,7 +60,7 @@ export function declaredResultFiles(blocks: readonly TranscriptBlock[]): Declare
  * Tool calls that only feed the UI — the chips above — and render as nothing
  * themselves. They stay in the session data; the transcript just skips them.
  */
-const RENDER_HIDDEN_TOOLS = new Set([RESULT_FILES_TOOL_NAME]);
+const RENDER_HIDDEN_TOOLS = RESULT_FILES_TOOL_NAMES;
 
 export function filterRenderableBlocks(blocks: readonly TranscriptBlock[]): TranscriptBlock[] {
   return blocks.filter(

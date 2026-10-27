@@ -8,6 +8,7 @@ import type {
   ResourcePreferenceUpdate,
   ResourceRecord,
 } from "@piabyss/protocol";
+import { legacyPluginIdsFor } from "./plugin-env-migration";
 
 /**
  * Pure derivation for the plugin-library view: from the curated registry
@@ -424,6 +425,9 @@ export function buildPluginEnvPatch(
   values: Record<string, string>,
 ): Record<string, Record<string, string>> {
   const next: Record<string, Record<string, string>> = { ...(pluginEnv ?? {}) };
+  // Never leave a pre-rename entry behind: it would be re-injected on the next
+  // Host spawn even after the user clears the new config form.
+  for (const legacyId of legacyPluginIdsFor(pluginId)) delete next[legacyId];
   const cleaned: Record<string, string> = {};
   for (const [name, value] of Object.entries(values)) {
     if (value.length > 0) cleaned[name] = value;

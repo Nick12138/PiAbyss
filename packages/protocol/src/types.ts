@@ -132,6 +132,8 @@ export type HostStatusSnapshot = HostIdentity & {
   sdkVersion: string;
   nodeVersion: string;
   agentDir: string;
+  /** Resolved memo data directory shared with the pi-memo plugin. */
+  memoDataDir?: string;
   phase: HostPhase;
   capabilities: HostCapabilities;
   modelConfigHealth: ModelConfigHealth;
@@ -2293,7 +2295,7 @@ export type MemoImage = {
   bytes: number;
 };
 
-/** Agent 处理备忘录后的结果总结（由 piabyss_memo 工具写入，覆盖式更新）。 */
+/** Agent 处理备忘录后的结果总结（由 memo 工具写入，覆盖式更新）。 */
 export type MemoAgentResult = {
   /** 结果总结（Markdown）。 */
   resultMd: string;
@@ -2356,7 +2358,7 @@ export type MemoDraftInput = {
 };
 
 /**
- * 备忘录云同步状态（引擎由 piabyss-memo 插件自持，Host 只代理）。
+ * 备忘录云同步状态（引擎由 pi-memo 插件自持，Host 只代理）。
  * R2 密钥不进协议层：只回报非敏感的 accountId / 桶名与「是否已配置齐」。
  */
 export type MemoSyncSettings = {

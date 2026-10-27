@@ -2,7 +2,7 @@
  * 备忘录「计划」规则：一次性截止（dueAt）之外，备忘录记录可以携带周期规则
  * （recurrence），例如「每周一 13:00 处理一次」。
  *
- * 与 piabyss-memo 插件端 `src/recurrence.ts` 逐行一致（本文件为其 Host 侧移植，
+ * 与 pi-memo 插件端 `src/recurrence.ts` 逐行一致（本文件为其 Host 侧移植，
  * 磁盘格式与轮次计算结果必须与插件保持同一套语义）。设计要点：
  *   - 规则是**结构化**的（daily / weekly / monthly + interval + time + tz），
  *     不用 cron——桌面端表单好渲染、agent 好构造、解析无歧义；

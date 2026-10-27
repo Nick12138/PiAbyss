@@ -1,7 +1,7 @@
 /**
  * Pixie (小精灵) workspace runner — the Host-owned helper agent over a REAL
  * folder workspace (`<agentDir>/workspace/pixie`, or the plugin-configured
- * `PIABYSS_PIXIE_WORKSPACE`).
+ * `PI_PIXIE_WORKSPACE`; legacy `PIABYSS_PIXIE_WORKSPACE` still works).
  *
  * v4 "workspace-ification": every conversation segment is a STANDARD session
  * stored at `<agentDir>/sessions/<workspaceKey(pixieCwd)>/<id>.jsonl` through
@@ -190,9 +190,16 @@ const MAX_DISPATCHES = 50;
 
 /* ── 环境配置（读取时机 = 使用时机，插件库改配置即时生效）────────────── */
 
+/** Generic PI_PIXIE_* name first, legacy PIABYSS_PIXIE_* second. */
+function readPixieEnv(name: string, legacyName: string): string | undefined {
+  const current = process.env[name]?.trim();
+  if (current) return current;
+  return process.env[legacyName]?.trim();
+}
+
 /** Resolve the pixie workspace path (plugin config → `{agentDir}` → default). */
 export function resolvePixieWorkspacePath(agentDir: string): string {
-  const configured = process.env.PIABYSS_PIXIE_WORKSPACE?.trim();
+  const configured = readPixieEnv("PI_PIXIE_WORKSPACE", "PIABYSS_PIXIE_WORKSPACE");
   if (!configured) return join(agentDir, "workspace", "pixie");
   return join(configured.replaceAll("{agentDir}", agentDir));
 }
@@ -211,13 +218,15 @@ export function parsePixieModelRef(value: string | undefined): {
 
 /** Delegation stale threshold (ms); 0/invalid → default 30 min. */
 export function pixieStaleMs(): number {
-  const raw = Number(process.env.PIABYSS_PIXIE_STALE_MS);
+  const raw = Number(readPixieEnv("PI_PIXIE_STALE_MS", "PIABYSS_PIXIE_STALE_MS"));
   return Number.isFinite(raw) && raw > 0 ? raw : 30 * 60 * 1000;
 }
 
-/** Stale-warning push toggle (PIABYSS_PIXIE_STALE_NOTIFY); default on. */
+/** Stale-warning push toggle (PI_PIXIE_STALE_NOTIFY); default on. */
 function pixieStaleNotifyEnabled(): boolean {
-  return process.env.PIABYSS_PIXIE_STALE_NOTIFY?.trim().toLowerCase() !== "off";
+  return (
+    readPixieEnv("PI_PIXIE_STALE_NOTIFY", "PIABYSS_PIXIE_STALE_NOTIFY")?.toLowerCase() !== "off"
+  );
 }
 
 /* ── 基础设施 ────────────────────────────────────────────────────── */
@@ -1233,7 +1242,7 @@ async function createPixieSessionInGraph(
     settingsManager,
     resourceLoader,
     sessionManager,
-    modelRef: parsePixieModelRef(process.env.PIABYSS_PIXIE_MODEL),
+    modelRef: parsePixieModelRef(readPixieEnv("PI_PIXIE_MODEL", "PIABYSS_PIXIE_MODEL")),
   });
   const session = created.session;
   // 段名不在新建时写入：首条用户消息到达时由 agent-controller 的首句兜底落名。
@@ -1299,7 +1308,7 @@ async function openPixieSessionInGraph(
       ensurePixiePersonaFile(agentDir, pixieCwd);
     },
     createResourceLoader: (cwd) => createPixieResourceLoader(factory, cwd),
-    modelRef: parsePixieModelRef(process.env.PIABYSS_PIXIE_MODEL),
+    modelRef: parsePixieModelRef(readPixieEnv("PI_PIXIE_MODEL", "PIABYSS_PIXIE_MODEL")),
     // 小精灵图从未走过前台：会话四个槽位一起补（详见 markParkedForegroundSession）。
     adoptForegroundSlots: true,
     // v4.3 会话缓存：小精灵自己的工作区会话也登记（role=pixie）。

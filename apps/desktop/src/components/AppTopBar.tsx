@@ -9,6 +9,7 @@ import { WindowControls, resolveWindowControlsPlatform } from "./WindowControls"
 import { SidebarBrandToggle } from "./Sidebar";
 import { MemoSyncHeaderActions } from "../features/memo/MemoSyncHeaderActions";
 import { usePluginEnabled } from "../features/plugin-library/plugin-gate";
+import { MEMO_PLUGIN_ID, MEMO_PLUGIN_ID_LEGACY } from "../features/plugin-library/plugin-ids";
 import { SubagentTitleMenu } from "../features/subagents/SubagentTitleMenu";
 import { PixieBackToCurrentButton } from "../features/pixie/PixieBackToCurrentButton";
 import { PixiePanelToggleButton } from "../features/pixie/PixiePanelToggleButton";
@@ -25,7 +26,6 @@ import { clampSessionTitleForDisplay } from "../lib/session-title-display";
  *  it used per-strip; the whole row is a Tauri drag region. All children sit on
  *  the vertical center via items-center on each flex container. */
 /** 顶栏右侧动作与标题状态点都跟着这个插件走（待办 · 速记已并入小精灵随行面板）。 */
-const MEMO_PLUGIN_ID = "piabyss-memo";
 
 export function AppTopBar({
   actionsSlotRef,
@@ -34,7 +34,9 @@ export function AppTopBar({
 }) {
   const t = useT();
   const page = useAppStore((s) => s.page);
-  const memoEnabled = usePluginEnabled(MEMO_PLUGIN_ID);
+  const memoPluginEnabled = usePluginEnabled(MEMO_PLUGIN_ID);
+  const memoLegacyEnabled = usePluginEnabled(MEMO_PLUGIN_ID_LEGACY);
+  const memoEnabled = memoPluginEnabled || memoLegacyEnabled;
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const session = useAppStore((s) => s.session);

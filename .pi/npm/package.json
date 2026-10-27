@@ -1,4 +1,7 @@
 {
   "name": "pi-extensions",
-  "private": true
+  "private": true,
+  "dependencies": {
+    "betterwright": "^2.9.0"
+  }
 }

@@ -10,7 +10,7 @@
  * 同步成功后广播 MEMO_SYNCED_EVENT，随行面板「待办 · 速记」据此刷新列表；本组件同时是
  * `useMemoSyncStatus` 30s 轮询的挂载方——顶栏不渲染它，后台 autoSync 落地就没人播报。
  *
- * v2：同步引擎与 R2 密钥配置都由 piabyss-memo 插件自持——本弹窗只保留
+ * v2：同步引擎与 R2 密钥配置都由 pi-memo 插件自持——本弹窗只保留
  * 状态展示、测试连接与立即同步；密钥/自动同步改到「设置 → 插件 →
  * PiAbyss 待办 · 速记」的配置表单里，弹窗内提供跳转按钮（深链直达配置弹窗）。
  */
@@ -19,14 +19,12 @@ import { useState } from "react";
 import type { MemoSyncSettings } from "@piabyss/protocol";
 import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
 import { requestPluginConfigDeepLink } from "../plugin-library/plugin-config-deeplink";
+import { MEMO_PLUGIN_ID } from "../plugin-library/plugin-ids";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 import { getMemoSyncSettings, syncMemoNow, testMemoSync } from "./memo-client";
 import { formatMemoDateTime } from "./memo-model";
 import { MEMO_SYNCED_EVENT, refreshMemoSyncStatus, useMemoSyncStatus } from "./memo-sync-status";
-
-/** 承载备忘录云同步的插件库条目（配置表单在这个插件的卡片上）。 */
-const MEMO_PLUGIN_ID = "piabyss-memo";
 
 type SyncFeedback = { tone: "success" | "error"; text: string };
 

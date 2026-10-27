@@ -53,7 +53,9 @@ function freshAgentDir(): string {
 
 afterEach(() => {
   resetPixieStateForTests();
+  delete process.env.PI_PIXIE_WORKSPACE;
   delete process.env.PIABYSS_PIXIE_WORKSPACE;
+  delete process.env.PI_PIXIE_STALE_MS;
   delete process.env.PIABYSS_PIXIE_STALE_MS;
 });
 
@@ -463,15 +465,22 @@ describe("pixie dispatch 重复提交防护", () => {
 
 describe("pixie workspace + config resolution", () => {
   it("defaults the workspace to <agentDir>/workspace/pixie", () => {
+    delete process.env.PI_PIXIE_WORKSPACE;
     delete process.env.PIABYSS_PIXIE_WORKSPACE;
     expect(resolvePixieWorkspacePath("C:/agent")).toBe(join("C:/agent", "workspace", "pixie"));
   });
 
-  it("honours PIABYSS_PIXIE_WORKSPACE with the {agentDir} placeholder", () => {
-    process.env.PIABYSS_PIXIE_WORKSPACE = "{agentDir}/custom/pixie";
+  it("honours PI_PIXIE_WORKSPACE with the {agentDir} placeholder", () => {
+    process.env.PI_PIXIE_WORKSPACE = "{agentDir}/custom/pixie";
     expect(resolvePixieWorkspacePath("C:/agent")).toBe(join("C:/agent", "custom", "pixie"));
-    process.env.PIABYSS_PIXIE_WORKSPACE = "D:/fixed/path";
+    process.env.PI_PIXIE_WORKSPACE = "D:/fixed/path";
     expect(resolvePixieWorkspacePath("C:/agent")).toBe(join("D:/fixed/path"));
+  });
+
+  it("still reads the legacy PIABYSS_PIXIE_WORKSPACE for older settings", () => {
+    delete process.env.PI_PIXIE_WORKSPACE;
+    process.env.PIABYSS_PIXIE_WORKSPACE = "D:/legacy/pixie";
+    expect(resolvePixieWorkspacePath("C:/agent")).toBe(join("D:/legacy/pixie"));
   });
 
   it("parses provider/model refs at the first slash", () => {
@@ -485,10 +494,14 @@ describe("pixie workspace + config resolution", () => {
   });
 
   it("applies the stale-threshold env override with a safe default", () => {
+    delete process.env.PI_PIXIE_STALE_MS;
     delete process.env.PIABYSS_PIXIE_STALE_MS;
     expect(pixieStaleMs()).toBe(30 * 60 * 1000);
-    process.env.PIABYSS_PIXIE_STALE_MS = "60000";
+    process.env.PI_PIXIE_STALE_MS = "60000";
     expect(pixieStaleMs()).toBe(60000);
+    delete process.env.PI_PIXIE_STALE_MS;
+    process.env.PIABYSS_PIXIE_STALE_MS = "90000";
+    expect(pixieStaleMs()).toBe(90000);
   });
 
   it("persists and reloads the known-workspace context", () => {
@@ -505,7 +518,7 @@ describe("dispatch task prompt template", () => {
     expect(prompt).toContain("check okxbot");
     expect(prompt).toContain("pixie_report");
     expect(prompt).toContain("pixie_ask");
-    expect(prompt).toContain("piabyss_memo complete");
+    expect(prompt).toContain("memo complete");
     expect(prompt).toContain("<pixie-dispatch>");
   });
 

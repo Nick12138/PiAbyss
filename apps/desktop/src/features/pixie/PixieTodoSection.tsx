@@ -341,7 +341,7 @@ export function PixieTodoSection({
         note,
         withMemoPrompt(
           "",
-          composeMemoPrompt(note, state.host?.agentDir ?? null),
+          composeMemoPrompt(note, state.host?.memoDataDir ?? null),
           t("memoAgentPrompt"),
         ),
       );
@@ -375,7 +375,7 @@ export function PixieTodoSection({
         return;
       }
       const block = [
-        composeMemoPrompt(note, state.host?.agentDir ?? null),
+        composeMemoPrompt(note, state.host?.memoDataDir ?? null),
         composeMemoResultSection(note),
       ]
         .filter(Boolean)

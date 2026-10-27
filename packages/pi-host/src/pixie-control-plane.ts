@@ -2,7 +2,7 @@
  * Pixie 环回 HTTP 控制面 —— pi-pixie 插件的 Host 对端。
  *
  * v4：插件侧工具壳扩展为四类（dispatch / report / ask / name / inject 网关
- * 预留），全部经 `node:http` 直连 127.0.0.1:<PIABYSS_PIXIE_HTTP_PORT>（禁用
+ * 预留），全部经 `node:http` 直连 127.0.0.1:<PI_PIXIE_HTTP_PORT>（禁用
  * 全局 fetch：Host 注入的代理设置会拦截环回请求）。执行本体仍在本进程：
  *
  * - `POST /api/pixie/dispatch`        { cwd, task, newSession?, taskName?, sessionName?, sourceSessionId? } → 委派受理结果
@@ -13,10 +13,11 @@
  * - `POST /api/pixie/inject`          { source, text } → 统一注入入口（网关预留，已实装最小版）
  * - `GET  /api/pixie/dispatch-state`  ?sessionId=… → 该会话是否被委派（armed）+ kind
  *
- * v4 安全：所有端点要求 `X-Piabyss-Pixie-Token` 头（token 由 Host 启动时生成
- * 到 `<agentDir>/piabyss/pixie/control-token`，经 PIABYSS_PIXIE_HTTP_TOKEN 下
- * 发）。破坏性变更：插件与 Host 同版本升级；插件对 401 的保守降级语义（视为
- * 未 armed / 委派失败）正好兼容。
+ * v4 安全：所有端点要求 `X-Pixie-Token` 头（token 由 Host 启动时生成
+ * 到 `<agentDir>/piabyss/pixie/control-token`，经 `PI_PIXIE_HTTP_TOKEN` 下发；
+ * 旧插件仍发送 `X-Piabyss-Pixie-Token` 与 `PIABYSS_PIXIE_HTTP_TOKEN`，两者都
+ * 继续接受）。破坏性变更：插件与 Host 同版本升级；插件对 401 的保守降级语义
+ * （视为未 armed / 委派失败）正好兼容。
  *
  * 响应字段与文案的权威契约在 my-pi-plugins `packages/pi-pixie/README.md`；
  * 插件对非 200 / 非法 JSON / 缺字段一律保守降级（未 armed / 委派失败），
@@ -49,8 +50,9 @@ const PIXIE_DISPATCHES_PATH = "/api/pixie/dispatches";
 /** v4.3：小精灵会话缓存（自己创建的会话 + 被委托会话的简介/结果）。 */
 const PIXIE_SESSIONS_PATH = "/api/pixie/sessions";
 
-/** 控制面鉴权头（v4 token）。 */
-export const PIXIE_TOKEN_HEADER = "x-piabyss-pixie-token";
+/** 控制面鉴权头（v4 token）。新版插件用通用名，旧版仍发 piabyss 前缀。 */
+export const PIXIE_TOKEN_HEADER = "x-pixie-token";
+export const PIXIE_TOKEN_HEADER_LEGACY = "x-piabyss-pixie-token";
 
 export type PixieControlPlaneDeps = {
   /** 委派引擎入口（dispatchPixieTask，单次注册 + 回合跟踪 + 排队门）。 */
@@ -568,7 +570,8 @@ export async function handlePixieControlPlaneRequest(
 
   // Token 鉴权：token 未配置（测试桩）时跳过；配置后不匹配一律 401。
   if (options.token) {
-    const provided = options.headers?.[PIXIE_TOKEN_HEADER];
+    const provided =
+      options.headers?.[PIXIE_TOKEN_HEADER] ?? options.headers?.[PIXIE_TOKEN_HEADER_LEGACY];
     if (provided !== options.token) {
       return { status: 401, body: { ok: false, error: "控制面鉴权失败（token 不匹配）" } };
     }
@@ -739,8 +742,8 @@ export async function handlePixieControlPlaneRequest(
 
 /**
  * 启动环回控制面。监听 127.0.0.1 的系统分配端口——Host 内的会话与控制面同
- * 进程，没有固定端口需求；插件经 PIABYSS_PIXIE_HTTP_PORT 发现端口（main.ts
- * 在任何会话创建之前写入进程环境），token 经 PIABYSS_PIXIE_HTTP_TOKEN 下发。
+ * 进程，没有固定端口需求；插件经 PI_PIXIE_HTTP_PORT 发现端口（main.ts
+ * 在任何会话创建之前写入进程环境），token 经 PI_PIXIE_HTTP_TOKEN 下发。
  */
 export async function startPixieControlPlane(
   deps: PixieControlPlaneDeps,

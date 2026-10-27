@@ -20,6 +20,7 @@ import {
 import { IdentityState } from "./identity.js";
 import { acquireWithAbort, AgentOperationLock, TryMutex } from "./locks.js";
 import { logger } from "./logger.js";
+import { resolveMemoDataDir } from "./memo-store.js";
 import { GraphOperationRegistry } from "./operation-lifecycle.js";
 import { OutboundWriter } from "./outbound-queue.js";
 import { createLineReader } from "./transport.js";
@@ -221,6 +222,7 @@ export class PiHostServer {
       sdkVersion: this.deps.sdkVersion,
       nodeVersion: process.version,
       agentDir: this.deps.agentDir,
+      memoDataDir: resolveMemoDataDir(this.deps.agentDir),
       phase: this.phase,
       capabilities: this.deps.capabilities,
       modelConfigHealth: this.deps.getModelConfigHealth(),
