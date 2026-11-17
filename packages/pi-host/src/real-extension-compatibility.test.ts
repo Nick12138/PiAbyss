@@ -42,13 +42,18 @@ type DecisionPayload = {
   groupKey?: string;
 };
 
+type BlockedEventPayload = {
+  active: boolean;
+  toolCallId?: string;
+};
+
 type LoadedExtension = {
   binding: ExtensionUiBinding;
   events: EmittedEvent[];
   identity: HostIdentity;
   layout: TempAgentLayout;
   promptEvents: unknown[];
-  blockedEvents: unknown[];
+  blockedEvents: BlockedEventPayload[];
   session: AgentSession;
   cleanup: () => void;
 };
@@ -71,9 +76,11 @@ async function loadPublishedExtension(
   const layout = createTempAgentLayout("piabyss-real-extension-");
   const eventBus = createEventBus();
   const promptEvents: unknown[] = [];
-  const blockedEvents: unknown[] = [];
+  const blockedEvents: BlockedEventPayload[] = [];
   eventBus.on("rpiv:ask-user:prompt", (payload) => promptEvents.push(payload));
-  eventBus.on("rpiv:ask-user:blocked", (payload) => blockedEvents.push(payload));
+  eventBus.on("rpiv:ask-user:blocked", (payload) =>
+    blockedEvents.push(payload as BlockedEventPayload),
+  );
 
   const settingsManager = SettingsManager.create(layout.projectDir, layout.agentDir, {
     projectTrusted: true,
@@ -147,6 +154,18 @@ function registeredAskUserTool(session: AgentSession) {
     .find((tool) => tool.definition.name === "ask_user_question");
   expect(registered).toBeDefined();
   return wrapRegisteredTool(registered!, session.extensionRunner);
+}
+
+/**
+ * The published package may append fields to its append-only event contract.
+ * Assert the behavior PiAbyss relies on, while validating tool-call correlation
+ * whenever the installed release provides it.
+ */
+function expectBlockedLifecycle(events: BlockedEventPayload[], toolCallId: string): void {
+  expect(events.map((event) => event.active)).toEqual([true, false]);
+  if (events.some((event) => event.toolCallId !== undefined)) {
+    expect(events.map((event) => event.toolCallId)).toEqual([toolCallId, toolCallId]);
+  }
 }
 
 const QUESTIONNAIRE = {
@@ -251,7 +270,7 @@ describe("pinned published Extension compatibility", () => {
           ],
         },
       });
-      expect(loaded.blockedEvents).toEqual([{ active: true }, { active: false }]);
+      expectBlockedLifecycle(loaded.blockedEvents, "tool-call-rpiv-v2");
       expect(loaded.events.filter((event) => event.event === "extensionUi.groupClosed")).toEqual([
         {
           event: "extensionUi.groupClosed",
@@ -309,7 +328,7 @@ describe("pinned published Extension compatibility", () => {
           ],
         },
       });
-      expect(loaded.blockedEvents).toEqual([{ active: true }, { active: false }]);
+      expectBlockedLifecycle(loaded.blockedEvents, "tool-call-rpiv-v2-cancel");
       expect(respondExtensionUi(second.requestId, "resolved", "late", loaded.identity)).toBe(false);
     } finally {
       loaded.cleanup();
@@ -346,7 +365,6 @@ describe("pinned published Extension compatibility", () => {
 
       expect(request).toMatchObject({
         kind: "input",
-        message: "1,3",
         origin: {
           invocationKind: "tool",
           toolName: "ask_user_question",
@@ -372,6 +390,9 @@ describe("pinned published Extension compatibility", () => {
           ],
         },
       });
+      // Newer releases may extend the placeholder to explain custom answers.
+      // The numeric selection prefix remains the compatibility contract.
+      expect(request.message).toContain("1,3");
     } finally {
       loaded.cleanup();
     }
@@ -404,7 +425,7 @@ describe("pinned published Extension compatibility", () => {
       await expect(running).resolves.toMatchObject({
         details: { answers: [], cancelled: true },
       });
-      expect(loaded.blockedEvents).toEqual([{ active: true }, { active: false }]);
+      expectBlockedLifecycle(loaded.blockedEvents, "tool-call-rpiv-v2-abort");
       expect(respondExtensionUi(request.requestId, "resolved", "late", loaded.identity)).toBe(
         false,
       );
