@@ -85,10 +85,13 @@ function extractArchive(archivePath, destination) {
   mkdirSync(destination, { recursive: true });
   if (archivePath.endsWith(".zip")) {
     if (process.platform === "win32") {
+      // Windows PowerShell's Expand-Archive can exit successfully without
+      // materializing files on some hosted runners. Use the underlying ZIP
+      // API directly so extraction and its exit status are deterministic.
       run("powershell.exe", [
         "-NoProfile",
         "-Command",
-        `Expand-Archive -LiteralPath '${archivePath.replace(/'/g, "''")}' -DestinationPath '${destination.replace(/'/g, "''")}' -Force`,
+        `Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory('${archivePath.replace(/'/g, "''")}','${destination.replace(/'/g, "''")}')`,
       ]);
     } else {
       run("unzip", ["-q", "-o", archivePath, "-d", destination]);
